@@ -90,11 +90,15 @@ auto gse::camera::scripted_requester_id() -> id {
 	return find_or_generate_id("gse::camera::scripted");
 }
 
-auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, request, jitter_request> requests_in, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update> requests_in, read<follow_component> cameras) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : requests_in.of<ui_focus_request>()) {
 		d.ui_focus = focus;
+	}
+
+	for (const auto& [visible] : requests_in.of<world_visibility_update>()) {
+		d.world_visible = visible;
 	}
 
 	for (const auto& [size] : requests_in.of<viewport_update>()) {

@@ -6,6 +6,7 @@ import gse.ide.highlight;
 
 import :layout;
 import :model;
+import :phase;
 import :stream;
 
 auto gse::ide::agent::style_of(const row_kind kind) -> row_style {
@@ -358,7 +359,7 @@ auto gse::ide::agent::chat_bubble(const gui::style& sty, const transcript_row& r
 	return {
 		.first_line = first_line,
 		.last_line = last_line,
-		.fill = { vec3f(mine ? sty.color_tab_active : sty.color_panel_alt), 1.f },
+		.fill = { vec3f(mine ? sty.tab.cell.selected.fill : sty.panel_alt.fill), 1.f },
 		.border = mine ? sty.color_accent : sty.color_border,
 		.align_right = mine,
 	};
@@ -735,8 +736,10 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 
 	const auto opened = static_cast<std::uint32_t>(v.buffer.lines.size());
 	const row_style look = style_of(row.kind);
-	const std::string_view title = v.filter == row_filter::digest && row.kind == row_kind::phase
-		? row.phase == task_phase::scope ? "Scope" : "Summary"
+	const bool record = v.filter == row_filter::digest && row.kind == row_kind::phase;
+	const phase_policy reported = record ? policy_of(row.phase) : phase_policy{};
+	const std::string_view title = *reported.record != '\0'
+		? std::string_view(reported.record)
 		: std::string_view(row.text);
 
 	push_transcript_line(v, sty, {
@@ -778,7 +781,9 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 		push_diff(v, sty, row, index, metrics);
 	}
 
-	const bool previewable = row.kind == row_kind::user || (row.kind == row_kind::tool && !edit);
+	const bool previewable = row.kind == row_kind::user
+		|| (row.kind == row_kind::tool && !edit)
+		|| reported.record_brief;
 	if (previewable && v.buffer.lines.size() - opened > row_preview_lines) {
 		const bool expanded = group_expanded(s, index);
 		if (!expanded) {
@@ -814,7 +819,9 @@ auto gse::ide::agent::shows(const row_filter filter, const transcript_row& row) 
 		case row_filter::digest:
 			return row.kind == row_kind::user
 				|| row.kind == row_kind::failure
-				|| (row.kind == row_kind::phase && (row.phase == task_phase::scope || row.phase == task_phase::summarize));
+				|| row.kind == row_kind::gap
+				|| row.kind == row_kind::question
+				|| (row.kind == row_kind::phase && !row.detail.empty());
 		case row_filter::changes:
 			return !row.file.empty() && !(row.added.empty() && row.removed.empty());
 	}

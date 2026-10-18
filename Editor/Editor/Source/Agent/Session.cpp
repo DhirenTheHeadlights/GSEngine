@@ -102,6 +102,9 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 		attach_runtime(s);
 		d.next_id = std::max(d.next_id, s.id);
 	}
+	std::erase_if(d.sessions, [](const session& s) {
+		return s.sync.has_value();
+	});
 }
 
 auto gse::ide::agent::adopt_inherited(data& d) -> void {
@@ -260,10 +263,42 @@ auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd, 
 	return d.sessions.back();
 }
 
+auto gse::ide::agent::create_sync_session(data& d, sync_request request) -> session& {
+	const std::uint32_t session_id = ++d.next_id;
+	d.sessions.push_back({
+		.id = session_id,
+		.name = std::format("Sync {}", request.root.filename().generic_display_string()),
+		.cwd = request.root,
+		.hydrated = true,
+		.mode = transcript_mode::transcript,
+		.sync = std::move(request),
+		.runs = { {
+			.phase = task_phase::settled,
+			.started = unix_now(),
+		} },
+		.model_id = d.default_model.value,
+		.requested_effort = d.default_effort,
+	});
+	attach_runtime(d.sessions.back());
+	return d.sessions.back();
+}
+
+auto gse::ide::agent::is_chat(const session& s) -> bool {
+	return !s.sync.has_value();
+}
+
+auto gse::ide::agent::sync_session(data& d) -> session* {
+	const auto found = std::ranges::find_if_not(d.sessions, is_chat);
+	return found != d.sessions.end() ? &*found : nullptr;
+}
+
 auto gse::ide::agent::session_command(const session& s, const std::filesystem::path& prompt) -> std::wstring {
 	std::wstring command(agent_command.begin(), agent_command.end());
 
-	if (policy_of(current_phase(s)).read_only) {
+	if (s.sync) {
+		command.append(sync_denied_tools.begin(), sync_denied_tools.end());
+	}
+	else if (policy_of(current_phase(s)).read_only) {
 		command.append(read_only_denied_tools.begin(), read_only_denied_tools.end());
 	}
 
@@ -408,6 +443,7 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			arm_retry(s);
 		}
 		else if (!turn_failed(*event)) {
+			s.turn_ended = true;
 			s.retry.waiting = false;
 			s.retry.attempts = 0;
 			s.resume_attempts = 0;
@@ -518,7 +554,7 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 	erase_session(d, session_id);
 }
 
-auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments) -> void {
+auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments, const bool editor_driven) -> void {
 	const bool settings_stale = s.launched_model_id != s.model_id || s.launched_effort != s.requested_effort;
 	if (s.running && !s.think_clock && settings_stale) {
 		restart_session(s);
@@ -531,8 +567,11 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 	s.retry.waiting = false;
 	s.retry.held = true;
 	s.turn_open = true;
+	s.editor_turn = editor_driven;
+	s.turn_ended = false;
 	s.hibernating = false;
 	s.wake_prompt.clear();
+	s.asleep_blocker.clear();
 
 	append_row(s, {
 		.kind = row_kind::user,
@@ -583,11 +622,17 @@ auto gse::ide::agent::interrupt_session(session& s) -> void {
 }
 
 auto gse::ide::agent::active_session(data& d) -> session* {
-	if (d.sessions.empty()) {
-		return nullptr;
+	session* last = nullptr;
+	for (session& s : d.sessions) {
+		if (!is_chat(s)) {
+			continue;
+		}
+		if (s.id == d.active) {
+			return &s;
+		}
+		last = &s;
 	}
-	const auto found = std::ranges::find(d.sessions, d.active, &session::id);
-	return found != d.sessions.end() ? &*found : &d.sessions.back();
+	return last;
 }
 
 auto gse::ide::agent::environment_value(const std::wstring_view name) -> std::wstring {

@@ -159,6 +159,7 @@ auto gse::alloc_panel::run(context& ctx, data& d, const channel_write<gui::menu_
 
 	ui_out.push<gui::menu_content>({
 		.menu = "Allocations",
+		.translucent = true,
 		.build = [&d](gui::builder& ui) {
 			build_panel(d, ui);
 		},

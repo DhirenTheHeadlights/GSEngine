@@ -235,7 +235,9 @@ namespace sandbox {
 
 	auto spawn_domino_chain(
 		gse::scene& s,
-		const gse::vec3<gse::position>& origin
+		int index,
+		const gse::vec3<gse::position>& origin,
+		gse::angle heading = gse::degrees(0.f)
 	) -> void;
 
 	auto spawn_funnel(
@@ -286,6 +288,7 @@ namespace sandbox {
 
 	auto spawn_pendulum_chain(
 		gse::scene& s,
+		int index,
 		const gse::vec3<gse::position>& origin
 	) -> void;
 
@@ -366,19 +369,16 @@ auto sandbox::spawn_inverted_mass_pyramid(gse::scene& s, const gse::vec3<gse::po
 	);
 }
 
-auto sandbox::spawn_domino_chain(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
-	constexpr float spacing = 0.9f;
+auto sandbox::spawn_domino_chain(gse::scene& s, const int index, const gse::vec3<gse::position>& origin, const gse::angle heading) -> void {
+	const auto spacing = gse::meters(0.9f);
+	const gse::quat facing(gse::axis_y, heading);
 
 	for (int i = 0; i < 12; ++i) {
-		const float x = static_cast<float>(i) * spacing;
-		const auto pos = origin + gse::meters(x, (i == 0) ? 1.2f : 1.f, 0.f);
-		const auto tilt = (i == 0) ? gse::quat(
-			{ 0.f, 0.f, 1.f },
-			gse::radians(-0.8f)
-		)
-								   : gse::quat();
+		const auto step = gse::rotate_vector(facing, gse::vec3<gse::length>(spacing * static_cast<float>(i), gse::meters(0.f), gse::meters(0.f)));
+		const auto pos = origin + step + gse::meters(0.f, (i == 0) ? 1.2f : 1.f, 0.f);
+		const auto tilt = (i == 0) ? facing * gse::quat(gse::axis_z, gse::radians(-0.8f)) : facing;
 		s.spawn(
-			std::format("Domino {}", i + 1),
+			std::format("Domino {} {}", index, i + 1),
 			box(
 				pos,
 				gse::meters(0.3f, 2.f, 1.f),
@@ -789,12 +789,12 @@ auto sandbox::spawn_slider_elevator(gse::scene& s, const gse::vec3<gse::position
 		});
 }
 
-auto sandbox::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>& origin) -> void {
+auto sandbox::spawn_pendulum_chain(gse::scene& s, const int index, const gse::vec3<gse::position>& origin) -> void {
 	constexpr int chain_length = 5;
 	constexpr float link_spacing = 1.5f;
 
 	const auto ceiling_pos = origin + gse::meters(0.f, 12.f, 0.f);
-	const auto ceiling_id = s.spawn("Chain Ceiling", static_box(ceiling_pos, gse::meters(1.f, 0.5f, 1.f)));
+	const auto ceiling_id = s.spawn(std::format("Chain {} Ceiling", index), static_box(ceiling_pos, gse::meters(1.f, 0.5f, 1.f)));
 
 	std::vector<gse::id> link_ids;
 	link_ids.push_back(ceiling_id);
@@ -804,7 +804,7 @@ auto sandbox::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>
 		const float x_offset = (i == chain_length - 1) ? 2.f : 0.f;
 		const auto link_pos = origin + gse::meters(x_offset, y, 0.f);
 		const auto link_id = s.spawn(
-			std::format("Chain Link {}", i),
+			std::format("Chain {} Link {}", index, i),
 			box(
 				link_pos,
 				gse::meters(0.6f, 0.6f, 0.6f),
@@ -815,7 +815,7 @@ auto sandbox::spawn_pendulum_chain(gse::scene& s, const gse::vec3<gse::position>
 	}
 
 	for (std::size_t i = 0; i + 1 < link_ids.size(); ++i) {
-		s.build(std::format("Chain Joint {}", i))
+		s.build(std::format("Chain {} Joint {}", index, i))
 			.with<gse::physics::joint_spec>({
 				.entity_a = link_ids[i],
 				.entity_b = link_ids[i + 1],
@@ -980,7 +980,7 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 
 auto sandbox::spawn_physics_stress(gse::scene& s, const stress_scene_params& params) -> void {
 	spawn_inverted_mass_pyramid(s, gse::vec3<gse::position>(gse::meters(-15.f, 0.f, 0.f)));
-	spawn_domino_chain(s, gse::vec3<gse::position>(gse::meters(-8.f, 0.f, -10.f)));
+	spawn_domino_chain(s, 0, gse::vec3<gse::position>(gse::meters(-8.f, 0.f, -10.f)));
 	spawn_funnel(s, gse::vec3<gse::position>(gse::meters(15.f, 0.f, 0.f)));
 	spawn_slope_friction_test(s, gse::vec3<gse::position>(gse::meters(0.f, 0.f, 15.f)));
 	spawn_high_speed_impact_target(s, gse::vec3<gse::position>(gse::meters(0.f, 0.f, -20.f)));
@@ -1081,7 +1081,7 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	spawn_distance_pendulum(s, gse::vec3<gse::position>(gse::meters(-10.f, 0.f, 0.f)));
 	spawn_hinge_door(s, gse::vec3<gse::position>(gse::meters(0.f, 0.f, 0.f)));
 	spawn_slider_elevator(s, gse::vec3<gse::position>(gse::meters(10.f, 0.f, 0.f)));
-	spawn_pendulum_chain(s, gse::vec3<gse::position>(gse::meters(20.f, 0.f, 0.f)));
+	spawn_pendulum_chain(s, 0, gse::vec3<gse::position>(gse::meters(20.f, 0.f, 0.f)));
 
 	s.spawn("Joint Test Sphere", sphere(gse::vec3<gse::position>(gse::meters(0.f, 6.f, -8.f)), gse::meters(1.f)));
 }

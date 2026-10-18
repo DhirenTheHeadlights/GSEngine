@@ -37,6 +37,57 @@ export namespace gse::gpu::context {
 		std::unique_ptr<swap_chain> swapchain;
 	};
 
+	struct gpu_profiling_settings {
+		[[
+			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+		]]
+		bool timestamps = true;
+
+		[[
+			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
+		]]
+		bool pipeline_stats = false;
+
+		[[
+			= settings::describe<"Record intra-pass GPU timestamp marks for passes that place them. Adds one query per mark.">{}
+		]]
+		bool intra_pass_marks = false;
+	};
+
+	struct gpu_perf_metrics_settings {
+		[[
+			= settings::describe<"Sample NVIDIA GPU hardware counters (SM throughput, warp occupancy, stall reasons) and "
+								  "attribute them to render graph passes and marks. Needs the Nsight Perf SDK at build time, "
+								  "GPU timestamps at run time, and performance counter permission from the driver.">{}
+		]]
+		bool enabled = false;
+
+		[[
+			= settings::describe<"Comma separated Nsight Perf metric names to sample. The set must fit a single "
+								  "configuration pass; the periodic sampler cannot replay, so an oversized set is refused "
+								  "whole rather than trimmed.">{}
+		]]
+		std::string names{ default_gpu_perf_metrics };
+
+		[[
+			= settings::describe<"Index of the NVIDIA device to sample, for machines holding more than one.">{}
+		]]
+		std::uint32_t device = 0;
+
+		[[
+			= settings::describe<"Hardware counter sampling period. Shorter periods resolve shorter dispatches and cost "
+								  "more decode work; a pass shorter than two periods gets no row.">{}
+		]]
+		time interval = microseconds(10.f);
+
+		[[
+			= settings::describe<"Lock GPU clocks to rated TDP while sampling. Makes stall ratios repeatable but moves "
+								  "every microsecond figure away from the profile tables the rest of the work is measured "
+								  "against.">{}
+		]]
+		bool lock_clocks = false;
+	};
+
 	struct [[= system_state<"Gpu">{}, = settings::category<"Graphics">{}]] data {
 		[[
 			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
@@ -57,19 +108,9 @@ export namespace gse::gpu::context {
 		gpu::device_settings device_settings;
 
 		[[
-			= settings::describe<"Record GPU timestamp queries around each render pass for the profiler.">{}
+			= settings::describe<"What the render graph records for the profiler each pass.">{}
 		]]
-		bool gpu_timestamps_enabled = true;
-
-		[[
-			= settings::describe<"Collect pipeline statistics (invocations, primitives) per pass. Has measurable overhead.">{}
-		]]
-		bool gpu_pipeline_stats_enabled = false;
-
-		[[
-			= settings::describe<"Record intra-pass GPU timestamp marks for passes that place them. Adds one query per mark.">{}
-		]]
-		bool gpu_intra_pass_marks_enabled = false;
+		gpu_profiling_settings gpu_profiling;
 
 		[[
 			= settings::describe<"Dump every render graph pass with its reads, writes and attachments to the log whenever "
@@ -78,36 +119,9 @@ export namespace gse::gpu::context {
 		bool log_render_graph = false;
 
 		[[
-			= settings::describe<"Sample NVIDIA GPU hardware counters (SM throughput, warp occupancy, stall reasons) and "
-								  "attribute them to render graph passes and marks. Needs the Nsight Perf SDK at build time, "
-								  "GPU timestamps at run time, and performance counter permission from the driver.">{}
+			= settings::describe<"Sampling NVIDIA GPU hardware counters and attributing them to render graph passes.">{}
 		]]
-		bool gpu_perf_metrics_enabled = false;
-
-		[[
-			= settings::describe<"Comma separated Nsight Perf metric names to sample. The set must fit a single "
-								  "configuration pass; the periodic sampler cannot replay, so an oversized set is refused "
-								  "whole rather than trimmed.">{}
-		]]
-		std::string gpu_perf_metrics{ default_gpu_perf_metrics };
-
-		[[
-			= settings::describe<"Index of the NVIDIA device to sample, for machines holding more than one.">{}
-		]]
-		std::uint32_t gpu_perf_metrics_device = 0;
-
-		[[
-			= settings::describe<"Hardware counter sampling period. Shorter periods resolve shorter dispatches and cost "
-								  "more decode work; a pass shorter than two periods gets no row.">{}
-		]]
-		time gpu_perf_metrics_interval = microseconds(10.f);
-
-		[[
-			= settings::describe<"Lock GPU clocks to rated TDP while sampling. Makes stall ratios repeatable but moves "
-								  "every microsecond figure away from the profile tables the rest of the work is measured "
-								  "against.">{}
-		]]
-		bool gpu_perf_metrics_lock_clocks = false;
+		gpu_perf_metrics_settings gpu_perf_metrics;
 
 		[[
 			= settings::describe<"Render into an offscreen target when there is no window, so a windowless run can still record.">{},

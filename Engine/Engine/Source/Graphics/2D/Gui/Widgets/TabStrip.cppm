@@ -15,11 +15,14 @@ import std;
 
 import :font;
 import :input_layers;
+import :interaction;
 import :scroll_widget;
 import :styles;
+import :surface_paint;
 import :symbols;
 import :types;
 import :ui_renderer;
+import :widget_skin;
 
 export namespace gse::gui {
 	enum class tab_orientation : std::uint8_t {
@@ -127,8 +130,6 @@ export namespace gse::gui {
 }
 
 namespace gse::gui {
-	constexpr float base_tab_gap = 2.f;
-
 	auto warning_extent(
 		const style& sty
 	) -> float;
@@ -164,14 +165,14 @@ auto gse::gui::tab_strip_row_extent(const resource::handle<font>& fnt, const sty
 auto gse::gui::tab_strip_measure(const style& sty, const tab_strip_measure_params& params) -> tab_strip_metrics {
 	const float pad = sty.padding;
 	const float close_extent = sty.icon_extent;
-	const float tab_gap = base_tab_gap * sty.scale_factor;
+	const float tab_gap = sty.tab.gap;
 	const float row_extent = tab_strip_row_extent(params.font, sty);
 	const float available = std::max(0.f, params.available_extent - (params.show_add ? row_extent + tab_gap : 0.f));
 
 	tab_strip_metrics metrics{
 		.row_extent = row_extent,
 		.row_gap = tab_gap,
-		.scroll_bar_extent = 6.f * sty.scale_factor,
+		.scroll_bar_extent = sty.tab.scroll_bar_extent,
 	};
 	float row_width = 0.f;
 	for (const tab_desc& tab : params.tabs) {
@@ -202,7 +203,7 @@ auto gse::gui::tab_strip_layout(const resource::handle<font>& fnt, const style& 
 	const float close_extent = sty.icon_extent;
 	const auto fnt_view = fnt.resolve();
 	const float row_h = std::min(fnt_view->line_height(fs) + pad, area.height());
-	const float tab_gap = base_tab_gap * sty.scale_factor;
+	const float tab_gap = sty.tab.gap;
 
 	std::vector<float> widths;
 	widths.reserve(tabs.size());
@@ -293,11 +294,20 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	const float dot_extent = warning_extent(sty);
 	rectf tab_area = params.area;
 
+	const tab_skin& skin = sty.tab;
+
 	const auto draw_cell = [&](const rectf& rect, const rectf& visible, const rectf& close_rect, const tab_desc& tab, const bool is_active, const bool hovered) {
-		ctx.queue_sprite({
-			.rect = rect,
-			.color = is_active ? sty.color_tab_active : (hovered ? sty.color_tab_hovered : sty.color_tab_background),
-			.texture = ctx.blank_texture,
+		const interaction::press cell{
+			.hovered = hovered,
+			.selected = is_active,
+		};
+		const interaction::press caption{
+			.enabled = !tab.dimmed,
+			.hovered = hovered,
+			.selected = is_active,
+		};
+
+		draw::fill_surface(ctx, rect, cell.select(skin.cell), {
 			.clip_rect = visible,
 		});
 
@@ -330,7 +340,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			.text = tab.caption,
 			.position = { rect.left() + pad + warning_zone, rect.center().y() + fnt_view->vertical_center_offset(fs) },
 			.scale = fs,
-			.color = tab.dimmed ? sty.color_text_disabled : (is_active ? sty.color_text : sty.color_text_secondary),
+			.color = caption.select(skin.caption_colors),
 			.clip_rect = caption_clip,
 		});
 		if (tab.dirty) {
@@ -339,21 +349,24 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 				.text = "*",
 				.position = { caption_right + pad * 0.25f, rect.center().y() + fnt_view->vertical_center_offset(fs) },
 				.scale = fs,
-				.color = is_active ? sty.color_text : sty.color_text_secondary,
+				.color = cell.select(skin.caption_colors),
 				.clip_rect = visible,
 			});
 		}
 		const bool close_hovered = tab_area.contains(mouse) && ctx.hovers(close_rect);
+		const interaction::press close_glyph{
+			.hovered = close_hovered,
+		};
 		if (tab.busy && !(tab.closeable && close_hovered)) {
 			symbol::spinner(ctx, close_rect, {
-				.color = sty.color_text_secondary,
+				.color = skin.glyph_colors.idle,
 				.extent = sty.icon_extent,
 				.clip_rect = visible,
 			});
 		}
 		else if (tab.closeable) {
 			symbol::draw(ctx, symbol::close(), close_rect, {
-				.color = close_hovered ? sty.color_text : sty.color_text_secondary,
+				.color = close_glyph.select(skin.glyph_colors),
 				.extent = sty.icon_extent,
 				.clip_rect = visible,
 			});
@@ -361,18 +374,18 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 	};
 
 	const auto draw_add_cell = [&](const rectf& cell) -> bool {
-		const bool hovered = ctx.hovers(cell);
-		ctx.queue_sprite({
-			.rect = cell,
-			.color = hovered ? sty.color_tab_hovered : sty.color_tab_background,
-			.texture = ctx.blank_texture,
-		});
+		const interaction::press add{
+			.hovered = ctx.hovers(cell),
+		};
+
+		draw::fill_surface(ctx, cell, add.select(skin.cell), {});
+
 		symbol::draw(ctx, symbol::plus(), cell, {
-			.color = hovered ? sty.color_text : sty.color_text_secondary,
+			.color = add.select(skin.glyph_colors),
 			.extent = sty.icon_extent,
 			.clip_rect = cell,
 		});
-		return hovered && ctx.mouse_pressed_for(cell);
+		return add.hovered && ctx.mouse_pressed_for(cell);
 	};
 
 	if (params.orientation == tab_orientation::vertical) {
@@ -465,11 +478,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 		}
 
 		if (has_active) {
-			ctx.queue_sprite({
-				.rect = active_bar,
-				.color = sty.color_accent,
-				.texture = ctx.blank_texture,
-			});
+			draw::fill_surface(ctx, active_bar, skin.accent_bar, {});
 		}
 		return result;
 	}
@@ -508,7 +517,7 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			}
 		}
 		else if (std::abs(wheel.x()) > 0.001f || (shift && std::abs(wheel.y()) > 0.001f)) {
-			state.scroll.offset -= (wheel.x() + wheel.y()) * 80.f * sty.scale_factor;
+			state.scroll.offset -= (wheel.x() + wheel.y()) * skin.wheel_step;
 			state.scroll.target = state.scroll.offset;
 		}
 	}
@@ -621,23 +630,19 @@ auto gse::gui::tab_strip(const draw_context& ctx, const tab_strip_params& params
 			.mouse = mouse,
 			.mouse_pressed = pressed && !ctx.is_press_consumed(mouse_button::button_1),
 			.mouse_held = held,
-			.min_thumb = 24.f * sty.scale_factor,
+			.min_thumb = sty.scrollbar.min_thumb,
 		});
 		if (bar.used_press) {
 			ctx.consume_press(mouse_button::button_1);
 		}
-		vec4f track_color = sty.color_widget_background;
-		track_color.w() *= 0.4f;
-		ctx.queue_sprite({
-			.rect = bar.track_rect,
-			.color = track_color,
-			.texture = ctx.blank_texture,
-		});
-		ctx.queue_sprite({
-			.rect = bar.thumb_rect,
-			.color = bar.held || bar.hovered ? sty.color_widget_hovered : sty.color_widget_background,
-			.texture = ctx.blank_texture,
-		});
+
+		const interaction::press scroll_state{
+			.hovered = bar.hovered,
+			.held = bar.held,
+		};
+
+		draw::fill_surface(ctx, bar.track_rect, sty.scrollbar.track, {});
+		draw::fill_surface(ctx, bar.thumb_rect, scroll_state.select(sty.scrollbar.thumb), {});
 	}
 
 	if (params.show_add) {

@@ -103,10 +103,6 @@ export namespace gse::ide::project {
 		const std::filesystem::path& file
 	) -> manifest;
 
-	auto theme_name(
-		const std::filesystem::path& root
-	) -> std::string;
-
 	auto held_elsewhere(
 		const std::filesystem::path& manifest_file
 	) -> bool;

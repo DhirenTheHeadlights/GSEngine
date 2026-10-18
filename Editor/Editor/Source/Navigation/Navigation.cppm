@@ -4,6 +4,8 @@ import std;
 import gse.ide.diagnostic;
 
 export namespace gse::ide {
+	constexpr std::string_view source_control_panel_name = "Source Control";
+
 	enum class jump_highlight : std::uint8_t {
 		caret,
 		span,

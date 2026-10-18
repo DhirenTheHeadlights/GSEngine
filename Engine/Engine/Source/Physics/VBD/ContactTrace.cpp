@@ -14,7 +14,7 @@ import :vbd_gpu_solver;
 import :vbd_contact_trace;
 
 auto gse::physics::contact_trace::run(data& d, const shared_view<physics::data> phys) -> async::task<> {
-	if (d.body == 0 || !gpu_solver_active(phys)) {
+	if (phys.trace.body == 0 || !gpu_solver_active(phys)) {
 		co_return;
 	}
 
@@ -29,24 +29,24 @@ auto gse::physics::contact_trace::run(data& d, const shared_view<physics::data> 
 		log::println(
 			log::level::warning,
 			log::category::physics,
-			"contact trace: Physics.trace_hashes is off, so the per-tick pass-hash line will read all zeros; enable it to trace hashes"
+			"contact trace: Physics.trace.hashes is off, so the per-tick pass-hash line will read all zeros; enable it to trace hashes"
 		);
 	}
 
-	const auto it = phys.id_to_body_index.find(generate_temp_id(d.body));
-	if (it == phys.id_to_body_index.end()) {
+	const auto traced = trace_body_index(phys);
+	if (!traced) {
 		if (!d.missing_reported) {
 			d.missing_reported = true;
 			log::println(
 				log::level::warning,
 				log::category::physics,
 				"contact trace: body {} is not in the solver body map",
-				d.body
+				phys.trace.body
 			);
 		}
 		co_return;
 	}
-	const auto body_index = it->second;
+	const auto body_index = *traced;
 
 	const auto bodies = phys.gpu_solver.read_body_snapshots();
 	if (body_index >= bodies.size()) {
@@ -76,7 +76,7 @@ auto gse::physics::contact_trace::run(data& d, const shared_view<physics::data> 
 		log::category::physics,
 		"contact trace gen {} body {} idx {}: pos {:.6f} vel {:.6f} avel {:.6f} aw {:.2f} sleep {} grounded {} contacts {}",
 		generation,
-		d.body,
+		phys.trace.body,
 		body_index,
 		body.position,
 		body.velocity,

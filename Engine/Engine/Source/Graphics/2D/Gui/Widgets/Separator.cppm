@@ -4,7 +4,9 @@ import gse.core;
 import gse.math;
 
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct separator {
@@ -28,17 +30,13 @@ auto gse::gui::separator::draw(const draw_context& ctx, id&, id&, id&) -> void {
 
 	ctx.layout_cursor.y() -= half_spacing;
 
-	const float line_height = 1.f;
+	const float line_height = ctx.style.separator_thickness;
 	const rectf line_rect = rectf::from_position_size(
 		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), line_height }
 	);
 
-	ctx.queue_sprite({
-		.rect = line_rect,
-		.color = ctx.style.color_border,
-		.texture = ctx.blank_texture
-	});
+	draw::fill_surface(ctx, line_rect, ctx.style.separator_line, {});
 
 	ctx.layout_cursor.y() -= line_height + half_spacing;
 }

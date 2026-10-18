@@ -26,6 +26,7 @@ namespace gse {
 		std::optional<scenario::context> scenario_ctx;
 		async::task<> scenario_task;
 		std::ofstream state_dump;
+		std::vector<std::string> failures;
 	};
 
 	auto world_populated(
@@ -65,7 +66,11 @@ namespace gse {
 
 	auto finish_bench(
 		const bench_config& config,
-		const bench_state& state,
+		bench_state& state,
 		engine& e
 	) -> void;
+
+	auto bench_exit_code(
+		const bench_state& state
+	) -> int;
 }

@@ -125,26 +125,48 @@ export namespace gse::vbd {
 	constexpr vbd_limits limits{};
 
 	struct vbd_capacities {
-		std::uint32_t max_bodies = 20480;
-		std::uint32_t max_contacts = 262144;
-		std::uint32_t max_collision_pairs = 262144;
+		std::uint32_t max_bodies = 1024;
+		std::uint32_t max_contacts = 16384;
+		std::uint32_t max_collision_pairs = 16384;
 		std::uint32_t poly_pair_base = 1 + max_collision_pairs * 2;
-		std::uint32_t max_joints = 8192;
-		std::uint32_t max_islands = 512;
-		std::uint32_t max_impulses = 4096;
-		std::uint32_t max_motors = 4096;
-		std::uint32_t max_muscles = 8192;
-		std::uint32_t max_muscle_points = 32768;
+		std::uint32_t max_joints = 256;
+		std::uint32_t max_islands = 1024;
+		std::uint32_t max_impulses = 256;
+		std::uint32_t max_motors = 256;
+		std::uint32_t max_muscles = 256;
+		std::uint32_t max_muscle_points = 1024;
 		std::uint32_t max_hull_uints = limits.curve_words_base;
 		std::uint32_t max_curve_uints = 16384;
-		std::uint32_t grid_table_size = 32768;
-		std::uint32_t ring_max_bodies = 4096;
+		std::uint32_t grid_table_size = 2048;
+		std::uint32_t ring_max_bodies = 1024;
 		std::uint32_t ring_max_contacts = 16384;
 		std::uint32_t max_contact_adjacency = max_contacts * 2;
 		std::uint32_t max_joint_adjacency = max_joints * 2 + max_muscle_points;
 		std::uint32_t max_grounded_uints = (max_bodies + 31) / 32;
 		std::uint32_t grid_max_entries = max_bodies * 8;
+
+		auto operator==(
+			const vbd_capacities&
+		) const -> bool = default;
 	};
+
+	struct vbd_scene_counts {
+		std::uint32_t bodies = 0;
+		std::uint32_t joints = 0;
+		std::uint32_t impulses = 0;
+		std::uint32_t motors = 0;
+		std::uint32_t muscles = 0;
+		std::uint32_t muscle_points = 0;
+		std::uint32_t hull_uints = 0;
+
+		auto merge(
+			const vbd_scene_counts& other
+		) -> void;
+	};
+
+	auto capacities_for(
+		const vbd_scene_counts& counts
+	) -> vbd_capacities;
 
 	struct [[= shaders::shader_constant_block]] muscle_curves {
 		vec3f active_height = { 0.814483478343008f, 0.433004984392647f, 0.1f };
@@ -381,4 +403,48 @@ inline auto gse::vbd::body_state::sleeping() const -> bool {
 
 inline auto gse::vbd::body_snapshot::sleeping() const -> bool {
 	return sleep_counter >= limits.sleep_threshold;
+}
+namespace gse::vbd {
+	constexpr std::uint32_t capacity_index_ceiling = 1u << 20;
+	constexpr std::uint32_t contacts_per_body = 16;
+
+	auto with_headroom(
+		std::uint32_t count,
+		std::uint32_t smallest
+	) -> std::uint32_t;
+}
+
+inline auto gse::vbd::with_headroom(const std::uint32_t count, const std::uint32_t smallest) -> std::uint32_t {
+	return std::min(std::bit_ceil(std::max(count + 1, smallest)), capacity_index_ceiling);
+}
+
+inline auto gse::vbd::vbd_scene_counts::merge(const vbd_scene_counts& other) -> void {
+	this->bodies = std::max(this->bodies, other.bodies);
+	this->joints = std::max(this->joints, other.joints);
+	this->impulses = std::max(this->impulses, other.impulses);
+	this->motors = std::max(this->motors, other.motors);
+	this->muscles = std::max(this->muscles, other.muscles);
+	this->muscle_points = std::max(this->muscle_points, other.muscle_points);
+	this->hull_uints = std::max(this->hull_uints, other.hull_uints);
+}
+
+inline auto gse::vbd::capacities_for(const vbd_scene_counts& counts) -> vbd_capacities {
+	const auto bodies = with_headroom(counts.bodies, 1024);
+	const auto contacts = std::min(bodies * contacts_per_body, capacity_index_ceiling);
+
+	return vbd_capacities{
+		.max_bodies = bodies,
+		.max_contacts = contacts,
+		.max_collision_pairs = contacts,
+		.max_joints = with_headroom(counts.joints, 256),
+		.max_islands = bodies,
+		.max_impulses = with_headroom(counts.impulses, 256),
+		.max_motors = with_headroom(counts.motors, 256),
+		.max_muscles = with_headroom(counts.muscles, 256),
+		.max_muscle_points = with_headroom(counts.muscle_points, 1024),
+		.max_hull_uints = with_headroom(counts.hull_uints, 4096),
+		.grid_table_size = bodies * 2,
+		.ring_max_bodies = bodies,
+		.ring_max_contacts = contacts,
+	};
 }

@@ -147,7 +147,7 @@ auto installer::setup_screen::body_rect(const gse::gui::style&, const gse::vec2f
 auto installer::setup_screen::draw_backdrop(gse::gui::draw_context& ctx, const gse::vec2f viewport_size) const -> void {
 	ctx.sprites.push_back({
 		.rect = body_rect(ctx.style, viewport_size),
-		.color = { gse::vec3f(ctx.style.color_menu_body), 1.f },
+		.color = ctx.style.screen.backdrop.fill,
 		.texture = ctx.blank_texture,
 		.layer = gse::render_layer::overlay,
 	});
@@ -195,16 +195,16 @@ auto installer::setup_screen::draw_progress(const gse::gui::builder& ui) const -
 		{ content.left(), ctx.layout_cursor.y() },
 		{ content.width(), height }
 	);
-	ctx.queue_sprite({
-		.rect = track,
-		.color = ctx.style.color_widget_background,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = gse::rectf::from_position_size({ track.left(), track.top() }, { track.width() * std::clamp(fraction, 0.f, 1.f), height }),
-		.color = m_phase == phase::failed ? ctx.style.color_error : ctx.style.color_accent,
-		.texture = ctx.blank_texture,
-	});
+	const gse::gui::progress_skin& bar = ctx.style.progress;
+
+	gse::gui::draw::fill_surface(ctx, track, bar.track, {});
+
+	gse::gui::draw::fill_surface(
+		ctx,
+		gse::rectf::from_position_size({ track.left(), track.top() }, { track.width() * std::clamp(fraction, 0.f, 1.f), height }),
+		m_phase == phase::failed ? bar.fill_error : bar.fill,
+		{}
+	);
 	ctx.layout_cursor.y() -= height + ctx.style.padding;
 }
 

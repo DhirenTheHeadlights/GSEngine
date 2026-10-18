@@ -1,0 +1,62 @@
+--- a/gcc/config/wasm/wasm.cc
++++ b/gcc/config/wasm/wasm.cc
+@@ -91,7 +91,7 @@
+ #define TARGET_PRINT_OPERAND_PUNCT_VALID_P wasm_valid_punct_p
+ void wasm_print_operand (FILE *stream, rtx value, int mode);
+ #define TARGET_PRINT_OPERAND wasm_print_operand
+-void wasm_output_internal_label (FILE *stream, const char *pfx, size_t no);
++void wasm_output_internal_label (FILE *stream, const char *pfx, unsigned long no);
+ #define TARGET_ASM_INTERNAL_LABEL wasm_output_internal_label
+ #define TARGET_HAVE_NAMED_SECTIONS false
+ 
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -77,8 +77,6 @@
+   fprintf (stream, "%*s", indent * 2, "");
+ }
+ 
+-char *fake_out_file_data;
+-size_t fake_out_file_length;
+ FILE *saved_asm_out_file;
+ 
+ hash_map<tree, std::pair<tree, const_tree>> import_map;
+@@ -470,7 +468,12 @@
+   ++indent;
+   fprintf (asm_out_file, "(module\n");
+   saved_asm_out_file = asm_out_file;
+-  asm_out_file = open_memstream (&fake_out_file_data, &fake_out_file_length);
++  /* The module body is buffered so that imports and globals, which are only known
++     once codegen has run, can be emitted ahead of it.  tmpfile rather than
++     open_memstream: the latter is a glibc extension and does not exist on every
++     host GCC builds on.  */
++  asm_out_file = tmpfile ();
++  gcc_assert (asm_out_file);
+ }
+ 
+ /* Implemetation of TARGET_ASM_FILE_END.  */
+@@ -498,8 +501,14 @@
+     assemble_entity_import (saved_asm_out_file, XSTR (sym, 0), XSTR (sym, 0),
+ 			    *external_libcalls.get (sym));
+ 
+-  fflush (asm_out_file);
+-  fwrite (fake_out_file_data, 1, fake_out_file_length, saved_asm_out_file);
++  rewind (asm_out_file);
++  char buf[4096];
++  size_t n;
++  while ((n = fread (buf, 1, sizeof (buf), asm_out_file)) > 0)
++    fwrite (buf, 1, n, saved_asm_out_file);
++  fclose (asm_out_file);
++  /* Hand the real output file back, so that toplev closes that and not the buffer.  */
++  asm_out_file = saved_asm_out_file;
+ 
+   fprintf (saved_asm_out_file, ")\n");
+ }
+@@ -941,7 +950,7 @@
+ 
+ /* Implemetation of TARGET_ASM_INTERNAL_LABEL.  */
+ void
+-wasm_output_internal_label (FILE *stream, const char *pfx, size_t no)
++wasm_output_internal_label (FILE *stream, const char *pfx, unsigned long no)
+ {
+   if (!strcmp (pfx, "L"))
+     {

@@ -82,8 +82,8 @@ export namespace gse::ide::terminal {
 
 	struct [[= system_state<"Terminal">{}]] data {
 		ring_sink* sink = nullptr;
-		std::vector<instance> instances;
-		id active;
+		[[= shared]] std::vector<instance> instances;
+		[[= shared]] id active;
 		std::uint32_t next_number = 1;
 		std::uint64_t next_id = 1;
 		std::string prompt;

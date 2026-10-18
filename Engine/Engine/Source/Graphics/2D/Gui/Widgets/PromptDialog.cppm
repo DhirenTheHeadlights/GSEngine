@@ -15,10 +15,13 @@ import std;
 import :builder;
 import :button_widget;
 import :font;
+import :modal_surface;
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :text_input_widget;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	enum class prompt_result : std::uint8_t {
@@ -85,14 +88,6 @@ auto gse::gui::draw::prompt_dialog(builder& ui, const prompt_params& params) -> 
 	const float btn_h = text_view->line_height(fs) + pad;
 	const float field_h = text_view->line_height(fs) + pad;
 
-	const auto _ = ctx.scoped_layer(render_layer::modal);
-	ctx.register_hit_region(render_layer::modal, params.body);
-	ctx.queue_sprite({
-		.rect = params.body,
-		.color = { 0.f, 0.f, 0.f, 0.45f },
-		.texture = ctx.blank_texture,
-	});
-
 	const float content_w = std::max({ text_view->width(params.title, fs), text_view->width(params.message, fs), 280.f });
 	const float dialog_w = content_w + pad * 4.f;
 	const float dialog_h = line_h * 2.f + field_h + btn_h + pad * 5.f;
@@ -102,35 +97,36 @@ auto gse::gui::draw::prompt_dialog(builder& ui, const prompt_params& params) -> 
 		{ dialog_w, dialog_h }
 	);
 
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_w, dialog_h }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = dialog,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
+	const auto _ = draw_modal_surface(ctx, {
+		.host = params.body,
+		.panel = dialog,
 	});
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.title,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text,
-		.clip_rect = dialog,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.message,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text_secondary,
-		.clip_rect = dialog,
-	});
+	const modal_skin& skin = sty.modal;
+	const float text_left = dialog.left() + pad * 2.f;
+	const float text_width = std::max(0.f, dialog.right() - pad * 2.f - text_left);
+
+	draw::label(
+		ctx,
+		rectf::from_position_size({ text_left, dialog.top() - pad * 2.f }, { text_width, line_h }),
+		params.title,
+		skin.title,
+		{
+			.color = skin.title_color,
+			.clip_rect = dialog,
+		}
+	);
+
+	draw::label(
+		ctx,
+		rectf::from_position_size({ text_left, dialog.top() - pad * 2.f - line_h }, { text_width, line_h }),
+		params.message,
+		skin.message,
+		{
+			.color = skin.message_color,
+			.clip_rect = dialog,
+		}
+	);
 
 	const id field_id = ids::make(std::format("{}_field", params.key));
 	const rectf field = rectf::from_position_size(

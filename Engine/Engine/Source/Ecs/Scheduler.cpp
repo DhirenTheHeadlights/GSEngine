@@ -1226,9 +1226,22 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 			const bool starved = !n.channel_consumes.empty() && std::ranges::none_of(n.channel_consumes, [&](const id ch) {
 				return has_active_producer(ch);
 			});
-			if (!starved) {
+			const auto starved_on = starved
+				? std::ranges::find_if(n.channel_consumes, [&](const id ch) {
+					return !has_active_producer(ch);
+				})
+				: std::ranges::end(n.channel_consumes);
+			if (starved_on == std::ranges::end(n.channel_consumes)) {
 				continue;
 			}
+			log::println(
+				log::level::warning,
+				log::category::runtime,
+				"system '{}' deactivated: channel {} has registered producers but none of them are active — every system depending on '{}' is dropped with it",
+				n.system_name,
+				*starved_on,
+				n.system_name
+			);
 			inactive.insert(n.state_id);
 			work.push_back(n.state_id);
 			changed = true;

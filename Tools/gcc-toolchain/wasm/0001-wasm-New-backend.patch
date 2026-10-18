@@ -1,0 +1,3131 @@
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+index fabd5f75f96..d14ab457c06 100644
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -609,6 +609,11 @@ tic6x-*-*)
+ 	extra_headers="c6x_intrinsics.h"
+ 	extra_options="${extra_options} c6x/c6x-tables.opt"
+ 	;;
++wasm*-*-*)
++	cpu_type=wasm
++	target_has_targetm_common=no
++	extra_objs="wasm-cg.o wasm-asm.o wasm-passes.o"
++	;;
+ xtensa*-*-*)
+ 	extra_options="${extra_options} fused-madd.opt"
+ 	extra_objs="xtensa-dynconfig.o"
+@@ -3673,6 +3678,9 @@ visium-*-elf*)
+ 	tm_file="elfos.h ${tm_file} visium/elf.h newlib-stdint.h"
+ 	tmake_file="visium/t-visium visium/t-crtstuff"
+ 	;;
++wasm*-*-*)
++	use_gcc_stdint=wrap
++	;;
+ xstormy16-*-elf)
+ 	# For historical reasons, the target files omit the 'x'.
+ 	tm_file="elfos.h newlib-stdint.h stormy16/stormy16.h"
+diff --git a/gcc/config/i386/i386.cc b/gcc/config/i386/i386.cc
+index dd1f715b460..b4993336893 100644
+--- a/gcc/config/i386/i386.cc
++++ b/gcc/config/i386/i386.cc
+@@ -3574,7 +3574,8 @@ ix86_function_arg (cumulative_args_t cum_v, const function_arg_info &arg)
+   HOST_WIDE_INT bytes, words;
+   rtx reg;
+ 
+-  if (!cum->caller && cfun->machine->func_type != TYPE_NORMAL)
++  if (!arg.end_marker_p () && !cum->caller
++      && cfun->machine->func_type != TYPE_NORMAL)
+     {
+       gcc_assert (arg.type != NULL_TREE);
+       if (POINTER_TYPE_P (arg.type))
+diff --git a/gcc/config/wasm/attrs.md b/gcc/config/wasm/attrs.md
+new file mode 100644
+index 00000000000..cda80bae582
+--- /dev/null
++++ b/gcc/config/wasm/attrs.md
+@@ -0,0 +1,104 @@
++;; WebAssembly Machine description iterators
++;; Copyright (C) 2025-2026 Free Software Foundation, Inc.
++;; Contributed by feedable.
++
++;; This file is part of GCC.
++
++;; GCC is free software; you can redistribute it and/or modify
++;; it under the terms of the GNU General Public License as published by
++;; the Free Software Foundation; either version 3, or (at your option)
++;; any later version.
++
++;; GCC is distributed in the hope that it will be useful,
++;; but WITHOUT ANY WARRANTY; without even the implied warranty of
++;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++;; GNU General Public License for more details.
++
++;; You should have received a copy of the GNU General Public License
++;; along with GCC; see the file COPYING3.  If not see
++;; <http://www.gnu.org/licenses/>.
++
++(define_c_enum "unspecv" [
++  UNSPECV_CALL_ADDRESS_BARRIER
++])
++
++(define_mode_iterator QHSDI [QI HI SI DI])
++(define_mode_iterator QHSDI2 [QI HI SI DI])
++(define_mode_iterator QHSDISDF [QI HI SI DI SF DF])
++(define_mode_iterator F [SF DF])
++(define_mode_iterator REG [SI DI])
++(define_mode_iterator REGF [SI DI SF DF])
++(define_mode_attr REG2F [(SI "SF") (DI "DF") (SF "SI") (DF "DI")])
++(define_mode_attr reg2f [(SI "sf") (DI "df") (SF "si") (DF "di")])
++(define_mode_attr reg2f_types [
++  (SF "i32") (DF "i64")
++  (SI "f32") (DI "f64")])
++(define_mode_attr types [
++  (QI "i8") (HI "i16")
++  (SI "i32") (DI "i64")
++  (SF "f32") (DF "f64")])
++(define_mode_attr size [
++  (QI "8") (HI "16")
++  (SI "32") (DI "64")
++  (SF "32") (DF "64")])
++(define_mode_attr promote_type [
++  (QI "i32") (HI "i32")
++  (SI "i32") (DI "i64")
++  (SF "f32") (DF "f32")])
++(define_mode_attr promote_mode [
++  (QI "SI") (HI "SI")
++  (SI "SI") (DI "DI")
++  (SF "SF") (DF "DF")])
++(define_mode_iterator SUBREGSI [QI HI])
++(define_mode_iterator SUBREGDI [QI HI SI])
++(define_mode_iterator P [(SI "Pmode == SImode") (DI "Pmode == DImode")])
++
++(define_code_iterator irelop [le ge lt gt leu geu ltu gtu eq ne])
++(define_code_iterator frelop [le ge lt gt eq ne])
++
++(define_code_iterator iunop [clz ctz popcount])
++
++(define_code_iterator iconvop [sign_extend truncate])
++
++(define_code_iterator ibinop [
++  and ior xor
++  plus minus mult
++  div udiv mod umod
++  ashift ashiftrt lshiftrt
++  rotate rotatert])
++
++(define_code_iterator fbinop [plus minus mult div smin smax copysign])
++
++(define_code_iterator funop [abs neg sqrt])
++
++(define_code_attr opname [
++  (eq  "eq") (ne  "ne")
++  (le  "le_s") (ge  "ge_s") (lt  "lt_s") (gt  "gt_s")
++  (leu "le_u") (geu "ge_u") (ltu "lt_u") (gtu "gt_u")
++  (clz "clz") (ctz "ctz") (popcount  "popcnt")
++  (and "and") (ior "or") (xor "xor")
++  (plus "add") (minus "sub") (mult "mul")
++  (div "div_s") (udiv "div_u") (mod "rem_s") (umod "rem_u")
++  (ashift "shl") (ashiftrt "shr_s") (lshiftrt "shr_u")
++  (rotate "rotl") (rotatert "rotr")
++  (sign_extend "extend") (zero_extend "zero_extend")
++  (truncate "trunc")
++  (abs "abs") (neg "neg") (sqrt "sqrt")])
++(define_code_attr opnamef [
++  (eq  "eq") (ne  "ne") (le  "le") (ge  "ge") (lt  "lt") (gt  "gt")
++  (plus "add") (minus "sub") (mult "mul") (div "div") (smin "min") (smax "max")
++  (abs "abs") (neg "neg") (sqrt "sqrt") (copysign "copysign")])
++(define_code_attr opname_rt [
++  (eq "eq") (ne "ne")
++  (le "le") (ge "ge") (lt "lt") (gt "gt")
++  (leu "leu") (geu "geu") (ltu "ltu") (gtu "gtu")
++  (clz "clz") (ctz "ctz") (popcount  "popcount")
++  (and "and") (ior "ior") (xor "xor")
++  (plus "add") (minus "sub") (mult "mul")
++  (div "div") (udiv "udiv") (mod "mod") (umod "umod")
++  (ashift "ashl") (ashiftrt "ashr") (lshiftrt "lshr")
++  (rotate "rotl") (rotatert "rotr")
++  (sign_extend "extend") (zero_extend "zero_extend")
++  (truncate "ftrunc")
++  (smax "smax") (smin "smin") (copysign "copysign")
++  (abs "abs") (neg "neg") (sqrt "sqrt")])
+diff --git a/gcc/config/wasm/constraints.md b/gcc/config/wasm/constraints.md
+new file mode 100644
+index 00000000000..d8d084fb70f
+--- /dev/null
++++ b/gcc/config/wasm/constraints.md
+@@ -0,0 +1,106 @@
++;; WebAssembly Machine description constraints
++;; Copyright (C) 2025-2026 Free Software Foundation, Inc.
++;; Contributed by feedable.
++
++;; This file is part of GCC.
++
++;; GCC is free software; you can redistribute it and/or modify
++;; it under the terms of the GNU General Public License as published by
++;; the Free Software Foundation; either version 3, or (at your option)
++;; any later version.
++
++;; GCC is distributed in the hope that it will be useful,
++;; but WITHOUT ANY WARRANTY; without even the implied warranty of
++;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++;; GNU General Public License for more details.
++
++;; You should have received a copy of the GNU General Public License
++;; along with GCC; see the file COPYING3.  If not see
++;; <http://www.gnu.org/licenses/>.
++
++(define_predicate "symbol_operand"
++  (match_code "symbol_ref"))
++(define_predicate "funcref_operand"
++  (match_code "symbol_ref")
++  {
++    gcc_assert (GET_CODE (op) == SYMBOL_REF);
++    return !SYMBOL_REF_DECL (op)
++	   || TREE_CODE (SYMBOL_REF_DECL (op)) == FUNCTION_DECL;
++  })
++(define_predicate "varref_operand"
++  (match_code "symbol_ref")
++  {
++    gcc_assert (GET_CODE (op) == SYMBOL_REF);
++    return TREE_CODE (SYMBOL_REF_DECL (op)) == VAR_DECL;
++  })
++(define_predicate "subregister_for_si_operand"
++  (ior (match_code "reg") (match_code "subreg"))
++  {
++    rtx x = op;
++    if (SUBREG_P (x))
++      x = SUBREG_REG (x);
++    if (!REG_P (x))
++      return false;
++    machine_mode m = GET_MODE (x);
++    int sign = 0;
++    PROMOTE_MODE (m, sign, NULL_TREE);
++    return m == SImode;
++  })
++
++(define_predicate "subregister_for_di_operand"
++  (ior (match_code "reg") (match_code "subreg"))
++  {
++    rtx x = op;
++    if (SUBREG_P (x))
++      x = SUBREG_REG (x);
++    if (!REG_P (x))
++      return false;
++    machine_mode m = GET_MODE (x);
++    int sign = 0;
++    PROMOTE_MODE (m, sign, NULL_TREE);
++    return m == DImode;
++  })
++(define_predicate "wasm_register_operand"
++  (match_operand 0 "register_operand")
++  {
++    machine_mode m = GET_MODE (op);
++    PROMOTE_MODE (m, 0, NULL_RTX);
++    if (mode == TImode)
++      return false;
++    return m == wasm_real_register_mode (op);
++  })
++(define_predicate "wasm_call_register_operand"
++  (ior (match_operand 0 "wasm_register_operand")
++       (match_test "GET_CODE (op) == UNSPEC_VOLATILE
++		    && wasm_register_operand (XVECEXP (op, 0, 0), mode)")))
++(define_predicate "wasm_subregister_operand"
++  (match_operand 0 "register_operand")
++  {
++    machine_mode m = wasm_real_register_mode (op);
++    return mode != TImode;
++  })
++
++(define_predicate "immediate_or_register_operand"
++  (ior (match_operand 0 "immediate_operand")
++       (match_operand 0 "register_operand")))
++
++(define_predicate "wasm_offset_operand"
++  (match_operand 0 "const_int_operand")
++  {
++    return INTVAL (op) >= 0;
++  })
++
++(define_predicate "call_operation"
++  (match_code "parallel")
++{
++  int arg_end = XVECLEN (op, 0);
++
++  for (int i = 1; i < arg_end; i++)
++    {
++      rtx elt = XVECEXP (op, 0, i);
++
++      if (GET_CODE (elt) != USE || !REG_P (XEXP (elt, 0)))
++	return false;
++    }
++  return true;
++})
+\ No newline at end of file
+diff --git a/gcc/config/wasm/t-wasm b/gcc/config/wasm/t-wasm
+new file mode 100644
+index 00000000000..96e92b4df9d
+--- /dev/null
++++ b/gcc/config/wasm/t-wasm
+@@ -0,0 +1,13 @@
++wasm-cg.o: $(srcdir)/config/wasm/wasm-cg.cc \
++  $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(TREE_H) $(INPUT_H)
++	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
++
++wasm-asm.o: $(srcdir)/config/wasm/wasm-asm.cc \
++  $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(TREE_H) $(INPUT_H)
++	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
++
++wasm-passes.o: $(srcdir)/config/wasm/wasm-passes.cc \
++  $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(TREE_H) $(INPUT_H)
++	$(COMPILER) -c $(ALL_COMPILERFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
++
++PASSES_EXTRA += $(srcdir)/config/wasm/wasm-passes.def
+diff --git a/gcc/config/wasm/wasm-asm.cc b/gcc/config/wasm/wasm-asm.cc
+new file mode 100644
+index 00000000000..f93155483bf
+--- /dev/null
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -0,0 +1,962 @@
++/* WebAssembly assembly output utilities.
++   Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#define IN_TARGET_CODE 1
++
++#include <utility>
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "target.h"
++#include "rtl.h"
++#include "tree.h"
++#include "regs.h"
++#include "stringpool.h"
++#include "attribs.h"
++#include "gimple.h"
++#include "df.h"
++#include "memmodel.h"
++#include "tm_p.h"
++#include "stringpool.h"
++#include "optabs.h"
++#include "emit-rtl.h"
++#include "recog.h"
++#include "diagnostic-core.h"
++#include "output.h"
++#include "fold-const.h"
++#include "stor-layout.h"
++#include "varasm.h"
++#include "calls.h"
++#include "explow.h"
++#include "expr.h"
++#include "langhooks.h"
++#include "cfgrtl.h"
++#include "gimplify.h"
++#include "reload.h"
++#include "builtins.h"
++#include "tree-pass.h"
++
++void wasm_print_operand (FILE *stream, rtx value, int mode);
++
++struct cfl_hash: int_hash<int, -1, -2> {};
++extern hash_map<const_rtx, tree> external_libcalls;
++extern hash_map<rtx_insn *, int> labels_to_cfno;
++extern hash_map<cfl_hash, rtx_insn *> labelno_to_labels;
++
++namespace
++{
++
++/* Current indentation level within an output WebAssembly file.  */
++int indent;
++
++/* The alignment with which the next decl should be output.  */
++int align;
++
++void
++output_indent (FILE *stream)
++{
++  fprintf (stream, "%*s", indent * 2, "");
++}
++
++char *fake_out_file_data;
++size_t fake_out_file_length;
++FILE *saved_asm_out_file;
++
++hash_map<tree, std::pair<tree, const_tree>> import_map;
++hash_set<const_rtx> external_libcall_set;
++
++bool
++global_p (rtx reg)
++{
++  if (GET_CODE (reg) == SUBREG)
++    reg = SUBREG_REG (reg);
++  gcc_assert (GET_CODE (reg) == REG);
++  return REGNO (reg) == STACK_POINTER_REGNUM;
++}
++
++bool
++is_escape (char x)
++{
++  const char *escapes = "\"\'\\\t\n\r";
++  while (*escapes && x != *escapes)
++    ++escapes;
++  return *escapes;
++}
++
++void
++assemble_string (FILE *stream, const char *string, int size, bool hex_only)
++{
++  fprintf (stream, " \"");
++  for (int i = 0; i != size; ++i)
++    {
++      char c[] = {'\\', string[i], '\0'};
++      if (c[1] < 32 || c[1] > 127 || hex_only)
++	fprintf (stream, "\\%.2hhx", c[1]);
++      else
++	fprintf (stream, "%s", c + !is_escape (c[1]));
++    }
++  fprintf (stream, "\"");
++}
++
++void
++assemble_zeroes (FILE *stream, unsigned HOST_WIDE_INT size)
++{
++  fputs (" \"", stream);
++  for (unsigned HOST_WIDE_INT i = 0; i != size; ++i)
++    fputs ("\\00", stream);
++  fputs ("\"", stream);
++}
++
++void
++assemble_const_int (FILE *stream, HOST_WIDE_INT value, unsigned size)
++{
++  char val[sizeof (HOST_WIDE_INT)];
++  for (int i = 0; i != sizeof (HOST_WIDE_INT); ++i)
++    val[i] = value >> (i * 8);
++  assemble_string (stream, val, size, true);
++}
++
++/* Can handle following shapes:
++   (const_int x)
++   (symbol_ref x)
++   (const (plus (symbol_ref x) (const_int y))
++   (const (minus (symbol_ref x) (const_int y))
++   (const (plus (const_int x) (const_int y))
++   (const (minus (const_int x) (const_int y)) */
++bool
++assemble_integer (FILE *stream, rtx x, unsigned size, int)
++{
++  HOST_WIDE_INT addend = 0;
++
++  if (GET_CODE (x) == CONST)
++    {
++      x = XEXP (x, 0);
++      switch (GET_CODE (x))
++	{
++	default:
++	  return false;
++	case PLUS:
++	  if (GET_CODE (XEXP (x, 1)) != CONST_INT)
++	    return false;
++	  addend = INTVAL (XEXP (x, 1));
++	  x = XEXP (x, 0);
++	  break;
++	case MINUS:
++	  if (GET_CODE (XEXP (x, 1)) != CONST_INT)
++	    return false;
++	  addend = -INTVAL (XEXP (x, 1));
++	  x = XEXP (x, 0);
++	  break;
++	}
++    }
++  switch (GET_CODE (x))
++    {
++    default:
++      return false;
++    case CONST_INT:
++      assemble_const_int (stream, INTVAL (x) + addend, size);
++      return true;
++    case SYMBOL_REF:
++      tree decl = SYMBOL_REF_DECL (x);
++      bool func_p = TREE_CODE (decl) == FUNCTION_DECL;
++
++      assemble_zeroes (stream, size);
++      fprintf (stream, " (@reloc i%d %s ", size * 8,
++	       func_p ? "functable" : "data");
++      wasm_print_operand (stream, x, 'l');
++      if (addend)
++	fprintf (stream, " %+ld", addend);
++      fprintf (stream, ")");
++      return true;
++    }
++}
++
++/* Given a type, print what wasm thinks it should look like.  */
++void
++print_type (FILE *stream, const_tree type, bool first = false)
++{
++  const char *delim = first ? "" : " ";
++  switch (TREE_CODE (type))
++    {
++    default:
++      gcc_unreachable ();
++    case VOID_TYPE:
++      break;
++    case UNION_TYPE:
++    case RECORD_TYPE:
++      if (TYPE_EMPTY_P (type))
++	break;
++      if (TYPE_TRANSPARENT_AGGR (type))
++	print_type (stream, TREE_TYPE (first_field (type)), first);
++      else
++	print_type (stream, ptr_type_node, first);
++      break;
++    case NULLPTR_TYPE:
++    case POINTER_TYPE:
++    case REFERENCE_TYPE:
++    case OFFSET_TYPE:
++    case INTEGER_TYPE:
++    case BOOLEAN_TYPE:
++    case ENUMERAL_TYPE:
++      fprintf (stream, "%s%s", delim,
++	       TYPE_PRECISION (type) > 32 ? "i64" : "i32");
++      break;
++    case REAL_TYPE:
++      fprintf (stream, "%s%s", delim,
++	       TYPE_PRECISION (type) > 32 ? "f64" : "f32");
++      break;
++    case FUNCTION_TYPE:
++    case METHOD_TYPE:
++      function_args_iterator it;
++      tree *arg;
++      fprintf (stream, "%s(param", delim);
++      CUMULATIVE_ARGS args;
++      INIT_CUMULATIVE_ARGS (args, type, nullptr, false, 0);
++      FOREACH_FUNCTION_ARGS_PTR (type, arg, it)
++      {
++	function_arg_info info (*arg, stdarg_p (type));
++	if (pass_by_reference (&args, info))
++	  print_type (stream, intSI_type_node);
++	else
++	  print_type (stream, *arg);
++      }
++      fprintf (stream, ")");
++      tree return_type = TREE_TYPE (type);
++      fprintf (stream, " (result");
++      if (return_type != void_type_node)
++	{
++	  print_type (stream, return_type);
++	}
++      fprintf (stream, ")");
++      break;
++    }
++}
++void
++print_local_decl (FILE *stream, rtx reg, bool param = false)
++{
++  output_indent (stream);
++  fprintf (stream, "(%s ", param ? "param" : "local");
++  wasm_print_operand (stream, reg, 0);
++  tree param_type = lang_hooks.types.type_for_mode (GET_MODE (reg), 0);
++  print_type (stream, param_type);
++  fprintf (stream, ")\n");
++}
++
++void assemble_visibility (FILE *stream, const_tree decl)
++{
++  if (decl && DECL_VISIBILITY (decl) == VISIBILITY_HIDDEN)
++    fprintf (stream, " hidden");
++}
++
++void assemble_binding (FILE *stream, const_tree decl)
++{
++  if (!decl)
++    return;
++  if (DECL_WEAK (decl))
++    fprintf (stream, " weak");
++  if (!TREE_PUBLIC (decl))
++    fprintf (stream, " local");
++}
++
++void assemble_init_prio (FILE *stream, const_tree decl)
++{
++  if (DECL_STATIC_CONSTRUCTOR (decl))
++    {
++      int prio = decl_init_priority_lookup (const_cast<tree> (decl));
++      fprintf (stream, " (init_prio %d)", prio);
++    }
++}
++
++void assemble_sym_name (FILE *stream, const char *name)
++{
++  fprintf (stream, " (name \"");
++  assemble_name (stream, name);
++  fprintf (stream, "\")");
++}
++
++void
++assemble_data_import (FILE *stream, const_tree decl, const char *name)
++{
++  output_indent (stream);
++  fprintf (stream, "(@sym.import.data $");
++  assemble_name (stream, name);
++  assemble_binding (stream, decl);
++  assemble_visibility (stream, decl);
++  assemble_sym_name (stream, name);
++  fprintf (stream, ")\n");
++}
++
++/* Given the type, guess where assign_params must've put it.  */
++void print_func_frame_related (FILE *stream, tree type)
++{
++  if (VOID_TYPE_P (type))
++    return;
++  if (TREE_CODE (type) == COMPLEX_TYPE
++	    && targetm.calls.split_complex_arg (type))
++    {
++      print_func_frame_related (stream, TREE_TYPE (type));
++      print_func_frame_related (stream, TREE_TYPE (type));
++      return;
++    }
++  if (RECORD_OR_UNION_TYPE_P (type)
++      && TYPE_TRANSPARENT_AGGR (type))
++    type = TREE_TYPE (first_field (type));
++
++  function_arg_info arg (type, true);
++  if (pass_by_reference (NULL, arg))
++    print_type (stream, build_pointer_type (type));
++  else
++    print_type (stream, type);
++}
++
++void
++print_func_type (FILE *stream, const_tree type, bool for_block = false)
++{
++  tree result = TREE_TYPE (type);
++
++  /* Taken from assign_parms_augmented_arg_list, please keep in sync.  */
++  bool return_by_ref = aggregate_value_p (result, type);
++  if (!for_block)
++    {
++      fprintf (stream, " (param");
++      if (return_by_ref)
++	print_func_frame_related (stream, build_pointer_type (result));
++      tree arg;
++      function_args_iterator it;
++      FOREACH_FUNCTION_ARGS (type, arg, it)
++      {
++	print_func_frame_related (stream, arg);
++      }
++      if (stdarg_p (type) || !TYPE_ARG_TYPES (type))
++	print_func_frame_related (stream, ptr_type_node);
++      fprintf (stream, ")");
++    }
++
++  fprintf (stream, "%s(result", for_block ? "": " ");
++  if (!return_by_ref)
++    print_func_frame_related (stream, result);
++  fprintf (stream, ")");
++}
++
++void print_global_type (FILE *stream, const_tree type)
++{
++  if (!TYPE_READONLY (type))
++    fprintf (stream, " (mut");
++  print_type (stream, type);
++  if (!TYPE_READONLY (type))
++    fprintf (stream, ")");
++}
++
++void
++assemble_entity_import (FILE *stream, const char *name, const char *abi_name,
++			const_tree decl)
++{
++  const_tree type = DECL_P (decl) ? TREE_TYPE (decl) : decl;
++
++  output_indent (stream);
++  fprintf (stream, "(import \"env\" \"");
++  assemble_name (stream, abi_name);
++  fprintf (stream, "\" ");
++  switch (TREE_CODE (type))
++    {
++    case INTEGER_TYPE:
++    case BOOLEAN_TYPE:
++    case ENUMERAL_TYPE:
++    case POINTER_TYPE:
++    case OFFSET_TYPE:
++    case RECORD_TYPE:
++    case UNION_TYPE: {
++      fprintf (stream, "(global $");
++      assemble_name (stream, name);
++      print_global_type (stream, type);
++      break;
++    }
++    case FUNCTION_TYPE:
++    case METHOD_TYPE: {
++      fprintf (stream, "(func $");
++      assemble_name (stream, name);
++      fprintf (stream, " (@sym");
++      if (type != decl)
++	{
++	  assemble_init_prio (stream, decl);
++	  assemble_binding (stream, decl);
++	  assemble_visibility (stream, decl);
++	}
++      fprintf (stream, ")");
++
++      print_func_type (stream, type);
++      break;
++    }
++    default:
++      gcc_unreachable ();
++    }
++  fprintf (stream, "))\n");
++}
++
++void
++decl_end (FILE *stream)
++{
++  fprintf (stream, ")\n");
++}
++
++void
++assemble_import (FILE *stream, const char *name, const_tree decl)
++{
++  if (!FUNC_OR_METHOD_TYPE_P (TREE_TYPE (decl)))
++    return assemble_data_import (stream, decl, name);
++  assemble_entity_import (stream, name, name, decl);
++}
++
++void
++print_nan_payload (FILE *stream, rtx value)
++{
++  machine_mode flt_mode = GET_MODE (value);
++  const REAL_VALUE_TYPE *n = CONST_DOUBLE_REAL_VALUE (value);
++  int ndata = GET_MODE_PRECISION (flt_mode) / 32;
++  long data[8];
++  real_to_target (data, n, flt_mode);
++  format_helper fmt (REAL_MODE_FORMAT (flt_mode));
++  int mantissa = significand_size (fmt) - 1;
++  int mantissa_words = ((mantissa - 1) / 32) + 1;
++  for (int i = mantissa_words; i != ndata; ++i)
++    data[i] = 0;
++  unsigned mask = (1 << (mantissa % 32)) - 1;
++  data[mantissa / 32] &= mask;
++
++  bool start = true;
++  for (int i = ndata; i--;)
++    if (start && !data[i])
++      ;
++    else if (start)
++      fprintf (stream, "%lx", data[i]), start = false;
++    else
++      fprintf (stream, "%08lx", data[i]);
++}
++
++}
++
++/* Implemetation of TARGET_ASM_INIT_SECTIONS.  */
++void
++wasm_asm_init_sections ()
++{
++  text_section = get_unnamed_section (SECTION_CODE, [](const char *){}, "T");
++  data_section = get_unnamed_section (SECTION_WRITE, [](const char *){}, "D");
++}
++
++/* Implemetation of TARGET_ASM_FILE_START.  */
++void
++wasm_asm_file_start ()
++{
++  output_indent (asm_out_file);
++  ++indent;
++  fprintf (asm_out_file, "(module\n");
++  saved_asm_out_file = asm_out_file;
++  asm_out_file = open_memstream (&fake_out_file_data, &fake_out_file_length);
++}
++
++/* Implemetation of TARGET_ASM_FILE_END.  */
++void
++wasm_asm_file_end ()
++{
++  /* ??? All wasm globals should become builtin decls.  */
++  output_indent (saved_asm_out_file);
++  fprintf (saved_asm_out_file, "(import \"env\" \"__stack_pointer\""
++	   " (global $stack (mut i32)))\n");
++
++  output_indent (saved_asm_out_file);
++  fprintf (saved_asm_out_file, "(import \"env\" \"memory\" (memory 0))\n");
++  output_indent (saved_asm_out_file);
++  fprintf (saved_asm_out_file, "(import \"env\" \"__indirect_function_table\""
++			       "(table 0 funcref))\n");
++
++  for (const auto &map_entry: import_map)
++    {
++      tree name = map_entry.second.first;
++      const_tree decl = map_entry.second.second;
++      assemble_import (saved_asm_out_file, IDENTIFIER_POINTER (name), decl);
++    }
++  for (auto sym: external_libcall_set)
++    assemble_entity_import (saved_asm_out_file, XSTR (sym, 0), XSTR (sym, 0),
++			    *external_libcalls.get (sym));
++
++  fflush (asm_out_file);
++  fwrite (fake_out_file_data, 1, fake_out_file_length, saved_asm_out_file);
++
++  fprintf (saved_asm_out_file, ")\n");
++}
++
++/* Implemetation of ASM_OUTPUT_FUNCTION_LABEL.  */
++void
++wasm_asm_start_function (FILE *stream, tree decl, const char *name)
++{
++  output_indent (stream);
++  ++indent;
++  fprintf (stream, "(func $");
++  assemble_name (stream, name);
++
++  bool override_args = false;
++  if (MAIN_NAME_P (DECL_NAME (decl)))
++    {
++      if (!cfun->machine->func_args)
++	name = "__main_void";
++      else
++	name = "__main_argc_argv", override_args = true;
++    }
++
++  fprintf (stream, " (@sym");
++  if (TREE_CODE (decl) == FUNCTION_DECL)
++    {
++      assemble_init_prio (stream, decl);
++      assemble_binding (stream, decl);
++      assemble_visibility (stream, decl);
++      assemble_sym_name (stream, name);
++    }
++  fprintf (stream, ") ");
++
++  tree type = TREE_TYPE (decl);
++  fprintf (stream, "\n");
++  int i;
++  rtx reg;
++
++  if (override_args)
++    {
++      FOR_EACH_VEC_SAFE_ELT (cfun->machine->func_args, i, reg)
++	  print_local_decl (stream, reg, i < 2);
++      if (i < 1)
++	{
++	  output_indent (stream);
++	  fprintf (stream, "(param i32)\n");
++	}
++      if (i < 2)
++	{
++	  output_indent (stream);
++	  fprintf (stream, "(param i32)\n");
++	}
++    }
++  else
++    {
++      FOR_EACH_VEC_SAFE_ELT (cfun->machine->func_args, i, reg)
++	print_local_decl (stream, reg, true);
++      if (stdarg_p (type))
++	print_local_decl (stream, regno_reg_rtx[ARG_POINTER_REGNUM], true);
++      if (DECL_STATIC_CHAIN (decl))
++	print_local_decl (stream, regno_reg_rtx[STATIC_CHAIN_REGNUM], true);
++    }
++  output_indent (stream);
++  print_func_type (stream, type, true);
++  fprintf (stream, "\n");
++
++  output_indent (stream);
++  fprintf (stream, ";; hard\n");
++  if (cfun->machine->return_mode != VOIDmode)
++    print_local_decl (stream, gen_rtx_REG (cfun->machine->return_mode,
++					   WASM_RETURN_REGNUM));
++
++  df_set_regs_ever_live (WASM_CONTROL_POINTER_REGNUM, true);
++  for (int r = 0; r < FIRST_PSEUDO_REGISTER; r++)
++    {
++      if (r == WASM_RETURN_REGNUM)
++	continue;
++      if (r == ARG_POINTER_REGNUM)
++	continue;
++      if (r == STATIC_CHAIN_REGNUM && DECL_STATIC_CHAIN (decl))
++	continue;
++      reg = regno_reg_rtx[r];
++      if (df_regs_ever_live_p (r))
++	{
++	  if (!global_p (reg))
++	    print_local_decl (stream, reg);
++	}
++    }
++
++  output_indent (stream);
++  fprintf (stream, ";; locals\n");
++  int max = max_reg_num ();
++  for (int r = FIRST_PSEUDO_REGISTER; r < max; r++)
++    {
++      reg = regno_reg_rtx[r];
++      if (!reg)
++	continue;
++      if (reg == const0_rtx)
++	continue;
++      if (vec_safe_contains (cfun->machine->func_args, reg))
++	continue;
++      if (!bitmap_bit_p (cfun->machine->regs_ever_live, r))
++	continue;
++      print_local_decl (stream, reg);
++    }
++  output_indent (stream);
++  fprintf (stream, "(local.set $control (i32.const 0))\n");
++  output_indent (stream);
++  fprintf (stream, "(loop $control ");
++  print_func_type (stream, type, true);
++  fprintf (stream, "\n");
++  ++indent;
++  int len = labelno_to_labels.elements ();
++  for (i = len - 1; i >= 0; --i)
++    {
++      output_indent (stream);
++      ++indent;
++      fprintf (stream, "(block $%d\n", i);
++    }
++
++  output_indent (stream);
++
++  fprintf (stream, "(br_table");
++  for (i = 0; i < len; ++i)
++    fprintf (stream, " $%d", i);
++  fprintf (stream, " (local.get $control))\n");
++}
++
++/* Implemetation of ASM_DECLARE_FUNCTION_SIZE.  */
++void
++wasm_asm_end_function (FILE *stream, tree, const char *name)
++{
++  --indent;
++  output_indent (stream);
++  fprintf (stream, ") ;; loop $control\n");
++  --indent;
++  output_indent (stream);
++  fprintf (stream, ") ;;%s\n",
++	   IDENTIFIER_POINTER (targetm.asm_out.mangle_assembler_name (name)));
++}
++
++/* Implemetation of TARGET_ASM_ASSEMBLE_UNDEFINED_DECL.  */
++void
++wasm_handle_import (FILE *, const char *name, const_tree decl)
++{
++  auto has_proto = [] (const_tree ty)
++    {
++      if (TREE_CODE (ty) != FUNCTION_DECL)
++	return true;
++      ty = TREE_TYPE (ty);
++      return TYPE_ARG_TYPES (ty) || TYPE_NO_NAMED_ARGS_STDARG_P (ty);
++    };
++  bool existed = false;
++  tree key = targetm.asm_out.mangle_assembler_name (name);
++  auto &slot = import_map.get_or_insert (key, &existed);
++  if (!existed || (!has_proto (slot.second) && has_proto (decl)))
++    slot = {get_identifier (name), decl};
++}
++
++/* Implemetation of TARGET_ASM_ASSEMBLE_EXTERNAL_LIBCALL.  */
++void
++wasm_handle_libcall (rtx symbol)
++{
++  external_libcall_set.add (symbol);
++}
++
++/* Implemetation of TARGET_ASM_INTEGER.  */
++bool
++wasm_assemble_integer (rtx x, unsigned size, int align)
++{
++  return assemble_integer (asm_out_file, x, size, align);
++}
++
++/* Implemetation of TARGET_ASM_END_DECL.  */
++void
++wasm_assemble_decl_end ()
++{
++  return decl_end (asm_out_file);
++}
++
++/* Implemetation of ASM_OUTPUT_ASCII.  */
++void
++wasm_assemble_ascii (FILE *stream, const char *data, int len)
++{
++  return assemble_string (stream, data, len, false);
++}
++
++/* Implemetation of ASM_OUTPUT_SKIP.  */
++void
++wasm_assemble_skip (FILE *stream, unsigned HOST_WIDE_INT len)
++{
++  return assemble_zeroes (stream, len);
++}
++
++/* Implemetation of ASM_DECLARE_OBJECT_NAME
++   and TARGET_ASM_DECLARE_CONSTANT_NAME.  */
++void
++wasm_assemble_data_begin (FILE *stream, tree decl, const char *name,
++			  HOST_WIDE_INT size, bool pub)
++{
++  if (!name)
++    name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
++  if (!size)
++    size = tree_to_uhwi (DECL_SIZE_UNIT (decl));
++  output_indent (stream);
++
++  HOST_WIDE_INT align_real = align ? align : 1;
++
++  /* We gathered the alignment.  Time to reset it so that a new one can be
++   * specified.  */
++  align = 0;
++  fprintf (stream, "(data (@sym (align " HOST_WIDE_INT_PRINT_DEC "))"
++		   " (i32.const 0) (@sym $", align_real);
++  assemble_name (stream, name);
++  if (decl)
++    {
++      assemble_binding (stream, decl);
++    }
++  else
++    {
++      if (!pub)
++	fprintf (stream, " local");
++    }
++  assemble_visibility (stream, decl);
++  assemble_sym_name (stream, name);
++  fprintf (stream, " (size %ld)", size);
++  fprintf (stream, ")");
++}
++
++/* Implemetation of ASM_OUTPUT_ALIGN.  */
++void
++wasm_specify_align (HOST_WIDE_INT new_align)
++{
++  // gcc_assert (!align);
++  align = new_align;
++}
++
++/* Implemetation of ASM_OUTPUT_ALIGNED_DECL_COMMON
++   and ASM_OUTPUT_ALIGNED_DECL_LOCAL.  */
++void
++wasm_assemble_data_zeros (FILE *stream, tree decl, const char *name,
++			  HOST_WIDE_INT size, HOST_WIDE_INT decl_align,
++			  bool pub)
++{
++  wasm_specify_align (decl_align);
++  wasm_assemble_data_begin (stream, decl, name, size, pub);
++  wasm_assemble_skip (stream, size);
++  decl_end (stream);
++}
++
++/* Implemetation of TARGET_PRINT_OPERAND_PUNCT_VALID_P.  */
++bool
++wasm_valid_punct_p (unsigned char code)
++{
++  return code == '#';
++}
++
++/* Implemetation of TARGET_PRINT_OPERAND.  */
++void
++wasm_print_operand (FILE *stream, rtx value, int mode)
++{
++  if (value && GET_CODE (value) == UNSPEC_VOLATILE)
++    return wasm_print_operand (stream, XVECEXP (value, 0, 0), mode);
++
++  if (mode == '#') /* Print the return insn.  */
++    {
++      if (TREE_TYPE (TREE_TYPE (cfun->decl)) != void_type_node)
++	fprintf (stream, " (local.get $return)");
++    }
++  else if (mode == 'M') /* Print local/global for a register.  */
++    if (global_p (value))
++      fprintf (stream, "global");
++    else
++      fprintf (stream, "local");
++  else if (mode == 'A') /* Print a call insn arglist.  */
++    {
++      gcc_assert (GET_CODE (value) == PARALLEL);
++      int len = XVECLEN (value, 0);
++      for (int i = 1; i < len; ++i)
++	{
++	  rtx arg = XVECEXP (value, 0, i);
++	  gcc_assert (GET_CODE (arg) == USE);
++	  rtx reg = XEXP (arg, 0);
++	  gcc_assert (GET_CODE (reg) == REG);
++	  fprintf (stream, " ");
++	  wasm_print_operand (stream, reg, 'i');
++	}
++    }
++  else if (mode == 'T') /* Print an arglist type.  */
++    {
++      if (GET_CODE (value) == PARALLEL)
++	{
++	  int len = XVECLEN (value, 0);
++	  for (int i = 1; i < len; ++i)
++	    {
++	      rtx arg = XVECEXP (value, 0, i);
++	      gcc_assert (GET_CODE (arg) == USE);
++	      rtx reg = XEXP (arg, 0);
++	      gcc_assert (GET_CODE (reg) == REG);
++	      wasm_print_operand (stream, reg, mode);
++	    }
++	}
++      else if (REG_P (value))
++	print_type (stream,
++		    lang_hooks.types.type_for_mode (GET_MODE (value), 0));
++      else
++	gcc_unreachable ();
++    }
++  else switch (GET_CODE (value))
++    {
++    case MEM:
++      {
++	rtx addr = XEXP (value, 0);
++	if (GET_CODE (addr) == PLUS)
++	  {
++	    fprintf (stream, "offset=%lu ", UINTVAL (XEXP (addr, 1)));
++	    addr = XEXP (addr, 0);
++	  }
++
++	wasm_print_operand (stream, addr, 'i');
++	break;
++      }
++    case CONST:
++    case SYMBOL_REF:
++      {
++	rtx op = GET_CODE (value) == CONST ? XEXP (value, 0) : value;
++	rtx offset = NULL_RTX;
++	if (GET_CODE (op) == PLUS)
++	  offset = XEXP (op, 1), op = XEXP (op, 0);
++	tree decl = SYMBOL_REF_P (op) ? SYMBOL_REF_DECL (op) : NULL_TREE;
++	bool fndecl_p = decl && TREE_CODE (decl) == FUNCTION_DECL;
++	if (mode == 'i')
++	  fprintf (stream, "(i32.const 0 (@reloc %s ",
++		   fndecl_p ? "functable" : "data");
++
++	fprintf (stream, "$");
++	output_addr_const (stream, op);
++	if (offset)
++	  {
++	    fprintf (stream, " %+" HOST_WIDE_INT_PRINT "d",
++		     INTVAL (offset));
++	  }
++	if (mode == 'i')
++	  fprintf (stream, "))");
++	break;
++      }
++    case SUBREG:
++      gcc_assert (SUBREG_BYTE (value) == 0);
++      wasm_print_operand (stream, SUBREG_REG (value), mode);
++      break;
++    case REG:
++      {
++	int reg = REGNO (value);
++	if (mode == 'i' || mode == 'o')
++	  fprintf (stream, "%s%s.%s ", mode == 'o' ? "" : "(",
++		   global_p (value) ? "global" : "local",
++		   mode == 'i' ? "get" : "set");
++	if (reg < FIRST_PSEUDO_REGISTER)
++	  fprintf (stream, "%s", reg_names[reg]);
++	else
++	  {
++	    reg -= FIRST_PSEUDO_REGISTER;
++	    fprintf (stream, "$local_%d", reg);
++	  }
++	if (mode == 'i')
++	  fprintf (stream, ")");
++	break;
++      }
++    case CONST_INT:
++      if (mode == 'i')
++	fprintf (stream, "(i32.const ");
++      fprintf (stream, "%ld", INTVAL (value));
++      if (mode == 'i')
++	fprintf (stream, ")");
++      break;
++    case CONST_DOUBLE:
++      {
++	int prec = GET_MODE_PRECISION (GET_MODE (value));
++	if (mode == 'i')
++	  fprintf (stream, "(f%d.const ", prec);
++	const REAL_VALUE_TYPE *n = CONST_DOUBLE_REAL_VALUE (value);
++	if (REAL_VALUE_ISINF (*n))
++	  fprintf (stream, "%cinf", REAL_VALUE_NEGATIVE (*n) ? '-' : '+');
++	else if (REAL_VALUE_ISNAN (*n))
++	  {
++	    fprintf (stream, "%cnan", REAL_VALUE_NEGATIVE (*n) ? '-' : '+');
++	    if (!n->canonical)
++	      {
++		fprintf (stream, ":0x");
++		switch (GET_MODE (value))
++		  {
++		  case DFmode:
++		  case SFmode:
++		    print_nan_payload (stream, value);
++		    break;
++		  default:
++		    gcc_unreachable ();
++		  }
++	      }
++	  }
++	else
++	  {
++	    /* There are always 32 bits in each long, no matter the size of
++	       the hosts long.  */
++	    long tmp[2];
++	    REAL_VALUE_TO_TARGET_DOUBLE (*n, tmp);
++	    int32_t tmp2[2] = {(int32_t)tmp[0], (int32_t)tmp[1]};
++	    double r;
++	    std::memcpy (&r, tmp2, sizeof r);
++	    fprintf (stream, "%a", r);
++	  }
++	if (mode == 'i')
++	  fprintf (stream, ")");
++	break;
++      }
++    default:
++      gcc_unreachable ();
++    }
++}
++
++static int get_cf_label (size_t no)
++{
++  rtx_insn **l = labelno_to_labels.get (no);
++  if (!l)
++    return -1;
++  int cf = *labels_to_cfno.get (*l);
++  gcc_assert (cf >= 0);
++  return cf;
++}
++
++/* Implemetation of ASM_GENERATE_INTERNAL_LABEL.  */
++void
++wasm_generate_internal_label (char *buf, const char *pfx, size_t no)
++{
++  if (!strcmp (pfx, "L"))
++    sprint_ul (buf, get_cf_label (no));
++  else
++    sprintf (buf, "%s" HOST_WIDE_INT_PRINT_DEC, pfx, no);
++}
++
++/* Implemetation of TARGET_ASM_INTERNAL_LABEL.  */
++void
++wasm_output_internal_label (FILE *stream, const char *pfx, size_t no)
++{
++  if (!strcmp (pfx, "L"))
++    {
++      int l = get_cf_label (no);
++      if (l >= 0)
++	{
++	  --indent;
++	  output_indent (stream);
++	  fprintf (stream, ") ;; $%d\n", l);
++	}
++    }
++  else if (!strcmp (pfx, "LFB"))
++    /* Function begin label, skip.  */;
++  else if (!strcmp (pfx, "LFE"))
++    /* Function end label, skip.  */;
++  else
++    /* unknown label type, skip.  */;
++}
+diff --git a/gcc/config/wasm/wasm-cg.cc b/gcc/config/wasm/wasm-cg.cc
+new file mode 100644
+index 00000000000..83264caadbb
+--- /dev/null
++++ b/gcc/config/wasm/wasm-cg.cc
+@@ -0,0 +1,621 @@
++/* WebAssembly code generation utilities.
++   Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#define IN_TARGET_CODE 1
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "target.h"
++#include "rtl.h"
++#include "tree.h"
++#include "regs.h"
++#include "stringpool.h"
++#include "attribs.h"
++#include "gimple.h"
++#include "df.h"
++#include "memmodel.h"
++#include "tm_p.h"
++#include "stringpool.h"
++#include "optabs.h"
++#include "emit-rtl.h"
++#include "recog.h"
++#include "diagnostic-core.h"
++#include "output.h"
++#include "fold-const.h"
++#include "stor-layout.h"
++#include "varasm.h"
++#include "calls.h"
++#include "explow.h"
++#include "expr.h"
++#include "langhooks.h"
++#include "cfgrtl.h"
++#include "gimplify.h"
++#include "reload.h"
++#include "builtins.h"
++#include "tree-pass.h"
++#include "cfghooks.h"
++
++hash_map<const_rtx, tree> external_libcalls;
++
++namespace
++{
++
++rtx
++unify_mem (rtx mem)
++{
++  HOST_WIDE_INT offset = 0;
++  if (SUBREG_P (mem) && MEM_P (SUBREG_REG (mem)))
++    {
++      offset += SUBREG_BYTE (mem);
++      mem = SUBREG_REG (mem);
++    }
++  if (!MEM_P (mem))
++    return mem;
++  rtx addr = XEXP (mem, 0);
++  if (GET_CODE (addr) == PLUS && CONST_INT_P (XEXP (addr, 1)))
++    {
++      rtx offset_rtx = XEXP (addr, 1);
++      addr = XEXP (addr, 0);
++      offset += INTVAL (offset_rtx);
++    }
++  addr = force_reg (Pmode, addr);
++  addr = gen_rtx_PLUS (Pmode, addr, gen_rtx_CONST_INT (Pmode, offset));
++  if (offset < 0)
++    addr = gen_rtx_PLUS (Pmode, force_reg (Pmode, addr), const0_rtx);
++  mem = copy_rtx (mem);
++  XEXP (mem, 0) = addr;
++  return mem;
++}
++
++bool symref_p (rtx expr)
++{
++  if (GET_CODE (expr) == CONST)
++    {
++      expr = XEXP (expr, 0);
++      if (GET_CODE (expr) == PLUS)
++	expr = XEXP (expr, 0);
++    }
++  return GET_CODE (expr) == SYMBOL_REF;
++}
++
++void
++record_libcall (const_rtx sym, tree ret)
++{
++  auto_vec<tree> args;
++  vec<rtx, va_gc> *args_rtx = cfun->machine->call->args;
++  int cnt = vec_safe_length (args_rtx);
++  args.safe_grow (cnt);
++  for (int i = 0; i != cnt; ++i)
++    args[i] = lang_hooks.types.type_for_mode (GET_MODE ((*args_rtx)[i]), false);
++  tree ty = build_function_type_array (ret, cnt, args.address ());
++  bool existed;
++  tree &slot = external_libcalls.get_or_insert (sym, &existed);
++  if (!existed)
++    slot = ty;
++  gcc_assert (slot == ty);
++}
++
++}
++
++machine_mode
++wasm_real_register_mode (rtx reg)
++{
++  if (SUBREG_P (reg))
++    reg = SUBREG_REG (reg);
++  if (!REG_P (reg))
++    return VOIDmode;
++  machine_mode m = GET_MODE (reg);
++  PROMOTE_MODE (m, 0, NULL_TREE);
++  return m;
++}
++
++static bool
++expand_const (rtx dest, rtx src, machine_mode mode)
++{
++  if (!const_int_operand (src, mode) && !const_double_operand (src, mode)
++      && GET_CODE (src) != LABEL_REF && !symref_p (src))
++    return false;
++  if (symref_p (src))
++
++    if (GET_CODE (src) == CONST)
++      if (GET_CODE (XEXP (src, 0)) == PLUS)
++	if (GET_CODE (XEXP (XEXP (src, 0), 1)) == CONST_INT)
++	{
++	  tree symref_dcl = SYMBOL_REF_DECL (XEXP (XEXP (src, 0), 0));
++	  if (INTVAL (XEXP (XEXP (src, 0), 1)) <= 0)
++	    src = force_reg (Pmode, XEXP (src, 0));
++	  else if (symref_dcl && TREE_CODE (symref_dcl) == FUNCTION_DECL)
++	    src = force_reg (Pmode, XEXP (src, 0));
++	}
++
++  emit_insn (gen_rtx_SET (dest, src));
++  return true;
++}
++
++bool
++wasm_expand_mov (rtx dest, rtx src, machine_mode mode)
++{
++  temporary_volatile_ok g {1};
++  dest = unify_mem (dest);
++  src = unify_mem (src);
++  if (register_operand (dest, mode) && immediate_operand (src, mode))
++    return expand_const (dest, src, mode);
++  gcc_assert (REG_P (dest) || MEM_P (dest) || SUBREG_P (dest));
++  if (register_operand (dest, mode) && memory_operand (src, mode))
++    {
++      emit_insn (gen_rtx_SET (dest, src));
++      return true;
++    }
++  if (!SUBREG_P (src))
++    src = force_reg (mode, src);
++  emit_insn (gen_rtx_SET (dest, src));
++  return true;
++}
++
++void
++wasm_expand_conv (rtx dest, rtx src, rtx_code code)
++{
++  if (code == TRUNCATE)
++    code = LOAD_EXTEND_OP (VOIDmode);
++
++  auto real_reg = [](rtx reg)
++    {
++      if (!SUBREG_P (reg))
++	return reg;
++      gcc_assert (SUBREG_BYTE (reg) == 0);
++      return SUBREG_REG (reg);
++    };
++  rtx r_src = real_reg (src), r_dest = real_reg (dest);
++
++  /* This is a conversion within as register class.  */
++  bool src_di_p = (GET_MODE (r_src) == DImode);
++  bool dest_di_p = (GET_MODE (r_dest) == DImode);
++  bool do_conv = src_di_p != dest_di_p;
++  bool do_intra = (GET_MODE (src) != SImode && GET_MODE (src) != DImode)
++		   || (GET_MODE (src) != DImode && (dest_di_p && src_di_p));
++  machine_mode mid_mode = src_di_p ? DImode : SImode;
++
++  rtx mid = do_conv
++	    ? do_intra
++	      ? gen_reg_rtx (mid_mode)
++	      : src
++	    : simplify_gen_subreg (mid_mode, dest, GET_MODE (r_dest), 0);
++  if (do_intra)
++    {
++      if (GET_MODE_PRECISION (GET_MODE (src))
++	  >= GET_MODE_PRECISION (GET_MODE (mid)))
++	src = simplify_gen_subreg (mid_mode, src, GET_MODE (r_src), 0);
++      rtx op = gen_rtx_fmt_e_stat (code, mid_mode, src);
++      rtx_insn *i = emit_insn (gen_rtx_SET (mid, op));
++      extract_insn (i);
++    }
++
++  if (do_conv)
++    {
++      if (mid_mode == DImode)
++	code = TRUNCATE;
++      rtx op = gen_rtx_fmt_e_stat (code, GET_MODE (r_dest), mid);
++      rtx_insn *i = emit_insn (gen_rtx_SET (r_dest, op));
++      extract_insn (i);
++    }
++}
++
++void
++wasm_expand_call (rtx retval, rtx fn, rtx aux)
++{
++  bool vararg_p = false;
++  bool has_proto = true;
++  bool is_fn = true;
++  bool need_chain = false;
++
++  if (tree type = cfun->machine->call->type)
++    {
++      vararg_p = stdarg_p (type);
++      has_proto = TYPE_ARG_TYPES (type) || vararg_p;
++    }
++
++  if (GET_CODE (XEXP (fn, 0)) == SYMBOL_REF)
++    if (tree decl = SYMBOL_REF_DECL (XEXP (fn, 0)))
++      {
++	if (TREE_CODE (decl) != FUNCTION_DECL)
++	is_fn = false;
++	else if (DECL_STATIC_CHAIN (decl))
++	need_chain = true;
++      }
++
++  /* Pretend unprototyped fn calls dynamic.  That way we can assert the function
++     type ourselves, and if it doesn't agree with whatever is actually supplied
++     by the linker, ANSI C 3.3.2.2 says it's undefied anyway.  */
++  if (!has_proto || !is_fn)
++    {
++      rtvec ops = gen_rtvec (1, force_reg (Pmode, XEXP (fn, 0)));
++      XEXP (fn, 0) = gen_rtx_UNSPEC_VOLATILE (SImode, ops,
++					      UNSPECV_CALL_ADDRESS_BARRIER);
++    }
++
++  rtx call = gen_rtx_CALL (VOIDmode, fn, aux);
++  if (retval)
++    call = gen_rtx_SET (retval, call);
++
++  auto *args_rtx = cfun->machine->call->args;
++
++  /* ??? This should be handled by the call machinery, not me! */
++  if (vararg_p)
++    {
++      rtx stdarg_reg = gen_reg_rtx (SImode);
++      /* Rely on args being pushed in reverse order, and on only varargs being
++	 pushed, so that the beginning of the vararg buffer is
++	 stack_pointer_rtx.  This is a hack.  */
++      emit_move_insn (stdarg_reg, stack_pointer_rtx);
++      vec_safe_insert (args_rtx, 0, stdarg_reg);
++    }
++  if (need_chain)
++    {
++      rtx chain_reg = gen_reg_rtx (SImode);
++      emit_move_insn (chain_reg, regno_reg_rtx[STATIC_CHAIN_REGNUM]);
++      vec_safe_insert (args_rtx, 0, chain_reg);
++    }
++
++  int argc = vec_safe_length (args_rtx);
++  rtx res = gen_rtx_PARALLEL (VOIDmode, rtvec_alloc (argc + 1));
++  XVECEXP (res, 0, 0) = call;
++  for (int i = 0; i < argc; ++i)
++    XVECEXP (res, 0, argc - i) = gen_rtx_USE (VOIDmode, (*args_rtx)[i]);
++  emit_call_insn (res);
++}
++
++void
++wasm_expand_prologue ()
++{
++  emit_move_insn (regno_reg_rtx[WASM_BASE_POINTER_REGNUM],
++		stack_pointer_rtx);
++  if (crtl->stack_realign_needed)
++    {
++      int align = ~(crtl->max_used_stack_slot_alignment / BITS_PER_UNIT - 1);
++      rtx align_mask = gen_rtx_CONST_INT (SImode, align);
++      rtx reg = gen_reg_rtx (SImode);
++      emit_move_insn (reg, align_mask);
++      emit_insn (gen_andsi3 (stack_pointer_rtx, stack_pointer_rtx, reg));
++    }
++
++  if (flag_stack_usage_info)
++    current_function_static_stack_size = 0;
++  if (poly_int64 stack_space = get_frame_size ())
++    {
++      HOST_WIDE_INT unit_boundary = STACK_BOUNDARY / BITS_PER_UNIT;
++      poly_int64 aligned = aligned_upper_bound (stack_space, unit_boundary);
++      rtx aligned_space_rtx = gen_int_mode (aligned, Pmode);
++      emit_insn (gen_sub2_insn (stack_pointer_rtx, aligned_space_rtx));
++      emit_move_insn (frame_pointer_rtx, stack_pointer_rtx);
++      if (flag_stack_usage_info)
++	current_function_static_stack_size = aligned;
++    }
++  if (HOST_WIDE_INT stack_space = crtl->outgoing_args_size)
++    {
++      emit_insn (gen_sub2_insn (stack_pointer_rtx,
++			  gen_int_mode (stack_space, Pmode)));
++    }
++}
++
++void
++wasm_expand_epilogue ()
++{
++  emit_move_insn (stack_pointer_rtx, regno_reg_rtx[WASM_BASE_POINTER_REGNUM]);
++}
++
++void
++wasm_expand_compare (machine_mode m, rtx res, rtx op)
++{
++  rtx *left_p = &XEXP (op, 0), *right_p = &XEXP (op, 1);
++
++  *left_p = force_reg (m, *left_p);
++  *right_p = force_reg (m, *right_p);
++
++  rtx left = *left_p, right = *right_p;
++
++  switch (GET_CODE (op))
++    {
++    case ORDERED:
++      {
++	rtx eq = gen_reg_rtx (SImode), ne = gen_reg_rtx (SImode);
++	wasm_expand_compare (m, eq, gen_rtx_LE (SImode, left, right));
++	wasm_expand_compare (m, ne, gen_rtx_GE (SImode, left, right));
++	emit_insn (gen_iorsi3 (res, eq, ne));
++	break;
++      }
++    case LTGT:
++      {
++	rtx eq = gen_reg_rtx (SImode), ne = gen_reg_rtx (SImode);
++	wasm_expand_compare (m, eq, gen_rtx_LT (SImode, left, right));
++	wasm_expand_compare (m, ne, gen_rtx_GT (SImode, left, right));
++	emit_insn (gen_iorsi3 (res, eq, ne));
++	break;
++      }
++    case LTU:
++    case GTU:
++    case LEU:
++    case GEU:
++    case LT:
++    case GT:
++    case LE:
++    case GE:
++    case EQ:
++    case NE:
++      op = gen_rtx_fmt_ee (GET_CODE (op), SImode, left, right);
++      emit_insn (gen_rtx_SET (res, op));
++      break;
++    case UNLT:
++    case UNGT:
++    case UNLE:
++    case UNGE:
++    case UNEQ:
++    case UNORDERED:
++      {
++	rtx_code cond_code = reverse_condition_maybe_unordered (GET_CODE (op));
++	rtx cond = gen_rtx_fmt_ee (cond_code, SImode, left, right);
++	rtx mid = gen_reg_rtx (SImode);
++	wasm_expand_compare (m, mid, cond);
++	emit_insn (gen_xorsi3 (res, mid,
++			       gen_rtx_CONST_INT (SImode, STORE_FLAG_VALUE)));
++	break;
++      }
++    default:
++      gcc_unreachable ();
++    }
++}
++
++/* Implementation of TARGET_HARD_REGNO_MODE_OK.  */
++bool
++wasm_regno_mode_ok (unsigned regno, machine_mode mode)
++{
++  if (COMPLEX_MODE_P (mode))
++    return false;
++  if (regno == WASM_CONTROL_POINTER_REGNUM)
++    return mode == SImode;
++  if (regno == ARG_POINTER_REGNUM
++      || regno == STACK_POINTER_REGNUM
++      || regno == FRAME_POINTER_REGNUM
++      || regno == STATIC_CHAIN_REGNUM
++      || regno == WASM_BASE_POINTER_REGNUM)
++    return mode == Pmode;
++  if (GET_MODE_CLASS (mode) == MODE_INT)
++    return mode < TImode;
++  if (GET_MODE_CLASS (mode) == MODE_FLOAT)
++    return mode == DFmode || mode == SFmode;
++  return false;
++}
++
++/* Implementation of TARGET_CAN_CHANGE_MODE_CLASS.  */
++bool
++wasm_can_change_mode_class (machine_mode from, machine_mode to, reg_class_t)
++{
++  return QImode <= from && from <= SImode && QImode <= to && to <= SImode;
++}
++
++/* Implementation of TARGET_LEGITIMATE_ADDRESS_P.  */
++bool
++wasm_legitimate_address_p (machine_mode, rtx x, bool, code_helper)
++{
++  if (GET_CODE (x) == CONST)
++    x = XEXP (x, 0);
++  if (GET_CODE (x) == PLUS && CONST_INT_P (XEXP (x, 1))
++      && INTVAL (XEXP (x, 1)) >= 0)
++    x = XEXP (x, 0);
++  switch (GET_CODE (x))
++    {
++    case SYMBOL_REF:
++    case LABEL_REF:
++    case CONST_INT:
++    case REG:
++      return true;
++    default:
++      return false;
++    }
++}
++
++/* Implementation of TARGET_MARK_ARG_REGNOS.  */
++void
++wasm_mark_arg_regnos (bitmap regnos)
++{
++  for (rtx arg: cfun->machine->func_args)
++    bitmap_set_bit (regnos, REGNO (arg));
++}
++
++/* Implementation of TARGET_START_CALL_ARGS.  */
++void
++wasm_start_call_args (cumulative_args_t args)
++{
++  cfun->machine->call = get_cumulative_args (args);
++}
++
++/* Implementation of TARGET_CALL_ARGS.  */
++void
++wasm_call_args (cumulative_args_t args, rtx arg, tree type)
++{
++  get_cumulative_args (args)->type = type;
++  if (arg == pc_rtx)
++    return;
++
++  if (GET_CODE (arg) == PARALLEL)
++    {
++      rtvec elts = XVEC (arg, 0);
++      for (int i = 0; i != GET_NUM_ELEM (elts); ++i)
++	wasm_call_args (args, XEXP (RTVEC_ELT (elts, i), 0), type);
++      return;
++    }
++  gcc_assert (REG_P (arg));
++  vec_safe_push (get_cumulative_args (args)->args, arg);
++}
++
++/* Implementation of TARGET_END_CALL_ARGS.  */
++void
++wasm_end_call_args (cumulative_args_t)
++{
++  cfun->machine->call = NULL;
++}
++
++/* Implementation of TARGET_FUNCTION_ARG_ADVANCE.  */
++void
++wasm_function_arg_advance (cumulative_args_t, const function_arg_info &)
++{
++}
++
++/* Implementation of TARGET_FUNCTION_ARG_BOUNDARY.  */
++unsigned int wasm_vararg_align (machine_mode mode, const_tree type)
++{
++  unsigned align = 0;
++
++  if (type)
++    align = TYPE_ALIGN (type);
++  if (align)
++    return MIN (MAX (align, BITS_PER_UNIT), BIGGEST_ALIGNMENT);
++  return get_mode_alignment (mode);
++}
++
++/* Implementation of TARGET_FUNCTION_VALUE.  */
++rtx
++wasm_function_value (const_tree type, const_tree ARG_UNUSED (func),
++		     bool outgoing)
++{
++  machine_mode mode = TYPE_MODE (type);
++  if (!cfun)
++    /* Fake the return regnum since none is actually available.  */
++    return gen_rtx_REG (mode, WASM_RETURN_REGNUM);
++  if (outgoing)
++    {
++      /* This is where we actually put the return value.  */
++      cfun->machine->return_mode = mode;
++      return gen_rtx_REG (mode, WASM_RETURN_REGNUM);
++    }
++  if (!cfun->machine->call)
++    /* Fake the return regnum again, since we're not in a call.  */
++    return gen_rtx_REG (mode, WASM_RETURN_REGNUM);
++
++  /* Put the retval in a fresh reg, since its class may be different from actual
++     retval, and we can't have that.  */
++  return gen_reg_rtx (mode);
++}
++
++/* Implementation of TARGET_FUNCTION_ARG.  */
++rtx
++wasm_function_arg (cumulative_args_t, const function_arg_info &arg)
++{
++  if (arg.end_marker_p ())
++    return NULL_RTX;
++
++  if (!arg.named)
++    return NULL_RTX;
++
++  if (arg.mode == TImode)
++    {
++      rtx const8_rtx = gen_rtx_CONST_INT (VOIDmode, 8);
++      rtvec para = gen_rtvec (2,
++	gen_rtx_EXPR_LIST (DImode, gen_reg_rtx (DImode), const0_rtx),
++	gen_rtx_EXPR_LIST (DImode, gen_reg_rtx (DImode), const8_rtx));
++      return gen_rtx_PARALLEL (TImode, para);
++    }
++  return gen_reg_rtx (arg.mode);
++}
++
++/* Implementation of TARGET_FUNCTION_INCOMING_ARG.  */
++rtx
++wasm_function_incoming_arg (cumulative_args_t cum_v,
++			    const function_arg_info &arg)
++{
++  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
++
++  auto maybe_push_arg = [cum](rtx arg)
++    {
++      if (cum->incoming)
++	vec_safe_push (cum->args, arg);
++    };
++
++  if (arg.end_marker_p ())
++    {
++      gcc_assert (!cfun->machine->func_args);
++      if (cum->incoming)
++	cfun->machine->func_args = cum->args;
++      return gen_rtx_CONST_INT (SImode, 80);
++    }
++  if (!arg.named)
++    return NULL_RTX;
++
++  /* Int128 is passed as 2xint64_t, in LE order.  */
++  if (arg.mode == TImode)
++    {
++      rtx const8_rtx = gen_rtx_CONST_INT (VOIDmode, 8);
++
++      rtx lsb = gen_rtx_EXPR_LIST (DImode, gen_reg_rtx (DImode), const0_rtx);
++      rtx msb = gen_rtx_EXPR_LIST (DImode, gen_reg_rtx (DImode), const8_rtx);
++      maybe_push_arg (lsb);
++      maybe_push_arg (msb);
++      rtvec para = gen_rtvec (2, lsb, msb);
++      return gen_rtx_PARALLEL (TImode, para);
++    }
++  rtx reg = gen_reg_rtx (arg.mode);
++  maybe_push_arg (reg);
++  return reg;
++}
++
++/* Implementation of TARGET_LIBCALL_VALUE.  */
++rtx wasm_libcall_value (machine_mode m, const_rtx sym)
++{
++  tree rtype = lang_hooks.types.type_for_mode (m, false);
++  if (cfun && cfun->machine->call)
++    record_libcall (sym, rtype);
++  return wasm_function_value (rtype, NULL_TREE, false);
++}
++
++/* Implementation of TARGET_PASS_BY_REFERENCE.  */
++bool
++wasm_pass_by_reference (cumulative_args_t, const function_arg_info &arg)
++{
++  if (arg.type)
++    {
++      if (TREE_CODE (arg.type) == COMPLEX_TYPE)
++	return true;
++      if (TREE_CODE (arg.type) == VECTOR_TYPE)
++	return true;
++    }
++  if (COMPLEX_MODE_P (arg.mode))
++    return true;
++  if (VECTOR_MODE_P (arg.mode))
++    return true;
++  if (arg.aggregate_type_p ())
++    return true;
++  return false;
++}
++
++/* Implementation of TARGET_RETURN_IN_MEMORY.  */
++bool
++wasm_return_in_memory (const_tree type, const_tree ARG_UNUSED (fntype))
++{
++  if (TREE_CODE (type) == COMPLEX_TYPE)
++    return true;
++  if (TREE_CODE (type) == VECTOR_TYPE)
++    return true;
++  if (VECTOR_MODE_P (TYPE_MODE (type)))
++    return true;
++  if (COMPLEX_MODE_P (TYPE_MODE (type)))
++    return true;
++  return false;
++}
+diff --git a/gcc/config/wasm/wasm-modes.def b/gcc/config/wasm/wasm-modes.def
+new file mode 100644
+index 00000000000..e69de29bb2d
+diff --git a/gcc/config/wasm/wasm-passes.cc b/gcc/config/wasm/wasm-passes.cc
+new file mode 100644
+index 00000000000..2e550c80535
+--- /dev/null
++++ b/gcc/config/wasm/wasm-passes.cc
+@@ -0,0 +1,161 @@
++/* WebAssembly passes for code generation.
++Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "target.h"
++#include "rtl.h"
++#include "tree.h"
++#include "regs.h"
++#include "stringpool.h"
++#include "attribs.h"
++#include "gimple.h"
++#include "df.h"
++#include "memmodel.h"
++#include "tm_p.h"
++#include "stringpool.h"
++#include "optabs.h"
++#include "emit-rtl.h"
++#include "recog.h"
++#include "diagnostic-core.h"
++#include "output.h"
++#include "fold-const.h"
++#include "stor-layout.h"
++#include "varasm.h"
++#include "calls.h"
++#include "explow.h"
++#include "expr.h"
++#include "langhooks.h"
++#include "cfgrtl.h"
++#include "gimplify.h"
++#include "reload.h"
++#include "builtins.h"
++#include "tree-pass.h"
++#include "cfghooks.h"
++
++struct cfl_hash: int_hash<int, -1, -2> {};
++hash_map<rtx_insn *, int> labels_to_cfno;
++hash_map<cfl_hash, rtx_insn *> labelno_to_labels;
++
++namespace {
++
++const pass_data pass_data_count_labels =
++{
++  RTL_PASS, /* type */
++  "count_labels", /* name */
++  OPTGROUP_NONE, /* optinfo_flags */
++  TV_MACH_DEP, /* tv_id */
++  0, /* properties_required */
++  0, /* properties_provided */
++  0, /* properties_destroyed */
++  0, /* todo_flags_start */
++  0, /* todo_flags_finish */
++};
++
++class pass_count_labels : public rtl_opt_pass
++{
++  static void put_label (function *, rtx_insn *l, int &idx)
++  {
++    gcc_assert (!labels_to_cfno.put (l, idx++));
++    int n = CODE_LABEL_NUMBER (l);
++    gcc_assert (!labelno_to_labels.put (n, l));
++  }
++
++  static void mark_live (bitmap regs)
++  {
++    df_clear_flags (DF_LR_RUN_DCE);
++    df_set_flags (DF_NO_INSN_RESCAN | DF_NO_HARD_REGS);
++    df_live_add_problem ();
++    df_live_set_all_dirty ();
++    df_analyze ();
++    for (int i = FIRST_PSEUDO_REGISTER; i < max_reg_num (); ++i)
++      if (DF_REG_DEF_COUNT (i) || DF_REG_USE_COUNT (i))
++	bitmap_set_bit (regs, i);
++  }
++
++  static void inject_trap (function *fun, basic_block bb)
++  {
++    rtx_insn *insn = BB_END (bb);
++    if (INSN_P (insn)
++	&& (recog_memoized (insn) == CODE_FOR_trap))
++      return;
++    if (!vec_safe_length (bb->succs))
++      make_edge (bb, fun->cfg->x_exit_block_ptr, EDGE_FALLTHRU);
++    edge_iterator ei;
++    edge e;
++    FOR_EACH_EDGE (e, ei, bb->succs)
++      if (e->flags & EDGE_FALLTHRU && cfun->machine->return_mode != VOIDmode)
++	if (e->dest == fun->cfg->x_exit_block_ptr)
++	  {
++	    basic_block new_bb = split_edge (e);
++	    emit_insn_after (gen_trap (), BB_END (new_bb));
++	  }
++  }
++
++  static rtx_insn *find_label (basic_block bb)
++  {
++    rtx_insn *insn;
++    FOR_BB_INSNS (bb, insn)
++      {
++	if (LABEL_P (insn))
++	  return insn;
++	if (NOTE_P (insn) && NOTE_KIND (insn) == NOTE_INSN_DELETED_LABEL)
++	  return insn;
++      }
++    return NULL;
++  }
++
++public:
++  pass_count_labels (gcc::context *ctxt)
++    : rtl_opt_pass (pass_data_count_labels, ctxt)
++  {}
++
++  /* opt_pass methods: */
++  unsigned int execute (function *fun) override
++  {
++    labels_to_cfno.empty ();
++    labelno_to_labels.empty ();
++    basic_block bb;
++    FOR_EACH_BB_FN (bb, fun)
++      inject_trap (fun, bb);
++
++    bb = fun->cfg->x_entry_block_ptr->next_bb;
++    int i = 0;
++    put_label (fun, block_label (bb), i);
++    mark_live (fun->machine->regs_ever_live);
++
++    FOR_BB_BETWEEN (bb, bb->next_bb, fun->cfg->x_exit_block_ptr, next_bb)
++      {
++	if (rtx_insn *x = find_label (bb))
++	  put_label (fun, x, i);
++      }
++    return 0;
++  }
++
++};
++
++}
++
++rtl_opt_pass *make_pass_count_labels (gcc::context *ctx)
++{
++  return new pass_count_labels (ctx);
++}
+diff --git a/gcc/config/wasm/wasm-passes.def b/gcc/config/wasm/wasm-passes.def
+new file mode 100644
+index 00000000000..88426bae750
+--- /dev/null
++++ b/gcc/config/wasm/wasm-passes.def
+@@ -0,0 +1,27 @@
++/* Description of target passes for WebAssembly
++   Copyright (C) 2025-2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/*
++   Macros that can be used in this file:
++   INSERT_PASS_AFTER (PASS, INSTANCE, TGT_PASS)
++   INSERT_PASS_BEFORE (PASS, INSTANCE, TGT_PASS)
++   REPLACE_PASS (PASS, INSTANCE, TGT_PASS)
++ */
++
++  INSERT_PASS_BEFORE (pass_free_cfg, 1, pass_count_labels);
+diff --git a/gcc/config/wasm/wasm-protos.h b/gcc/config/wasm/wasm-protos.h
+new file mode 100644
+index 00000000000..2793be74f35
+--- /dev/null
++++ b/gcc/config/wasm/wasm-protos.h
+@@ -0,0 +1,31 @@
++/* WebAssembly cpu description.
++Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#ifdef RTX_CODE
++extern void wasm_expand_prologue ();
++extern void wasm_expand_epilogue ();
++extern void wasm_expand_call (rtx, rtx, rtx);
++extern void wasm_emit_jump (rtx, rtx);
++extern bool wasm_expand_mov (rtx, rtx, machine_mode);
++extern void wasm_expand_conv (rtx, rtx, rtx_code);
++extern void wasm_expand_compare (machine_mode, rtx, rtx);
++extern machine_mode wasm_real_register_mode (rtx);
++rtl_opt_pass *make_pass_count_labels (gcc::context *);
++#endif
+diff --git a/gcc/config/wasm/wasm.cc b/gcc/config/wasm/wasm.cc
+new file mode 100644
+index 00000000000..1016ddc7872
+--- /dev/null
++++ b/gcc/config/wasm/wasm.cc
+@@ -0,0 +1,146 @@
++/* WebAssembly hooks.
++   Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "backend.h"
++#include "target.h"
++#include "rtl.h"
++#include "tree.h"
++#include "stringpool.h"
++#include "attribs.h"
++#include "df.h"
++#include "memmodel.h"
++#include "stringpool.h"
++#include "optabs.h"
++#include "emit-rtl.h"
++#include "recog.h"
++#include "diagnostic-core.h"
++#include "output.h"
++#include "varasm.h"
++#include "calls.h"
++#include "explow.h"
++#include "expr.h"
++#include "builtins.h"
++
++#include "target.h"
++#include "common/common-target.h"
++
++static machine_function *
++wasm_init_machine_status (void)
++{
++  machine_function *p = ggc_cleared_alloc<machine_function> ();
++  p->regs_ever_live = BITMAP_GGC_ALLOC ();
++  return p;
++}
++
++#define TARGET_OPTION_OVERRIDE wasm_option_override
++static void
++wasm_option_override (void)
++{
++  init_machine_status = wasm_init_machine_status;
++}
++
++void wasm_asm_init_sections ();
++#define TARGET_ASM_INIT_SECTIONS wasm_asm_init_sections
++bool wasm_assemble_integer (rtx x, unsigned size, int align);
++#define TARGET_ASM_INTEGER wasm_assemble_integer
++void wasm_assemble_decl_end ();
++#define TARGET_ASM_DECL_END wasm_assemble_decl_end
++void wasm_handle_import (FILE *stream, const char *name, const_tree decl);
++#define TARGET_ASM_ASSEMBLE_UNDEFINED_DECL wasm_handle_import
++void wasm_handle_libcall (rtx symbol);
++#define TARGET_ASM_EXTERNAL_LIBCALL wasm_handle_libcall
++void wasm_assemble_data_begin (FILE *stream, tree decl, const char *name,
++			       HOST_WIDE_INT size,
++			       bool pub);
++#define TARGET_ASM_DECLARE_CONSTANT_NAME \
++  [] (FILE *stream, const char *name, const_tree, HOST_WIDE_INT size) \
++  { return wasm_assemble_data_begin (stream, 0, name, size, false); }
++
++#define TARGET_ASM_GLOBALIZE_LABEL [](FILE *, const char *) {}
++#define TARGET_ASM_ASSEMBLE_VISIBILITY [](tree, int) {}
++#define TARGET_ASM_CONSTRUCTOR [] (rtx, int) {}
++#define TARGET_ASM_DESTRUCTOR [] (rtx, int) {}
++#define TARGET_USE_LATE_PROLOGUE_EPILOGUE [] { return true; }
++
++#define TARGET_ASM_FILE_START wasm_asm_file_start
++void wasm_asm_file_start ();
++#define TARGET_ASM_FILE_END wasm_asm_file_end
++void wasm_asm_file_end ();
++
++bool wasm_valid_punct_p (unsigned char code);
++#define TARGET_PRINT_OPERAND_PUNCT_VALID_P wasm_valid_punct_p
++void wasm_print_operand (FILE *stream, rtx value, int mode);
++#define TARGET_PRINT_OPERAND wasm_print_operand
++void wasm_output_internal_label (FILE *stream, const char *pfx, size_t no);
++#define TARGET_ASM_INTERNAL_LABEL wasm_output_internal_label
++#define TARGET_HAVE_NAMED_SECTIONS false
++
++bool wasm_regno_mode_ok (unsigned regno, machine_mode mode);
++#define TARGET_HARD_REGNO_MODE_OK wasm_regno_mode_ok
++bool wasm_can_change_mode_class (machine_mode from, machine_mode to,
++				 reg_class_t);
++#define TARGET_CAN_CHANGE_MODE_CLASS wasm_can_change_mode_class
++bool wasm_legitimate_address_p (machine_mode, rtx x, bool, code_helper);
++#define TARGET_LEGITIMATE_ADDRESS_P wasm_legitimate_address_p
++void wasm_mark_arg_regnos (bitmap regnos);
++#define TARGET_MARK_ARG_REGNOS wasm_mark_arg_regnos
++
++void wasm_start_call_args (cumulative_args_t args);
++#define TARGET_START_CALL_ARGS wasm_start_call_args
++void wasm_call_args (cumulative_args_t args, rtx arg, tree fntype);
++#define TARGET_CALL_ARGS wasm_call_args
++void wasm_end_call_args (cumulative_args_t);
++#define TARGET_END_CALL_ARGS wasm_end_call_args
++bool wasm_pass_by_reference (cumulative_args_t, const function_arg_info &arg);
++#define TARGET_PASS_BY_REFERENCE wasm_pass_by_reference
++bool wasm_return_in_memory (const_tree type, const_tree fntype);
++#define TARGET_RETURN_IN_MEMORY wasm_return_in_memory
++#define TARGET_SPLIT_COMPLEX_ARG [] (auto ...) { return false; }
++
++#define TARGET_SCALAR_MODE_SUPPORTED_P [](scalar_mode m) \
++  { return default_scalar_mode_supported_p (m) && m != TImode; }
++
++#define TARGET_EXCEPT_UNWIND_INFO [] (auto ...) { return UI_NONE; }
++
++#define TARGET_HAVE_STRUB_SUPPORT_FOR hook_bool_tree_false
++#define TARGET_ALLOCATE_STACK_SLOTS_FOR_ARGS hook_bool_void_false
++#define TARGET_STRICT_ARGUMENT_NAMING [] (auto ...) { return true; }
++unsigned int wasm_vararg_align (machine_mode mode, const_tree type);
++#define TARGET_FUNCTION_ARG_BOUNDARY wasm_vararg_align
++void wasm_function_arg_advance (cumulative_args_t, const function_arg_info &);
++#define TARGET_FUNCTION_ARG_ADVANCE wasm_function_arg_advance
++rtx wasm_function_value (const_tree type, const_tree ARG_UNUSED (func), bool);
++#define TARGET_FUNCTION_VALUE wasm_function_value
++rtx wasm_function_arg (cumulative_args_t cum_v, const function_arg_info &arg);
++#define TARGET_FUNCTION_ARG wasm_function_arg
++rtx wasm_function_incoming_arg (cumulative_args_t cum_v,
++				const function_arg_info &arg);
++#define TARGET_FUNCTION_INCOMING_ARG wasm_function_incoming_arg
++rtx wasm_libcall_value (machine_mode, const_rtx);
++#define TARGET_LIBCALL_VALUE wasm_libcall_value
++
++#include "target-def.h"
++gcc_target targetm = TARGET_INITIALIZER;
++
++#include "common/common-target-def.h"
++struct gcc_targetm_common targetm_common = TARGETM_COMMON_INITIALIZER;
+diff --git a/gcc/config/wasm/wasm.h b/gcc/config/wasm/wasm.h
+new file mode 100644
+index 00000000000..3d4c6ea7906
+--- /dev/null
++++ b/gcc/config/wasm/wasm.h
+@@ -0,0 +1,296 @@
++/* WebAssembly cpu description.
++   Copyright (C) 2025-2026 Free Software Foundation, Inc.
++   Contributed by feedable.
++
++   This file is part of GCC.
++
++   GCC is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3, or (at your option)
++   any later version.
++
++   GCC is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with GCC; see the file COPYING3.  If not see
++   <http://www.gnu.org/licenses/>.  */
++
++#ifndef GCC_WASM_H
++#define GCC_WASM_H
++
++#ifndef USED_FOR_TARGET
++#include "statistics.h"
++#include "vec.h"
++#endif
++
++/* Debug.  */
++#define PREFERRED_DEBUGGING_TYPE NO_DEBUG
++/* End debug.  */
++
++#define CC1PLUS_SPEC "-stdlib=libc++"
++#define ASM_SPEC "-r --enable-annotations %{v:-v} %{Wa,*:%*}"
++#define STANDARD_STARTFILE_PREFIX_1 "/lib/wasm32-wasi/"
++#define STARTFILE_SPEC "%R" STANDARD_STARTFILE_PREFIX_1 "crt1%O%s"
++#define LIB_SPEC "%{!shared:%{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"
++#define LINK_SPEC "%{!o:-o a.out}"
++
++/* Run-time target specifications.  */
++#define TARGET_CPU_CPP_BUILTINS()	 \
++  do					  \
++    {					  \
++      builtin_define_std ("wasm32");	  \
++      builtin_assert ("machine=wasm32");  \
++      builtin_assert ("cpu=wasm32");	  \
++      cpp_define (parse_in, "__wasm32__");\
++      cpp_define (parse_in, "__wasi__");  \
++    }					  \
++  while (0)
++
++/* End run-time target specifications.  */
++
++/* Regs.  */
++#define WASM_RETURN_REGNUM 0
++#define STACK_POINTER_REGNUM 1
++#define FRAME_POINTER_REGNUM 2
++#define ARG_POINTER_REGNUM 3
++#define STATIC_CHAIN_REGNUM 4
++#define WASM_CONTROL_POINTER_REGNUM 5
++#define WASM_BASE_POINTER_REGNUM 6
++
++/* If this isn't defined, loads form $args will be performed with nested
++   functions.  */
++#define FRAME_POINTER_CFA_OFFSET(FNDECL) ((void)(FNDECL), 0)
++
++/* ??? IRA is a bit silly with on targets that don't do register allocation,
++   in that it still needs free hard regs to play with, give it some for now.  */
++#define REGISTER_NAMES	\
++  {			\
++    "$return",		\
++    "$stack",		\
++    "$frame",		\
++    "$args",		\
++    "$chain",		\
++    "$control",		\
++    "$base",		\
++    "general0",		\
++    "general1",		\
++    "general2",		\
++    "general3",		\
++  }
++
++#define TARGET_NO_REGISTER_ALLOCATION true
++#define FIRST_PSEUDO_REGISTER 11
++#define FIXED_REGISTERS	    { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 }
++#define CALL_USED_REGISTERS { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 }
++
++enum reg_class	     {  NO_REGS,    ALL_REGS,	LIM_REG_CLASSES };
++#define REG_CLASS_NAMES    { "NO_REGS",  "ALL_REGS" }
++#define REG_CLASS_CONTENTS { { 0x0000 }, { 0xFFFF } }
++#define N_REG_CLASSES (int) LIM_REG_CLASSES
++
++#define GENERAL_REGS ALL_REGS
++#define REGNO_REG_CLASS(R) ALL_REGS
++#define BASE_REG_CLASS ALL_REGS
++#define INDEX_REG_CLASS NO_REGS
++
++#define REGNO_OK_FOR_BASE_P(X) true
++#define REGNO_OK_FOR_INDEX_P(X) false
++
++#define CLASS_MAX_NREGS(class, mode) 1
++
++#define PROMOTE_MODE(MODE, UNSIGNEDP, TYPE) \
++  if ((MODE) == QImode || (MODE) == HImode) \
++    (MODE) = SImode; \
++  (void)(UNSIGNEDP); \
++  (void)(TYPE); \
++/* End regs.  */
++
++/* Calling convention.  */
++#define PARM_BOUNDARY 8
++#define STACK_BOUNDARY 128
++#define FUNCTION_BOUNDARY 16
++#define BIGGEST_ALIGNMENT 128
++#define STRICT_ALIGNMENT 0
++
++/* Copied from elf.h and other places.  We'd otherwise use
++   BIGGEST_ALIGNMENT and fail a number of testcases.  */
++#define MAX_OFILE_ALIGNMENT (32768 * 8)
++
++#define FRAME_GROWS_DOWNWARD 0
++#define STACK_GROWS_DOWNWARD 1
++
++#ifndef USED_FOR_TARGET
++#define CUMULATIVE_ARGS wasm_cumulative_args
++struct wasm_cumulative_args {
++  bool incoming;
++  vec<rtx, va_gc> *args;
++  tree type;
++};
++#endif
++
++#define INIT_CUMULATIVE_ARGS(CUM, FNTYPE, LIBNAME, INDIRECT, N_NAMED_ARGS) \
++  CUM = {false, NULL, NULL}
++#define INIT_CUMULATIVE_INCOMING_ARGS(CUM, FNTYPE, LIBNAME) \
++  CUM = {true, NULL, NULL}
++
++#define FUNCTION_ARG_REGNO_P(r) 0
++#define FUNCTION_VALUE_REGNO_P(r) 0
++
++#define ELIMINABLE_REGS				\
++  {						\
++    {ARG_POINTER_REGNUM, FRAME_POINTER_REGNUM}	\
++  }
++
++#define INITIAL_ELIMINATION_OFFSET(FROM, TO, OFFSET) (OFFSET) = 0
++
++#define FIRST_PARM_OFFSET(FNDECL) 0
++/* We only use the stack for varargs, let's abuse that to achieve the proper
++   layout for the varargs buffer.  */
++#define ACCUMULATE_OUTGOING_ARGS 1
++
++#define TRAMPOLINE_SIZE 64
++#define TRAMPOLINE_ALIGNMENT 32
++/* End calling convention.  */
++
++/* Costs.  */
++#define NO_FUNCTION_CSE 1
++#define SLOW_BYTE_ACCESS 0
++#define BRANCH_COST(speed_p, predictable_p) 6
++/* End costs.  */
++
++/* Data layout.  */
++#define STORE_FLAG_VALUE 1
++
++#define BITS_BIG_ENDIAN 0
++#define BYTES_BIG_ENDIAN 0
++#define WORDS_BIG_ENDIAN 0
++#define UNITS_PER_WORD 8
++#define MIN_UNITS_PER_WORD 4
++
++#define Pmode SImode
++#define FUNCTION_MODE SImode
++#define CASE_VECTOR_MODE SImode
++
++#define POINTER_SIZE 32
++#define INT_TYPE_SIZE 32
++#define CHAR_TYPE_SIZE 8
++#define SHORT_TYPE_SIZE 16
++#define LONG_TYPE_SIZE 32
++#define LONG_LONG_TYPE_SIZE 64
++#define DEFAULT_SIGNED_CHAR 0
++#define WCHAR_TYPE_SIZE 32
++#define MAX_FIXED_MODE_SIZE 64
++
++#define SIZE_TYPE "long unsigned int"
++#define WCHAR_TYPE "long int"
++#define PTRDIFF_TYPE "long int"
++#define INTPTR_TYPE "long int"
++#define UINTPTR_TYPE "long unsigned int"
++
++#define INT8_TYPE "signed char"
++#define INT16_TYPE "short int"
++#define INT32_TYPE "int"
++#define INT64_TYPE "long long int"
++#define UINT8_TYPE "unsigned char"
++#define UINT16_TYPE "short unsigned int"
++#define UINT32_TYPE "unsigned int"
++#define UINT64_TYPE "long long unsigned int"
++
++#define INT_LEAST8_TYPE INT8_TYPE
++#define INT_LEAST16_TYPE INT16_TYPE
++#define INT_LEAST32_TYPE INT32_TYPE
++#define INT_LEAST64_TYPE INT64_TYPE
++#define UINT_LEAST8_TYPE UINT8_TYPE
++#define UINT_LEAST16_TYPE UINT16_TYPE
++#define UINT_LEAST32_TYPE UINT32_TYPE
++#define UINT_LEAST64_TYPE UINT64_TYPE
++
++#define INT_FAST8_TYPE INT8_TYPE
++#define INT_FAST16_TYPE INT16_TYPE
++#define INT_FAST32_TYPE INT32_TYPE
++#define INT_FAST64_TYPE INT64_TYPE
++#define UINT_FAST8_TYPE UINT8_TYPE
++#define UINT_FAST16_TYPE UINT16_TYPE
++#define UINT_FAST32_TYPE UINT32_TYPE
++#define UINT_FAST64_TYPE UINT64_TYPE
++
++#define MOVE_MAX 8
++#define MAX_REGS_PER_ADDRESS 1
++#define LEGITIMATE_PIC_OPERAND_P(X) 1
++
++#define WORD_REGISTER_OPERATIONS 1
++#define LOAD_EXTEND_OP(M) SIGN_EXTEND
++/* End data layout.  */
++
++/* Asm.  */
++#define ASM_COMMENT_START ";;"
++#define ASM_APP_ON ""
++#define ASM_APP_OFF ""
++
++#define GLOBAL_ASM_OP ""
++
++#ifndef USED_FOR_TARGET
++void wasm_generate_internal_label (char *buf, const char *pfx, size_t no);
++#define ASM_GENERATE_INTERNAL_LABEL(LABEL, PREFIX, NUM)\
++  wasm_generate_internal_label (LABEL, PREFIX, NUM)
++#define ASM_OUTPUT_LABEL(stream, name) \
++  (void)stream, (void)name, gcc_unreachable ()
++void wasm_specify_align (HOST_WIDE_INT align);
++#define ASM_OUTPUT_ALIGN(FILE, ALIGN) \
++  (void)FILE, wasm_specify_align ((HOST_WIDE_INT)1 << (ALIGN))
++
++void wasm_assemble_data_begin (FILE *stream, tree decl, const char *name,
++			       HOST_WIDE_INT size,
++			       bool pub);
++#define ASM_DECLARE_OBJECT_NAME(FILE, DECL, NAME) \
++  wasm_assemble_data_begin (FILE, NAME, DECL, 0, true);
++void wasm_assemble_data_zeros (FILE *stream, tree decl, const char *name,
++			       HOST_WIDE_INT size, HOST_WIDE_INT align,
++			       bool pub);
++#define ASM_OUTPUT_ALIGNED_DECL_COMMON(FILE, DECL, NAME, SIZE, ALIGN) \
++  wasm_assemble_data_zeros (FILE, DECL, NAME, SIZE, ALIGN, true);
++#define ASM_OUTPUT_ALIGNED_DECL_LOCAL(FILE, DECL, NAME, SIZE, ALIGN) \
++  wasm_assemble_data_zeros (FILE, DECL, NAME, SIZE, ALIGN, 0);
++
++void wasm_asm_start_function (FILE *stream, tree decl, const char *name);
++#define ASM_OUTPUT_FUNCTION_LABEL(stream, name, decl) \
++  wasm_asm_start_function (stream, decl, name)
++void wasm_asm_end_function (FILE *stream, tree decl, const char *name);
++#define ASM_DECLARE_FUNCTION_SIZE(stream, name, decl) \
++  wasm_asm_end_function (stream, decl, name)
++
++void wasm_handle_import (FILE *stream, const char *name, const_tree decl);
++#define ASM_OUTPUT_EXTERNAL(stream, decl, name) \
++  wasm_handle_import (stream, name, decl)
++
++void wasm_assemble_skip (FILE *stream, unsigned HOST_WIDE_INT len);
++#define ASM_OUTPUT_SKIP(...) wasm_assemble_skip (__VA_ARGS__)
++void wasm_assemble_ascii (FILE *stream, const char *data, int len);
++#define ASM_OUTPUT_ASCII(...) wasm_assemble_ascii (__VA_ARGS__)
++#endif
++
++#define HAS_INIT_SECTION
++#define SUPPORTS_INIT_PRIORITY 1
++#define SUPPORTS_WEAK 1
++/* End asm.  */
++
++#define FUNCTION_PROFILER(file, labelno) \
++  sorry_at (input_location, \
++	    "profiling is not yet implemented for this architecture")
++
++#ifndef USED_FOR_TARGET
++struct GTY(()) machine_function
++{
++  vec<rtx, va_gc> *func_args;  /* Arg list for the current function.  */
++  machine_mode return_mode;
++  bool stdarg_p;
++
++  wasm_cumulative_args *call;
++  bitmap regs_ever_live;
++};
++#endif
++
++#endif /* GCC_WASM_H */
+diff --git a/gcc/config/wasm/wasm.md b/gcc/config/wasm/wasm.md
+new file mode 100644
+index 00000000000..8f0e7b3eece
+--- /dev/null
++++ b/gcc/config/wasm/wasm.md
+@@ -0,0 +1,418 @@
++;; WebAssembly Machine description
++;; Copyright (C) 2025-2026 Free Software Foundation, Inc.
++;; Contributed by feedable.
++
++;; This file is part of GCC.
++
++;; GCC is free software; you can redistribute it and/or modify
++;; it under the terms of the GNU General Public License as published by
++;; the Free Software Foundation; either version 3, or (at your option)
++;; any later version.
++
++;; GCC is distributed in the hope that it will be useful,
++;; but WITHOUT ANY WARRANTY; without even the implied warranty of
++;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++;; GNU General Public License for more details.
++
++;; You should have received a copy of the GNU General Public License
++;; along with GCC; see the file COPYING3.  If not see
++;; <http://www.gnu.org/licenses/>.
++
++(include "attrs.md")
++(include "constraints.md")
++
++(define_insn "nop"
++  [(const_int 0)]
++  ""
++  "(nop)"
++  [])
++
++ (define_expand "mov<mode>"
++  [(set (match_operand:QHSDISDF 0 "nonimmediate_operand" "")
++	(match_operand:QHSDISDF 1 "general_operand" ""))]
++  ""
++  {
++    if (wasm_expand_mov (operands[0], operands[1], <QHSDISDF:MODE>mode))
++      DONE;
++    else FAIL;
++  })
++
++(define_expand "jump"
++  [(set (pc)
++  (label_ref (match_operand 0 "" "")))]
++  ""
++{
++})
++
++(define_insn "speculation_barrier" [(const_int 0)] "" "")
++(define_expand "prologue"
++  [(const_int 777)]
++  ""
++  {
++    wasm_expand_prologue ();
++    DONE;
++  })
++(define_expand "epilogue"
++  [(const_int 777)]
++  ""
++  {
++    wasm_expand_epilogue ();
++    emit_jump_insn (gen_return ());
++    DONE;
++  })
++
++;; Calls
++(define_expand "call"
++  [(call (match_operand:SI 0 "memory_operand" "m")
++	 (match_operand:SI 1 "" ""))]
++  ""
++  {
++    wasm_expand_call (NULL_RTX, operands[0], operands[1]);
++    DONE;
++  })
++
++(define_expand "call_value"
++  [(set (match_operand 0 "register_operand" "=r")
++    (call (match_operand:SI 1 "memory_operand" "m")
++	  (match_operand:SI 2 "" "")))]
++  ""
++  {
++    wasm_expand_call (operands[0], operands[1], operands[2]);
++    DONE;
++  })
++
++(define_insn "*call_internal_indirect"
++  [(match_parallel 2 "call_operation"
++    [(call (mem:SI (match_operand:P 0 "wasm_call_register_operand"))
++	       (match_operand 1))])]
++  ""
++  "(call_indirect (param%T2) (result)%A2 (%M0.get %0))")
++
++(define_insn "*call_value_internal_indirect"
++  [(match_parallel 3 "call_operation"
++    [(set (match_operand 0 "wasm_register_operand" "")
++	      (call (mem:SI (match_operand:P 1 "wasm_call_register_operand"))
++			(match_operand 2)))])]
++  ""
++  "(%M0.set %0 (call_indirect (param%T3) (result%T0)%A3 (%M1.get %1)))")
++
++(define_insn "*call_internal"
++  [(match_parallel 2 "call_operation"
++    [(call (mem:SI (match_operand:P 0 "funcref_operand"))
++	       (match_operand 1))])]
++  ""
++  "(call %0%A2)")
++
++(define_insn "*call_value_internal"
++  [(match_parallel 3 "call_operation"
++    [(set (match_operand 0 "wasm_register_operand" "")
++	      (call (mem:SI (match_operand:P 1 "funcref_operand"))
++			(match_operand 2)))])]
++  ""
++  "(%M0.set %0 (call %1%A3))")
++
++;; Literals
++(define_insn "*local_const<mode>"
++  [(set (match_operand:QHSDI 0 "register_operand")
++	    (match_operand:QHSDI 1 "const_int_operand" ""))]
++  ""
++  "(%M0.set %0 (<QHSDI:promote_type>.const %1))")
++
++(define_insn "*local_const<mode>"
++  [(set (match_operand:F 0 "register_operand")
++	    (match_operand:F 1 "immediate_operand" ""))]
++  ""
++  "(%M0.set %0 (<types>.const %1))")
++
++;; Address taking
++(define_insn "*local_const_addr"
++  [(set (match_operand:SI 0 "register_operand")
++	    (match_operand:SI 1 "immediate_operand"))]
++  ""
++  "(%M0.set %0 %i1)")
++
++;; Moves
++(define_insn "*local_move<mode>"
++  [(set (match_operand:QHSDISDF 0 "wasm_subregister_operand" "")
++	(match_operand:QHSDISDF 1 "wasm_subregister_operand" ""))]
++  "wasm_real_register_mode (operands[0])
++   == wasm_real_register_mode (operands[1])"
++  "(%M0.set %0 (%M1.get %1))")
++
++(define_insn "*local_move<mode>"
++  [(set (match_operand:QHSDI 0 "subregister_for_di_operand" "")
++	(match_operand:QHSDI 1 "subregister_for_si_operand" ""))]
++  ""
++  "(%M0.set %0 (i64.extend_i32_s (%M1.get %1)))")
++
++(define_insn "*local_move<mode>"
++  [(set (match_operand:QHSDI 0 "subregister_for_si_operand" "")
++	(match_operand:QHSDI 1 "subregister_for_di_operand" ""))]
++  ""
++  "(%M0.set %0 (i32.wrap_i64 (%M1.get %1)))")
++
++;; Comparisons
++(define_expand "cstore<mode>4"
++  [(set (match_operand:SI 0 "register_operand" "")
++	(match_operator 1 "comparison_operator"
++			[(match_operand:REGF 2 "general_operand" "")
++			(match_operand:REGF 3 "general_operand" "")]))]
++  ""
++  {
++    wasm_expand_compare (<MODE>mode, operands[0], operands[1]);
++    DONE;
++  })
++
++(define_insn "*test<code>_<mode>"
++  [(set (match_operand:SI 0 "wasm_register_operand")
++	(frelop:SI (match_operand:F 1 "wasm_register_operand")
++		   (match_operand:F 2 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<opnamef> (%M1.get %1) (%M2.get %2)))")
++
++(define_insn "*test<code>_<mode>"
++  [(set (match_operand:SI 0 "wasm_register_operand")
++	(irelop:SI (match_operand:REG 1 "wasm_register_operand")
++		   (match_operand:REG 2 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<opname> (%M1.get %1) (%M2.get %2)))")
++
++;; Control flow
++(define_insn "return" [(return)] "" "(return%#)")
++(define_insn "trap" [(trap_if (const_int 1) (const_int 0))] "" "(unreachable)")
++
++(define_expand "cbranch<mode>4"
++  [(set (pc)
++	(if_then_else (match_operator 0 "comparison_operator"
++				      [(match_operand:REGF 1 "general_operand")
++				       (match_operand:REGF 2
++							   "general_operand")])
++		      (label_ref (match_operand 3 "" ""))
++		      (pc)))]
++  ""
++  {
++    rtx cond = gen_reg_rtx (SImode);
++    emit_insn (gen_cstore<mode>4 (cond, operands[0], operands[1], operands[2]));
++    emit_jump_insn (gen_branch (operands[3], cond));
++    DONE;
++  })
++
++(define_insn "branch"
++  [(set (pc)
++	(if_then_else (ne (match_operand:SI 1 "wasm_register_operand" "")
++			  (const_int 0))
++		      (label_ref (match_operand 0 "" ""))
++		      (pc)))]
++  ""
++  "(br_if $control (local.set $control (i32.const %l0)) (%M1.get %1))")
++
++(define_insn "*jump"
++  [(set (pc) (label_ref (match_operand 0 "" "")))]
++  ""
++  "(br $control (local.set $control (i32.const %l0)))")
++
++;; Int memops
++(define_insn "*store<mode>"
++  [(set (match_operand:REGF 0 "memory_operand")
++	(match_operand:REGF 1 "wasm_register_operand"))]
++  ""
++  "(<types>.store %m0 %i1)")
++
++(define_insn "*load<mode>"
++  [(set (match_operand:REGF 0 "wasm_register_operand")
++	(match_operand:REGF 1 "memory_operand"))]
++  ""
++  "(%o0 (<types>.load %m1))")
++
++;; I64 subreg memops
++(define_insn "*store<SUBREGDI:mode>"
++  [(set (match_operand:SUBREGDI 0 "memory_operand")
++	(match_operand:SUBREGDI 1 "subregister_for_di_operand"))]
++  ""
++  "(i64.store<SUBREGDI:size> %m0 %i1)")
++
++(define_insn "*load<SUBREGDI:mode>"
++  [(set (match_operand:SUBREGDI 0 "subregister_for_di_operand")
++	(match_operand:SUBREGDI 1 "memory_operand"))]
++  ""
++  "(%o0 (i64.load<SUBREGSI:size>_s %m1))")
++
++;; I32 subreg memops
++(define_insn "*store<SUBREGSI:mode>"
++  [(set (match_operand:SUBREGSI 0 "memory_operand" "")
++	(match_operand:SUBREGSI 1 "subregister_for_si_operand" ""))]
++  ""
++  "(i32.store<SUBREGSI:size> %m0 %i1)")
++
++(define_insn "*load<SUBREGSI:mode>"
++  [(set (match_operand:SUBREGSI 0 "subregister_for_si_operand")
++	(match_operand:SUBREGSI 1 "memory_operand"))]
++  ""
++  "(%o0 (i32.load<SUBREGSI:size>_s %i1))")
++
++;; Binary integer
++(define_expand "<opname_rt><mode>3"
++  [(set (match_operand:REG 0 "register_operand" "")
++	(ibinop:REG (match_operand:REG 1 "immediate_or_register_operand" "")
++		(match_operand:REG 2 "immediate_or_register_operand" "")))]
++  ""
++  {
++    if (!subregister_for_<REG:mode>_operand (operands[1], <REG:MODE>mode))
++      operands[1] = force_reg (<REG:MODE>mode, operands[1]);
++    if (!subregister_for_<REG:mode>_operand (operands[2], <REG:MODE>mode))
++      operands[2] = force_reg (<REG:MODE>mode, operands[2]);
++  })
++
++(define_insn "*<opname_rt><mode>3"
++  [(set (match_operand:REG 0 "wasm_register_operand")
++	    (ibinop:REG (match_operand:REG 1 "wasm_register_operand")
++		    (match_operand:REG 2 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<ibinop:opname> (%M1.get %1) (%M2.get %2)))")
++
++;; Unary integer
++(define_expand "<opname_rt><mode>2"
++  [(set (match_operand:REG 0 "register_operand")
++	(iunop:REG (match_operand:REG 1 "immediate_or_register_operand")))]
++  ""
++  {
++    if (!subregister_for_<REG:mode>_operand (operands[1], <REG:MODE>mode))
++      operands[1] = force_reg (<REG:MODE>mode, operands[1]);
++  })
++
++(define_insn "*<opname_rt><mode>2"
++  [(set (match_operand:REG 0 "wasm_register_operand")
++	    (iunop:REG (match_operand:REG 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<iunop:opname> (%M1.get %1)))")
++
++;; Binary float
++(define_expand "<opname_rt><mode>3"
++  [(set (match_operand:F 0 "register_operand")
++	    (fbinop:F (match_operand:F 1 "immediate_or_register_operand")
++		  (match_operand:F 2 "immediate_or_register_operand")))]
++  ""
++  {
++    operands[1] = force_reg (<MODE>mode, operands[1]);
++    operands[2] = force_reg (<MODE>mode, operands[2]);
++  })
++
++(define_insn "*<opname_rt><mode>3"
++  [(set (match_operand:F 0 "wasm_register_operand")
++	    (fbinop:F (match_operand:F 1 "wasm_register_operand")
++		  (match_operand:F 2 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<opnamef> (%M1.get %1) (%M2.get %2)))")
++
++;; Unary float
++(define_expand "<opname_rt><mode>2"
++  [(set (match_operand:F 0 "register_operand")
++	(funop:F (match_operand:F 1 "immediate_or_register_operand")))]
++  ""
++  {
++    operands[1] = force_reg (<MODE>mode, operands[1]);
++  })
++
++(define_insn "*<opname_rt><mode>2"
++  [(set (match_operand:F 0 "wasm_register_operand")
++	    (funop:F (match_operand:F 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<types>.<funop:opnamef> (%M1.get %1)))")
++
++;; Integer conv
++(define_expand "<iconvop:opname_rt><QHSDI2:mode><QHSDI:mode>2"
++  [(set (match_operand:QHSDI 0 "wasm_subregister_operand")
++	(iconvop:QHSDI (match_operand:QHSDI2 1 "wasm_subregister_operand")))]
++  ""
++  {
++    wasm_expand_conv (operands[0], operands[1], <iconvop:CODE>);
++    DONE;
++  })
++
++(define_insn "*extend_si_<SUBREGSI:mode><QHSDI:mode>"
++  [(set (match_operand:QHSDI 0 "register_operand")
++	(sign_extend:QHSDI (match_operand:SUBREGSI 1 "register_operand")))]
++  "wasm_real_register_mode (operands[0]) == SImode
++   && wasm_real_register_mode (operands[1]) == SImode"
++  "(%M0.set %0 (i32.extend<SUBREGSI:size>_s (%M1.get %1)))")
++
++(define_insn "*extend_di_<SUBREGDI:mode><QHSDI:mode>"
++  [(set (match_operand:QHSDI 0 "register_operand")
++	(sign_extend:QHSDI (match_operand:SUBREGDI 1 "register_operand")))]
++  "wasm_real_register_mode (operands[0]) == DImode
++   && wasm_real_register_mode (operands[1]) == DImode"
++  "(%M0.set %0 (i64.extend<SUBREGDI:size>_s (%M1.get %1)))")
++(define_insn "*extend_sidi"
++  [(set (match_operand:DI 0 "register_operand")
++	(sign_extend:DI (match_operand:SI 1 "register_operand")))]
++  "REG_P (operands[0]) && REG_P (operands[1])"
++  "(%M0.set %0 (i64.extend_i32_s (%M1.get %1)))")
++(define_insn "*uextend_sidi"
++  [(set (match_operand:DI 0 "register_operand")
++	(zero_extend:DI (match_operand:SI 1 "register_operand")))]
++  "REG_P (operands[0]) && REG_P (operands[1])"
++  "(%M0.set %0 (i64.extend_i32_u (%M1.get %1)))")
++(define_insn "*truncate_disi"
++  [(set (match_operand:SI 0 "register_operand")
++	(truncate:SI (match_operand:DI 1 "register_operand")))]
++  "REG_P (operands[0]) && REG_P (operands[1])"
++  "(%M0.set %0 (i32.wrap_i64 (%M1.get %1)))")
++
++;; Float conv
++(define_insn "extendsfdf2"
++  [(set (match_operand:DF 0 "wasm_register_operand")
++	(float_extend:DF (match_operand:SF 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (f64.promote_f32 (%M1.get %1)))")
++
++(define_insn "truncdfsf2"
++  [(set (match_operand:SF 0 "wasm_register_operand")
++	(float_truncate:SF (match_operand:DF 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (f32.demote_f64 (%M1.get %1)))")
++
++;; Float -> int conv
++(define_insn "fix_trunc<F:mode><REG:mode>2"
++  [(set (match_operand:REG 0 "wasm_register_operand")
++	(fix:REG (match_operand:F 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<REG:types>.trunc_sat_<F:types>_s (%M1.get %1)))")
++
++(define_insn "fixuns_trunc<F:mode><REG:mode>2"
++  [(set (match_operand:REG 0 "wasm_register_operand")
++	(unsigned_fix:REG (match_operand:F 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<REG:types>.trunc_sat_<F:types>_u (%M1.get %1)))")
++
++;;  Int -> float conv
++(define_insn "float<REG:mode><F:mode>2"
++  [(set (match_operand:F 0 "wasm_register_operand")
++	(float:F (match_operand:REG 1 "wasm_register_operand")))]
++  ""
++  "(%M0.set %0 (<F:types>.convert_<REG:types>_s (%M1.get %1)))")
++
++;; Float -> int cast
++(define_insn "*cast<REG:reg2f><REG:mode>"
++  [(set (match_operand:REG 0 "wasm_register_operand")
++	(subreg:REG (match_operand:<REG:REG2F> 1 "wasm_register_operand") 0))]
++  ""
++  "(%M0.set %0 (<REG:types>.reinterpret_<reg2f_types> (%M1.get %1)))")
++
++(define_insn "*cast<REG:reg2f><REG:mode>"
++  [(set (subreg:<REG:REG2F> (match_operand:REG 0 "wasm_register_operand") 0)
++	(match_operand:<REG:REG2F> 1 "wasm_register_operand"))]
++  ""
++  "(%M0.set %0 (<REG:types>.reinterpret_<reg2f_types> (%M1.get %1)))")
++
++;; Int -> float cast
++(define_insn "*cast<mode><reg2f>"
++  [(set (match_operand:<REG2F> 0 "wasm_register_operand")
++	(subreg:<REG2F> (match_operand:REG 1 "wasm_register_operand") 0))]
++  ""
++  "(%M0.set %0 (<reg2f_types>.reinterpret_<REG:types> (%M1.get %1)))")
++
++(define_insn "*cast<mode><reg2f>"
++  [(set (subreg:REG (match_operand:<REG2F> 0 "wasm_register_operand") 0)
++	(match_operand:REG 1 "wasm_register_operand"))]
++  ""
++  "(%M0.set %0 (<reg2f_types>.reinterpret_<REG:types> (%M1.get %1)))")
+\ No newline at end of file
+diff --git a/gcc/df-problems.cc b/gcc/df-problems.cc
+index 710f3c12032..bd4c3391b0b 100644
+--- a/gcc/df-problems.cc
++++ b/gcc/df-problems.cc
+@@ -2954,9 +2954,11 @@ df_word_lr_bb_local_compute (unsigned int bb_index)
+   rtx_insn *insn;
+   df_ref def, use;
+ 
+-  /* Ensure that artificial refs don't contain references to pseudos.  */
++  /* Ensure that artificial refs don't contain references to pseudos.
++     Do allow pseudos as args, though. */
+   FOR_EACH_ARTIFICIAL_DEF (def, bb_index)
+-    gcc_assert (DF_REF_REGNO (def) < FIRST_PSEUDO_REGISTER);
++    gcc_assert (DF_REF_REGNO (def) < FIRST_PSEUDO_REGISTER
++		|| bitmap_bit_p (df->entry_block_defs, DF_REF_REGNO (def)));
+ 
+   FOR_EACH_ARTIFICIAL_USE (use, bb_index)
+     gcc_assert (DF_REF_REGNO (use) < FIRST_PSEUDO_REGISTER);
+diff --git a/gcc/df-scan.cc b/gcc/df-scan.cc
+index c6a5053ddbb..5cc8f2e1a46 100644
+--- a/gcc/df-scan.cc
++++ b/gcc/df-scan.cc
+@@ -3500,6 +3500,10 @@ df_get_entry_block_def_set (bitmap entry_block_defs)
+ 	bitmap_set_bit (entry_block_defs, INCOMING_REGNO (i));
+     }
+ 
++  /* Whatever the target considers to be an argument */
++  if (targetm.calls.mark_arg_regnos)
++    targetm.calls.mark_arg_regnos (entry_block_defs);
++
+   /* The always important stack pointer.  */
+   bitmap_set_bit (entry_block_defs, STACK_POINTER_REGNUM);
+ 
+diff --git a/gcc/doc/tm.texi b/gcc/doc/tm.texi
+index 04537aa3200..92ab52fe43e 100644
+--- a/gcc/doc/tm.texi
++++ b/gcc/doc/tm.texi
+@@ -4517,6 +4517,11 @@ return a different value if an argument size must be rounded to a larger
+ value.
+ @end deftypefn
+ 
++@deftypefn {Target Hook} void TARGET_MARK_ARG_REGNOS (bitmap @var{regs})
++Useful for TARGET_NO_REGISTER_ALLOCATION targets, define this to mark all
++ the pseudos that hold the current function arguments.
++@end deftypefn
++
+ @defmac FUNCTION_ARG_REGNO_P (@var{regno})
+ A C expression that is nonzero if @var{regno} is the number of a hard
+ register in which function arguments are sometimes passed.  This does
+diff --git a/gcc/doc/tm.texi.in b/gcc/doc/tm.texi.in
+index e31d7440b75..9ce5a07dbef 100644
+--- a/gcc/doc/tm.texi.in
++++ b/gcc/doc/tm.texi.in
+@@ -3467,6 +3467,8 @@ required.
+ 
+ @hook TARGET_FUNCTION_ARG_ROUND_BOUNDARY
+ 
++@hook TARGET_MARK_ARG_REGNOS
++
+ @defmac FUNCTION_ARG_REGNO_P (@var{regno})
+ A C expression that is nonzero if @var{regno} is the number of a hard
+ register in which function arguments are sometimes passed.  This does
+diff --git a/gcc/expr.cc b/gcc/expr.cc
+index 1c68055d45f..0b8b8fa8bf7 100644
+--- a/gcc/expr.cc
++++ b/gcc/expr.cc
+@@ -3789,7 +3789,8 @@ use_regs (rtx *call_fusage, int regno, int nregs)
+ {
+   int i;
+ 
+-  gcc_assert (regno + nregs <= FIRST_PSEUDO_REGISTER);
++  gcc_assert (regno + nregs <= FIRST_PSEUDO_REGISTER
++	      || targetm.no_register_allocation);
+ 
+   for (i = 0; i < nregs; i++)
+     use_reg (call_fusage, regno_reg_rtx[regno + i]);
+diff --git a/gcc/function.cc b/gcc/function.cc
+index 84023070ad8..2c6dfe82358 100644
+--- a/gcc/function.cc
++++ b/gcc/function.cc
+@@ -3756,6 +3756,9 @@ assign_parms (tree fndecl)
+       targetm.calls.function_arg_advance (all.args_so_far, data.arg);
+     }
+ 
++  targetm.calls.function_incoming_arg (all.args_so_far,
++                                       function_arg_info::end_marker ());
++
+   if (targetm.calls.split_complex_arg)
+     assign_parms_unsplit_complex (&all, fnargs);
+ 
+diff --git a/gcc/target.def b/gcc/target.def
+index 0b7436b67a4..53189d38e7c 100644
+--- a/gcc/target.def
++++ b/gcc/target.def
+@@ -5401,6 +5401,13 @@ value.",
+  unsigned int, (machine_mode mode, const_tree type),
+  default_function_arg_round_boundary)
+ 
++DEFHOOK
++(mark_arg_regnos,
++ "Useful for TARGET_NO_REGISTER_ALLOCATION targets, define this to mark all\n\
++ the pseudos that hold the current function arguments.",
++ void, (bitmap regs),
++ NULL)
++
+ /* Return the diagnostic message string if function without a prototype
+    is not allowed for this 'val' argument; NULL otherwise. */
+ DEFHOOK
+diff --git a/libgcc/config.host b/libgcc/config.host
+index cb4c512ada3..13867e1ef6a 100644
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -1571,6 +1571,11 @@ nvptx-*)
+ 	tmake_file="$tmake_file nvptx/t-nvptx"
+ 	extra_parts="crt0.o"
+ 	;;
++wasm*-*-*)
++	tmake_file="$tmake_file wasm/t-wasm"
++	# unwind_header=config/no-unwind.h
++	# extra_parts="crt0.o"
++	;;
+ *)
+ 	echo "*** Configuration ${host} not supported" 1>&2
+ 	exit 1
+diff --git a/libgcc/config/wasm/t-wasm b/libgcc/config/wasm/t-wasm
+new file mode 100644
+index 00000000000..bd09d3c0dbf
+--- /dev/null
++++ b/libgcc/config/wasm/t-wasm
+@@ -0,0 +1,4 @@
++LIB2ADDEH=
++
++# Debug information is not yet supported
++LIBGCC2_DEBUG_CFLAGS = -g0
+\ No newline at end of file

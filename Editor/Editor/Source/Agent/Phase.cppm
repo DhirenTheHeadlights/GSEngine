@@ -10,6 +10,8 @@ namespace gse::ide::agent {
 	constexpr std::string_view workflow_doc_name = "AGENT_WORKFLOW.md";
 	constexpr std::string_view charter_dir_name = "agent";
 	constexpr std::string_view scratch_dir_name = "agent";
+	constexpr std::string_view sync_charter_name = "sync";
+	constexpr std::string_view sync_opening = "The owner pressed Sync in the source control panel. Read the repository's real state and carry the work out now, following your instructions.";
 
 	struct phase_step {
 		task_phase phase = task_phase::scope;
@@ -105,9 +107,13 @@ namespace gse::ide::agent {
 		const session& s
 	) -> std::filesystem::path;
 
+	auto gaps_path(
+		const session& s
+	) -> std::filesystem::path;
+
 	auto task_artifacts(
 		const session& s
-	) -> std::array<std::filesystem::path, 4>;
+	) -> std::array<std::filesystem::path, 5>;
 
 	constexpr std::string_view change_header = "> ";
 
@@ -130,6 +136,19 @@ namespace gse::ide::agent {
 	auto resume_target(
 		const session& s
 	) -> std::string;
+
+	auto phase_charter(
+		const session& s,
+		task_phase phase
+	) -> std::string;
+
+	auto sync_facts(
+		const sync_request& request
+	) -> std::string;
+
+	auto write_sync_prompt(
+		const session& s
+	) -> std::filesystem::path;
 
 	auto write_phase_prompt(
 		const session& s
@@ -204,4 +223,24 @@ namespace gse::ide::agent {
 	auto pause_goal(
 		session& s
 	) -> void;
+	auto accept_gap_reports(
+		data& d
+	) -> bool;
+
+	auto accept_questions(
+		data& d
+	) -> bool;
+
+	auto awaiting_answer(
+		const session& s
+	) -> bool;
+
+	auto answer_question(
+		session& s,
+		std::string_view note
+	) -> void;
+
+	auto service_questions(
+		data& d
+	) -> bool;
 }

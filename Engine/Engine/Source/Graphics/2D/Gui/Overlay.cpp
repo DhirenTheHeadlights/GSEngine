@@ -34,6 +34,7 @@ import :texture;
 import :types;
 import :ui_renderer;
 import :settings;
+import :widget_skin;
 
 auto gse::gui::apply_builtin_menu_action(viewport_state& vp, const std::uint32_t action_id) -> bool {
 	const context_menu_state& cm = vp.context_menu;
@@ -74,29 +75,32 @@ auto gse::gui::draw_drag_ghost(data& d, viewport_state& vp) -> void {
 		{ label_w + icon_w + sty.padding * 2.f, ghost_h }
 	);
 
+	const surface& ghost_surface = state.detaching ? sty.overlay.drag_ghost_detached : sty.overlay.drag_ghost;
+
 	if (state.detaching) {
+		const float edge = ghost_surface.stroke_width;
 		d.sprite_commands.push_back({
-			.rect = ghost.inset({ -1.f, -1.f }),
-			.color = sty.color_accent,
+			.rect = ghost.inset({ -edge, -edge }),
+			.color = ghost_surface.stroke,
 			.texture = d.blank_texture,
 			.layer = render_layer::overlay,
 			.z_order = 19,
-			.corner_radius = sty.corner_radius + 1.f,
+			.corner_radius = ghost_surface.radii + vec4f(edge),
 		});
 	}
 
 	d.sprite_commands.push_back({
 		.rect = ghost,
-		.color = state.detaching ? sty.color_menu_body : sty.color_tab_active,
+		.color = ghost_surface.fill,
 		.texture = d.blank_texture,
 		.layer = render_layer::overlay,
 		.z_order = 20,
-		.corner_radius = sty.corner_radius,
+		.corner_radius = ghost_surface.radii,
 	});
 
 	if (state.detaching) {
 		symbol::draw(d.sprite_commands, d.blank_texture, symbol::maximize(), rectf::from_position_size(ghost.top_left(), { icon_w, ghost_h }), {
-			.color = sty.color_accent,
+			.color = sty.overlay.glyph_color,
 			.extent = sty.icon_extent,
 			.layer = render_layer::overlay,
 			.z_order = 21,
@@ -109,7 +113,7 @@ auto gse::gui::draw_drag_ghost(data& d, viewport_state& vp) -> void {
 		.text = intern_text(d, state.label),
 		.position = { ghost.left() + icon_w + sty.padding, ghost.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
-		.color = sty.color_text,
+		.color = sty.overlay.text_color,
 		.clip_rect = ghost,
 		.layer = render_layer::overlay,
 		.z_order = 21,
@@ -166,17 +170,20 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 			{ tooltip_width, tooltip_height }
 		);
 
+		const surface& tooltip_surface = vp.fstate.sty.overlay.tooltip;
+		const float tooltip_edge = tooltip_surface.stroke_width;
+
 		d.sprite_commands.push_back({
 			.rect = tooltip_rect,
-			.color = vp.fstate.sty.color_menu_body,
+			.color = tooltip_surface.fill,
 			.texture = d.blank_texture,
 			.layer = render_layer::modal,
 			.z_order = 100
 		});
 
 		d.sprite_commands.push_back({
-			.rect = tooltip_rect.inset({ -1.f, -1.f }),
-			.color = vp.fstate.sty.color_border,
+			.rect = tooltip_rect.inset({ -tooltip_edge, -tooltip_edge }),
+			.color = tooltip_surface.stroke,
 			.texture = d.blank_texture,
 			.layer = render_layer::modal,
 			.z_order = 99
@@ -189,7 +196,7 @@ auto gse::gui::update_tooltip(data& d, viewport_state& vp) -> void {
 				.text = intern_text(d, std::string_view(line)),
 				.position = { tooltip_rect.left() + padding, line_center_y + text_view->vertical_center_offset(font_size) },
 				.scale = font_size,
-				.color = vp.fstate.sty.color_text,
+				.color = vp.fstate.sty.overlay.text_color,
 				.layer = render_layer::modal,
 				.z_order = 100
 			});
@@ -242,21 +249,23 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 
 	const rectf panel = rectf::from_position_size(pos, { width, total_h });
 
+	const float shadow_offset = sty.modal_shadow_offset;
+
 	d.sprite_commands.push_back({
-		.rect = rectf::from_position_size({ pos.x() + 4.f, pos.y() - 4.f }, { width, total_h }),
-		.color = sty.color_shadow,
+		.rect = rectf::from_position_size({ pos.x() + shadow_offset, pos.y() - shadow_offset }, { width, total_h }),
+		.color = sty.modal.shadow.fill,
 		.texture = d.blank_texture,
 		.layer = layer,
 		.z_order = base_z,
-		.corner_radius = sty.corner_radius_menu,
+		.corner_radius = sty.modal.shadow.radii,
 	});
 	d.sprite_commands.push_back({
 		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.0f },
+		.color = sty.modal.panel.fill,
 		.texture = d.blank_texture,
 		.layer = layer,
 		.z_order = base_z + 1,
-		.corner_radius = sty.corner_radius_menu,
+		.corner_radius = sty.modal.panel.radii,
 	});
 
 	float y = panel.top() - sty.padding * 0.5f;
@@ -279,8 +288,11 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 		const menu_item& it = cm.items[i];
 		if (it.separator_before) {
 			d.sprite_commands.push_back({
-				.rect = rectf::from_position_size({ panel.left() + sty.padding, y - sep_h * 0.5f }, { width - sty.padding * 2.f, 1.f }),
-				.color = sty.color_separator,
+				.rect = rectf::from_position_size(
+					{ panel.left() + sty.padding, y - sep_h * 0.5f },
+					{ width - sty.padding * 2.f, sty.separator_thickness }
+				),
+				.color = sty.context_menu.separator.fill,
 				.texture = d.blank_texture,
 				.layer = layer,
 				.z_order = base_z + 2,
@@ -293,25 +305,32 @@ auto gse::gui::process_context_menu(data& d, viewport_state& vp, const input::st
 		const id row_id = ids::make_from_key(hash_of(cm.tag.number(), target_key, "context_menu_row", i));
 		const bool activated = interaction::activate_on_click(vp.active_widget_id, row_id, hovered, hovered && left_pressed, left_released);
 
+		const context_menu_skin& item_style = sty.context_menu;
+		const interaction::press row_state{
+			.enabled = it.enabled,
+			.hovered = hovered,
+		};
+
 		if (hovered) {
+			const float inset = item_style.row_inset;
 			d.sprite_commands.push_back({
-				.rect = rectf::from_position_size({ panel.left() + 3.f, y }, { width - 6.f, row_h }),
-				.color = sty.color_widget_hovered,
+				.rect = rectf::from_position_size({ panel.left() + inset, y }, { width - inset * 2.f, row_h }),
+				.color = item_style.row_hover.fill,
 				.texture = d.blank_texture,
 				.layer = layer,
 				.z_order = base_z + 2,
-				.corner_radius = sty.corner_radius,
+				.corner_radius = item_style.row_hover.radii,
 			});
 		}
 
-		const vec4f text_color = !it.enabled
-			? sty.color_text_disabled
-			: (it.destructive ? vec4f{ 0.92f, 0.45f, 0.45f, 1.f } : sty.color_text);
+		const vec4f text_color = it.enabled && it.destructive
+			? item_style.destructive_color
+			: row_state.select(item_style.label_colors);
 		if (it.checkable) {
 			const float extent = checkbox_extent(sty);
 			draw_checkbox(d.sprite_commands, d.blank_texture, rectf::from_position_size({ row.left() + sty.padding, row.center().y() + extent * 0.5f }, { extent, extent }), it.checked, {
-				.color_frame = it.enabled ? (hovered ? sty.color_handle_hovered : sty.color_border) : sty.color_text_disabled,
-				.color_mark = it.enabled ? sty.color_accent : sty.color_text_disabled,
+				.color_frame = row_state.select(sty.checkbox.frame),
+				.color_mark = row_state.select(sty.checkbox.mark),
 				.extent = extent,
 				.layer = layer,
 				.z_order = base_z + 3,

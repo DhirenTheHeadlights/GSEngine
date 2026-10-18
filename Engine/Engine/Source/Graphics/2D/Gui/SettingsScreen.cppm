@@ -18,11 +18,14 @@ import :interaction;
 import :layout_ops;
 import :menu_stack;
 import :nav_item_widget;
+import :button_widget;
 import :render_layer;
 import :settings;
 import :styles;
+import :surface_paint;
 import :symbols;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct settings_screen_config {
@@ -116,7 +119,6 @@ export namespace gse::gui {
 		std::vector<std::string> m_categories;
 		footer_status_cache m_footer_status;
 
-		static constexpr float backdrop_alpha = 0.55f;
 		static constexpr float scope_line_scale = 1.15f;
 	};
 }
@@ -141,41 +143,26 @@ auto gse::gui::settings_screen::draw_backdrop(draw_context& ctx, const vec2f vie
 
 	ctx.sprites.push_back({
 		.rect = full,
-		.color = { 0.f, 0.f, 0.f, backdrop_alpha },
+		.color = ctx.style.modal.scrim.fill,
 		.texture = ctx.blank_texture,
 		.layer = render_layer::popup,
 	});
 
-	const rect_t<vec2f> card = body_rect(ctx.style, viewport_size);
-
-	const vec4f card_color = m_opaque
-		? vec4f{ vec3f(ctx.style.color_menu_body), 1.0f }
-		: ctx.style.color_menu_body;
-	ctx.sprites.push_back({
-		.rect = card,
-		.color = card_color,
-		.texture = ctx.blank_texture,
+	const surface& card_surface = m_opaque ? ctx.style.modal.panel : ctx.style.menu.floating;
+	draw::fill_surface(ctx, body_rect(ctx.style, viewport_size), card_surface, {
 		.layer = render_layer::popup,
-		.corner_radius = ctx.style.corner_radius_menu,
 	});
 }
 
 auto gse::gui::settings_screen::draw_close_button(draw_context& ctx, const rect_t<vec2f>& rect, nav& n) const -> void {
 	const auto& sty = ctx.style;
 	const id close_id = ids::make("settings.close");
-	const bool hovered = ctx.hovers(rect);
-	const vec4f bg = hovered ? sty.color_widget_hovered : vec4f{ 0.f, 0.f, 0.f, 0.f };
 
-	ctx.queue_sprite({
+	draw_icon_button(ctx, sty.window_caption, {
 		.rect = rect,
-		.color = ctx.animated_color(close_id, bg),
-		.texture = ctx.blank_texture,
-		.corner_radius = rect.width() * 0.5f,
-	});
-
-	symbol::draw(ctx, symbol::close(), rect, {
-		.color = hovered ? sty.color_icon_hovered : sty.color_icon,
-		.extent = sty.icon_extent,
+		.glyph = symbol::close(),
+		.state = { .hovered = ctx.hovers(rect) },
+		.anim = close_id,
 	});
 
 	if (ctx.clicked_in_rect(rect)) {
@@ -187,13 +174,8 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const rect_t<vec2
 	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
-	const float title_size = sty.font_size * 1.6f;
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = m_title,
-		.position = { rect.left() + sty.padding * 1.5f, rect.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(title_size) },
-		.scale = title_size,
-		.color = sty.color_text,
+	draw::label(ctx, rect.inset({ sty.padding * 1.5f, 0.f }), m_title, sty.screen.title, {
+		.color = sty.screen.title_color,
 		.clip_rect = rect,
 	});
 
@@ -211,11 +193,7 @@ auto gse::gui::settings_screen::draw_header(draw_context& ctx, const rect_t<vec2
 		{ rect.left() + sty.padding, rect.bottom() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
-	ctx.queue_sprite({
-		.rect = separator,
-		.color = sty.color_separator,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, separator, sty.separator_line, {});
 }
 
 auto gse::gui::settings_screen::refresh_categories() -> void {
@@ -273,11 +251,7 @@ auto gse::gui::settings_screen::build(builder& ui, nav& n) -> void {
 		{ body.left() + sty.sidebar_width, body.top() - sty.padding },
 		{ sty.separator_thickness, body.height() - sty.padding * 2.f }
 	);
-	ctx.queue_sprite({
-		.rect = vertical_sep,
-		.color = sty.color_separator,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, vertical_sep, sty.separator_line, {});
 
 	const auto [category_band, scope_band] = lo::split_vertical<2>(
 		sidebar,
@@ -327,13 +301,12 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 	const id entry_id = ids::make(label);
 	const bool hovered = ctx.hovers(rect);
 
-	vec4f background = sty.color_widget_hovered;
-	background.w() *= hovered ? 0.55f : 0.f;
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = ctx.animated_color(entry_id, background),
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius,
+	const interaction::press entry_state{
+		.hovered = hovered,
+	};
+
+	draw::fill_surface(ctx, rect, entry_state.select(sty.nav_item.surfaces), {
+		.anim = entry_id,
 	});
 
 	const auto [icon_column, text_column] = lo::split_horizontal<2>(
@@ -354,7 +327,6 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 		}
 	);
 
-	const float line_size = sty.font_size * 0.85f;
 	const auto [name_row, dir_row] = lo::split_vertical<2>(
 		text_column,
 		{
@@ -363,16 +335,18 @@ auto gse::gui::settings_screen::draw_scope_entry(draw_context& ctx, const rect_t
 		}
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = std::format("{}  {}", label, path.filename().generic_display_string()),
-		.position = { name_row.left(), name_row.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(line_size) },
-		.scale = line_size,
-		.color = hovered ? sty.color_text : sty.color_text_secondary,
-		.clip_rect = name_row,
-	});
+	draw::label(
+		ctx,
+		name_row,
+		ctx.intern(std::format("{}  {}", label, path.filename().generic_display_string())),
+		sty.screen.entry_name,
+		{
+			.color = hovered ? sty.color_text : sty.color_text_secondary,
+			.clip_rect = name_row,
+		}
+	);
 
-	const float dir_size = line_size * 0.9f;
+	const float dir_size = sty.font_size * sty.screen.entry_path.size_mult;
 	const std::string dir_text = path.parent_path().generic_display_string();
 	const vec4f link_color = hovered ? sty.color_accent : sty.color_text_disabled;
 	const auto code_view = ctx.fonts.code.resolve();
@@ -439,11 +413,7 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const rect_t
 		{ block.left(), rect.top() },
 		{ block.width(), sty.separator_thickness }
 	);
-	ctx.queue_sprite({
-		.rect = separator,
-		.color = sty.color_separator,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, separator, sty.separator_line, {});
 
 	rect_t<vec2f> cursor = rect_t<vec2f>::from_position_size(
 		{ block.left(), block.top() },
@@ -474,40 +444,13 @@ auto gse::gui::settings_screen::draw_scope_paths(draw_context& ctx, const rect_t
 }
 
 auto gse::gui::settings_screen::draw_footer_button(builder& ui, const rect_t<vec2f>& rect, const std::string_view label, const bool enabled, const bool primary, const id key) -> bool {
-	draw_context& ctx = ui.ctx;
-	const auto& sty = ctx.style;
-	const auto btn = interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, key, rect, enabled);
-
-	vec4f disabled_color = sty.color_button_background;
-	disabled_color.w() = disabled_color.w() * 0.4f;
-
-	const vec4f target_color = btn.color({
-		.idle = primary ? sty.color_widget_active : sty.color_button_background,
-		.hot = primary ? sty.color_accent : sty.color_button_hovered,
-		.active = primary ? sty.color_accent : sty.color_button_hovered,
-		.disabled = disabled_color,
-	});
-
-	ctx.queue_sprite({
+	return draw::button_in_rect(ui.ctx, {
 		.rect = rect,
-		.color = ctx.animated_color(key, target_color),
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius,
-	});
-
-	const auto text_view = ctx.fonts.text.resolve();
-	const float text_width = text_view->width(label, sty.font_size);
-	const vec4f text_color = enabled ? sty.color_text : sty.color_text_disabled;
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = label,
-		.position = { rect.center().x() - text_width / 2.f, rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
-		.scale = sty.font_size,
-		.color = text_color,
-		.clip_rect = rect,
-	});
-
-	return btn.activated;
+		.label = label,
+		.widget_id = key,
+		.role = primary ? button_role::accent : button_role::standard,
+		.enabled = enabled,
+	}, ui.hot_widget_id, ui.active_widget_id);
 }
 
 auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& rect) -> void {
@@ -519,11 +462,7 @@ auto gse::gui::settings_screen::draw_footer(builder& ui, const rect_t<vec2f>& re
 		{ rect.left() + sty.padding, rect.top() },
 		{ rect.width() - sty.padding * 2.f, sty.separator_thickness }
 	);
-	ctx.queue_sprite({
-		.rect = separator,
-		.color = sty.color_separator,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, separator, sty.separator_line, {});
 
 	const std::size_t pending = m_panel_state.pending_count();
 	const std::size_t pending_restart = m_panel_state.pending_restart_count();

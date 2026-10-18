@@ -3,6 +3,7 @@ module;
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <directx/d3d12.h>
+#include <directx/d3d12video.h>
 #include <dxgi1_6.h>
 #include <directx/d3dx12_pipeline_state_stream.h>
 
@@ -28,6 +29,7 @@ __CRT_UUID_DECL(ID3D12Device10, 0x517f8718, 0xaa66, 0x49f9, 0xb0, 0x2b, 0xa7, 0x
 __CRT_UUID_DECL(ID3D12QueryHeap, 0x0d9658ae, 0xed45, 0x469e, 0xa6, 0x1d, 0x97, 0x0e, 0xc5, 0x83, 0xca, 0xb4)
 __CRT_UUID_DECL(ID3D12DeviceRemovedExtendedDataSettings, 0x82bc481c, 0x6b9b, 0x4030, 0xae, 0xdb, 0x7e, 0xe3, 0xd1, 0xdf, 0x1e, 0x63)
 __CRT_UUID_DECL(ID3D12DeviceRemovedExtendedData, 0x98931d33, 0x5ae8, 0x4791, 0xaa, 0x3c, 0x1a, 0x73, 0xa2, 0x93, 0x4e, 0x71)
+__CRT_UUID_DECL(ID3D12VideoDevice, 0x1f052807, 0x0b46, 0x4acc, 0x8a, 0x89, 0x36, 0x4f, 0x79, 0x37, 0x18, 0xa4)
 
 export module gse.directx;
 
@@ -726,6 +728,29 @@ export namespace gse::directx {
 		IDXGIFactory4* factory,
 		ID3D12Device* device
 	) -> std::uint32_t;
+
+	struct video_codec_support {
+		bool encode = false;
+		std::uint32_t max_encode_width = 0;
+		std::uint32_t max_encode_height = 0;
+		bool encode_cqp = false;
+		bool encode_cbr = false;
+		bool encode_vbr = false;
+		bool decode = false;
+		std::uint32_t max_decode_width = 0;
+		std::uint32_t max_decode_height = 0;
+		std::uint32_t decode_tier = 0;
+	};
+
+	struct video_support {
+		bool video_device = false;
+		video_codec_support av1;
+		video_codec_support h265;
+	};
+
+	[[nodiscard]] auto query_video_support(
+		ID3D12Device* device
+	) -> video_support;
 
 	[[nodiscard]] auto create_timestamp_query_heap(
 		ID3D12Device* device,
@@ -2237,6 +2262,109 @@ auto gse::directx::adapter_vendor_id(IDXGIFactory4* factory, ID3D12Device* devic
 		}
 	}
 	return 0;
+}
+
+auto gse::directx::query_video_support(ID3D12Device* device) -> video_support {
+	video_support out;
+	if (!device) {
+		return out;
+	}
+
+	com_ptr<ID3D12VideoDevice> video;
+	if (FAILED(device->QueryInterface(IID_PPV_ARGS(video.put())))) {
+		return out;
+	}
+	out.video_device = true;
+
+	const auto decode_supported_at = [&video](const GUID& profile, const UINT width, const UINT height, std::uint32_t& out_tier) {
+		D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT support = {
+			.NodeIndex = 0,
+			.Configuration = {
+				.DecodeProfile = profile,
+				.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE,
+				.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE,
+			},
+			.Width = width,
+			.Height = height,
+			.DecodeFormat = DXGI_FORMAT_NV12,
+			.FrameRate = { .Numerator = 60, .Denominator = 1 },
+			.BitRate = 0,
+		};
+		if (FAILED(video->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT, &support, sizeof(support)))) {
+			return false;
+		}
+		if ((support.SupportFlags & D3D12_VIDEO_DECODE_SUPPORT_FLAG_SUPPORTED) == 0) {
+			return false;
+		}
+		out_tier = static_cast<std::uint32_t>(support.DecodeTier);
+		return true;
+	};
+
+	const auto encode_rate_control_supported = [&video](const D3D12_VIDEO_ENCODER_CODEC codec, const D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE mode) {
+		D3D12_FEATURE_DATA_VIDEO_ENCODER_RATE_CONTROL_MODE support = {
+			.NodeIndex = 0,
+			.Codec = codec,
+			.RateControlMode = mode,
+			.IsSupported = FALSE,
+		};
+		if (FAILED(video->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_RATE_CONTROL_MODE, &support, sizeof(support)))) {
+			return false;
+		}
+		return support.IsSupported != FALSE;
+	};
+
+	struct candidate_extent {
+		UINT width;
+		UINT height;
+	};
+
+	const auto fill = [&](const GUID& decode_profile, const D3D12_VIDEO_ENCODER_CODEC codec, video_codec_support& slot) {
+		const candidate_extent candidates[] = { { 1920, 1080 }, { 3840, 2160 } };
+		for (const candidate_extent& candidate : candidates) {
+			std::uint32_t tier = 0;
+			if (!decode_supported_at(decode_profile, candidate.width, candidate.height, tier)) {
+				continue;
+			}
+			slot.decode = true;
+			slot.max_decode_width = candidate.width;
+			slot.max_decode_height = candidate.height;
+			slot.decode_tier = tier;
+		}
+
+		D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC codec_support = {
+			.NodeIndex = 0,
+			.Codec = codec,
+			.IsSupported = FALSE,
+		};
+		if (FAILED(video->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC, &codec_support, sizeof(codec_support))) || codec_support.IsSupported == FALSE) {
+			return;
+		}
+		slot.encode = true;
+
+		D3D12_FEATURE_DATA_VIDEO_ENCODER_OUTPUT_RESOLUTION resolution = {
+			.NodeIndex = 0,
+			.Codec = codec,
+			.ResolutionRatiosCount = 0,
+			.IsSupported = FALSE,
+			.pResolutionRatios = nullptr,
+		};
+		if (SUCCEEDED(video->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_OUTPUT_RESOLUTION, &resolution, sizeof(resolution))) && resolution.IsSupported != FALSE) {
+			slot.max_encode_width = resolution.MaxResolutionSupported.Width;
+			slot.max_encode_height = resolution.MaxResolutionSupported.Height;
+		}
+
+		slot.encode_cqp = encode_rate_control_supported(codec, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP);
+		slot.encode_cbr = encode_rate_control_supported(codec, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CBR);
+		slot.encode_vbr = encode_rate_control_supported(codec, D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_VBR);
+	};
+
+	constexpr GUID decode_profile_av1_profile0 = { 0xb8be4ccb, 0xcf53, 0x46ba, { 0x8d, 0x59, 0xd6, 0xb8, 0xa6, 0xda, 0x5d, 0x2a } };
+	constexpr GUID decode_profile_hevc_main = { 0x5b11d51b, 0x2f4c, 0x4452, { 0xbc, 0xc3, 0x09, 0xf2, 0xa1, 0x16, 0x0c, 0xc0 } };
+
+	fill(decode_profile_av1_profile0, D3D12_VIDEO_ENCODER_CODEC_AV1, out.av1);
+	fill(decode_profile_hevc_main, D3D12_VIDEO_ENCODER_CODEC_HEVC, out.h265);
+
+	return out;
 }
 
 auto gse::directx::create_gpu_upload_buffer(ID3D12Device* device, const std::uint64_t size) -> com_ptr<ID3D12Resource> {

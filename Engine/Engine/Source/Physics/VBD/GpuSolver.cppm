@@ -131,16 +131,19 @@ export namespace gse::vbd {
 
 	class gpu_solver {
 	public:
-		auto create_buffers(
-			shared_view<gpu::context::data> ctx
-		) -> void;
-
 		auto initialize_compute(
 			context& ctx,
 			shared_view<gpu::context::data> gpu_s,
-			const vbd_capacities& capacities,
 			const readback_options& readback = {}
 		) -> async::task<>;
+
+		auto measure_scene(
+			const solver_upload& payload
+		) -> void;
+
+		auto ensure_capacity(
+			shared_view<gpu::context::data> gpu_s
+		) -> void;
 
 		auto capacities() const -> const vbd_capacities&;
 
@@ -257,6 +260,14 @@ export namespace gse::vbd {
 		static constexpr std::uint32_t max_seed_contacts = 16384;
 
 		using pass_channel = channel_write<gpu::render_pass_request>;
+
+		auto build_compute(
+			shared_view<gpu::context::data> gpu_s
+		) -> void;
+
+		auto create_buffers(
+			shared_view<gpu::context::data> ctx
+		) -> void;
 
 		auto stage_ring_copy(
 			per_frame_data& f,
@@ -616,6 +627,7 @@ export namespace gse::vbd {
 		bool m_joint_snapshot = false;
 		bool m_contact_snapshot = false;
 		vbd_capacities m_capacities{};
+		vbd_scene_counts m_scene_counts{};
 		std::uint64_t m_recorded_frame = 0;
 
 		gpu::upload_channel m_body_input_channel;
@@ -736,6 +748,5 @@ export namespace gse::vbd {
 		std::uint32_t m_ring_history = 0;
 		std::uint64_t m_first_tick = 0;
 		std::optional<std::uint64_t> m_restore_tick;
-		bool m_ring_overflow_reported = false;
 	};
 }

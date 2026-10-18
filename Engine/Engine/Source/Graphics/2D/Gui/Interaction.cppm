@@ -6,6 +6,7 @@ import gse.core;
 import gse.time;
 import gse.math;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui::interaction {
 	struct click_state {
@@ -14,23 +15,24 @@ export namespace gse::gui::interaction {
 		int count = 0;
 	};
 
-	struct press_palette {
-		vec4f idle;
-		vec4f hot;
-		vec4f active;
-		vec4f disabled;
-	};
-
 	struct press {
 		id widget;
 		bool enabled = true;
 		bool hovered = false;
 		bool held = false;
 		bool activated = false;
+		bool selected = false;
 
-		[[nodiscard]] auto color(
-			const press_palette& colors
-		) const -> vec4f;
+		template <typename T>
+		[[nodiscard]] auto select(
+			const state_set<T>& states
+		) const -> T;
+	};
+
+	struct press_info {
+		rectf rect;
+		bool enabled = true;
+		bool selected = false;
 	};
 
 	auto register_click(
@@ -43,8 +45,7 @@ export namespace gse::gui::interaction {
 		id& hot,
 		id& active,
 		id widget,
-		const rectf& rect,
-		bool enabled = true
+		const press_info& info
 	) -> press;
 
 	struct dismiss_info {
@@ -92,14 +93,19 @@ namespace gse::gui::interaction {
 		bool released
 	) -> bool;
 
+	struct press_signals {
+		bool hovered = false;
+		bool pressed_on_widget = false;
+		bool released = false;
+		bool enabled = true;
+		bool selected = false;
+	};
+
 	auto press_from(
 		id& hot,
 		id& active,
 		id widget,
-		bool hovered,
-		bool pressed_on_widget,
-		bool released,
-		bool enabled
+		const press_signals& signals
 	) -> press;
 }
 
@@ -115,17 +121,21 @@ auto gse::gui::interaction::register_click(click_state& state, const vec2f pos) 
 	return state.count;
 }
 
-auto gse::gui::interaction::press::color(const press_palette& colors) const -> vec4f {
+template <typename T>
+auto gse::gui::interaction::press::select(const state_set<T>& states) const -> T {
 	if (!enabled) {
-		return colors.disabled;
+		return states.disabled;
+	}
+	if (selected) {
+		return states.selected;
 	}
 	if (held) {
-		return colors.active;
+		return states.active;
 	}
 	if (hovered) {
-		return colors.hot;
+		return states.hot;
 	}
-	return colors.idle;
+	return states.idle;
 }
 
 auto gse::gui::interaction::mark_hot(id& hot, const id widget, const bool hovered) -> void {
@@ -166,21 +176,28 @@ auto gse::gui::interaction::activate_on_click(id& active, const id widget, const
 	return release_active(active, widget, released) && hovered;
 }
 
-auto gse::gui::interaction::press_from(id& hot, id& active, const id widget, const bool hovered, const bool pressed_on_widget, const bool released, const bool enabled) -> press {
-	const bool live = enabled && hovered;
+auto gse::gui::interaction::press_from(id& hot, id& active, const id widget, const press_signals& signals) -> press {
+	const bool live = signals.enabled && signals.hovered;
 	mark_hot(hot, widget, live);
-	const bool activated = activate_on_click(active, widget, live, enabled && pressed_on_widget, released);
+	const bool activated = activate_on_click(active, widget, live, signals.enabled && signals.pressed_on_widget, signals.released);
 	return {
 		.widget = widget,
-		.enabled = enabled,
+		.enabled = signals.enabled,
 		.hovered = live,
-		.held = enabled && active == widget,
+		.held = signals.enabled && active == widget,
 		.activated = activated,
+		.selected = signals.selected,
 	};
 }
 
-auto gse::gui::interaction::press_in_rect(const draw_context& ctx, id& hot, id& active, const id widget, const rectf& rect, const bool enabled) -> press {
-	return press_from(hot, active, widget, ctx.hovers(rect), ctx.mouse_pressed_for(rect), ctx.mouse_released(), enabled);
+auto gse::gui::interaction::press_in_rect(const draw_context& ctx, id& hot, id& active, const id widget, const press_info& info) -> press {
+	return press_from(hot, active, widget, {
+		.hovered = ctx.hovers(info.rect),
+		.pressed_on_widget = ctx.mouse_pressed_for(info.rect),
+		.released = ctx.mouse_released(),
+		.enabled = info.enabled,
+		.selected = info.selected,
+	});
 }
 
 auto gse::gui::interaction::dismissed_by_outside_press(const draw_context& ctx, const dismiss_info& info) -> bool {

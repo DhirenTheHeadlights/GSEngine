@@ -20,6 +20,54 @@ namespace {
 	std::atomic<bool> dred_enabled{ false };
 }
 
+namespace gse::dx12 {
+	auto log_codec_support(
+		std::string_view codec,
+		const directx::video_codec_support& support
+	) -> void;
+
+	auto log_video_support(
+		const directx::video_support& support
+	) -> void;
+}
+
+auto gse::dx12::log_codec_support(const std::string_view codec, const directx::video_codec_support& support) -> void {
+	if (!support.encode && !support.decode) {
+		log::println(log::category::dx12, "video {}: neither encode nor decode supported", codec);
+		return;
+	}
+
+	std::string encode_detail = "unsupported";
+	if (support.encode) {
+		std::string modes;
+		for (const auto [supported, name] : { std::pair{ support.encode_cqp, "cqp" }, std::pair{ support.encode_cbr, "cbr" }, std::pair{ support.encode_vbr, "vbr" } }) {
+			if (!supported) {
+				continue;
+			}
+			if (!modes.empty()) {
+				modes += '|';
+			}
+			modes += name;
+		}
+		encode_detail = std::format("max {}x{}, rate control {}", support.max_encode_width, support.max_encode_height, modes.empty() ? "none" : modes);
+	}
+
+	const std::string decode_detail = support.decode
+		? std::format("max {}x{}, tier {}", support.max_decode_width, support.max_decode_height, support.decode_tier)
+		: std::string("unsupported");
+
+	log::println(log::category::dx12, "video {}: encode {} | decode {}", codec, encode_detail, decode_detail);
+}
+
+auto gse::dx12::log_video_support(const directx::video_support& support) -> void {
+	if (!support.video_device) {
+		log::println(log::category::dx12, "video: ID3D12VideoDevice unavailable, no hardware encode or decode");
+		return;
+	}
+	log_codec_support("av1", support.av1);
+	log_codec_support("h265", support.h265);
+}
+
 auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const graphics_pass_state& pass, directx::ID3D12RootSignature* root_signature) -> directx::graphics_pipeline_desc {
 	const auto& s = tmpl.state;
 
@@ -201,6 +249,9 @@ gse::dx12::device::device(const std::optional<shared_view<window::data>> win,con
 auto gse::dx12::device::init_bindless() -> void {
 	m_gpu_upload_supported = directx::gpu_upload_heap_supported(m_device.get());
 	log::println(log::category::dx12, "gpu_upload_supported={} mesh_shader_tier={} adapter_vendor=0x{:04x}", m_gpu_upload_supported, directx::mesh_shader_tier(m_device.get()), directx::adapter_vendor_id(m_factory.get(), m_device.get()));
+
+	m_video_support = directx::query_video_support(m_device.get());
+	log_video_support(m_video_support);
 
 	constexpr std::uint32_t texture_capacity = 1024;
 	constexpr std::uint32_t image_capacity = 65536;
@@ -416,6 +467,10 @@ auto gse::dx12::device::timestamp_period() const -> float {
 		return 1.0f;
 	}
 	return static_cast<float>(1.0e9 / static_cast<double>(frequency));
+}
+
+auto gse::dx12::device::video_support() const -> const directx::video_support& {
+	return m_video_support;
 }
 
 auto gse::dx12::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {

@@ -79,6 +79,13 @@ export namespace sandbox::crosshair {
 		float outline_opacity = 1.f;
 	};
 
+	template <typename Crosshair>
+	auto draw(
+		const gse::gui::draw_context& ctx,
+		const gse::rect_t<gse::vec2f>& rect,
+		const Crosshair& crosshair
+	) -> void;
+
 	auto draw_preview(
 		const gse::gui::draw_context& ctx,
 		const gse::rect_t<gse::vec2f>& rect,
@@ -119,48 +126,15 @@ auto sandbox::crosshair::draw_settings(gse::gui::builder& b, gse::settings::pane
 }
 
 auto sandbox::crosshair::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {
-	const auto& sty = ctx.style;
-	const float border = sty.separator_thickness;
-	const gse::vec4f border_color = sty.color_border;
+	gse::gui::draw::fill_surface(ctx, rect, ctx.style.screen.preview, {});
+	draw(ctx, rect, crosshair);
+}
 
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = { 0.06f, 0.06f, 0.09f, 1.f },
-		.texture = ctx.blank_texture,
-	});
-
-	ctx.queue_sprite({
-		.rect = gse::rect_t<gse::vec2f>::from_position_size(
-			rect.top_left(),
-			{ rect.width(), border }
-		),
-		.color = border_color,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = gse::rect_t<gse::vec2f>::from_position_size(
-			{ rect.left(), rect.bottom() + border },
-			{ rect.width(), border }
-		),
-		.color = border_color,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = gse::rect_t<gse::vec2f>::from_position_size(
-			rect.top_left(),
-			{ border, rect.height() }
-		),
-		.color = border_color,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = gse::rect_t<gse::vec2f>::from_position_size(
-			{ rect.right() - border, rect.top() },
-			{ border, rect.height() }
-		),
-		.color = border_color,
-		.texture = ctx.blank_texture,
-	});
+template <typename Crosshair>
+auto sandbox::crosshair::draw(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const Crosshair& crosshair) -> void {
+	if (!ctx.blank_texture.valid()) {
+		return;
+	}
 
 	const gse::vec2f center = rect.center();
 	const gse::vec4f color = { crosshair.color_r, crosshair.color_g, crosshair.color_b, crosshair.opacity };

@@ -502,6 +502,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 	}
 
 	const bool shadows_active = d.enabled
+		&& cam_state.world_visible
 		&& d.shadow_strength > 0.f
 		&& d.shadow_map.valid()
 		&& d.shadow_ubo_buffer.valid()
@@ -521,7 +522,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
-	if (!d.enabled) {
+	if (!d.enabled || !cam_state.world_visible) {
 		co_return;
 	}
 

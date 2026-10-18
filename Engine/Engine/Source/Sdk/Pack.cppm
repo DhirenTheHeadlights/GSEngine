@@ -104,6 +104,9 @@ auto gse::sdk::read_bytes(const std::filesystem::path& path) -> std::expected<st
 		return std::unexpected(std::format("could not open {}", path.generic_display_string()));
 	}
 	const std::streamoff size = in.tellg();
+	if (!std::in_range<std::size_t>(size)) {
+		return std::unexpected(std::format("{} is {} bytes, which does not fit this build's address space", path.generic_display_string(), size));
+	}
 	std::vector<char> bytes(static_cast<std::size_t>(size));
 	in.seekg(0);
 	in.read(bytes.data(), size);
@@ -233,6 +236,9 @@ auto gse::sdk::digest_of(const std::filesystem::path& file) -> std::expected<std
 }
 
 auto gse::sdk::extract_entry(std::ifstream& payload, const pack_entry& entry, const std::filesystem::path& destination) -> std::expected<void, std::string> {
+	if (!std::in_range<std::size_t>(entry.compressed) || !std::in_range<std::size_t>(entry.size)) {
+		return std::unexpected(std::format("{}: {} bytes compressed and {} uncompressed, which does not fit this build's address space", entry.path, entry.compressed, entry.size));
+	}
 	std::vector<char> packed(static_cast<std::size_t>(entry.compressed));
 	payload.seekg(static_cast<std::streamoff>(entry.offset));
 	payload.read(packed.data(), static_cast<std::streamsize>(packed.size()));

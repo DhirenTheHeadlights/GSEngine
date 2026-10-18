@@ -79,6 +79,46 @@ export namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	[[= gse::scenario::info{ .name = "scene_reset", .scene = "Pyramid", .headless = true, .gpu_solver = true, .warmup_frames = 0, .frames = 240, .settings = { "Dev Spawn.pyramid.base_count=12", "Dev Spawn.strike.row_begin=4", "Dev Spawn.strike.rows=3" } }]]
+	auto scene_reset(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "scene_reset_cpu", .scene = "Pyramid", .headless = true, .warmup_frames = 0, .frames = 240, .settings = { "Dev Spawn.pyramid.base_count=12", "Dev Spawn.strike.row_begin=4", "Dev Spawn.strike.rows=3" } }]]
+	auto scene_reset_cpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "carousel_bench", .scene = "Carousel", .headless = true, .warmup_frames = 0, .frames = 300 }]]
+	auto carousel_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "machines_bench", .scene = "Machines", .headless = true, .warmup_frames = 0, .frames = 400 }]]
+	auto machines_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "dominoes_bench", .scene = "Dominoes", .headless = true, .warmup_frames = 0, .frames = 300 }]]
+	auto dominoes_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "swings_bench", .scene = "Swings", .headless = true, .warmup_frames = 0, .frames = 400 }]]
+	auto swings_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "carousel_showcase", .scene = "Carousel", .gpu_solver = true, .video_encode = true, .warmup_frames = 0, .frames = 1020, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Clouds.cloud_coverage=0.40", "Grid.show_labels=false", "Grid.fade_distance=400 m" } }]]
+	auto carousel_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{ .name = "dominoes_showcase", .scene = "Dominoes", .video_encode = true, .warmup_frames = 0, .frames = 520, .settings = { "Window.present_mode=immediate", "Graphics.enabled=false", "Grid.show_labels=false", "Grid.fade_distance=400 m" } }]]
+	auto dominoes_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	[[= gse::scenario::info{ .name = "locomotion", .scene = "Sandbox", .headless = true, .settings = { "Dev Spawn.characters.count=8" } }]]
 	auto locomotion(
 		gse::scenario::context& ctx

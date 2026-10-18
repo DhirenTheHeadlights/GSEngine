@@ -8,6 +8,9 @@ import gse.meta;
 import :builder;
 import :types;
 import :font;
+import :styles;
+import :surface_paint;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct screen;
@@ -202,15 +205,8 @@ auto gse::gui::screen::draw_caption(builder& b, const rectf& area) -> float {
 		return 0.f;
 	}
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = label,
-		.position = {
-			area.left() + ctx.style.padding,
-			area.center().y() + ctx.fonts.text.resolve()->vertical_center_offset(ctx.style.font_size)
-		},
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text_secondary,
+	draw::label(ctx, area.inset({ ctx.style.padding, 0.f }), label, ctx.style.screen.caption, {
+		.color = ctx.style.screen.caption_color,
 		.clip_rect = area,
 	});
 
@@ -225,18 +221,7 @@ auto gse::gui::screen::body_rect(const style& sty, const vec2f viewport_size) co
 }
 
 auto gse::gui::screen::draw_backdrop(draw_context& ctx, const vec2f viewport_size) const -> void {
-	const rectf rect = body_rect(ctx.style, viewport_size);
-	const vec4f color = {
-		ctx.style.color_menu_body.x(),
-		ctx.style.color_menu_body.y(),
-		ctx.style.color_menu_body.z(),
-		1.0f,
-	};
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = color,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, body_rect(ctx.style, viewport_size), ctx.style.screen.backdrop, {});
 }
 
 template <typename T, typename... Args>

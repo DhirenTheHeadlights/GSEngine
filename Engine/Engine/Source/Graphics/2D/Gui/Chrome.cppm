@@ -70,7 +70,8 @@ namespace gse::gui {
 		viewport_state& vp,
 		const input::state& input_state,
 		menu& current_menu,
-		render_layer layer
+		render_layer layer,
+		bool translucent
 	) -> void;
 
 	auto draw_tab_bar(
@@ -79,7 +80,8 @@ namespace gse::gui {
 		const input::state& input_state,
 		menu& current_menu,
 		const rectf& title_bar_rect,
-		render_layer layer
+		render_layer layer,
+		bool translucent
 	) -> void;
 }
 
@@ -104,7 +106,7 @@ export namespace gse::gui {
 		const rectf& rect,
 		const std::string& key,
 		std::span<const symbol::stroke> glyph,
-		vec4f hover_color,
+		const icon_button_skin& skin,
 		bool enabled = true
 	) -> bool;
 }

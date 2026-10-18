@@ -40,6 +40,16 @@ Other chats are working in this tree and in sibling worktrees, and the presence 
 
 Before editing a file, consider whether someone else is in it. When your change and theirs overlap, say so and ask rather than racing. `build_hold::tree_busy` is information, not a failure: a busy tree is a wait.
 
+## Asking The Owner
+
+Some decisions are not yours. When two readings of the task lead to materially different work, when the design is genuinely open, or when you are about to guess at something the owner knows, ask with `gse_ask` — available in every phase, including the ones that withhold editing.
+
+It is a prompt, not a message: name the concrete options you are choosing between, at least two, with the one you recommend first and said to be the recommendation. The owner answers by picking — `multi: true` when several can hold together — and there is always a box beside the options for steering you somewhere else entirely. Their pick, and whatever they typed with it, arrives as your next message.
+
+It returns immediately, and then **end your turn**, exactly as with `gse_hibernate`. The answer may be an hour away and nothing is lost by waiting for it; nothing is gained by polling, and a question written into your reply text is not a question anyone is waiting on.
+
+Do not use it for what reading the code would settle, to ask for phase approval (`gse_phase_done` reports that, and the owner approves through the editor), or to argue for a capability a phase withheld (that is `gse_report_gap` with `kind: "capability"`). One question at a time: a second is refused while the first is still in front of them. If no editor owns this chat the tool says so — then the decision is yours to make, and to state in your summary.
+
 ## The Review Contract
 
 Plan and review every change against `docs/CODE_REVIEW_GUIDE.md` and `docs/STYLEGUIDE.md`. Read them before designing, not after implementing — the guide decides what the design has to be, so consulting it at the end only finds what has to be redone. For renderer, shader, or GPU work add `docs/GRAPHICS_REVIEW.md`.

@@ -25,6 +25,10 @@ export namespace gse::camera {
 	struct jitter_request {
 		bool enabled = true;
 	};
+
+	struct world_visibility_update {
+		bool visible = false;
+	};
 }
 
 export namespace gse::camera {
@@ -59,6 +63,7 @@ export namespace gse::camera {
 		bool jitter_enabled = false;
 		vec2f viewport{ 1920.f, 1080.f };
 		[[= shared]] bool ui_focus = false;
+		[[= shared]] bool world_visible = false;
 	};
 
 	[[= system_init{}]]
@@ -70,7 +75,7 @@ export namespace gse::camera {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<ui_focus_request, viewport_update, request, jitter_request> requests_in,
+		channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update> requests_in,
 		read<follow_component> cameras
 	) -> async::task<>;
 

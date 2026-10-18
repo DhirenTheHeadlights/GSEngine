@@ -234,6 +234,8 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 			.text = std::format("no transcript on disk for {}", s.info.agent_id),
 		});
 	}
+
+	std::ranges::stable_sort(s.rows, {}, &transcript_row::stamped);
 }
 
 auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {

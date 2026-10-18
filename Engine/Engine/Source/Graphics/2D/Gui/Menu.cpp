@@ -33,6 +33,7 @@ import :texture;
 import :types;
 import :ui_renderer;
 import :widget_context;
+import :widget_skin;
 
 auto gse::gui::hosts_menu(const viewport_state& vp, const std::string_view name) -> bool {
 	return vp.name_to_menu_id.contains(stable_id(name));
@@ -142,7 +143,7 @@ auto gse::gui::update_menu_zoom(viewport_state& vp, menu& m, const input::state&
 	vp.input_layers_data.consume_scroll(scroll_axis_kind::vertical);
 }
 
-auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const bool translucent, const std::function<void(builder&)>& build) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}
@@ -180,7 +181,7 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 	};
 
 	if (!current_menu.chrome_drawn_this_frame) {
-		draw_menu_chrome(d, vp, input_state, current_menu, layer);
+		draw_menu_chrome(d, vp, input_state, current_menu, layer, translucent);
 		current_menu.chrome_drawn_this_frame = true;
 	}
 
@@ -217,14 +218,15 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 	);
 
 	const bool is_floating = is_floating_menu(current_menu);
-	const float menu_radius = is_floating ? sty.corner_radius_menu : 0.f;
+	const surface& docked_surface = is_floating ? sty.menu.floating : sty.menu.docked;
+	const surface& body_surface = translucent ? sty.menu.overlay_body : docked_surface;
 
 	d.sprite_commands.push_back({
 		.rect = body_rect,
-		.color = sty.color_menu_body,
+		.color = body_surface.fill,
 		.texture = d.blank_texture,
 		.layer = layer,
-		.corner_radius = menu_radius,
+		.corner_radius = docked_surface.radii,
 		.sample_scene_snapshot = true
 	});
 

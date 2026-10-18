@@ -7,20 +7,9 @@ import gse.core;
 
 import :types;
 import :styles;
+import :widget_skin;
 
 export namespace gse::gui::layout {
-	enum class halign {
-		start,
-		center,
-		end,
-	};
-
-	enum class valign {
-		top,
-		center,
-		bottom,
-	};
-
 	enum class size_kind {
 		fixed,
 		flex,

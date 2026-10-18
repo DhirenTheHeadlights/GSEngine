@@ -12,6 +12,7 @@ export namespace sandbox::player_spawner {
 		std::vector<gse::id> pending;
 		gse::scene* scene = nullptr;
 		int spawned = 0;
+		std::uint32_t generation = 0;
 	};
 
 	[[= gse::system_run<>{}]]
@@ -52,6 +53,11 @@ auto sandbox::player_spawner::run(
 	gse::structural<sidearm::component>
 ) -> gse::async::task<> {
 	for (const auto& catalog : spawn_in.of<gse::world_system::scene_catalog>()) {
+		if (catalog.generation != d.generation) {
+			d.generation = catalog.generation;
+			d.pending.clear();
+			d.spawned = 0;
+		}
 		d.scene = catalog.active_scene;
 	}
 	for (const auto& request : spawn_in.of<gse::world_system::spawn_player_request>()) {

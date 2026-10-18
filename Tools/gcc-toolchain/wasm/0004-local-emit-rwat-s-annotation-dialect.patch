@@ -1,0 +1,140 @@
+--- a/gcc/config/wasm/wasm.md
++++ b/gcc/config/wasm/wasm.md
+@@ -101,7 +101,7 @@
+     [(call (mem:SI (match_operand:P 0 "funcref_operand"))
+ 	       (match_operand 1))])]
+   ""
+-  "(call %0%A2)")
++  "(call %0%A2 (@reloc))")
+ 
+ (define_insn "*call_value_internal"
+   [(match_parallel 3 "call_operation"
+@@ -109,7 +109,7 @@
+ 	      (call (mem:SI (match_operand:P 1 "funcref_operand"))
+ 			(match_operand 2)))])]
+   ""
+-  "(%M0.set %0 (call %1%A3))")
++  "(%M0.set %0 (call %1%A3 (@reloc)))")
+ 
+ ;; Literals
+ (define_insn "*local_const<mode>"
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -291,16 +291,53 @@
+   fprintf (stream, "\")");
+ }
+ 
++bool has_binding_decoration (const_tree decl, bool pub)
++{
++  if (!decl)
++    return !pub;
++  if (DECL_WEAK (decl) || !TREE_PUBLIC (decl))
++    return true;
++  if (DECL_VISIBILITY (decl) == VISIBILITY_HIDDEN)
++    return true;
++  return TREE_CODE (decl) == FUNCTION_DECL && DECL_STATIC_CONSTRUCTOR (decl);
++}
++
++/* Emit the binding, visibility and init-priority decorations of a symbol as a
++   sibling annotation, rather than inside its (@sym ...).
++
++   rwat, the assembler ASM_SPEC names, parses exactly `(@sym)` and
++   `(@sym (name "..."))`; anything else inside the annotation makes the whole
++   module fail to assemble, which rules out every translation unit holding an
++   internal-linkage or weak function.  An annotation it does not know it skips,
++   so moving the decorations out keeps them in the text for an assembler that
++   grows binding support, instead of dropping them on the floor.  */
++void assemble_gcc_binding (FILE *stream, const_tree decl, bool pub = true)
++{
++  if (!has_binding_decoration (decl, pub))
++    return;
++  fprintf (stream, " (@gcc.binding");
++  if (!decl)
++    fprintf (stream, " local");
++  else
++    {
++      if (TREE_CODE (decl) == FUNCTION_DECL)
++	assemble_init_prio (stream, decl);
++      assemble_binding (stream, decl);
++      assemble_visibility (stream, decl);
++    }
++  fprintf (stream, ")");
++}
++
+ void
+ assemble_data_import (FILE *stream, const_tree decl, const char *name)
+ {
+   output_indent (stream);
+   fprintf (stream, "(@sym.import.data $");
+   assemble_name (stream, name);
+-  assemble_binding (stream, decl);
+-  assemble_visibility (stream, decl);
+   assemble_sym_name (stream, name);
+-  fprintf (stream, ")\n");
++  fprintf (stream, ")");
++  assemble_gcc_binding (stream, decl);
++  fprintf (stream, "\n");
+ }
+ 
+ /* Given the type, guess where assign_params must've put it.  */
+@@ -392,14 +429,9 @@
+     case METHOD_TYPE: {
+       fprintf (stream, "(func $");
+       assemble_name (stream, name);
+-      fprintf (stream, " (@sym");
++      fprintf (stream, " (@sym)");
+       if (type != decl)
+-	{
+-	  assemble_init_prio (stream, decl);
+-	  assemble_binding (stream, decl);
+-	  assemble_visibility (stream, decl);
+-	}
+-      fprintf (stream, ")");
++	assemble_gcc_binding (stream, decl);
+ 
+       print_func_type (stream, type);
+       break;
+@@ -531,15 +563,14 @@
+ 	name = "__main_argc_argv", override_args = true;
+     }
+ 
++  bool fndecl_p = TREE_CODE (decl) == FUNCTION_DECL;
+   fprintf (stream, " (@sym");
+-  if (TREE_CODE (decl) == FUNCTION_DECL)
+-    {
+-      assemble_init_prio (stream, decl);
+-      assemble_binding (stream, decl);
+-      assemble_visibility (stream, decl);
+-      assemble_sym_name (stream, name);
+-    }
+-  fprintf (stream, ") ");
++  if (fndecl_p)
++    assemble_sym_name (stream, name);
++  fprintf (stream, ")");
++  if (fndecl_p)
++    assemble_gcc_binding (stream, decl);
++  fprintf (stream, " ");
+ 
+   tree type = TREE_TYPE (decl);
+   fprintf (stream, "\n");
+@@ -722,19 +753,10 @@
+   fprintf (stream, "(data (@sym (align " HOST_WIDE_INT_PRINT_DEC "))"
+ 		   " (i32.const 0) (@sym $", align_real);
+   assemble_name (stream, name);
+-  if (decl)
+-    {
+-      assemble_binding (stream, decl);
+-    }
+-  else
+-    {
+-      if (!pub)
+-	fprintf (stream, " local");
+-    }
+-  assemble_visibility (stream, decl);
+   assemble_sym_name (stream, name);
+   fprintf (stream, " (size %ld)", size);
+   fprintf (stream, ")");
++  assemble_gcc_binding (stream, decl, pub);
+ }
+ 
+ /* Implemetation of ASM_OUTPUT_ALIGN.  */

@@ -364,7 +364,7 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 	const atmosphere_data shader_payload = build_atmosphere_data(d);
 	d.atmosphere_ubo_buffer.host_write(shader_payload);
 
-	if (!d.enabled) {
+	if (!d.enabled || !cam_state.world_visible) {
 		co_return;
 	}
 

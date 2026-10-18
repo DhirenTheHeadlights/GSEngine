@@ -167,7 +167,7 @@ auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::
 auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value, const rectf& rect) -> void {
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.style.color_widget_background,
+		.color = ctx.style.list_item.surfaces.idle.fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = ctx.style.corner_radius
 	});

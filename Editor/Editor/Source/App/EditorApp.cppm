@@ -56,7 +56,7 @@ export namespace gse::ide {
 		struct [[= system_state<"Editor">{}]] data {
 			bool initialized = false;
 			bool screen_pushed = false;
-			std::vector<dock_view> views;
+			[[= shared]] std::vector<dock_view> views;
 			std::optional<dock_drag> drag;
 			id drag_window;
 			std::optional<id> cursor_window;
@@ -66,7 +66,7 @@ export namespace gse::ide {
 			std::optional<vec2f> pending_panels_menu;
 			id panels_menu_window;
 			id panels_menu_panel;
-			shelf_view shelf;
+			[[= shared]] shelf_view shelf;
 			std::optional<id> pending_shelf_toggle;
 			cursor_shape frame_cursor = cursor_shape::arrow;
 			bool game_panel_open = false;
@@ -100,37 +100,37 @@ export namespace gse::ide {
 
 	namespace workspace_system {
 		struct [[= system_state<"Workspace">{}]] data {
-			workspace::data ws;
-			graph_data graph;
+			[[= shared]] workspace::data ws;
+			[[= shared]] graph_data graph;
 			std::uint32_t graph_game_gen = 0;
 			std::uint32_t graph_pending_gen = 0;
 			std::uint32_t graph_load_attempts = 0;
 			clock graph_load_clock;
-			quick_search_state search;
-			problems_view_state problems;
-			search_panel_state search_panel;
-			lint_panel_state lint_panel;
-			source_control_state source_control;
-			git::status_snapshot git_status;
+			[[= shared]] quick_search_state search;
+			[[= shared]] problems_view_state problems;
+			[[= shared]] search_panel_state search_panel;
+			[[= shared]] lint_panel_state lint_panel;
+			[[= shared]] source_control_state source_control;
+			[[= shared]] git::status_snapshot git_status;
 			std::vector<std::filesystem::path> git_rootless;
-			bool git_busy = false;
-			std::string git_action_error;
-			std::string engine_pin;
+			[[= shared]] bool git_busy = false;
+			[[= shared]] std::string git_action_error;
+			[[= shared]] std::string engine_pin;
 			bool initialized = false;
 			bool cursor_capture_sent = false;
 			bool profile_capture_sent = false;
 			bool game_was_running = false;
 			profile_source profile_source_sent = profile_source::editor;
 			bool game_input_forwarding = false;
-			session_view_state session_view;
+			[[= shared]] session_view_state session_view;
 		};
 
 		[[= system_run<>{}]]
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<git::status_updated, agent::draft_ready, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
-			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::draft_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
+			channel_read<git::status_updated, agent::sync_finished, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
+			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::sync_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
 			const scheduler& sched,
 			shared_view<config_system::data> config_d,
 			shared_view<search_system::data> search_d,
@@ -151,6 +151,8 @@ export namespace gse::ide {
 			data& d
 		) -> void;
 	}
+
+	[[nodiscard]] auto editor_panels() -> std::span<const panel_desc>;
 }
 
 namespace gse::ide {
@@ -162,7 +164,6 @@ namespace gse::ide {
 	constexpr std::string_view problems_panel_name = "Problems";
 	constexpr std::string_view search_panel_name = "Search";
 	constexpr std::string_view lint_panel_name = "Lints";
-	constexpr std::string_view source_control_panel_name = "Source Control";
 	constexpr std::string_view game_panel_name = "Game";
 	constexpr std::string_view server_quadrant_name = "Server";
 	constexpr std::array<std::string_view, 3> client_quadrant_names{ "Client 1", "Client 2", "Client 3" };
@@ -251,8 +252,6 @@ namespace gse::ide {
 		editor_app::data& d,
 		dock_view& v
 	) -> void;
-
-	[[nodiscard]] auto editor_panels() -> std::span<const panel_desc>;
 
 	[[nodiscard]] auto editor_dock_metrics(
 		const gui::style& sty
@@ -491,7 +490,7 @@ auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::str
 	const rectf header = rectf::from_position_size(area.top_left(), { area.width(), std::min(header_h, area.height()) });
 	ctx.queue_sprite({
 		.rect = header,
-		.color = ctx.style.color_tab_background,
+		.color = ctx.style.tab.cell.idle.fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = area,
 	});
@@ -1855,7 +1854,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	return {};
 }
 
-auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, agent::draft_ready, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::draft_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, agent::sync_finished, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::sync_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
 		if (!project::opened()) {
 			return {};
@@ -2003,8 +2002,8 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		d.git_busy = update.busy;
 		d.git_action_error = update.action_error;
 	}
-	for (const agent::draft_ready& drafted : requests_in.of<agent::draft_ready>()) {
-		apply_draft(d.source_control, drafted);
+	for (const agent::sync_finished& finished : requests_in.of<agent::sync_finished>()) {
+		apply_sync_finished(d.source_control, finished);
 	}
 	for (const build_runner::build_finished& finished : requests_in.of<build_runner::build_finished>()) {
 		if (finished.kind != build_runner::stream_kind::build_game || !finished.succeeded || !project::current().valid || !project::current().sdk_version.empty() || !d.git_status) {

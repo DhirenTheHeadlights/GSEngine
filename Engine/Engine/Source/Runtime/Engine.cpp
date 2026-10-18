@@ -143,6 +143,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_save.pin<gpu::context::data, "device_settings.video_encode">(m_config.video_encode);
 	m_save.pin<gui::data, "scale_with_resolution">(m_config.scale_ui_with_resolution);
 	m_save.pin<gui::data, "reserve_top_bar">(m_config.custom_chrome);
+	m_save.default_for<gui::data, "current_theme">(m_config.default_theme);
 
 	if (m_config.custom_chrome) {
 		m_save.pin<window::data, "native_frame">(true);

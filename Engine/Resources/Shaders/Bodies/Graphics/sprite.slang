@@ -1,4 +1,5 @@
 static const uint SHAPE_ARC = 1u;
+static const uint SHAPE_RING = 2u;
 
 struct VS_OUTPUT {
     float4 clip_pos     : SV_Position;
@@ -6,12 +7,26 @@ struct VS_OUTPUT {
     float4 color        : COLOR0;
     float2 local_pos    : TEXCOORD1;
     float2 half_size    : TEXCOORD2;
-    float  corner_radius: TEXCOORD3;
+    float4 corner_radius: TEXCOORD3;
     nointerpolation uint shape_kind : TEXCOORD4;
     float2 arc_sc       : TEXCOORD5;
     float  arc_radius   : TEXCOORD6;
-    float  arc_thickness: TEXCOORD7;
+    float  stroke_thickness : TEXCOORD7;
 };
+
+float corner_radius_at(float4 radii, float2 local) {
+    float right = step(0.0, local.x);
+    float top = step(0.0, local.y);
+    float upper = lerp(radii.x, radii.y, right);
+    float lower = lerp(radii.w, radii.z, right);
+    return lerp(lower, upper, top);
+}
+
+float rounded_box_sdf(float2 local, float2 half_size, float radius) {
+    float r = min(radius, min(half_size.x, half_size.y));
+    float2 q = abs(local) - half_size + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
 
 [shader("vertex")]
 VS_OUTPUT vs_main(uint vid : SV_VertexID) {
@@ -26,7 +41,7 @@ VS_OUTPUT vs_main(uint vid : SV_VertexID) {
     output.shape_kind = v.shape_kind;
     output.arc_sc = float2(sin(v.arc_half_sweep), cos(v.arc_half_sweep));
     output.arc_radius = v.arc_radius;
-    output.arc_thickness = v.arc_thickness;
+    output.stroke_thickness = v.stroke_thickness;
     return output;
 }
 
@@ -48,14 +63,18 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     if (input.shape_kind == SHAPE_ARC) {
         float2 p = float2(abs(input.local_pos.x), input.local_pos.y);
         float outside = input.arc_sc.y * p.x - input.arc_sc.x * p.y;
-        float d = (outside > 0.0 ? length(p - input.arc_sc * input.arc_radius) : abs(length(p) - input.arc_radius)) - input.arc_thickness;
+        float d = (outside > 0.0 ? length(p - input.arc_sc * input.arc_radius) : abs(length(p) - input.arc_radius)) - input.stroke_thickness;
         col *= smoothstep(0.0, -1.0, d);
     }
-    else if (input.corner_radius > 0.0) {
-        float2 q = abs(input.local_pos) - input.half_size + input.corner_radius;
-        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - input.corner_radius;
-        float aa = smoothstep(0.0, -1.0, d);
-        col *= aa;
+    else if (input.shape_kind == SHAPE_RING) {
+        float radius = corner_radius_at(input.corner_radius, input.local_pos);
+        float d = rounded_box_sdf(input.local_pos, input.half_size, radius);
+        col *= smoothstep(0.5, -0.5, abs(d + input.stroke_thickness) - input.stroke_thickness);
+    }
+    else if (any(input.corner_radius > 0.0)) {
+        float radius = corner_radius_at(input.corner_radius, input.local_pos);
+        float d = rounded_box_sdf(input.local_pos, input.half_size, radius);
+        col *= smoothstep(0.0, -1.0, d);
     }
 
     return col;

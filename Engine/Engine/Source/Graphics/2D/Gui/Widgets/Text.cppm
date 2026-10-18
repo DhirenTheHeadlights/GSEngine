@@ -13,8 +13,10 @@ import std;
 import :font;
 import :layout_ops;
 import :styles;
+import :surface_paint;
 import :text_buffer;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct text_style {
@@ -71,39 +73,26 @@ auto gse::gui::draw::text_in_rect(const draw_context& ctx, const rectf& rect, co
 		return;
 	}
 
-	const auto fnt = ctx.fonts.face_or(styling.font, styling.strong ? text_face::text_strong : (styling.emphasis ? text_face::text_emphasis : text_face::text));
-	const auto fnt_view = fnt.resolve();
-	if (!fnt_view) {
-		return;
-	}
+	const label_spec spec{
+		.face = styling.strong ? text_face::text_strong : (styling.emphasis ? text_face::text_emphasis : text_face::text),
+		.h = styling.align,
+		.size_mult = styling.size.value_or(ctx.style.font_size) / ctx.style.font_size,
+	};
 
-	const float size = styling.size.value_or(ctx.style.font_size);
-	const float width = fnt_view->width(content, size);
-
-	float left = rect.left();
-	if (styling.align == layout::halign::center) {
-		left = rect.center().x() - width * 0.5f;
-	}
-	else if (styling.align == layout::halign::end) {
-		left = rect.right() - width;
-	}
-
-	ctx.queue_text({
-		.font = fnt,
-		.text = content,
-		.position = { left, rect.center().y() + fnt_view->vertical_center_offset(size) },
-		.scale = size,
+	label(ctx, rect, content, spec, {
 		.color = styling.color.value_or(ctx.style.color_text),
+		.font = styling.font,
 		.clip_rect = rect,
 	});
 }
 
 auto gse::gui::draw::text(const draw_context& ctx, const std::string_view name, const std::string_view text, const resource::handle<font> font) -> void {
 	const auto fnt = ctx.fonts.face_or(font);
-	const auto fnt_view = fnt.resolve();
-	if (!ctx.current_menu) {
+	if (!ctx.current_menu || !fnt.valid()) {
 		return;
 	}
+
+	const auto fnt_view = fnt.resolve();
 
 	const float widget_height = fnt_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });

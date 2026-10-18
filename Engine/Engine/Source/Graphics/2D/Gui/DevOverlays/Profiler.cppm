@@ -17,9 +17,11 @@ import :builder;
 import :cursor;
 import :ids;
 import :styles;
+import :surface_paint;
 import :text_widget;
 import :tree_widget;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct profiler {
@@ -224,17 +226,11 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 			{ x, header_y },
 			{ w, row_h }
 		);
-		ctx.queue_sprite({
-			.rect = r,
-			.color = ctx.style.color_title_bar,
-			.texture = ctx.blank_texture
-		});
-		ctx.queue_text({
-			.font = ctx.fonts.code,
-			.text = txt,
-			.position = { r.left() + pad * 0.5f, r.center().y() + code_view->vertical_center_offset(font_sz) },
-			.scale = font_sz,
-			.clip_rect = r
+		draw::fill_surface(ctx, r, ctx.style.overlay.header, {});
+
+		draw::label(ctx, r.inset({ pad * 0.5f, 0.f }), txt, ctx.style.overlay.cell, {
+			.color = ctx.style.overlay.cell_color,
+			.clip_rect = r,
 		});
 	};
 
@@ -299,18 +295,11 @@ auto gse::gui::profiler::draw(draw_context& ctx, id& hot, id& active, id& focus)
 						{ w, row.height() }
 					);
 
-					draw_ctx.queue_sprite({
-						.rect = box,
-						.color = draw_ctx.style.color_widget_background,
-						.texture = draw_ctx.blank_texture
-					});
+					draw::fill_surface(draw_ctx, box, draw_ctx.style.overlay.row, {});
 
-					draw_ctx.queue_text({
-						.font = draw_ctx.fonts.code,
-						.text = val,
-						.position = { box.left() + pad * 0.5f, box.center().y() + draw_ctx.fonts.code.resolve()->vertical_center_offset(font_sz) },
-						.scale = font_sz,
-						.clip_rect = box
+					draw::label(draw_ctx, box.inset({ pad * 0.5f, 0.f }), val, draw_ctx.style.overlay.cell, {
+						.color = draw_ctx.style.overlay.cell_color,
+						.clip_rect = box,
 					});
 				};
 

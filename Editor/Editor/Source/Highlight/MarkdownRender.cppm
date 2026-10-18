@@ -349,7 +349,7 @@ auto gse::ide::markdown::render_document(const std::string_view source, const th
 				doc.blocks.push_back({
 					.first_line = first_rendered,
 					.last_line = static_cast<std::uint32_t>(doc.buffer.lines.size()) - 1,
-					.fill = look.sty.color_panel_alt,
+					.fill = look.sty.panel_alt.fill,
 				});
 			}
 			i = last < lines.size() && classified[last].shape == block::fence ? last + 1 : last;

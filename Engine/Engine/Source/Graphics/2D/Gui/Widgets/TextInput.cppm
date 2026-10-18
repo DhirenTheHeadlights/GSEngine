@@ -18,8 +18,10 @@ import :ids;
 import :input_layers;
 import :interaction;
 import :styles;
+import :surface_paint;
 import :text_select;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct text_input_state {
@@ -132,13 +134,10 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		{ content_rect.width() - label_width, widget_height }
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = label_rect
+	draw::label(ctx, label_rect, name, ctx.style.input.label, {
+		.color = ctx.style.input.label_color,
+		.font = font,
+		.clip_rect = label_rect,
 	});
 
 	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
@@ -149,8 +148,9 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
 	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
-	constexpr float text_padding = 5.f;
-	constexpr float caret_extent = 2.f;
+	const input_skin& skin = ctx.style.input;
+	const float text_padding = skin.text_padding;
+	const float caret_extent = skin.caret_width;
 	constexpr time blink_interval = milliseconds(500.f);
 	constexpr time repeat_delay = milliseconds(400.f);
 	constexpr time repeat_interval = milliseconds(33.f);
@@ -540,12 +540,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		}
 	}
 
-	ctx.queue_sprite({
-		.rect = box_rect,
-		.color = ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius_input
-	});
+	draw::fill_surface(ctx, box_rect, skin.box, {});
 
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
@@ -562,11 +557,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({
-			.rect = sel_rect,
-			.color = ctx.style.color_selection,
-			.texture = ctx.blank_texture,
-			.clip_rect = clip_rect
+		draw::fill_surface(ctx, sel_rect, skin.selection, {
+			.clip_rect = clip_rect,
 		});
 	}
 
@@ -575,7 +567,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 		.text = buffer,
 		.position = { text_pos.x() - state.scroll_x, text_pos.y() },
 		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+		.color = skin.text_color,
 		.clip_rect = clip_rect
 	});
 
@@ -586,11 +578,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			{ caret_extent, ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({
-			.rect = cursor_rect,
-			.color = ctx.style.color_caret,
-			.texture = ctx.blank_texture,
-			.clip_rect = clip_rect
+		draw::fill_surface(ctx, cursor_rect, skin.caret, {
+			.clip_rect = clip_rect,
 		});
 	}
 }

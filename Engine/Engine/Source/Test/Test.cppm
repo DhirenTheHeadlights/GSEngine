@@ -20,13 +20,13 @@ export namespace gse::test {
 		std::string message;
 	};
 
-	class context {
-	public:
-		explicit context(
-			std::string_view name
-		);
+	using report_fn = auto (*)(const failure&) -> void;
 
-		[[nodiscard]] auto name() const -> std::string_view;
+	class check_sink {
+	public:
+		explicit check_sink(
+			report_fn report = nullptr
+		);
 
 		[[nodiscard]] auto failures() const -> std::span<const failure>;
 
@@ -68,8 +68,20 @@ export namespace gse::test {
 			const std::source_location& loc
 		) -> bool;
 
-		std::string_view m_name;
+		report_fn m_report = nullptr;
 		std::vector<failure> m_failures;
+	};
+
+	class context : public check_sink {
+	public:
+		explicit context(
+			std::string_view name
+		);
+
+		[[nodiscard]] auto name() const -> std::string_view;
+
+	private:
+		std::string_view m_name;
 	};
 
 	using body_fn = auto (*)(context&) -> void;
@@ -127,7 +139,7 @@ namespace gse::test {
 }
 
 template <std::formattable<char> T, std::formattable<char> U>
-auto gse::test::context::expect_eq(const T& actual, const U& expected, const std::source_location loc) -> bool {
+auto gse::test::check_sink::expect_eq(const T& actual, const U& expected, const std::source_location loc) -> bool {
 	if (actual == expected) {
 		return true;
 	}
@@ -135,7 +147,7 @@ auto gse::test::context::expect_eq(const T& actual, const U& expected, const std
 }
 
 template <std::formattable<char> T, std::formattable<char> U, std::formattable<char> V>
-auto gse::test::context::expect_near(const T& actual, const U& expected, const V& tolerance, const std::source_location loc) -> bool {
+auto gse::test::check_sink::expect_near(const T& actual, const U& expected, const V& tolerance, const std::source_location loc) -> bool {
 	const auto deviation = actual < expected ? expected - actual : actual - expected;
 	if (!(deviation > tolerance)) {
 		return true;
@@ -144,7 +156,7 @@ auto gse::test::context::expect_near(const T& actual, const U& expected, const V
 }
 
 template <typename T, std::formattable<char> E>
-auto gse::test::context::expect_value(const std::expected<T, E>& result, const std::source_location loc) -> bool {
+auto gse::test::check_sink::expect_value(const std::expected<T, E>& result, const std::source_location loc) -> bool {
 	if (result) {
 		return true;
 	}
@@ -152,7 +164,7 @@ auto gse::test::context::expect_value(const std::expected<T, E>& result, const s
 }
 
 template <typename T, std::formattable<char> E>
-auto gse::test::context::expect_error(const std::expected<T, E>& result, const std::source_location loc) -> bool {
+auto gse::test::check_sink::expect_error(const std::expected<T, E>& result, const std::source_location loc) -> bool {
 	if (!result) {
 		return true;
 	}

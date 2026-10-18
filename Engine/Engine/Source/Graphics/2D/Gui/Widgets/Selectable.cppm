@@ -12,23 +12,20 @@ import gse.os;
 import gse.time;
 import std;
 
-import :column_header_widget;
 import :font;
 import :ids;
 import :interaction;
+import :layout_ops;
 import :marquee_widget;
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	enum class selectable_align : std::uint8_t {
 		center,
 		left
-	};
-
-	struct selectable_cell {
-		std::string_view text;
-		std::optional<vec4f> color;
 	};
 
 	struct selectable_info {
@@ -39,9 +36,6 @@ export namespace gse::gui {
 		selectable_align align = selectable_align::center;
 		std::optional<vec4f> accent = std::nullopt;
 		float detail_column = 0.f;
-		std::span<const selectable_cell> cells;
-		const column_state* columns = nullptr;
-		std::optional<vec4f> background;
 		resource::handle<font> font{};
 	};
 
@@ -89,101 +83,70 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 		{ content_rect.width(), widget_height }
 	);
 
-	const bool hovered = ctx.hovers(row_rect);
-	const bool released = ctx.mouse_released();
+	const item_skin& skin = ctx.style.list_item;
 
-	interaction::mark_hot(hot_widget_id, widget_id, hovered);
-	const bool activated = interaction::activate_on_click(active_widget_id, widget_id, hovered, ctx.mouse_pressed_for(row_rect), released);
-
-	vec4f target_color = info.background.value_or(ctx.style.color_widget_background);
-	if (info.selected) {
-		target_color = ctx.style.color_widget_selected;
-	}
-	else if (active_widget_id == widget_id) {
-		target_color = ctx.style.color_widget_active;
-	}
-	else if (hot_widget_id == widget_id) {
-		target_color = ctx.style.color_widget_hovered;
-	}
-
-	ctx.queue_sprite({
+	const interaction::press row = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, widget_id, {
 		.rect = row_rect,
-		.color = ctx.animated_color(widget_id, target_color),
-		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius
+		.selected = info.selected,
+	});
+	const bool activated = row.activated;
+
+	draw::fill_surface(ctx, row_rect, row.select(skin.surfaces), {
+		.anim = widget_id,
 	});
 
 	const float pad = ctx.style.padding;
-	const float baseline = row_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size);
 	float text_left = row_rect.left() + pad;
 
 	if (info.accent) {
 		const float swatch_w = ctx.style.accent_bar_width;
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size(
+		surface swatch = skin.accent_bar;
+		swatch.fill = *info.accent;
+		draw::fill_surface(
+			ctx,
+			rectf::from_position_size(
 				{ text_left, row_rect.center().y() + ctx.style.font_size * 0.5f },
 				{ swatch_w, ctx.style.font_size }
 			),
-			.color = *info.accent,
-			.texture = ctx.blank_texture,
-		});
+			swatch,
+			{}
+		);
 		text_left += swatch_w + pad;
-	}
-
-	if (info.columns && !info.cells.empty()) {
-		const std::size_t count = std::min(info.cells.size(), info.columns->widths.size());
-		for (std::size_t i = 0; i < count; ++i) {
-			const rectf cell = column_cell(*info.columns, row_rect, i);
-			if (cell.width() <= 0.f) {
-				continue;
-			}
-			const selectable_cell& entry = info.cells[i];
-			ctx.queue_text({
-				.font = fnt,
-				.text = entry.text,
-				.position = {
-					column_text_left(ctx, *info.columns, cell, i, fnt_view->width(entry.text, ctx.style.font_size)),
-					baseline,
-				},
-				.scale = ctx.style.font_size,
-				.color = entry.color.value_or(i == 0 ? ctx.style.color_text_secondary : ctx.style.color_text),
-				.clip_rect = cell,
-			});
-		}
-
-		ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
-		return activated;
 	}
 
 	const float split = info.detail.empty()
 		? row_rect.right() - pad
 		: row_rect.left() + (info.detail_column > 0.f ? info.detail_column : row_rect.width() * 0.5f);
 
-	const vec2f text_position = info.align == selectable_align::center
-		? vec2f{ row_rect.center().x() - fnt_view->width(info.text, ctx.style.font_size) * 0.5f, baseline }
-		: vec2f{ text_left, baseline };
+	const rectf text_area = rectf::from_position_size(
+		{ text_left, row_rect.top() },
+		{ std::max(0.f, split - pad - text_left), row_rect.height() }
+	);
 
-	ctx.queue_text({
-		.font = fnt,
-		.text = info.text,
-		.position = text_position,
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+	label_spec text_spec = skin.label;
+	if (info.align == selectable_align::center) {
+		text_spec.h = layout::halign::center;
+	}
+
+	draw::label(ctx, info.align == selectable_align::center ? row_rect : text_area, info.text, text_spec, {
+		.color = row.select(skin.label_colors),
+		.font = info.font,
 		.clip_rect = rectf::from_position_size(
 			{ row_rect.left(), row_rect.top() },
 			{ std::max(0.f, split - pad - row_rect.left()), row_rect.height() }
-		)
+		),
 	});
 
 	if (!info.detail.empty()) {
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size(
+		draw::fill_surface(
+			ctx,
+			rectf::from_position_size(
 				{ split, row_rect.center().y() + ctx.style.font_size * 0.5f },
 				{ std::max(1.f, ctx.style.scale_factor), ctx.style.font_size }
 			),
-			.color = ctx.style.color_text_secondary,
-			.texture = ctx.blank_texture,
-		});
+			skin.divider,
+			{}
+		);
 
 		marquee_text(ctx, {
 			.text = info.detail,
@@ -191,9 +154,9 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const selectable_info& 
 				{ split + pad, row_rect.top() },
 				{ std::max(0.f, row_rect.right() - pad - split - pad), row_rect.height() }
 			),
-			.color = ctx.style.color_text_secondary,
-			.scrolling = hot_widget_id == widget_id,
-			.font = fnt,
+			.color = skin.detail_color,
+			.scrolling = row.hovered,
+			.font = info.font,
 		});
 	}
 

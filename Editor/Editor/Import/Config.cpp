@@ -5,6 +5,7 @@ import std;
 import gse.config;
 import gse.core;
 import gse.ide.project;
+import gse.log;
 
 namespace gse::ide::config {
 	struct editor_paths {
@@ -40,6 +41,10 @@ namespace gse::ide::config {
 	auto git_worktree_roots(
 		const std::filesystem::path& root
 	) -> std::vector<std::filesystem::path>;
+
+	auto engine_of_another_project(
+		const std::filesystem::path& root
+	) -> bool;
 
 	auto retarget(
 		const std::filesystem::path& path,
@@ -164,6 +169,13 @@ auto gse::ide::config::git_worktree_roots(const std::filesystem::path& root) -> 
 	return roots;
 }
 
+auto gse::ide::config::engine_of_another_project(const std::filesystem::path& root) -> bool {
+	const std::filesystem::path canonical = canonical_path(root);
+	return std::ranges::any_of(project::engines(), [&canonical](const project::engine_entry& entry) {
+		return canonical_path(entry.path) == canonical;
+	});
+}
+
 auto gse::ide::config::retarget(const std::filesystem::path& path, const std::filesystem::path& from, const std::filesystem::path& to) -> std::filesystem::path {
 	if (path.empty() || !is_inside(path, from)) {
 		return path;
@@ -198,6 +210,10 @@ auto gse::ide::config::resolve_worktrees() -> std::vector<worktree> {
 	std::vector<worktree> trees;
 	trees.push_back(base);
 	for (const std::filesystem::path& root : git_worktree_roots(base.engine_root)) {
+		if (engine_of_another_project(root)) {
+			log::println(log::level::info, log::category::general, "[config] skipping engine worktree {}; it is registered in engines.ini as another project's engine", root.generic_display_string());
+			continue;
+		}
 		trees.push_back(retarget_worktree(base, root));
 	}
 	return trees;
@@ -223,6 +239,18 @@ auto gse::ide::config::owning_worktree(const std::filesystem::path& file) -> con
 auto gse::ide::config::worktree_for(const std::filesystem::path& file) -> const worktree& {
 	const worktree* owner = owning_worktree(file);
 	return owner ? *owner : primary();
+}
+
+auto gse::ide::config::owns_request(const std::filesystem::path& cwd, const std::filesystem::path& project) -> bool {
+	if (!cwd.empty() && !owning_worktree(cwd)) {
+		return false;
+	}
+	if (project.empty()) {
+		return true;
+	}
+	std::error_code ec;
+	const bool same_project = std::filesystem::equivalent(project, project_root(), ec);
+	return !ec && same_project;
 }
 
 auto gse::ide::config::canonical_path(const std::filesystem::path& file) -> std::filesystem::path {

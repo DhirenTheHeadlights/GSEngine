@@ -30,7 +30,7 @@ export namespace gse {
 	auto start(
 		app_setup_fn setup,
 		const engine_config& config = {}
-	) -> void;
+	) -> int;
 
 	auto shutdown() -> void;
 }
@@ -43,7 +43,7 @@ auto gse::shutdown() -> void {
 	should_shutdown.store(true, std::memory_order_release);
 }
 
-auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
+auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 	install_crash_handlers();
 	win32::enable_per_monitor_dpi_awareness();
 
@@ -98,7 +98,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 		: std::thread::hardware_concurrency();
 	const time exit_budget = seconds(10.f);
 
-	task::start([&] {
+	const int code = task::start([&] -> int {
 		e.initialize(setup);
 		trace::finalize_frame();
 		trace::set_enabled(config.trace);
@@ -340,6 +340,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 			watchdog::section _{ trace_id<"exit::engine_shutdown">(), exit_budget };
 			e.shutdown();
 		}
+
+		return config.bench.enabled ? bench_exit_code(bench) : 0;
 	}, worker_threads);
 
 	{
@@ -353,4 +355,6 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> void {
 	}
 
 	watchdog::stop();
+
+	return code;
 }

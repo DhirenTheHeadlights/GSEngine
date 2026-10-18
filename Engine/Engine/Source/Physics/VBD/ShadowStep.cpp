@@ -418,6 +418,9 @@ auto gse::physics::shadow_step::resolve_retired(data& d) -> void {
 }
 
 auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, const shared_view<physics::data> phys, data& d) -> async::task<> {
+	d.enabled = phys.trace.shadow_step.enabled;
+	d.detail_step = phys.trace.shadow_step.detail_step;
+
 	if (!d.enabled) {
 		co_return;
 	}
@@ -427,25 +430,23 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 		co_return;
 	}
 
-	co_await d.solver.initialize_compute(ctx, *gpu_s, capacities_from_settings(phys), { .full_snapshot = true });
+	co_await d.solver.initialize_compute(ctx, *gpu_s, { .full_snapshot = true });
 	d.solver.set_preserve_warm_starts(true);
-	d.buffers_ready = d.solver.buffers_created();
 
 	log::println(
 		log::category::physics,
-		"shadow step: gpu solver ready ({}). The cpu solver drives the world; the gpu is re-seeded from its pre-step state every tick with the same joints, drives and motors and its result is discarded. Impulses are not shadowed, and the device is stalled once per tick so this run's timings are not measurements",
-		d.buffers_ready
+		"shadow step: gpu solver initialized. The cpu solver drives the world; the gpu is re-seeded from its pre-step state every tick with the same joints, drives and motors and its result is discarded. Its capacities are sized from the first step's body set, so its buffers and pipelines are built on that step rather than here. Impulses are not shadowed, and the device is stalled once per tick so this run's timings are not measurements"
 	);
 
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
-	if (!d.enabled || !d.buffers_ready || motion.empty()) {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
+	if (!d.enabled || !d.solver.compute_initialized() || motion.empty()) {
 		co_return;
 	}
 
-	if (gpu_solver_active(phys)) {
+	if (gpu_solver_driving(phys)) {
 		if (!d.conflict_reported) {
 			d.conflict_reported = true;
 			log::println(
@@ -531,7 +532,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	const int substeps = std::max(phys.physics_substeps, 1);
 	const auto motor_count = static_cast<std::uint32_t>(motors.size());
 
-	d.solver.upload({
+	const vbd::solver_upload payload{
 		.bodies = std::move(bodies),
 		.motors = std::move(motors),
 		.joints = std::move(joints),
@@ -550,7 +551,21 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 		.force_reseed = true,
 		.motors_per_tick = motor_count,
 		.island_pack_min_islands = static_cast<std::uint32_t>(phys.gpu_island_pack_min_islands),
-	});
+	};
+
+	d.solver.measure_scene(payload);
+	if (!d.solver.buffers_created()) {
+		log::println(
+			log::category::physics,
+			"shadow step: sizing the gpu copy for this step's {} bodies; its buffers and pipelines are built in this frame, so step {} has no residual",
+			payload.bodies.size(),
+			d.step_index
+		);
+		++d.step_index;
+		co_return;
+	}
+
+	d.solver.upload(payload);
 
 	d.pending.push_back({
 		.step = d.step_index,
@@ -562,7 +577,12 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 }
 
 auto gse::physics::shadow_step::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
-	if (!d.enabled || !gpu_s || !d.buffers_ready || !d.solver.pending_dispatch()) {
+	if (!d.enabled || !gpu_s) {
+		co_return;
+	}
+
+	d.solver.ensure_capacity(*gpu_s);
+	if (!d.solver.buffers_created() || !d.solver.pending_dispatch()) {
 		co_return;
 	}
 

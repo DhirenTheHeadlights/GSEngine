@@ -378,7 +378,7 @@ auto gse::gui::update_text_selection(const text_selection_frame& frame) -> void 
 	for (const selected_run& run : state.runs) {
 		frame.sprites.push_back({
 			.rect = run.rect,
-			.color = frame.style.color_selection,
+			.color = frame.style.input.selection.fill,
 			.texture = frame.blank_texture,
 			.clip_rect = run.clip_rect,
 			.layer = run.layer,

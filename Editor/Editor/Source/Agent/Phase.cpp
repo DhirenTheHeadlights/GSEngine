@@ -131,8 +131,12 @@ auto gse::ide::agent::touched_path(const session& s) -> std::filesystem::path {
 	return session_scratch(s) / "touched.txt";
 }
 
-auto gse::ide::agent::task_artifacts(const session& s) -> std::array<std::filesystem::path, 4> {
-	return { scope_path(s), report_path(s), diff_path(s), touched_path(s) };
+auto gse::ide::agent::gaps_path(const session& s) -> std::filesystem::path {
+	return session_scratch(s) / "gaps.md";
+}
+
+auto gse::ide::agent::task_artifacts(const session& s) -> std::array<std::filesystem::path, 5> {
+	return { scope_path(s), report_path(s), diff_path(s), touched_path(s), gaps_path(s) };
 }
 
 auto gse::ide::agent::changes_path(const session& s) -> std::filesystem::path {
@@ -203,7 +207,60 @@ auto gse::ide::agent::resume_target(const session& s) -> std::string {
 	return {};
 }
 
+auto gse::ide::agent::phase_charter(const session& s, const task_phase phase) -> std::string {
+	return read_doc(docs_root(s) / charter_dir_name / std::format("{}.md", enum_to_string(phase)));
+}
+
+auto gse::ide::agent::sync_facts(const sync_request& request) -> std::string {
+	std::string facts = std::format(
+		"\n---\n\n# This Repository\n\n- root `{}`\n- branch `{}`\n- upstream {}\n",
+		request.root.generic_display_string(),
+		request.branch,
+		request.upstream.empty()
+			? std::string("none - this branch has never been pushed")
+			: std::format("`{}`, {} ahead, {} behind", request.upstream, request.ahead, request.behind)
+	);
+
+	facts += "\n## Selected Files\n\n";
+	for (const sync_file& file : request.files) {
+		facts += std::format("- `{}` {} +{} -{}\n", file.relative.generic_display_string(), file.code, file.added, file.deleted);
+	}
+
+	facts += request.message.empty()
+		? std::string("\n## Commit Message\n\nThe owner typed none, so you write it.\n")
+		: std::format("\n## Commit Message\n\nThe owner typed this, and it is the message to commit with:\n\n{}\n", request.message);
+	return facts;
+}
+
+auto gse::ide::agent::write_sync_prompt(const session& s) -> std::filesystem::path {
+	const std::filesystem::path path = prompt_path(s);
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
+	if (ec) {
+		log::println(log::level::error, log::category::task, "agent: could not create '{}': {} - this sync chat starts without its rules", path.parent_path(), ec.message());
+		return {};
+	}
+
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	if (!out) {
+		log::println(log::level::error, log::category::task, "agent: could not open '{}' - this sync chat starts without its rules", path);
+		return {};
+	}
+
+	out << read_doc(docs_root(s) / charter_dir_name / std::format("{}.md", sync_charter_name));
+	out << sync_facts(*s.sync);
+	if (!out) {
+		log::println(log::level::error, log::category::task, "agent: could not write '{}' - this sync chat starts without its rules", path);
+		return {};
+	}
+	return path;
+}
+
 auto gse::ide::agent::write_phase_prompt(const session& s) -> std::filesystem::path {
+	if (s.sync) {
+		return write_sync_prompt(s);
+	}
+
 	const std::filesystem::path path = prompt_path(s);
 	std::error_code ec;
 	std::filesystem::create_directories(path.parent_path(), ec);
@@ -216,7 +273,7 @@ auto gse::ide::agent::write_phase_prompt(const session& s) -> std::filesystem::p
 	const phase_policy policy = policy_of(phase);
 	const std::filesystem::path docs = docs_root(s);
 	const std::string workflow = read_doc(docs / workflow_doc_name);
-	const std::string charter = read_doc(docs / charter_dir_name / std::format("{}.md", enum_to_string(phase)));
+	const std::string charter = phase_charter(s, phase);
 
 	std::ofstream out(path, std::ios::binary | std::ios::trunc);
 	if (!out) {
@@ -288,10 +345,13 @@ auto gse::ide::agent::plan_handoff(const session& s, const task_phase from, cons
 		.touched = touched_path(s),
 		.diff = diff_path(s),
 		.roots = { tree.engine_root },
+		.root = tree.engine_root,
+		.gaps = gaps_path(s),
 		.heading = from == task_phase::scope
 			? std::string("# Approved Scope")
 			: std::format("# Reported Leaving {}", std::string_view(leaving.label)),
 		.summary = std::string(summary),
+		.replace_record = from == task_phase::scope,
 	};
 
 	planned.log = changes_path(s);
@@ -303,6 +363,9 @@ auto gse::ide::agent::plan_handoff(const session& s, const task_phase from, cons
 	const std::size_t begun = task.empty() ? 0 : std::min<std::size_t>(task.front().first_row, s.rows.size());
 	for (std::size_t at = 0; at < s.rows.size(); ++at) {
 		const transcript_row& row = s.rows[at];
+		if (at >= begun && row.kind == row_kind::gap) {
+			planned.shortfalls.push_back(row);
+		}
 		if (!shows(row_filter::changes, row)) {
 			continue;
 		}
@@ -322,8 +385,21 @@ auto gse::ide::agent::capture_handoff(const handoff_capture& planned, const std:
 		return false;
 	}
 
-	if (std::ofstream out(planned.record, std::ios::binary | std::ios::trunc); out) {
+	if (std::ofstream out(planned.record, std::ios::binary | (planned.replace_record ? std::ios::trunc : std::ios::app)); out) {
 		out << planned.heading << "\n\n" << planned.summary << '\n';
+	}
+
+	if (planned.shortfalls.empty()) {
+		std::filesystem::remove(planned.gaps, ec);
+	}
+	else if (std::ofstream out(planned.gaps, std::ios::binary | std::ios::trunc); out) {
+		out << "# Recorded Gaps\n\nTooling shortfalls the chats on this task reported as they hit them.\n\n";
+		for (const transcript_row& shortfall : planned.shortfalls) {
+			out << "- " << shortfall.text << '\n';
+			if (!shortfall.detail.empty()) {
+				out << "  " << shortfall.detail << '\n';
+			}
+		}
 	}
 
 	if (std::ofstream out(planned.touched, std::ios::binary | std::ios::trunc); out) {
@@ -411,6 +487,7 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 	s.info.agent_id = resumed;
 	s.info.failure.clear();
 	s.retry = {};
+	s.nudges = 0;
 
 	if (phase == task_phase::settled) {
 		stop_session(s);
@@ -426,14 +503,25 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 		return;
 	}
 
-	std::string message(opening);
+	std::string message;
+	if (!policy.fresh_context) {
+		if (const std::string charter = phase_charter(s, phase); !charter.empty()) {
+			message += std::format(
+				"# Current Phase: {}\n\nThis chat was resumed into a new phase, so the phase section of your system prompt is the one you were started under and is out of date. These are your instructions now, and they replace it.\n\n{}\n---\n\n",
+				std::string_view(policy.label),
+				charter
+			);
+		}
+	}
+
+	message += opening;
 	if (!handover.summary.empty()) {
 		message += std::format("\n\nWhat the previous phase reported:\n\n{}", handover.summary);
 	}
 	if (!handover.note.empty()) {
 		message += std::format("\n\nThe owner added this when approving, and it takes precedence over the above:\n\n{}", handover.note);
 	}
-	send_to_session(s, message, {});
+	send_to_session(s, message, {}, true);
 }
 
 auto gse::ide::agent::restart_task(session& s) -> void {
@@ -528,6 +616,23 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 			continue;
 		}
 		build_inbox::consume_phase_report(incoming.id);
+
+		if (found->sync) {
+			log::println(log::level::info, log::category::task, "agent: sync chat for {} reported done - {}", found->sync->root, incoming.summary);
+			append_row(*found, {
+				.kind = row_kind::phase,
+				.text = "sync reported done",
+				.detail = incoming.summary,
+			});
+			found->sync_report = incoming.summary;
+			recorded = true;
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::ok,
+				.lines = { "recorded - END YOUR TURN NOW; the editor closes this conversation and hands the panel back" },
+			});
+			continue;
+		}
 
 		const task_phase from = current_phase(*found);
 		if (from == task_phase::settled) {
@@ -773,6 +878,63 @@ auto gse::ide::agent::accept_awaits(data& d) -> bool {
 	return recorded;
 }
 
+auto gse::ide::agent::accept_questions(data& d) -> bool {
+	bool recorded = false;
+
+	for (build_inbox::ask_request& incoming : build_inbox::peek_ask_requests()) {
+		session* found = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!found) {
+			continue;
+		}
+		build_inbox::consume_ask_request(incoming.id);
+
+		if (found->question) {
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { "you already have a question waiting on the owner, and they answer one at a time - nothing was asked. End your turn and wait for the one already in front of them" },
+			});
+			continue;
+		}
+
+		pending_question asked{
+			.question = std::move(incoming.question),
+			.context = std::move(incoming.context),
+			.multi = incoming.multi,
+		};
+		for (std::string& label : incoming.options) {
+			asked.options.push_back({ .label = std::move(label) });
+		}
+
+		std::string listed = asked.context;
+		for (const question_option& option : asked.options) {
+			if (!listed.empty()) {
+				listed += '\n';
+			}
+			listed += "- " + option.label;
+		}
+
+		log::println(log::level::info, log::category::task, "agent: chat '{}' is asking the owner - {}", found->name, asked.question);
+		append_row(*found, {
+			.kind = row_kind::question,
+			.text = std::format("asking you: {}", asked.question),
+			.detail = listed,
+		});
+
+		const std::size_t offered = asked.options.size();
+		found->question = std::move(asked);
+		recorded = true;
+
+		build_inbox::publish({
+			.id = incoming.id,
+			.outcome = build_inbox::status::ok,
+			.lines = { std::format("asked - the owner has your {} option(s) in the agents panel, with a box beside them to steer you. END YOUR TURN NOW; their answer arrives as your next message", offered) },
+		});
+	}
+
+	return recorded;
+}
+
 auto gse::ide::agent::wake_goal(session& s, const std::string_view fired) -> void {
 	const std::string then = std::move(s.goal->waiting->then);
 	s.goal->waiting.reset();
@@ -837,4 +999,82 @@ auto gse::ide::agent::pause_goal(session& s) -> void {
 		.summary = summary,
 		.verdict = goal_verdict::escalate,
 	};
+}
+
+auto gse::ide::agent::awaiting_answer(const session& s) -> bool {
+	return s.question && !s.question->answered;
+}
+
+auto gse::ide::agent::answer_question(session& s, const std::string_view note) -> void {
+	pending_question& asked = *s.question;
+	asked.answered = true;
+	asked.note.assign(note);
+}
+
+auto gse::ide::agent::service_questions(data& d) -> bool {
+	bool delivered = false;
+
+	for (session& s : d.sessions) {
+		if (!s.question || !s.question->answered || is_busy(s)) {
+			continue;
+		}
+
+		const pending_question asked = *std::exchange(s.question, std::nullopt);
+
+		std::string chosen;
+		for (const question_option& option : asked.options) {
+			if (!option.chosen) {
+				continue;
+			}
+			if (!chosen.empty()) {
+				chosen += ", ";
+			}
+			chosen += option.label;
+		}
+
+		std::string answer;
+		if (chosen.empty()) {
+			answer = std::format(
+				"The owner read your question - \"{}\" - and picked none of the options you offered. They answered in their own words instead:\n\n{}",
+				asked.question,
+				asked.note
+			);
+			answer += "\n\nThat is steering, not a verdict. Follow what they actually said: if they are asking you to go deeper on an option, answer that - with gse_ask again once you have better options, or in a plain reply - rather than picking for them. Do not treat it as a decision already made.";
+		}
+		else {
+			answer = std::format("The owner answered your question - \"{}\" - and chose: {}", asked.question, chosen);
+			if (!asked.note.empty()) {
+				answer += "\n\nThey also said:\n\n" + asked.note;
+			}
+			answer += "\n\nThat is the decision. Act on it now and carry on with the work - do not ask it again, and do not relitigate it.";
+		}
+
+		log::println(log::level::info, log::category::task, "agent: delivering the owner's answer to chat '{}'", s.name);
+		resume_with(s, std::move(answer));
+		delivered = true;
+	}
+
+	return delivered;
+}
+
+auto gse::ide::agent::accept_gap_reports(data& d) -> bool {
+	bool recorded = false;
+
+	for (build_inbox::gap_report& incoming : build_inbox::peek_gap_reports()) {
+		session* found = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!found) {
+			continue;
+		}
+		build_inbox::consume_gap_report(incoming.id);
+
+		log::println(log::level::info, log::category::task, "agent: chat '{}' reported a {} gap - {}", found->name, incoming.kind, incoming.need);
+		append_row(*found, {
+			.kind = row_kind::gap,
+			.text = std::format("{} gap: {}", incoming.kind, incoming.need),
+			.detail = incoming.tried,
+		});
+		recorded = true;
+	}
+
+	return recorded;
 }

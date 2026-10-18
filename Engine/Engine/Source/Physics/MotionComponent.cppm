@@ -37,7 +37,7 @@ export namespace gse::physics {
 		[[= networked]] vec3<velocity> current_velocity;
 		[[= networked]] vec3<angular_velocity> angular_velocity;
 		[[= networked]] std::variant<dynamic_body, kinematic_body, static_body> body = dynamic_body{};
-		std::uint8_t reset_pending = 0;
+		std::uint8_t reset_pending = 1;
 	};
 
 	struct impulse_request {

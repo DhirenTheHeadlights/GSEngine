@@ -1,0 +1,77 @@
+gthr.h: no weak pthread references on wasi-libc.
+
+gthr-posix.h refers to every pthread_* entry point through a __gthrw weakref alias,
+so that a program which does not link libpthread degrades to single-threaded instead
+of failing to link. That mechanism does two things here and neither is wanted:
+
+  - It is pointless. wasi-libc keeps every pthread_* API in libc -- its libpthread.a
+    is an empty 8-byte archive, measured with `llvm-ar t` -- so there is no separate
+    library to link and nothing for the reference to be weak against. This is exactly
+    the case gthr.h already handles for glibc >= 2.34, with the same reasoning in its
+    own comment.
+
+  - It does not assemble. A weakref alias is referenced without GCC ever declaring the
+    target symbol external, so ASM_OUTPUT_EXTERNAL is never reached for it and the call
+    arrives at llvm-mc with no `.functype`: "symbol pthread_key_create: missing
+    .functype", followed by the operand-stack type mismatch that always trails an
+    unknown signature. libgcc's emutls.c is the first file to hit it.
+
+So this follows the file's own idiom -- a `__wasi__` arm beside the __MINGW32__ and
+__GLIBC_PREREQ ones -- rather than teaching the backend to chase weakref aliases into
+the import map.
+
+That backend fix is the alternative and was rejected for now, not forgotten: it would
+be the right answer for any target where weak references to undefined functions must be
+*callable*, which is a real gap this leaves open. Nothing in the engine or libstdc++
+needs it, because 0010 already covers the case libstdc++ actually uses -- a weak
+reference that is never called, tested by `weak_undef` in
+Tools/wasm_dialect_probe.py. A weak reference that IS called still has no signature.
+
+One consequence, stated because it is invisible otherwise: `__gthread_active_p` now
+always answers true, so a std::mutex really locks rather than compiling to nothing.
+That is correct for this sysroot -- the pthreads are always present -- and it is what
+makes the `std_mutex` probe a measurement rather than a tautology.
+
+## What this subsumes, and the second thing wasi-libc lacks
+
+The first error --enable-threads=posix produced was not the missing `.functype` but
+`'pthread_cancel' undeclared here (not in a function)` at gthr-posix.h's
+`__gthrw(pthread_cancel)`: wasi-libc has no cancellation support by stated design, its
+pthread.h declaring pthread_cancel only under __wasilibc_unmodified_upstream.
+
+That was first fixed on its own, extending the `__BIONIC__` arms gthr-posix.h already
+carries at both the __gthrw list and GTHR_ACTIVE_PROXY -- bionic has no pthread_cancel
+either. **That patch was then deleted as dead code, which a review caught and which is
+worth recording here rather than losing.** Both of its hunks live inside
+`#if SUPPORTS_WEAK && GTHREAD_USE_WEAK` regions (gthr-posix.h:116 and :188-299), so
+with GTHREAD_USE_WEAK at 0 `__gthrw(pthread_cancel)` expands to nothing and the whole
+GTHR_ACTIVE_PROXY block is skipped. Measured rather than argued: with that patch
+reverted and this one applied, emutls.o compiles.
+
+So **this patch alone fixes the libgcc build**, and the pthread_cancel repair is only
+needed by a configuration nothing here builds. If GTHREAD_USE_WEAK is ever turned back
+on for this target -- which would mean the backend had learned to declare weakref
+aliases -- gthr-posix.h needs `__wasi__` added beside `__BIONIC__` in those two places
+as well, and that is the note this paragraph exists to leave.
+
+--- a/libgcc/gthr.h
++++ b/libgcc/gthr.h
+@@ -150,6 +150,18 @@
+ #endif
+ #endif
+ 
++#ifdef __wasi__
++/* wasi-libc keeps every pthread_* API in libc, exactly as glibc 2.34 does above:
++   its libpthread.a is an empty archive, so there is no separate library to link
++   and nothing for a weak reference to be weak against.  Leaving the weak
++   references on is also not merely pointless here -- the __gthrw weakref aliases
++   are referenced without GCC ever declaring the target symbol as external, so
++   their calls reach the assembler with no .functype and emutls.c does not
++   assemble.  */
++#undef GTHREAD_USE_WEAK
++#define GTHREAD_USE_WEAK 0
++#endif
++
+ #ifndef GTHREAD_USE_WEAK
+ #define GTHREAD_USE_WEAK 1
+ #endif

@@ -350,7 +350,7 @@ auto gse::asset::discover_baked(data& d) -> asset_result {
 
 template <typename T>
 auto gse::asset::setup_hot_reload_for(data& d) -> void {
-	if constexpr (!has_compile_path<T>) {
+	if constexpr (!has_compile_path<T> || !loadable<T>) {
 		return;
 	}
 	else {
@@ -378,28 +378,12 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 						);
 						return;
 					}
-					auto baked = bake_to_disk<T>(changed_file, dst);
-					if (baked) {
-						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().generic_display_string());
-						if constexpr (loadable<T>) {
-							if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
-								if (auto registered = register_by_path<T>(d, dst); !registered) {
-									log::println(
-										log::level::warning,
-										log::category::assets,
-										"Hot reload failed to queue resource: {}",
-										registered.error().detail
-									);
-								}
-							}
-						}
-					}
-					else {
+					if (auto registered = register_by_path<T>(d, dst); !registered) {
 						log::println(
 							log::level::warning,
 							log::category::assets,
-							"Hot reload failed to recompile: {}",
-							baked.error().detail
+							"Hot reload failed to queue resource: {}",
+							registered.error().detail
 						);
 					}
 				},

@@ -158,10 +158,10 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 
 	const auto shape_kind = static_cast<std::uint32_t>(cmd.shape);
 
-	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
-	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
-	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
-	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.arc_thickness });
+	vertices.push_back(vertex{ p0, { u0, v0 }, cmd.color, l0, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.stroke_thickness });
+	vertices.push_back(vertex{ p1, { u1, v0 }, cmd.color, l1, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.stroke_thickness });
+	vertices.push_back(vertex{ p2, { u1, v1 }, cmd.color, l2, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.stroke_thickness });
+	vertices.push_back(vertex{ p3, { u0, v1 }, cmd.color, l3, half, cmd.corner_radius, shape_kind, cmd.arc_radius, cmd.arc_half_sweep, cmd.stroke_thickness });
 
 	indices.push_back(base_index + 0);
 	indices.push_back(base_index + 2);
@@ -296,7 +296,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 			.shape = cmd.shape,
 			.arc_radius = cmd.arc_radius,
 			.arc_half_sweep = cmd.arc_half_sweep,
-			.arc_thickness = cmd.arc_thickness,
+			.stroke_thickness = cmd.stroke_thickness,
 			.sample_scene_snapshot = cmd.sample_scene_snapshot,
 			.image_slot = cmd.image_slot,
 			.font = {},

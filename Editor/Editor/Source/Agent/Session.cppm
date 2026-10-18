@@ -8,6 +8,7 @@ import :model;
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
 	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk")";
+	constexpr std::string_view sync_denied_tools = R"( --disallowed-tools "Write NotebookEdit Agent Task TodoWrite WebSearch WebFetch mcp__gse__gse_build mcp__gse__gse_package_sdk mcp__gse__gse_run mcp__gse__gse_hibernate mcp__gse__gse_delete_file")";
 	constexpr std::wstring_view resume_option = L" --resume ";
 	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
@@ -83,6 +84,19 @@ namespace gse::ide::agent {
 		task_phase starting
 	) -> session&;
 
+	auto create_sync_session(
+		data& d,
+		sync_request request
+	) -> session&;
+
+	auto is_chat(
+		const session& s
+	) -> bool;
+
+	auto sync_session(
+		data& d
+	) -> session*;
+
 	auto session_command(
 		const session& s,
 		const std::filesystem::path& prompt
@@ -126,7 +140,8 @@ namespace gse::ide::agent {
 	auto send_to_session(
 		session& s,
 		std::string_view prompt,
-		std::span<const gui::image_attachment> attachments
+		std::span<const gui::image_attachment> attachments,
+		bool editor_driven = false
 	) -> void;
 
 	auto interrupt_session(

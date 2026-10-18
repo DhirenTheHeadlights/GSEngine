@@ -1,0 +1,176 @@
+--- a/gcc/config/wasm/wasm.h
++++ b/gcc/config/wasm/wasm.h
+@@ -296,11 +296,35 @@
+ #define ASM_OUTPUT_SKIP(...) wasm_assemble_skip (__VA_ARGS__)
+ void wasm_assemble_ascii (FILE *stream, const char *data, int len);
+ #define ASM_OUTPUT_ASCII(...) wasm_assemble_ascii (__VA_ARGS__)
++
++void wasm_output_def_from_decls (FILE *stream, tree alias, tree target);
++#define ASM_OUTPUT_DEF_FROM_DECLS(FILE, DECL, TARGET) \
++  wasm_output_def_from_decls (FILE, DECL, TARGET)
+ #endif
+ 
+ #define HAS_INIT_SECTION
+ #define SUPPORTS_INIT_PRIORITY 1
+ #define SUPPORTS_WEAK 1
++
++/* How the assembler equates two symbols, which is how an alias is spelled.
++   Defining this is what gives defaults.h's ASM_OUTPUT_DEF, and with it
++   TARGET_SUPPORTS_ALIASES: without one __attribute__((alias)) is rejected
++   outright, which libsupc++ hits in tinfo.cc.  ASM_OUTPUT_DEF_FROM_DECLS is
++   what the alias of a *decl* goes through, because a function alias needs a
++   `.functype' in the module header that this spelling cannot carry.  */
++#define SET_ASM_OP "\t.set\t"
++
++/* Link-once semantics.  The decl is weak, which is how two definitions coexist,
++   and make_decl_one_only additionally records a comdat group, which is what
++   wasm-asm.cc's emit_symbol_section turns into a group section so the linker
++   keeps one copy instead of both.
++
++   Without this SUPPORTS_ONE_ONLY is 0, and that is not only a missed
++   deduplication: the C++ front end derives __GXX_WEAK__ from it, libstdc++
++   derives __GXX_TYPEINFO_EQUALITY_INLINE from that, and the out-of-line branch
++   it then takes defines std::type_info::__equal as an alias.  So a target
++   without one-only is a target whose libsupc++ cannot be compiled.  */
++#define MAKE_DECL_ONE_ONLY(DECL) (DECL_WEAK (DECL) = 1)
+ /* End asm.  */
+ 
+ #define FUNCTION_PROFILER(file, labelno) \
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -419,6 +419,46 @@
+     emit_named_directive (stream, ".hidden", name);
+ }
+ 
++/* Open NAME's own section, PREFIX being `.text.' or `.data.'.  GROUP is the
++   comdat group the symbol belongs to, or null for a symbol that is not
++   one-only: a group is what makes the linker keep one copy of a decl the front
++   end emitted into several units -- an inline function, a vtable, a template's
++   static member -- rather than leave two weak definitions and take whichever it
++   met first.  It is GCC's own group identifier and not NAME because several
++   decls can share one, which is how a vtable and its typeinfo are kept or
++   discarded together.
++
++   Every symbol gets a section of its own, the ones that are not one-only
++   included, because switching back to plain `.text' does NOT end a group: a
++   function emitted after a one-only one joins it, and the linker then discards
++   that function along with the duplicate copy of the group.  The symptom is
++   `undefined symbol' naming a symbol the object plainly defines, which reads
++   like a relocation bug and is not one.  `comdat' in
++   Tools/wasm_dialect_probe.py is the measurement.  */
++void
++emit_symbol_section (FILE *stream, const char *prefix, const char *name,
++		     tree group)
++{
++  fprintf (stream, "\t.section\t%s", prefix);
++  assemble_name (stream, name);
++  if (!group)
++    {
++      fprintf (stream, ",\"\",@\n");
++      return;
++    }
++  fprintf (stream, ",\"G\",@,%s,comdat\n", IDENTIFIER_POINTER (group));
++}
++
++/* The comdat group DECL belongs to, or null.  DECL is null on the constant-pool
++   path, which has no decl to ask and nothing to deduplicate.  */
++tree
++group_of (const_tree decl)
++{
++  if (!decl || !VAR_OR_FUNCTION_DECL_P (decl) || !DECL_ONE_ONLY (decl))
++    return NULL_TREE;
++  return DECL_COMDAT_GROUP (decl);
++}
++
+ /* Close the object ASM_DECLARE_OBJECT_NAME opened.  */
+ void
+ decl_end (FILE *stream)
+@@ -634,7 +674,7 @@
+     sorry ("returning more than one value is not yet implemented for this "
+ 	   "architecture");
+ 
+-  fprintf (stream, "\t.text\n");
++  emit_symbol_section (stream, ".text.", name, group_of (decl));
+   fprintf (stream, "\t.type\t");
+   assemble_name (stream, name);
+   fprintf (stream, ",@function\n");
+@@ -683,6 +723,42 @@
+ 	   IDENTIFIER_POINTER (targetm.asm_out.mangle_assembler_name (name)));
+ }
+ 
++/* Implemetation of ASM_OUTPUT_DEF_FROM_DECLS.  An alias is a second name for a
++   symbol, which the assembler spells as an assignment -- no code and no data,
++   so nothing to place and no section of its own.  TARGET is an identifier
++   rather than a decl because an alias may name a target this unit has no decl
++   for.
++
++   The binding directives are emitted here because this target's
++   TARGET_ASM_GLOBALIZE_LABEL and TARGET_ASM_ASSEMBLE_VISIBILITY are no-ops, so
++   the globalize_decl that varasm runs ahead of this hook writes nothing.
++
++   A function alias also needs its signature in scope, for the same reason a
++   definition does: a `call' naming it is rejected unless the signature is
++   already there, and one declared afterwards is rejected too.  So it goes
++   through declare_func into the module header, derived by signature_of, which
++   keeps every signature in this unit coming from one place.  `alias' in
++   Tools/wasm_dialect_probe.py is the measurement that the assembler takes
++   this at all, for a function and for a data symbol.  */
++void
++wasm_output_def_from_decls (FILE *stream, tree alias, tree target)
++{
++  const char *name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (alias));
++  assemble_linkage (stream, alias, name, true);
++  if (TREE_CODE (alias) == FUNCTION_DECL)
++    {
++      fprintf (stream, "\t.type\t");
++      assemble_name (stream, name);
++      fprintf (stream, ",@function\n");
++      declare_func (name, signature_of (TREE_TYPE (alias)).c_str ());
++    }
++  fprintf (stream, "\t.set\t");
++  assemble_name (stream, name);
++  fprintf (stream, ", ");
++  assemble_name (stream, IDENTIFIER_POINTER (target));
++  fprintf (stream, "\n");
++}
++
+ /* Implemetation of TARGET_ASM_ASSEMBLE_UNDEFINED_DECL.  */
+ void
+ wasm_handle_import (FILE *, const char *name, const_tree decl)
+@@ -814,9 +890,8 @@
+      .text.  */
+   fprintf (stream, "\t.type\t");
+   assemble_name (stream, name);
+-  fprintf (stream, ",@object\n\t.section\t.data.");
+-  assemble_name (stream, name);
+-  fprintf (stream, ",\"\",@\n");
++  fprintf (stream, ",@object\n");
++  emit_symbol_section (stream, ".data.", name, group_of (decl));
+   assemble_linkage (stream, decl, name, pub);
+   fprintf (stream, "\t.p2align\t%d\n", floor_log2 (align_real));
+   assemble_name (stream, name);
+@@ -1001,14 +1076,17 @@
+ 	  fprintf (stream, "%sinfinity", REAL_VALUE_NEGATIVE (*n) ? "-" : "");
+ 	else if (REAL_VALUE_ISNAN (*n))
+ 	  {
+-	    /* A bare `nan' is the only NaN this dialect can spell: it takes
+-	       neither a sign nor wat's `:0x<payload>' suffix.  A NaN that is not
+-	       the canonical positive quiet one therefore cannot be emitted at
+-	       all, and refusing is the point -- printing `nan' for it would
+-	       silently change a constant rather than fail to compile one.  */
+-	    if (REAL_VALUE_NEGATIVE (*n) || !n->canonical)
++	    /* `nan' and `-nan' are the only NaNs this dialect can spell: it
++	       takes a sign, measured, but not wat's `:0x<payload>' suffix.  So a
++	       NaN carrying a payload cannot be emitted at all, and refusing is
++	       the point -- printing `nan' for it would silently change a
++	       constant rather than fail to compile one.  The sign is needed by
++	       real code and not a corner: `-quiet_NaN ()' in fast_float is what
++	       `src/c++17/floating_from_chars.cc' is built from, so a target that
++	       cannot spell it has no std::from_chars for a float.  */
++	    if (!n->canonical)
+ 	      sorry ("NaN constant that this target cannot spell in assembly");
+-	    fprintf (stream, "nan");
++	    fprintf (stream, "%snan", REAL_VALUE_NEGATIVE (*n) ? "-" : "");
+ 	  }
+ 	else
+ 	  {

@@ -328,6 +328,81 @@ export namespace gse::physics {
 		const interpolation_state& interpolation
 	) -> transform_component;
 
+	struct shadow_step_trace_settings {
+		[[
+			= settings::describe<"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
+									  "every tick and log the one-step residual, then discard it. A parity instrument: it "
+									  "denies divergence any time to amplify, so a residual is a defect rather than chaos. "
+									  "Stalls the device once per tick, so timings from such a run are meaningless. "
+									  "Requires a restart, and requires the CPU solver.">{},
+			= settings::restart_required{}
+		]]
+		bool enabled = false;
+
+		[[
+			= settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
+									  "Choose the step from the aggregate column rather than letting a magnitude trigger "
+									  "choose it: the steps just after first contact carry a large backend-independent "
+									  "residual from the per-tick reseed, so any threshold fires there instead of at the "
+									  "step where the backends actually part company.">{}
+		]]
+		int detail_step = -1;
+	};
+
+	struct trace_settings {
+		[[
+			= settings::describe<"Owner id of the one body every physics instrument traces. The cpu solver logs each of "
+									  "its contacts' violation, dual force and penalty before every dual update; the gpu "
+									  "solver records the same for its first substep into the collision state header; and "
+									  "the contact traces print its retired per-tick contact state. 0 traces nothing. The "
+									  "gpu instruments resolve this to a solver body index once the body map exists, so a "
+									  "trace starts on the body's second tick rather than its first.">{}
+		]]
+		std::uint64_t body = 0;
+
+		[[
+			= settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so the contact "
+									  "trace can print the pass-hash line. Off keeps the dispatch stream lean; the solve "
+									  "itself is identical either way.">{}
+		]]
+		bool hashes = false;
+
+		[[
+			= settings::describe<"Log the age in ticks of the gpu body snapshot the solver served each step. The control "
+									  "loop is act -> dispatch -> readback -> observe, so this age is the loop length the "
+									  "policy actually faces, and one extra tick of it costs most of a locomotion policy.">{}
+		]]
+		bool readback_age = false;
+
+		[[
+			= settings::describe<"Count, for every gpu island solve iteration, how many islands already meet the "
+									  "adaptive convergence tolerance on their own constraints, and log the running "
+									  "histogram. Measures what a per-island early-out could skip; the solve itself runs "
+									  "every iteration either way.">{}
+		]]
+		bool island_convergence = false;
+
+		[[
+			= settings::describe<"Ticks of gpu island convergence counts summed into each island_convergence line.">{},
+			= settings::range<1, 100000>{}
+		]]
+		int island_convergence_ticks = 600;
+
+		[[
+			= settings::describe<"Track the gpu solver's per-tick diagnostic counters (contact and colour peaks, "
+									  "coloring conflicts, stale reads, joint extremes) and log them whenever a peak "
+									  "moves or every 60 ticks. Reads the diagnostics header the solver already reads "
+									  "back each dispatch, so the solve itself is untouched.">{}
+		]]
+		bool gpu_diagnostics = true;
+
+		[[
+			= settings::describe<"The shadow-step parity harness, which steps a throwaway gpu copy of the solver from "
+									  "the cpu solver's state every tick.">{}
+		]]
+		shadow_step_trace_settings shadow_step;
+	};
+
 	struct [[= system_state<"Physics">{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
 		[[= settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
@@ -338,117 +413,6 @@ export namespace gse::physics {
 			= shared
 		]]
 		bool use_gpu_solver = false;
-
-		[[
-			= settings::describe<"Most rigid bodies the GPU solver can hold. Sizes the body, contact-adjacency, "
-									  "colouring and grounded buffers once at startup and is baked into the solver's "
-									  "shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<64, 1048576>{},
-			= shared
-		]]
-		int gpu_max_bodies = 20480;
-
-		[[
-			= settings::describe<"Most contacts the GPU solver can carry per tick; contacts past this are dropped "
-									  "and counted by the diagnostics. Sizes the contact, warm-start and frozen-Jacobian "
-									  "buffers once at startup and is baked into the solver's shaders, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{},
-			= shared
-		]]
-		int gpu_max_contacts = 262144;
-
-		[[
-			= settings::describe<"Most broad-phase pairs the GPU solver's grid can emit per tick. Sized once at "
-									  "startup and baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{},
-			= shared
-		]]
-		int gpu_max_collision_pairs = 262144;
-
-		[[
-			= settings::describe<"Most joints the GPU solver can hold. Sized once at startup and baked into the "
-									  "solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 1048576>{},
-			= shared
-		]]
-		int gpu_max_joints = 8192;
-
-		[[
-			= settings::describe<"Most jointed islands the GPU solver can sweep serially. Sized once at startup "
-									  "and baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1, 65536>{},
-			= shared
-		]]
-		int gpu_max_islands = 512;
-
-		[[
-			= settings::describe<"Most impulses the GPU solver accepts per upload. Sized once at startup, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 262144>{},
-			= shared
-		]]
-		int gpu_max_impulses = 4096;
-
-		[[
-			= settings::describe<"Most velocity motors the GPU solver accepts per upload, summed over every tick "
-									  "in a replay batch. Sized once at startup, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 262144>{},
-			= shared
-		]]
-		int gpu_max_motors = 4096;
-
-		[[
-			= settings::describe<"Most muscles the GPU solver can hold. Sized once at startup and baked into the "
-									  "solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 1048576>{},
-			= shared
-		]]
-		int gpu_max_muscles = 8192;
-
-		[[
-			= settings::describe<"Most muscle path points the GPU solver can hold, summed over every muscle. Sized "
-									  "once at startup and baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<32, 8388608>{},
-			= shared
-		]]
-		int gpu_max_muscle_points = 32768;
-
-		[[
-			= settings::describe<"Cells in the GPU solver's broad-phase hash grid. Sized once at startup and "
-									  "baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 1048576>{},
-			= shared
-		]]
-		int gpu_grid_table_size = 32768;
-
-		[[
-			= settings::describe<"Bodies each rollback ring slot can hold; a scene with more bodies runs with the "
-									  "ring off. Sized once at startup, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<64, 1048576>{},
-			= shared
-		]]
-		int gpu_ring_max_bodies = 4096;
-
-		[[
-			= settings::describe<"Contacts each rollback ring slot can hold. Sized once at startup, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{},
-			= shared
-		]]
-		int gpu_ring_max_contacts = 16384;
 
 		[[
 			= settings::describe<"Dispatch at most one GPU solver tick per frame and skip while the previous "
@@ -736,35 +700,10 @@ export namespace gse::physics {
 		bool use_jacobi = false;
 
 		[[
-			= settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so ContactTrace "
-									  "can print the pass-hash line. Off keeps the dispatch stream lean; the solve itself is "
-									  "identical either way.">{},
+			= settings::describe<"Every physics instrument: which body they trace, and which of them run.">{},
 			= shared
 		]]
-		bool trace_hashes = false;
-
-		[[
-			= settings::describe<"Log the age in ticks of the gpu body snapshot the solver served each step. The control "
-									  "loop is act -> dispatch -> readback -> observe, so this age is the loop length the "
-									  "policy actually faces, and one extra tick of it costs most of a locomotion policy.">{},
-			= shared
-		]]
-		bool trace_readback_age = false;
-
-		[[
-			= settings::describe<"Count, for every gpu island solve iteration, how many islands already meet the "
-									  "adaptive convergence tolerance on their own constraints, and log the running "
-									  "histogram. Measures what a per-island early-out could skip; the solve itself runs "
-									  "every iteration either way.">{},
-			= shared
-		]]
-		bool trace_island_convergence = false;
-
-		[[
-			= settings::describe<"Ticks of gpu island convergence counts summed into each trace_island_convergence line.">{},
-			= settings::range<1, 100000>{}
-		]]
-		int trace_island_convergence_ticks = 600;
+		trace_settings trace;
 
 		[[
 			= settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
@@ -825,18 +764,6 @@ export namespace gse::physics {
 			= settings::range<0, 600>{}
 		]]
 		int rollback_history_steps = 0;
-
-		[[
-			= settings::describe<"Solver body index of one body whose contacts both solvers trace per iteration: "
-									  "the cpu solver logs each contact's violation, dual force and penalty before "
-									  "every dual update, and the gpu solver records the same for its first substep "
-									  "into the collision state header, printed by ContactTrace. An index rather than "
-									  "an owner id so the trace covers the very first tick, before the body map exists; "
-									  "-1 traces nothing.">{},
-			= settings::range<-1, 5119>{},
-			= shared
-		]]
-		int trace_body = -1;
 
 		bool gpu_unavailable_reported = false;
 		int rollback_history_floor = 0;
@@ -1006,19 +933,27 @@ export namespace gse::physics {
 		const data& d
 	) -> vbd::solver_config;
 
-	auto capacities_from_settings(
+	auto trace_body_index(
 		const data& d
-	) -> vbd::vbd_capacities;
+	) -> std::optional<std::uint32_t>;
 
-	auto capacities_from_settings(
+	auto trace_body_index(
 		shared_view<data> d
-	) -> vbd::vbd_capacities;
+	) -> std::optional<std::uint32_t>;
 
 	auto gpu_solver_active(
 		const data& d
 	) -> bool;
 
 	auto gpu_solver_active(
+		shared_view<data> d
+	) -> bool;
+
+	auto gpu_solver_driving(
+		const data& d
+	) -> bool;
+
+	auto gpu_solver_driving(
 		shared_view<data> d
 	) -> bool;
 

@@ -16,10 +16,13 @@ import std;
 import :cursor;
 import :ids;
 import :input_layers;
+import :interaction;
 import :styles;
+import :surface_paint;
 import :texture;
 import :types;
 import :ui_renderer;
+import :widget_skin;
 
 namespace gse::gui {
 	auto auto_scroll_delta(
@@ -173,18 +176,18 @@ auto gse::gui::draw_scroll_bar(const draw_context& ctx, const scroll_bar_result&
 		return;
 	}
 
-	vec4f track_color = ctx.style.color_widget_background;
-	track_color.w() *= 0.3f;
-	ctx.queue_sprite({
-		.rect = bar.track_rect,
-		.color = track_color,
-		.texture = ctx.blank_texture,
+	const scrollbar_skin& skin = ctx.style.scrollbar;
+
+	const interaction::press state{
+		.hovered = bar.hovered,
+		.held = axis.held,
+	};
+
+	draw::fill_surface(ctx, bar.track_rect, skin.track, {
 		.layer = ctx.current_layer,
 	});
-	ctx.queue_sprite({
-		.rect = bar.thumb_rect,
-		.color = axis.held ? ctx.style.color_widget_active : (bar.hovered ? ctx.style.color_widget_hovered : ctx.style.color_widget_background),
-		.texture = ctx.blank_texture,
+
+	draw::fill_surface(ctx, bar.thumb_rect, state.select(skin.thumb), {
 		.layer = ctx.current_layer,
 	});
 }

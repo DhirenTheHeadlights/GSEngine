@@ -8,6 +8,7 @@ import gse.time;
 import gse.meta;
 import gse.ecs;
 import gse.concurrency;
+import gse.test;
 
 export namespace gse::scenario {
 	struct info {
@@ -29,16 +30,29 @@ export namespace gse::scenario {
 		async::checked_handle resume{};
 	};
 
-	class context {
+	class context : public test::check_sink {
 	public:
 		context(
 			channel_writer writer,
-			wait_gate* gate
+			wait_gate* gate,
+			gse::registry* reg,
+			test::report_fn report = nullptr
 		);
 
 		[[nodiscard]] auto frame() const -> std::uint64_t;
 
 		auto channels() -> channel_writer&;
+
+		template <typename C>
+		[[nodiscard]] auto owners() const -> std::span<const id>;
+
+		template <typename C>
+		[[nodiscard]] auto components() const -> std::span<const C>;
+
+		template <typename C>
+		[[nodiscard]] auto try_component(
+			id owner
+		) const -> const C*;
 
 		auto advance_frame() -> void;
 
@@ -47,6 +61,7 @@ export namespace gse::scenario {
 	private:
 		channel_writer m_writer;
 		wait_gate* m_gate = nullptr;
+		gse::registry* m_registry = nullptr;
 		std::uint64_t m_frame = 0;
 	};
 
@@ -100,8 +115,8 @@ namespace gse::scenario {
 	consteval auto scenario_members() -> std::vector<std::meta::info>;
 }
 
-gse::scenario::context::context(channel_writer writer, wait_gate* gate)
-	: m_writer(writer), m_gate(gate) {
+gse::scenario::context::context(channel_writer writer, wait_gate* gate, gse::registry* reg, const test::report_fn report)
+	: check_sink(report), m_writer(writer), m_gate(gate), m_registry(reg) {
 }
 
 auto gse::scenario::context::frame() const -> std::uint64_t {
@@ -110,6 +125,21 @@ auto gse::scenario::context::frame() const -> std::uint64_t {
 
 auto gse::scenario::context::channels() -> channel_writer& {
 	return m_writer;
+}
+
+template <typename C>
+auto gse::scenario::context::owners() const -> std::span<const id> {
+	return m_registry ? m_registry->owner_ids<C>() : std::span<const id>{};
+}
+
+template <typename C>
+auto gse::scenario::context::components() const -> std::span<const C> {
+	return m_registry ? std::span<const C>(m_registry->components<C>()) : std::span<const C>{};
+}
+
+template <typename C>
+auto gse::scenario::context::try_component(const id owner) const -> const C* {
+	return m_registry ? m_registry->try_component<C>(owner) : nullptr;
 }
 
 auto gse::scenario::context::advance_frame() -> void {

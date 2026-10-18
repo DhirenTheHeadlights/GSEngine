@@ -149,6 +149,7 @@ auto gse::gui::popout_system::run(context& ctx, data& d, const channel_read<popo
 		popout_out.push<menu_content>({
 			.menu = popout.menu_name,
 			.layer = render_layer::overlay,
+			.translucent = true,
 			.build = [entry = popout.entry, ps_ptr = &d.panel_state, settings_out = settings::change_request_writer(popout_out)](builder& b) {
 				settings::draw_fields_for_entry(b, *ps_ptr, settings_out, *entry, true);
 			},

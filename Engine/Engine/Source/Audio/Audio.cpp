@@ -31,9 +31,13 @@ auto gse::bake(const std::filesystem::path& src, audio_clip::baked& out) -> bool
 		log::println(log::level::warning, log::category::assets, "Failed to open audio source: {}", src.generic_display_string());
 		return false;
 	}
-	const auto size = file.tellg();
+	const std::streamoff size = file.tellg();
+	if (!std::in_range<std::size_t>(size)) {
+		log::println(log::level::warning, log::category::assets, "Audio source {} is {} bytes, which does not fit this build's address space", src.generic_display_string(), size);
+		return false;
+	}
 	file.seekg(0);
-	out.bytes.storage.resize(size);
+	out.bytes.storage.resize(static_cast<std::size_t>(size));
 	file.read(reinterpret_cast<char*>(out.bytes.storage.data()), size);
 	return true;
 }

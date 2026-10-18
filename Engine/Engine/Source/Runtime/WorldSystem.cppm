@@ -6,6 +6,7 @@ import gse.assert;
 import gse.concurrency;
 import gse.core;
 import gse.ecs;
+import gse.graphics;
 import gse.log;
 import gse.network;
 import gse.os;
@@ -47,6 +48,7 @@ export namespace gse::world_system {
 		std::vector<id> scene_ids;
 		std::vector<trigger> triggers;
 		scene* active_scene = nullptr;
+		std::uint32_t generation = 0;
 	};
 
 	struct [[= system_state<"World">{}]] data {
@@ -55,6 +57,7 @@ export namespace gse::world_system {
 		[[= shared]] std::vector<trigger> triggers;
 		[[= shared]] std::optional<id> active_scene;
 		[[= shared]] scene* active_scene_ptr = nullptr;
+		[[= shared]] std::uint32_t scene_generation = 0;
 		[[= shared]] bool networked = false;
 		[[= shared]] bool authoritative = true;
 		std::optional<id> client_id;
@@ -68,6 +71,7 @@ export namespace gse::world_system {
 		std::size_t published_scene_count = 0;
 		std::size_t published_trigger_count = 0;
 		scene* published_active_scene = nullptr;
+		std::uint32_t published_generation = 0;
 	};
 
 	[[= system_init{}]]
@@ -81,8 +85,8 @@ export namespace gse::world_system {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request> requests_in,
-		channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out,
+		channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request, reset_active_scene_request> requests_in,
+		channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request, physics::reset_physics_request, camera::world_visibility_update> player_out,
 		shared_view<actions::data> actions_d,
 		write<player_controller> controllers,
 		entities ents
@@ -117,6 +121,10 @@ export namespace gse {
 	) -> void;
 
 	auto deactivate_active_scene(
+		world_system::data& d
+	) -> void;
+
+	auto reset_active_scene(
 		world_system::data& d
 	) -> void;
 
@@ -182,19 +190,19 @@ auto gse::activate_scene(world_system::data& d, const id& scene_id) -> void {
 	if (d.active_scene == scene_id) {
 		return;
 	}
-	if (d.active_scene.has_value()) {
-		if (auto* old_scene = find_scene(d, d.active_scene.value())) {
-			old_scene->set_active(false);
-		}
-	}
-	if (auto* new_scene = find_scene(d, scene_id)) {
-		new_scene->set_active(true);
-		d.active_scene = new_scene->id();
-		log::println(log::category::runtime, "world: activated scene {} with {} entities (networked {}, authoritative {})", scene_id, new_scene->entities().size(), d.networked, d.authoritative);
-	}
-	else {
+
+	auto* new_scene = find_scene(d, scene_id);
+	if (new_scene == nullptr) {
 		log::println(log::level::warning, log::category::runtime, "world: activate scene {} requested but no scene with that id is registered", scene_id);
+		return;
 	}
+
+	deactivate_active_scene(d);
+
+	new_scene->set_active(true);
+	d.active_scene = new_scene->id();
+	++d.scene_generation;
+	log::println(log::category::runtime, "world: activated scene {} generation {} with {} entities (networked {}, authoritative {})", scene_id, d.scene_generation, new_scene->entities().size(), d.networked, d.authoritative);
 }
 
 auto gse::deactivate_active_scene(world_system::data& d) -> void {
@@ -205,6 +213,17 @@ auto gse::deactivate_active_scene(world_system::data& d) -> void {
 		log::println(log::category::runtime, "world: deactivated scene {}", d.active_scene.value());
 	}
 	d.active_scene = std::nullopt;
+	d.local_player_spawned = false;
+	d.local_controlled_entity = {};
+}
+
+auto gse::reset_active_scene(world_system::data& d) -> void {
+	if (!d.active_scene.has_value()) {
+		return;
+	}
+	const id scene_id = d.active_scene.value();
+	deactivate_active_scene(d);
+	activate_scene(d, scene_id);
 }
 
 auto gse::update_player_controllers(world_system::data& d, write<player_controller>& controllers, const entities& ents, const channel_write<world_system::spawn_player_request, world_system::possess_player_request> player_out) -> void {
@@ -273,7 +292,7 @@ auto gse::world_system::init(context& ctx, data& d, const network::config& net_c
 	return {};
 }
 
-auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
+auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networked_request, set_authoritative_request, set_local_controller_id_request, set_scene_setup_request, deactivate_active_scene_request, activate_scene_request, reset_active_scene_request> requests_in, const channel_write<spawn_player_request, possess_player_request, scene_catalog, physics::rollback_history_request, physics::reset_physics_request, camera::world_visibility_update> player_out, const shared_view<actions::data> actions_d, write<player_controller> controllers, entities ents) -> async::task<> {
 	for (const auto& r : requests_in.of<set_networked_request>()) {
 		if (r.value && !d.networked) {
 			d.local_controlled_entity = {};
@@ -300,6 +319,10 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 	if (!requests_in.of<deactivate_active_scene_request>().empty()) {
 		deactivate_active_scene(d);
 	}
+	if (!requests_in.of<reset_active_scene_request>().empty() && d.active_scene.has_value()) {
+		reset_active_scene(d);
+		player_out.push<physics::reset_physics_request>({});
+	}
 	for (const auto& r : requests_in.of<activate_scene_request>()) {
 		activate_scene(d, r.scene_id);
 	}
@@ -319,17 +342,8 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 			};
 
 			if (condition(ec) && scene_id != d.active_scene) {
-				if (d.active_scene.has_value()) {
-					if (auto* old_scene = find_scene(d, d.active_scene.value())) {
-						old_scene->set_active(false);
-					}
-				}
-
-				if (auto* new_scene = find_scene(d, scene_id)) {
-					new_scene->set_active(true);
-					d.active_scene = new_scene->id();
-					break;
-				}
+				activate_scene(d, scene_id);
+				break;
 			}
 		}
 	}
@@ -338,18 +352,25 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 
 	d.active_scene_ptr = current_scene(d);
 
+	player_out.push<camera::world_visibility_update>({
+		.visible = d.active_scene_ptr != nullptr,
+	});
+
 	if (!d.catalog_published
 		|| d.published_scene_count != d.scene_ids.size()
 		|| d.published_trigger_count != d.triggers.size()
-		|| d.published_active_scene != d.active_scene_ptr) {
+		|| d.published_active_scene != d.active_scene_ptr
+		|| d.published_generation != d.scene_generation) {
 		d.catalog_published = true;
 		d.published_scene_count = d.scene_ids.size();
 		d.published_trigger_count = d.triggers.size();
 		d.published_active_scene = d.active_scene_ptr;
+		d.published_generation = d.scene_generation;
 		player_out.push<scene_catalog>({
 			.scene_ids = d.scene_ids,
 			.triggers = d.triggers,
 			.active_scene = d.active_scene_ptr,
+			.generation = d.scene_generation,
 		});
 	}
 

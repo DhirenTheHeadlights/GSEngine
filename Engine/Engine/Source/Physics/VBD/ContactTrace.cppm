@@ -9,16 +9,7 @@ import gse.ecs;
 import :system;
 
 export namespace gse::physics::contact_trace {
-	struct [[= system_state<"Contact Trace">{}, = settings::category<"ContactTrace">{}, = deferred_system{}]] data {
-		[[
-			= settings::describe<"Log the gpu solver's retired per-tick contact state (lambda, penalty, gap, sticking, "
-									  "anchors) for every contact touching the body with this owner id, plus the body's own "
-									  "state line each tick. 0 traces nothing. A real-path instrument: it consumes the "
-									  "readback the solver already performs every dispatch, so the solve itself is untouched. "
-									  "Requires Physics.use_gpu_solver.">{}
-		]]
-		std::uint64_t body = 0;
-
+	struct [[= system_state<"Contact Trace">{}, = deferred_system{}]] data {
 		std::uint64_t last_generation = 0;
 		bool missing_reported = false;
 		bool overflow_reported = false;

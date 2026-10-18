@@ -101,14 +101,6 @@ auto gse::vbd::gpu_solver::stage_ring_copy(per_frame_data& f, const std::uint64_
 	if (m_ring_history == 0) {
 		co_return;
 	}
-	if (m_body_count > m_capacities.ring_max_bodies) {
-		if (!m_ring_overflow_reported) {
-			m_ring_overflow_reported = true;
-			log::println(log::level::warning, log::category::physics, "vbd gpu rollback ring holds {} bodies per slot but the scene has {}; the ring is off for this scene", m_capacities.ring_max_bodies, m_body_count);
-		}
-		co_return;
-	}
-
 	ring_slot& slot = m_ring[static_cast<std::size_t>(tick % m_ring_history)];
 
 	auto rec = co_await gpu::pass<vbd_ring_copy_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>(chain_index);

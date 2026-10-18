@@ -1,0 +1,100 @@
+--- /dev/null
++++ b/libgcc/config/wasm/unwind-wasm.c
+@@ -0,0 +1,80 @@
++/* Terminating unwinder for WebAssembly.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++/* This target's TARGET_EXCEPT_UNWIND_INFO is UI_NONE, so no function carries
++   unwind information and there is nothing for an unwinder to walk: every
++   landing pad a personality routine would look for is absent by construction,
++   not merely unreachable.  So these cannot be partially implemented -- there is
++   no state in which returning anything would be more correct than terminating
++   -- and each one aborts.
++
++   What that buys is not exceptions.  It is every program that does not throw:
++   libstdc++ refers to the unwinder from eh_throw.o, eh_catch.o, stdexcept.o and
++   cow-stdexcept.o, and those members are pulled into any link that constructs a
++   std::string or a container, so without these definitions nothing hosted links
++   at all.  A throw terminates, which is the truth about the target rather than
++   a property of this file.
++
++   These four are the whole set a hosted libstdc++ asks for, measured off the
++   link rather than taken from unwind.h: _Unwind_ForcedUnwind, _Unwind_Backtrace
++   and the _Unwind_Get* accessors are not referenced, because nothing pulls
++   eh_personality.o in -- with UI_NONE no function names a personality routine.
++   Both were written here first and removed again on that measurement.  A
++   program that reaches further will name what it needs at the link, which is
++   the only thing that can say so.
++
++   Real exceptions need the WebAssembly exception-handling proposal in the
++   back end.  The sjlj path is not an alternative: it needs a working setjmp,
++   and a wasi-libc built without that proposal has none.  */
++
++#include "tconfig.h"
++#include "tsystem.h"
++#include "coretypes.h"
++#include "tm.h"
++#include "unwind.h"
++
++_Unwind_Reason_Code
++_Unwind_RaiseException (struct _Unwind_Exception *exc __attribute__ ((unused)))
++{
++  abort ();
++}
++
++void
++_Unwind_DeleteException (struct _Unwind_Exception *exc __attribute__ ((unused)))
++{
++  abort ();
++}
++
++void
++_Unwind_Resume (struct _Unwind_Exception *exc __attribute__ ((unused)))
++{
++  abort ();
++}
++
++_Unwind_Reason_Code
++_Unwind_Resume_or_Rethrow (struct _Unwind_Exception *exc
++			   __attribute__ ((unused)))
++{
++  abort ();
++}
+--- a/libgcc/config/wasm/t-wasm
++++ b/libgcc/config/wasm/t-wasm
+@@ -1,4 +1,11 @@
+-LIB2ADDEH=
++# A terminating unwinder rather than none at all.  LIB2ADDEH is empty upstream,
++# which is right about the dw2 and sjlj unwinders -- neither can work on a target
++# whose TARGET_EXCEPT_UNWIND_INFO is UI_NONE -- and wrong about the four symbols
++# libstdc++ refers to from any link at all.  See unwind-wasm.c.
++#
++# emutls.c is unaffected: libgcc/Makefile.in appends it to LIB2ADDEH after
++# including this fragment.
++LIB2ADDEH = $(srcdir)/config/wasm/unwind-wasm.c
+ 
+ # Debug information is not yet supported
+-LIBGCC2_DEBUG_CFLAGS = -g0
+\ No newline at end of file
++LIBGCC2_DEBUG_CFLAGS = -g0

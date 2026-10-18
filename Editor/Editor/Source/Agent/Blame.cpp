@@ -141,6 +141,9 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	if (s.think_clock) {
 		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
 	}
+	if (awaiting_answer(s)) {
+		return agent_state::awaiting_answer;
+	}
 	return s.gate ? agent_state::awaiting_approval : agent_state::idle;
 }
 
@@ -156,6 +159,9 @@ auto gse::ide::agent::status_label(const data& d, const session& s) -> std::stri
 	}
 	if (state == agent_state::hibernating && !s.unbuilt.empty()) {
 		out += " until " + unbuilt_label(s) + " is built";
+	}
+	if (state == agent_state::hibernating && !s.asleep_blocker.empty()) {
+		out += " \xC2\xB7 " + s.asleep_blocker;
 	}
 	if (state == agent_state::awaiting_goal) {
 		out += " - " + await_label(*s.goal->waiting);
@@ -214,6 +220,12 @@ auto gse::ide::agent::refresh_build_times(data& d) -> void {
 auto gse::ide::agent::built_through(const data& d, const id key) -> std::int64_t {
 	const auto built = d.built.find(key);
 	return built != d.built.end() ? built->second : 0;
+}
+
+auto gse::ide::agent::edits_built(const data& d, const session& s) -> bool {
+	return std::ranges::all_of(s.unbuilt, [&d](const auto& entry) {
+		return entry.second <= built_through(d, entry.first);
+	});
 }
 
 auto gse::ide::agent::refresh_stale(data& d) -> void {
@@ -712,11 +724,45 @@ auto gse::ide::agent::hibernating_count(const data& d) -> std::size_t {
 	}));
 }
 
+auto gse::ide::agent::nudge_unclosed_phases(data& d) -> void {
+	constexpr std::uint32_t nudge_limit = 1;
+
+	for (session& s : d.sessions) {
+		if (!s.turn_ended) {
+			continue;
+		}
+		s.turn_ended = false;
+
+		const task_phase phase = current_phase(s);
+		if (!s.editor_turn || s.nudges >= nudge_limit || phase == task_phase::settled) {
+			continue;
+		}
+		if (s.hibernating || s.gate || s.pending_transition || s.question || !s.running) {
+			continue;
+		}
+
+		++s.nudges;
+		log::println(log::level::info, log::category::task, "agent: chat '{}' ended a turn in {} without reporting the phase - nudging it once", s.name, enum_to_string(phase));
+		send_to_session(s, std::format(
+			"Your turn ended in the {} phase without calling gse_phase_done, so the task is sitting still - the editor only moves this chat on when you report. If the work this phase owns is finished, call gse_phase_done now with your summary. If it is not finished, carry on with it and do not call it yet. This is the only time you are asked.",
+			std::string_view(policy_of(phase).label)
+		), {}, true);
+	}
+}
+
 auto gse::ide::agent::wake_session(session& s, const std::string_view lead) -> void {
 	s.hibernating = false;
 	const std::string prompt = std::move(s.wake_prompt);
 	s.wake_prompt.clear();
 
+	std::string message(lead);
+	if (!prompt.empty()) {
+		message += "\n\n" + prompt;
+	}
+	resume_with(s, std::move(message));
+}
+
+auto gse::ide::agent::resume_with(session& s, std::string message) -> void {
 	if (!s.running && !launch_session(s)) {
 		append_row(s, {
 			.kind = row_kind::failure,
@@ -725,30 +771,70 @@ auto gse::ide::agent::wake_session(session& s, const std::string_view lead) -> v
 		return;
 	}
 
-	std::string message(lead);
-	if (!prompt.empty()) {
-		message += "\n\n" + prompt;
+	if (const task_phase phase = current_phase(s); phase != task_phase::settled) {
+		message += std::format(
+			"\n\nThis chat is in its {} phase, and that phase ends with gse_phase_done. If the work it owns is finished when you pick this back up, call it with your summary rather than only reporting back.",
+			std::string_view(policy_of(phase).label)
+		);
 	}
 
-	send_to_session(s, message, {});
+	send_to_session(s, message, {}, true);
 }
 
 auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished& finished) -> void {
+	const auto broke_this_build = [&finished](const session& s) {
+		return s.blame_build == finished.key && !s.blame.empty();
+	};
+
+	std::string red_owner;
+	if (!finished.succeeded) {
+		const auto broke_it = std::ranges::find_if(d.sessions, broke_this_build);
+		red_owner = broke_it != d.sessions.end()
+			? std::format("errors owned by chat '{}'", broke_it->name)
+			: "errors nobody here wrote";
+	}
+
 	for (session& s : d.sessions) {
 		if (!s.hibernating || !(s.unbuilt.empty() || s.unbuilt.contains(finished.key))) {
 			continue;
 		}
 
+		if (!finished.succeeded && !broke_this_build(s)) {
+			const std::string reason = "blocked on a red tree - " + red_owner;
+			if (s.asleep_blocker != reason) {
+				s.asleep_blocker = reason;
+				log::println(log::level::info, log::category::task, "agent: chat '{}' stays asleep - the failed build had no errors of its own ({})", s.name, red_owner);
+				append_row(s, {
+					.kind = row_kind::note,
+					.text = std::format("staying asleep - the build failed on {}", red_owner),
+					.detail = std::format("still hibernating until {} lands", s.unbuilt.empty() ? "the next build" : unbuilt_label(s)),
+				});
+			}
+			continue;
+		}
+
+		if (finished.succeeded && !edits_built(d, s)) {
+			const std::string pending = unbuilt_label(s);
+			const std::string reason = "that build started before these edits";
+			if (s.asleep_blocker != reason) {
+				s.asleep_blocker = reason;
+				log::println(log::level::info, log::category::task, "agent: chat '{}' stays asleep - that build started before its latest edits to {}", s.name, pending);
+				append_row(s, {
+					.kind = row_kind::note,
+					.text = "staying asleep - that build started before your latest edits",
+					.detail = std::format("still hibernating until {} lands", pending),
+				});
+			}
+			continue;
+		}
+		s.asleep_blocker.clear();
+
 		std::string lead = finished.succeeded
 			? "The build you were waiting on succeeded and your edits are in the current binaries."
-			: "The build you were waiting on failed.";
-		if (!finished.succeeded && !s.blame.empty()) {
-			lead += " These errors land on lines you wrote:\n" + blame_prompt({}, s.blame);
+			: "The build you were waiting on failed. These errors land on lines you wrote:\n" + blame_prompt({}, s.blame);
+		if (!finished.succeeded) {
 			s.blame.clear();
 			s.blame_build = {};
-		}
-		else if (!finished.succeeded) {
-			lead += " None of the errors land on lines you wrote, so do not try to fix them - report that and stop.";
 		}
 
 		log::println(log::level::info, log::category::task, "agent: waking chat '{}' - its edits are in the build", s.name);
@@ -757,13 +843,8 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 }
 
 auto gse::ide::agent::wake_covered(data& d) -> void {
-	const auto covered = [&d](const auto& entry) {
-		const auto& [key, mtime] = entry;
-		return mtime <= built_through(d, key);
-	};
-
 	for (session& s : d.sessions) {
-		if (!s.hibernating || !std::ranges::any_of(s.unbuilt, covered)) {
+		if (!s.hibernating || s.unbuilt.empty() || !edits_built(d, s)) {
 			continue;
 		}
 
@@ -779,7 +860,7 @@ auto gse::ide::agent::resume_interrupted(data& d) -> void {
 	constexpr std::uint32_t resume_limit = 3;
 
 	for (session& s : d.sessions) {
-		if (!s.turn_open || s.running || s.hibernating || s.pending_transition || s.gate || s.info.agent_id.empty()) {
+		if (!s.turn_open || s.running || s.hibernating || s.pending_transition || s.gate || s.question || s.info.agent_id.empty()) {
 			continue;
 		}
 
@@ -903,7 +984,11 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const bool phases_recorded = accept_phase_reports(d);
 	const bool awaits_recorded = accept_awaits(d);
 	const bool woken = service_awaits(d);
-	const bool recorded = hibernated || phases_recorded || awaits_recorded || woken;
+	const bool gaps_recorded = accept_gap_reports(d);
+	const bool asked = accept_questions(d);
+	const bool answered = service_questions(d);
+	nudge_unclosed_phases(d);
+	const bool recorded = hibernated || phases_recorded || awaits_recorded || woken || gaps_recorded || asked || answered;
 	d.presence = build_inbox::take_presence();
 
 	accept_requests(d);
@@ -1080,7 +1165,7 @@ auto gse::ide::agent::dispatch_blame(data& d, const std::uint32_t session_id) ->
 
 	d.active = session_id;
 	d.overview_active = false;
-	send_to_session(*found, blame_prompt("The build failed on files this session edited:", found->blame), {});
+	send_to_session(*found, blame_prompt("The build failed on files this session edited:", found->blame), {}, true);
 	found->blame.clear();
 	found->blame_build = {};
 }
@@ -1102,7 +1187,7 @@ auto gse::ide::agent::fix_unclaimed(data& d) -> void {
 		return;
 	}
 
-	send_to_session(started, blame_prompt("The build failed and no chat owns these edits:", d.unclaimed), {});
+	send_to_session(started, blame_prompt("The build failed and no chat owns these edits:", d.unclaimed), {}, true);
 	d.unclaimed.clear();
 	d.unclaimed_build = {};
 }
@@ -1169,7 +1254,7 @@ auto gse::ide::agent::resume_waiting(data& d) -> void {
 			.text = std::format("continuing the interrupted turn (attempt {})", s.retry.attempts + 1),
 		});
 		s.retry.waiting = false;
-		send_to_session(s, "continue", {});
+		send_to_session(s, "continue", {}, s.editor_turn);
 	}
 }
 

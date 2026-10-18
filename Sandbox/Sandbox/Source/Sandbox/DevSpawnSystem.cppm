@@ -78,6 +78,7 @@ export namespace sandbox::dev_spawn {
 		gse::id last_character;
 		gse::id possessed_character;
 		gse::id last_scene;
+		std::uint32_t last_generation = 0;
 		int pending_characters = 0;
 		bool character_warning_logged = false;
 		bool in_light_hall = false;
@@ -173,8 +174,9 @@ auto sandbox::dev_spawn::run(
 	const bool req_pyramid = !spawn_in.of<spawn_pyramid_request>().empty();
 
 	const gse::id active_scene_id = scene != nullptr ? scene->id() : gse::id{};
-	const bool entered_scene = !(active_scene_id == state.last_scene);
+	const bool entered_scene = !(active_scene_id == state.last_scene) || world_d.scene_generation != state.last_generation;
 	state.last_scene = active_scene_id;
+	state.last_generation = world_d.scene_generation;
 	if (entered_scene) {
 		state.possessed_character.reset();
 		state.in_light_hall = active_scene_id == gse::find_or_generate_id("LightHall");

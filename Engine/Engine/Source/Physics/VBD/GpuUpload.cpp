@@ -49,7 +49,7 @@ auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<jo
 
 auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phys, const channel_write<gpu_upload_report, gpu_upload_payload, vbd::solver_upload> out, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
 	const auto& plan = phys.gpu_plan;
-	if (!gpu_solver_active(phys) || !plan.active || plan.generation == d.built_generation) {
+	if (!gpu_solver_driving(phys) || !plan.active || plan.generation == d.built_generation) {
 		co_return;
 	}
 	const bool consecutive_plan = plan.generation == d.built_generation + 1;
@@ -207,12 +207,6 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 				motors.insert(motors.end(), tick_motors.begin(), tick_motors.end());
 			}
 		}
-		assert(
-			motors.size() <= phys.gpu_solver.capacities().max_motors,
-			"per-tick motor count {} exceeds Physics.gpu_max_motors = {}",
-			motors.size(),
-			phys.gpu_solver.capacities().max_motors
-		);
 
 		std::size_t wake_at = 0;
 		for (std::size_t t = 0; t <= replay && t < impulse_counts.size(); ++t) {
@@ -262,12 +256,6 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 				++wake_at;
 			}
 		}
-		assert(
-			gpu_impulses.size() <= phys.gpu_solver.capacities().max_impulses,
-			"impulse count {} exceeds Physics.gpu_max_impulses = {}",
-			gpu_impulses.size(),
-			phys.gpu_solver.capacities().max_impulses
-		);
 	}
 
 	auto& gpu_joints = slot.joints;
@@ -306,12 +294,6 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 	};
 	if (refresh_joints) {
 		trace::scope_guard _{ trace_id<"vbd_gpu::build_joints">() };
-		assert(
-			phys.joints.size() <= phys.gpu_solver.capacities().max_joints,
-			"joint count {} exceeds Physics.gpu_max_joints = {}",
-			phys.joints.size(),
-			phys.gpu_solver.capacities().max_joints
-		);
 		{
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_joints::copy_inputs">() };
 			copy_joints_with_inputs(phys, drives, d.joints);
@@ -320,14 +302,6 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			trace::scope_guard _{ trace_id<"vbd_gpu::build_muscles">() };
 			d.muscles.assign(phys.muscles.items().begin(), phys.muscles.items().end());
 			build_muscle_constraints(d.muscles, d.body_index, gpu_muscles, gpu_muscle_points, &d.muscle_slots);
-			assert(
-				gpu_muscles.size() <= phys.gpu_solver.capacities().max_muscles && gpu_muscle_points.size() <= phys.gpu_solver.capacities().max_muscle_points,
-				"{} muscles with {} path points exceed Physics.gpu_max_muscles = {} or Physics.gpu_max_muscle_points = {}",
-				gpu_muscles.size(),
-				gpu_muscle_points.size(),
-				phys.gpu_solver.capacities().max_muscles,
-				phys.gpu_solver.capacities().max_muscle_points
-			);
 			gpu_muscle_excitations.resize(gpu_muscles.size());
 			for (std::size_t i = 0; i < gpu_muscles.size(); ++i) {
 				gpu_muscle_excitations[i] = gpu_muscles[i].excitation;

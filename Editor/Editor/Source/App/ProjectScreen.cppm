@@ -48,7 +48,6 @@ export namespace gse::ide {
 			std::string key;
 			std::string name;
 			std::string location;
-			vec4f accent;
 			bool current = false;
 			bool elsewhere = false;
 		};
@@ -121,14 +120,11 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 		if (current) {
 			m_selected = static_cast<int>(m_entries.size());
 		}
-		gui::theme t = gui::theme::midnight;
-		enum_from_string(project::theme_name(found.root), t);
 		m_entries.push_back({
 			.manifest = path,
 			.key = path.generic_display_string(),
 			.name = found.name,
 			.location = found.root.generic_display_string(),
-			.accent = gui::style::from_theme(t).color_accent,
 			.current = current
 		});
 	}
@@ -214,7 +210,7 @@ auto gse::ide::project_screen::body_rect(const gui::style& sty, const vec2f view
 auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f viewport_size) const -> void {
 	ctx.sprites.push_back({
 		.rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size),
-		.color = m_hub ? vec4f{ vec3f(ctx.style.color_menu_body), 1.f } : vec4f{ 0.f, 0.f, 0.f, 0.55f },
+		.color = m_hub ? ctx.style.modal.panel.fill : ctx.style.modal.scrim.fill,
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 	});
@@ -222,13 +218,8 @@ auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f
 	if (m_hub) {
 		return;
 	}
-	const rectf card = body_rect(ctx.style, viewport_size);
-	ctx.sprites.push_back({
-		.rect = card,
-		.color = { vec3f(ctx.style.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
+	gui::draw::fill_surface(ctx, body_rect(ctx.style, viewport_size), ctx.style.modal.panel, {
 		.layer = render_layer::overlay,
-		.corner_radius = ctx.style.corner_radius_menu,
 	});
 }
 
@@ -512,7 +503,6 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 			.key = item.key,
 			.selected = m_selected == static_cast<int>(index),
 			.align = gui::selectable_align::left,
-			.accent = item.accent,
 			.detail_column = detail_column,
 		})) {
 			activate(item);

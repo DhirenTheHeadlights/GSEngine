@@ -15,7 +15,7 @@ import :vbd_solver;
 import :vbd_cpu_contact_trace;
 
 auto gse::physics::cpu_contact_trace::run(data& d, const shared_view<physics::data> phys) -> async::task<> {
-	if (d.body == 0 || gpu_solver_active(phys)) {
+	if (phys.trace.body == 0 || gpu_solver_active(phys)) {
 		co_return;
 	}
 
@@ -27,7 +27,7 @@ auto gse::physics::cpu_contact_trace::run(data& d, const shared_view<physics::da
 	std::uint32_t body_index = 0;
 	bool found = false;
 	for (std::uint32_t i = 0; i < owners.size() && i < bodies.size(); ++i) {
-		if (owners[i].number() == d.body) {
+		if (owners[i].number() == phys.trace.body) {
 			body_index = i;
 			found = true;
 			break;
@@ -45,7 +45,7 @@ auto gse::physics::cpu_contact_trace::run(data& d, const shared_view<physics::da
 				log::category::physics,
 				"cpu contact trace tick {}: body {} not among the solver's {} bodies (contacts {}) owners{}",
 				tick,
-				d.body,
+				phys.trace.body,
 				owners.size(),
 				phys.vbd_solver.graph().contact_constraints().size(),
 				keys
@@ -68,7 +68,7 @@ auto gse::physics::cpu_contact_trace::run(data& d, const shared_view<physics::da
 		log::category::physics,
 		"cpu contact trace tick {} body {} idx {}: pos {:.8f} vel {:.8f} avel {:.8f} sleep {} contacts {} of {}",
 		tick,
-		d.body,
+		phys.trace.body,
 		body_index,
 		body.position,
 		body.velocity,

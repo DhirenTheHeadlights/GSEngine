@@ -28,7 +28,7 @@ export namespace gse::nsight_perf {
 		}]],
 
 		no_device [[= status_remedy{
-			.text = "no NVIDIA device at the configured index; set Graphics.gpu_perf_metrics_device",
+			.text = "no NVIDIA device at the configured index; set Graphics.gpu_perf_metrics.device",
 		}]],
 
 		unsupported_gpu [[= status_remedy{
@@ -41,7 +41,7 @@ export namespace gse::nsight_perf {
 		}]],
 
 		no_metrics [[= status_remedy{
-			.text = "Graphics.gpu_perf_metrics named no metric this device knows",
+			.text = "Graphics.gpu_perf_metrics.names named no metric this device knows",
 		}]],
 
 		config_needs_replay [[= status_remedy{

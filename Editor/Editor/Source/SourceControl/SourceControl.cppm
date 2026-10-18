@@ -12,16 +12,26 @@ export namespace gse::ide {
 		std::string key;
 		std::string commit_key;
 		std::string push_key;
-		std::string draft_key;
+		std::string sync_key;
 		std::string message;
-		std::string draft_status;
-		bool drafting = false;
 		gui::text_input_state input;
+	};
+
+	struct message_banner {
+		std::string shown;
+		float wrapped_width = 0.f;
+		gui::text_buffer text;
+		gui::text_area_state view;
+		std::vector<gui::text_span> spans;
 	};
 
 	struct source_control_state {
 		std::unordered_map<id, repository_edit> edits;
 		std::unordered_set<id> selected;
+		std::filesystem::path sync_root;
+		std::string sync_summary;
+		message_banner error_banner;
+		message_banner summary_banner;
 	};
 
 	struct source_control_inputs {
@@ -38,9 +48,9 @@ export namespace gse::ide {
 		const std::filesystem::path& root
 	) -> repository_edit&;
 
-	auto apply_draft(
+	auto apply_sync_finished(
 		source_control_state& state,
-		const agent::draft_ready& drafted
+		const agent::sync_finished& finished
 	) -> void;
 
 	auto draw_source_control_panel(
@@ -48,7 +58,7 @@ export namespace gse::ide {
 		const rectf& rect,
 		source_control_state& state,
 		const source_control_inputs& inputs,
-		channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels
+		channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels
 	) -> void;
 }
 
@@ -63,7 +73,7 @@ namespace gse::ide {
 		const source_control_inputs& inputs;
 		const git::repository_status& repository;
 		const git::change* change = nullptr;
-		channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels;
+		channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels;
 	};
 
 	auto draw_header_row(
@@ -142,6 +152,17 @@ namespace gse::ide {
 		const git::status_map& status,
 		float scale
 	) -> float;
+
+	constexpr float banner_room_share = 0.4f;
+
+	auto draw_banner(
+		gui::builder& ui,
+		message_banner& banner,
+		std::string_view name,
+		std::string_view text,
+		const vec4f& color,
+		rectf& room
+	) -> void;
 }
 
 auto gse::ide::contains_path(const std::filesystem::path& root, const std::filesystem::path& path) -> bool {
@@ -185,20 +206,15 @@ auto gse::ide::edit_for(source_control_state& state, const std::filesystem::path
 		.key = "##source_control_message_" + root_key,
 		.commit_key = "##source_control_commit_" + root_key,
 		.push_key = "##source_control_push_" + root_key,
-		.draft_key = "##source_control_draft_" + root_key,
+		.sync_key = "##source_control_sync_" + root_key,
 	}).first->second;
 }
 
-auto gse::ide::apply_draft(source_control_state& state, const agent::draft_ready& drafted) -> void {
-	repository_edit& edit = edit_for(state, drafted.root);
-	edit.drafting = false;
-	if (!drafted.failure.empty()) {
-		edit.draft_status = "draft failed: " + drafted.failure;
-		return;
-	}
-	edit.draft_status.clear();
-	edit.message = drafted.message;
-	edit.input = {};
+auto gse::ide::apply_sync_finished(source_control_state& state, const agent::sync_finished& finished) -> void {
+	state.sync_root.clear();
+	state.sync_summary = finished.failure.empty()
+		? finished.summary
+		: "the sync could not start: " + finished.failure;
 }
 
 auto gse::ide::change_id(const git::repository_status& repository, const git::change& change) -> id {
@@ -263,7 +279,7 @@ auto gse::ide::draw_header_row(const row_context& row) -> void {
 
 	ctx.queue_sprite({
 		.rect = row.rect,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
@@ -277,7 +293,11 @@ auto gse::ide::draw_header_row(const row_context& row) -> void {
 	if (!repository.changes.empty() && ctx.clicked_in_rect(box.intersection(row.visible))) {
 		select_all(row.state, repository, !all);
 	}
-	gui::draw_checkbox(ctx, box, all);
+	gui::draw_checkbox(ctx, box, all, {
+		.color_frame = sty.checkbox.frame.idle,
+		.color_mark = sty.checkbox.mark.idle,
+		.extent = gui::checkbox_extent(sty),
+	});
 
 	const std::string name = repository.root.filename().generic_display_string();
 	ctx.queue_text({
@@ -329,8 +349,8 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 
 	const rectf push_rect = rectf::from_position_size({ row.rect.right() - pad - button_w, top }, { button_w, control_h });
 	const rectf commit_rect = rectf::from_position_size({ push_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
-	const rectf draft_rect = rectf::from_position_size({ commit_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
-	const rectf input_rect = rectf::from_position_size({ row.rect.left() + pad, top }, { std::max(0.f, draft_rect.left() - pad - row.rect.left() - pad), control_h });
+	const rectf sync_rect = rectf::from_position_size({ commit_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
+	const rectf input_rect = rectf::from_position_size({ row.rect.left() + pad, top }, { std::max(0.f, sync_rect.left() - pad - row.rect.left() - pad), control_h });
 
 	ui.draw<gui::text_input>({
 		.name = edit.key,
@@ -339,23 +359,20 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 		.rect = input_rect,
 	});
 	if (edit.message.empty()) {
-		const bool failed = !edit.draft_status.empty();
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = edit.drafting ? "Drafting a commit message..." : failed ? edit.draft_status : "Commit message",
+			.text = "Commit message",
 			.position = { input_rect.left() + pad, input_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
 			.scale = sty.font_size,
-			.color = failed ? sty.color_error : sty.color_text_secondary,
+			.color = sty.color_text_secondary,
 			.clip_rect = input_rect,
 		});
 	}
 
 	std::vector<std::filesystem::path> paths = selected_paths(row.state, repository);
-	const bool can_draft = !row.inputs.busy && !edit.drafting && !paths.empty();
-	if (ui.draw<gui::button>({ .text = "Draft", .rect = draft_rect, .key = edit.draft_key, .enabled = can_draft })) {
-		edit.drafting = true;
-		edit.draft_status.clear();
-		std::vector<agent::draft_file> files;
+	const bool can_sync = !row.inputs.busy && !paths.empty();
+	if (ui.draw<gui::button>({ .text = "Sync", .rect = sync_rect, .key = edit.sync_key, .enabled = can_sync })) {
+		std::vector<agent::sync_file> files;
 		for (const git::change& change : repository.changes) {
 			if (!row.state.selected.contains(change_id(repository, change))) {
 				continue;
@@ -367,11 +384,20 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 				.deleted = change.deleted,
 			});
 		}
-		row.channels.push<agent::draft_request>({
+		row.channels.push<agent::sync_request>({
 			.root = repository.root,
 			.branch = repository.branch,
+			.upstream = repository.upstream,
+			.message = edit.message,
+			.ahead = repository.ahead,
+			.behind = repository.behind,
 			.files = std::move(files),
 		});
+		row.state.sync_root = repository.root;
+		row.state.sync_summary.clear();
+		select_all(row.state, repository, false);
+		edit.message.clear();
+		edit.input = {};
 	}
 
 	const bool can_commit = !row.inputs.busy && !edit.message.empty() && !paths.empty();
@@ -384,7 +410,6 @@ auto gse::ide::draw_controls_row(const row_context& row) -> void {
 			.paths = std::move(paths),
 		});
 		edit.message.clear();
-		edit.draft_status.clear();
 		edit.input = {};
 	}
 
@@ -408,7 +433,7 @@ auto gse::ide::draw_change_row(const row_context& row) -> void {
 	if (row.hovered) {
 		ctx.queue_sprite({
 			.rect = row.rect,
-			.color = sty.color_widget_hovered,
+			.color = sty.list_item.surfaces.hot.fill,
 			.texture = ctx.blank_texture,
 		});
 	}
@@ -425,7 +450,11 @@ auto gse::ide::draw_change_row(const row_context& row) -> void {
 			.path = row.repository.root / change.relative,
 		});
 	}
-	gui::draw_checkbox(ctx, box, row.state.selected.contains(file_id));
+	gui::draw_checkbox(ctx, box, row.state.selected.contains(file_id), {
+		.color_frame = sty.checkbox.frame.idle,
+		.color_mark = sty.checkbox.mark.idle,
+		.extent = gui::checkbox_extent(sty),
+	});
 
 	const std::string deleted = std::format("-{}", change.deleted);
 	const float deleted_x = row.rect.right() - pad - text_view->width(deleted, sty.font_size);
@@ -468,7 +497,73 @@ auto gse::ide::draw_change_row(const row_context& row) -> void {
 	});
 }
 
-auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, agent::draft_request, jump_to_request> channels) -> void {
+auto gse::ide::draw_banner(gui::builder& ui, message_banner& banner, const std::string_view name, const std::string_view text, const vec4f& color, rectf& room) -> void {
+	if (text.empty()) {
+		return;
+	}
+
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const float wrap_width = std::max(sty.font_size, room.width() - sty.accent_bar_width - pad * 2.f - gui::scroll_config{}.scrollbar_width);
+
+	if (banner.shown != text || banner.wrapped_width != wrap_width) {
+		banner.shown.assign(text);
+		banner.wrapped_width = wrap_width;
+		banner.text.lines.clear();
+		banner.spans.clear();
+		for (const std::string_view line : ctx.fonts.text.resolve()->wrap(text, wrap_width, sty.font_size)) {
+			banner.spans.push_back({
+				.line = static_cast<std::uint32_t>(banner.text.lines.size()),
+				.start_col = 0,
+				.end_col = static_cast<std::uint32_t>(line.size()),
+				.color = color,
+			});
+			banner.text.lines.emplace_back(line);
+		}
+	}
+
+	const float line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
+	const float wanted = static_cast<float>(banner.text.lines.size()) * line_h + pad;
+	const float extent = std::min(wanted, std::max(line_h + pad, room.height() * banner_room_share));
+	const rectf area = rectf::from_position_size(room.top_left(), { room.width(), extent });
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ area.left(), area.top() }, { sty.accent_bar_width, area.height() }),
+		.color = color,
+		.texture = ctx.blank_texture,
+	});
+
+	ui.draw<gui::text_area>({
+		.buffer = banner.text,
+		.state = banner.view,
+		.name = name,
+		.spans = banner.spans,
+		.rect = rectf::from_position_size(
+			{ area.left() + sty.accent_bar_width + pad, area.top() - pad * 0.5f },
+			{ std::max(0.f, area.width() - sty.accent_bar_width - pad), std::max(0.f, area.height() - pad) }
+		),
+		.read_only = true,
+		.blink_interval = time{},
+		.font = ctx.fonts.text,
+	});
+
+	room = rectf::from_position_size(
+		{ room.left(), room.top() - extent },
+		{ room.width(), std::max(0.f, room.height() - extent) }
+	);
+}
+
+auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) -> void {
+	if (!state.sync_root.empty()) {
+		return;
+	}
+
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -476,18 +571,8 @@ auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, so
 	const float row_h = text_view->line_height(sty.font_size) + pad;
 
 	rectf list_rect = rect;
-	if (!inputs.action_error.empty()) {
-		const rectf error_rect = rectf::from_position_size({ rect.left(), rect.top() }, { rect.width(), std::min(row_h, rect.height()) });
-		ctx.queue_text({
-			.font = ctx.fonts.text,
-			.text = inputs.action_error,
-			.position = { error_rect.left() + pad, error_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
-			.scale = sty.font_size,
-			.color = sty.color_error,
-			.clip_rect = error_rect,
-		});
-		list_rect = rectf::from_position_size({ rect.left(), error_rect.bottom() }, { rect.width(), std::max(0.f, rect.height() - error_rect.height()) });
-	}
+	draw_banner(ui, state.error_banner, "##source_control_error", inputs.action_error, sty.color_error, list_rect);
+	draw_banner(ui, state.summary_banner, "##source_control_summary", state.sync_summary, sty.color_text_secondary, list_rect);
 
 	if (!inputs.status || inputs.status->empty()) {
 		ctx.queue_text({

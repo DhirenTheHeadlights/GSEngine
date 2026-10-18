@@ -22,6 +22,7 @@ import :gui;
 import :gui_chrome;
 import :gui_drag_resize;
 import :gui_frame;
+import :gui_hud;
 import :gui_menu;
 import :gui_overlay;
 import :gui_scale;
@@ -292,7 +293,7 @@ auto gse::gui::update_viewport_interaction(data& d, viewport_state& vp, const sh
 		});
 }
 
-auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out) -> void {
+auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out) -> void {
 	const vec2f viewport_size = vp.frame_rect.size();
 
 	if (vp.active_dock_space) {
@@ -303,6 +304,11 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 
 	if (!vp.menu_stack.empty()) {
 		process_screen(d, vp, input_st, viewport_size);
+	}
+
+	if (vp.adopts_unclaimed_content && !vp.menu_stack.occludes()) {
+		const channel_read_guard<hud_content> hud = requests_in.of<hud_content>();
+		process_hud(d, vp, input_st, std::span(hud.begin(), hud.size()));
 	}
 
 	ui_out.push<window_chrome_metrics_request>({
@@ -318,7 +324,7 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 		if (occluded) {
 			continue;
 		}
-		process_menu(d, vp, input_st, content.menu, content.layer, content.build);
+		process_menu(d, vp, input_st, content.menu, content.layer, content.translucent, content.build);
 	}
 
 	for (const id& menu_id : vp.pending_popout_close_ids) {

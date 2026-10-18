@@ -14,7 +14,7 @@ import :vbd_gpu_solver;
 import :vbd_gpu_solver_diagnostics;
 
 auto gse::physics::gpu_diagnostics::run(data& d, const shared_view<physics::data> phys) -> async::task<> {
-	if (!d.enabled || !gpu_solver_active(phys)) {
+	if (!phys.trace.gpu_diagnostics || !gpu_solver_active(phys)) {
 		co_return;
 	}
 

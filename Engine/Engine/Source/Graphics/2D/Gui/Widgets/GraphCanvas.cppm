@@ -13,6 +13,8 @@ import :styles;
 import :types;
 import :ids;
 import :interaction;
+import :surface_paint;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct graph_canvas {
@@ -129,12 +131,11 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 			fill = { fill.x() + 0.07f, fill.y() + 0.07f, fill.z() + 0.07f, fill.w() };
 		}
 
-		ctx.queue_sprite({
-			.rect = n.rect,
-			.color = fill,
-			.texture = ctx.blank_texture,
+		surface node_surface = ctx.style.graph_node;
+		node_surface.fill = fill;
+
+		draw::fill_surface(ctx, n.rect, node_surface, {
 			.clip_rect = clip,
-			.corner_radius = ctx.style.corner_radius,
 		});
 
 		const float label_font = ctx.style.font_size * p.label_scale;

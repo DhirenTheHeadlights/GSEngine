@@ -77,6 +77,13 @@ export namespace gse::gui {
 		std::string menu;
 		int priority = 0;
 		render_layer layer = render_layer::content;
+		bool translucent = false;
+		std::function<void(builder&)> build;
+	};
+
+	struct hud_content {
+		std::string name;
+		render_layer layer = render_layer::overlay;
 		std::function<void(builder&)> build;
 	};
 }

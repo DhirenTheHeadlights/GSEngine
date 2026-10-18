@@ -70,6 +70,7 @@ export namespace gse::gui {
 		std::optional<text_edit_request> pending_text_edit;
 		image_paste_state image_paste;
 		std::optional<menu> screen_surface;
+		std::optional<menu> hud_surface;
 		bool manual_cursor = false;
 		std::vector<id> pending_popout_close_ids;
 		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
@@ -89,7 +90,7 @@ export namespace gse::gui {
 	struct [[= system_state<"Gui">{}, = settings::category<"UI">{}]] data {
 		[[
 			= settings::describe<"Color theme applied to all UI panels and widgets.">{},
-			= settings::project_scope{}
+			= settings::user_scope{}
 		]]
 		theme current_theme = theme::midnight;
 
@@ -178,7 +179,7 @@ export namespace gse::gui {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<input::data> input_state,
-		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
+		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
 		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
 		data& d
 	) -> async::task<>;

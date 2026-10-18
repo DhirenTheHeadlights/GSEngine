@@ -137,13 +137,7 @@ auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> vo
 
 auto gse::gui::scale_style(style sty, const float factor) -> style {
 	sty.scale_factor *= factor;
-
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
-		if constexpr (has_annotation<scaled_tag>(m)) {
-			sty.[:m:] *= factor;
-		}
-	}
-
+	scale_style_members(sty, factor);
 	return sty;
 }
 

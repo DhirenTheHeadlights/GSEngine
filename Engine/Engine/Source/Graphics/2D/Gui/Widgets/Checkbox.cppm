@@ -18,10 +18,12 @@ import :ids;
 import :interaction;
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :symbols;
 import :texture;
 import :types;
 import :ui_renderer;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct checkbox_paint {
@@ -125,11 +127,15 @@ auto gse::gui::checkbox::draw(const draw_context& ctx, const params& p, id& hot,
 		{ content_rect.width(), widget_height }
 	);
 
-	const interaction::press pressed = interaction::press_in_rect(ctx, hot, active, widget_id, row_rect, p.enabled);
+	const interaction::press pressed = interaction::press_in_rect(ctx, hot, active, widget_id, {
+		.rect = row_rect,
+		.enabled = p.enabled,
+	});
 	if (pressed.activated) {
 		p.value = !p.value;
 	}
 
+	const checkbox_skin& skin = ctx.style.checkbox;
 	const float label_width = content_rect.width() * ctx.style.label_column_ratio;
 
 	const rectf label_rect = rectf::from_position_size(
@@ -137,15 +143,10 @@ auto gse::gui::checkbox::draw(const draw_context& ctx, const params& p, id& hot,
 		{ label_width, widget_height }
 	);
 
-	const vec4f text_color = p.enabled ? ctx.style.color_text : ctx.style.color_text_disabled;
-
-	ctx.queue_text({
-		.font = fnt,
-		.text = p.name,
-		.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = text_color,
-		.clip_rect = label_rect
+	draw::label(ctx, label_rect, p.name, skin.label, {
+		.color = pressed.select(skin.label_colors),
+		.font = p.font,
+		.clip_rect = label_rect,
 	});
 
 	const float extent = checkbox_extent(ctx.style);
@@ -155,13 +156,8 @@ auto gse::gui::checkbox::draw(const draw_context& ctx, const params& p, id& hot,
 	);
 
 	draw_checkbox(ctx, box_rect, p.value, {
-		.color_frame = pressed.color({
-			.idle = ctx.style.color_border,
-			.hot = ctx.style.color_handle_hovered,
-			.active = ctx.style.color_accent,
-			.disabled = ctx.style.color_text_disabled,
-		}),
-		.color_mark = p.enabled ? ctx.style.color_accent : ctx.style.color_text_disabled,
+		.color_frame = pressed.select(skin.frame),
+		.color_mark = pressed.select(skin.mark),
 		.extent = extent,
 	});
 

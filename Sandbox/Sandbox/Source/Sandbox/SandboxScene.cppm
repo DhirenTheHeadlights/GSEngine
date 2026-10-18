@@ -53,6 +53,22 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
+	auto carousel_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto machines_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto dominoes_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto swings_scene_setup(
+		gse::scene& s
+	) -> void;
+
 	auto physics_parity_world_setup(
 		gse::engine& e,
 		std::size_t n_envs
@@ -131,6 +147,11 @@ namespace sandbox {
 		gse::length inner,
 		gse::length outer,
 		std::uint32_t seed
+	) -> void;
+
+	auto spawn_outdoor_ground(
+		gse::scene& s,
+		std::string_view prefix
 	) -> void;
 }
 
@@ -253,6 +274,141 @@ auto sandbox::tumbler_scene_setup(gse::scene& s) -> void {
 			.speed = gse::meters_per_second(30.f),
 			.yaw = gse::degrees(0.f),
 			.pitch = gse::degrees(-20.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::spawn_outdoor_ground(gse::scene& s, const std::string_view prefix) -> void {
+	constexpr auto floor_size = gse::vec3<gse::length>(gse::meters(1000.f), gse::meters(1.f), gse::meters(1000.f));
+
+	s.spawn(
+		std::format("{}Floor", prefix),
+		static_disc_floor(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.5f), gse::meters(0.f)),
+			floor_size,
+			gse::meters(1200.f)
+		)
+	);
+
+	s.spawn(
+		std::format("{}Mountains", prefix),
+		mountain_ring(
+			gse::meters(1200.f),
+			gse::meters(6500.f),
+			gse::meters(920.f)
+		)
+	);
+}
+
+auto sandbox::carousel_scene_setup(gse::scene& s) -> void {
+	spawn_outdoor_ground(s, "Carousel");
+
+	const stress_scene_params drum{
+		.tumbler_radial_cubes = 10,
+		.tumbler_axial_cubes = 20,
+	};
+	const stress_scene_params counter_drum{
+		.tumbler_radial_cubes = 5,
+		.tumbler_axial_cubes = 10,
+	};
+
+	spawn_tumbler(
+		s,
+		0,
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(7.f), gse::meters(0.f)),
+		gse::axis_x,
+		gse::radians_per_second(0.35f),
+		drum
+	);
+	spawn_tumbler(
+		s,
+		1,
+		gse::vec3<gse::position>(gse::meters(24.f), gse::meters(4.f), gse::meters(0.f)),
+		gse::axis_z,
+		gse::radians_per_second(-0.9f),
+		counter_drum
+	);
+
+	s.build("Carousel Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(6.f), gse::meters(16.f), gse::meters(44.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(24.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-12.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::machines_scene_setup(gse::scene& s) -> void {
+	spawn_outdoor_ground(s, "Machines");
+
+	spawn_elevator(s, gse::vec3<gse::position>(gse::meters(-18.f, 0.f, 0.f)));
+	spawn_vise(s, gse::vec3<gse::position>(gse::meters(0.f, 0.f, -14.f)));
+	spawn_slider_elevator(s, gse::vec3<gse::position>(gse::meters(14.f, 0.f, 0.f)));
+	spawn_hinge_door(s, gse::vec3<gse::position>(gse::meters(0.f, 0.f, 8.f)));
+	spawn_funnel(s, gse::vec3<gse::position>(gse::meters(26.f, 0.f, -16.f)));
+
+	s.build("Machines Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(9.f), gse::meters(34.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(18.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-10.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::dominoes_scene_setup(gse::scene& s) -> void {
+	spawn_outdoor_ground(s, "Dominoes");
+
+	constexpr int spokes = 6;
+	const auto hub_radius = gse::meters(4.f);
+
+	for (int i = 0; i < spokes; ++i) {
+		const auto bearing = gse::degrees(360.f) * (static_cast<float>(i) / static_cast<float>(spokes));
+		const auto origin = gse::vec3<gse::position>(
+			hub_radius * gse::sin(bearing),
+			gse::meters(0.f),
+			hub_radius * gse::cos(bearing)
+		);
+		spawn_domino_chain(s, i + 1, origin, bearing - gse::degrees(90.f));
+	}
+
+	s.build("Dominoes Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(20.f), gse::meters(26.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(18.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-34.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::swings_scene_setup(gse::scene& s) -> void {
+	spawn_outdoor_ground(s, "Swings");
+
+	for (int i = 0; i < 3; ++i) {
+		const auto origin = gse::vec3<gse::position>(
+			gse::meters(static_cast<float>(i - 1) * 8.f),
+			gse::meters(0.f),
+			gse::meters(0.f)
+		);
+		spawn_pendulum_chain(s, i + 1, origin);
+	}
+
+	spawn_spring_tests(s, gse::vec3<gse::position>(gse::meters(-24.f, 0.f, -16.f)));
+	spawn_high_speed_impact_target(s, gse::vec3<gse::position>(gse::meters(12.f, 0.f, 6.f)));
+
+	s.build("Swings Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(11.f), gse::meters(30.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(18.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-12.f),
 			.collide_with_geometry = false,
 		});
 }
@@ -689,7 +845,7 @@ auto sandbox::parity_domino_scene_setup(gse::scene& s) -> void {
 		)
 	);
 
-	spawn_domino_chain(s, gse::vec3<gse::position>(gse::meters(-5.f, 0.f, 0.f)));
+	spawn_domino_chain(s, 0, gse::vec3<gse::position>(gse::meters(-5.f, 0.f, 0.f)));
 }
 
 auto sandbox::spawn_parity_grid(gse::scene& s, const int side, const float spacing, const std::string_view prefix) -> void {

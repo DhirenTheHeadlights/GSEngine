@@ -809,18 +809,6 @@ auto gse::ide::project::held_elsewhere(const std::filesystem::path& manifest_fil
 	return false;
 }
 
-auto gse::ide::project::theme_name(const std::filesystem::path& root) -> std::string {
-	for (const layout_store::section& section : layout_store::parse_sections(read_file(config::project_settings_path_for(root)))) {
-		if (section.name != "UI") {
-			continue;
-		}
-		if (const auto entry = section.values.find("current_theme"); entry != section.values.end()) {
-			return entry->second;
-		}
-	}
-	return {};
-}
-
 auto gse::ide::project::current() -> const manifest& {
 	static const manifest value = resolve();
 	return value;

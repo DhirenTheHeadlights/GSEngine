@@ -215,6 +215,10 @@ namespace gse::resource {
 			const std::shared_ptr<resource_slot<Resource>>& slot
 		) const -> void;
 
+		auto prepare(
+			const std::filesystem::path& path
+		) const -> asset_result;
+
 		auto launch_load(
 			id rid
 		) -> async::task<>;
@@ -388,6 +392,30 @@ auto gse::resource::loader<R>::flush() -> void {
 }
 
 template <typename R>
+auto gse::resource::loader<R>::prepare(const std::filesystem::path& path) const -> asset_result {
+	if (!m_pre_load_fn || path.empty()) {
+		return {};
+	}
+	try {
+		return m_pre_load_fn(path);
+	}
+	catch (const std::exception& exception) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = exception.what()
+		});
+	}
+	catch (...) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = path,
+			.detail = "Resource preparation failed"
+		});
+	}
+}
+
+template <typename R>
 auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 	co_await async::yield_to_worker();
 
@@ -426,29 +454,9 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		slot->load_in_flight = false;
 	};
 
-	if (m_pre_load_fn && !path.empty()) {
-		asset_result prepared{};
-		try {
-			prepared = m_pre_load_fn(path);
-		}
-		catch (const std::exception& exception) {
-			prepared = std::unexpected(asset_error{
-				.code = asset_error_code::load_failure,
-				.path = path,
-				.detail = exception.what()
-			});
-		}
-		catch (...) {
-			prepared = std::unexpected(asset_error{
-				.code = asset_error_code::load_failure,
-				.path = path,
-				.detail = "Resource preparation failed"
-			});
-		}
-		if (!prepared) {
-			fail(std::move(prepared.error()));
-			co_return;
-		}
+	if (auto prepared = prepare(path); !prepared) {
+		fail(std::move(prepared.error()));
+		co_return;
 	}
 
 	assert(m_data.channels.bound(), "asset::run must run before flush()");
@@ -594,12 +602,25 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		path = slot->path;
 	}
 
-	auto fail = [this, slot](asset_error error) {
+	auto fail = [this, slot, path](asset_error error) {
+		log::println(
+			log::level::warning,
+			log::category::assets,
+			"Unable to reload {}: {}",
+			path.generic_display_string(),
+			error.detail
+		);
 		std::lock_guard lock(m_mutex);
 		slot->error.store(std::make_shared<const asset_error>(std::move(error)), std::memory_order_release);
 		slot->current_state.store(slot->current.load(std::memory_order_acquire) ? state::loaded : state::failed, std::memory_order_release);
 		slot->load_in_flight = false;
 	};
+
+	if (auto prepared = prepare(path); !prepared) {
+		fail(std::move(prepared.error()));
+		co_return;
+	}
+
 	std::unique_ptr<R> new_resource;
 	try {
 		new_resource = std::make_unique<R>(path);

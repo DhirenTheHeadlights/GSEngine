@@ -13,11 +13,14 @@ import gse.os;
 import gse.time;
 import std;
 
+import :font;
 import :ids;
 import :interaction;
 import :layout_ops;
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 namespace gse::gui::draw {
 	template <is_arithmetic T>
@@ -272,12 +275,9 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 		value_u = max_u;
 	}
 
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = ctx.style.color_widget_background,
-		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius
-	});
+	const slider_skin& skin = ctx.style.slider;
+
+	draw::fill_surface(ctx, rect, skin.track, {});
 
 	float fill_ratio = 0.0f;
 	const underlying range_u = max_u - min_u;
@@ -290,12 +290,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 		{ rect.width() * fill_ratio, rect.height() }
 	);
 
-	ctx.queue_sprite({
-		.rect = fill_rect,
-		.color = ctx.style.color_slider_fill,
-		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius
-	});
+	draw::fill_surface(ctx, fill_rect, skin.fill, {});
 
 	thread_local std::string value_str;
 	value_str.clear();
@@ -308,18 +303,9 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const rectf& rect, cons
 	else {
 		std::format_to(std::back_inserter(value_str), "{}", value_u);
 	}
-	const auto code_view = ctx.fonts.code.resolve();
-	const float text_width = code_view->width(value_str, ctx.style.font_size);
-	const vec2f value_text_pos = { rect.center().x() - text_width / 2.f,
-		rect.center().y() + code_view->vertical_center_offset(ctx.style.font_size) };
-
-	ctx.queue_text({
-		.font = ctx.fonts.code,
-		.text = value_str,
-		.position = value_text_pos,
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = rect
+	draw::label(ctx, rect, value_str, skin.value, {
+		.color = skin.value_color,
+		.clip_rect = rect,
 	});
 }
 
@@ -345,13 +331,9 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
 		}
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
-		.scale = sty.font_size,
-		.color = sty.color_text,
-		.clip_rect = label_rect
+	draw::label(ctx, label_rect, name, sty.slider.label, {
+		.color = sty.slider.label_color,
+		.clip_rect = label_rect,
 	});
 
 	std::array<spec, N> box_specs;

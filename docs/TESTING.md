@@ -2,19 +2,24 @@
 
 The master record of what GSE verifies, how each check runs, and where the gaps are. Update the status table when a check is added, wired or retired. When a planned item lands, delete its plan text and keep only the row.
 
+What the testing effort is converging on, with status per check, lives in [testing_program_plan.md](testing_program_plan.md). This file is what verifies today; that one is the goal.
+
 ## Status
 
 | Tier | Check | Where | How it runs | Verdict | Automated |
 |---|---|---|---|---|---|
 | Compile | `static_assert` blocks | `Math/Units/Units.cppm:468`, `Ecs/SystemManifest.cppm`, `Graphics/AssetTypes.cppm`, `Ecs/SharedView.cppm`, `Json/Value.cppm`, `Syntax/Lexer.cppm` and others | every compile | compile error | yes |
 | Compile | Lossy integer unit construction | `Math/Units/Quantity.cppm`, `internal::unit::operator()` | every compile | `static_assert`; names the remedy | yes |
+| Compile | Push-constant layout portability | `GpuRecord/PipelineBuilder.cppm:261`, `shaders::push_constant_layout_is_portable` | every compile, per `push_constant<T>` | `static_assert`; names the remedy | yes |
+| Compile | Binding-args layout flatness | `GpuRecord/PipelineBuilder.cppm:52`, `gpu::binding_args_layout_is_flat` | every compile, per bindings pack | `static_assert`; names the remedy | yes |
 | Compile | Semantic token contract | `Engine/Tools/TokenPlugin/SemanticContract.cpp`, `Engine/Tools/TokenPlugin/CheckSemanticContract.cmake` | custom command on `gse_tokens_plugin` | build error | yes, every build that calls `gse_token_plugin` |
 | Runtime | Math contracts (`pre`, `contract_assert`) | `gse.math`: vec/mat indexing, inverse, asin/acos, sqrt, fmod, look_at, perspective, orthographic, SIMD spans, rect/circle | Debug and RelWithDebInfo; `ignore` in Release | `assert_fail` exits 3 | only when a run hits one |
 | Runtime | `gse::assert` | everywhere | any run | logs `[Assertion Failure]`, exits 3 | only when a run hits one |
-| Unit | Units, vector/matrix/quaternion math, binary archive, bitstream and packet sequencing, ring buffers and work stealing | `Math/Tests/Units.cppm`, `Math/Tests/Math.cppm`, `Containers/Tests/Archive.cppm`, `Network/Tests/Net.cppm`, `Concurrency/Tests/Concurrency.cppm` | `Sandbox.exe --engine-test-all`, `--engine-test-tags units,math,archive,net,concurrency` | non-zero exit, `[error]` lines under the `test` category | yes, once wired to CI |
-| Violation | Math `pre` / `contract_assert` reporting | `Math/Tests/Contracts.cppm` | the same run re-launches the exe with `--engine-test-only <name>` per test | passes only when the child exits 3 and its report names the predicate | yes, once wired to CI |
-| Scenario | 60 annotated scenarios | `Sandbox/Source/Sandbox/Scenarios.cppm` | `Sandbox.exe --engine-bench-scenario <name>` | logs p50/p95/p99 and a world-state hash | no |
-| Scenario | Perf baseline | `Runtime/Bench.cpp:147` | `--engine-bench-update-baseline`, then a normal run | logs `REGRESSED` | no; the process still exits 0 |
+| Unit | Units, vector/matrix/quaternion math, binary archive, bitstream and packet sequencing, ring buffers and work stealing, settings merge-on-save, SDK feed ordering and round trip | `Math/Tests/Units.cppm`, `Math/Tests/Math.cppm`, `Containers/Tests/Archive.cppm`, `Network/Tests/Net.cppm`, `Concurrency/Tests/Concurrency.cppm`, `Save/Tests/SaveRegistry.cppm`, `Sdk/Tests/Feed.cppm` | `Sandbox.exe --engine-test-all`, `--engine-test-tags units,math,archive,net,concurrency,save_registry,feed` | non-zero exit, `[error]` lines under the `test` category | yes, `ci.yml` on push and pull request |
+| Violation | Math `pre` / `contract_assert` reporting | `Math/Tests/Contracts.cppm` | the same run re-launches the exe with `--engine-test-only <name>` per test | passes only when the child exits 3 and its report names the predicate | runs in CI but reports skipped: the preset is Release, where contracts are `ignore` |
+| Scenario | 61 annotated scenarios | `Sandbox/Source/Sandbox/Scenarios.cppm` | `Sandbox.exe --engine-bench-scenario <name>` | logs p50/p95/p99 and a world-state hash; exits 1 on any recorded failure | `pyramid_cpu` and `rollback_reference` in `ci.yml` |
+| Scenario | Scenario expectations | `gse::scenario::context`, the `expect` family inherited from `test::check_sink`; first user is `expect_bodies_sane` in `Scenarios.cpp` | any scenario run | logs the failure at the frame it happens, and `bench: FAILED` with every reason at the end; exit 1 | yes, for the scenarios CI runs |
+| Scenario | Perf baseline | `Runtime/Bench.cpp` `compare_against_baseline` | `--engine-bench-update-baseline`, then a normal run | logs `REGRESSED` and exits 1 | yes, wherever a `baseline.gsprof` exists beside the run |
 | Gate | CPU/GPU parity + determinism | `Tools/parity_gate.py` | `python Tools/parity_gate.py [--backend both]` | exits 1 on a `require` failure | no |
 | Gate | Stress invariants | `Tools/stress_battery.py` | manual, on state dumps | exits 1 on a jointed failure | no |
 | Data | State dump scan/compare | `Startup/StateDumpTools.cpp` | `--scan-states`, `--compare-states-a/-b` | prints the divergence | no |
@@ -22,14 +27,17 @@ The master record of what GSE verifies, how each check runs, and where the gaps 
 | Tool | Semantic audit | `Editor/Source/Tools/SemanticAudit.cpp` | `SemanticAudit --db ... --plugin ...` | exits 1 on failure | no |
 | Tool | Time report self-test | `Tools/TimeReport/time_report_check.py` | manual | exits 1 on failure | no |
 | CI | GCC trunk toolchain | `.github/workflows/build-gcc-trunk.yml` | weekly | toolchain only, never builds the engine | yes |
+| CI | Engine builds and the suite runs | `.github/workflows/ci.yml` | `push` on `main`/`dev`, every `pull_request`, or `workflow_dispatch` | build failure, a non-zero suite exit, or a non-zero scenario exit | yes |
+| CI | Engine builds on `windows-latest` | `.github/workflows/release.yml` `build` job | `push` on tag `v*`, or `workflow_dispatch` | build failure | yes, but only on a release tag |
+| CI | SDK image verify | `.github/workflows/release.yml:178` | the same job | non-zero exit; builds and runs the shipped consumer through `GSEEngineSdk.cmake`, so it catches an image staged without `gse.link`/`gse.modules` | yes, on a release tag |
+| CI | Packed game scenario verify | `.github/workflows/release.yml:210` | `workflow_dispatch` with `verify_game=true` | non-zero exit | no; staged off because `render_stress` needs a window |
 
 ## Gaps
 
-- **No CI runs the tests.** Nothing invokes the suite, so a red test is only seen by whoever thinks to run it. This is the single change that would make every row below worth more.
-- **The unit tier covers `gse.math`, the binary archive, the network bitstream and the concurrent queues.** Nothing in the priority list below is written yet.
-- **The queue tests are soak tests, not proofs.** A publish-before-write or a lost steal is detected only if the interleaving happens to occur, so they are worth running under `--engine-test-repeat`; passing once says less than passing a hundred times.
-- **The violation tier has never run.** Contracts are `ignore` in Release, which is the configuration the editor's build row produces, so all eight report as skipped. They need a RelWithDebInfo run to mean anything.
-- **Scenarios can neither fail nor observe.** `main` returns 0 after a baseline regression, a settle-cap abort or a stale coroutine, and `scenario::context` exposes only `frame()` and `channels()`, so a scenario can push input but cannot read world state. See Verdict plumbing.
+- **The unit tier covers `gse.math`, the binary archive, the network bitstream, the concurrent queues, settings merge-on-save and the SDK feed.** Everything else in the priority list below is unwritten.
+- **The queue tests are soak tests, not proofs.** A publish-before-write or a lost steal is detected only if the interleaving happens to occur, which is why `ci.yml` runs them under `--engine-test-repeat 100`; passing once says less than passing a hundred times.
+- **The violation tier has never run.** Contracts are `ignore` in Release, which is both the configuration the editor's build row produces and the preset `ci.yml` builds, so all eight report as skipped. They need a RelWithDebInfo run to mean anything, and a second CI configuration doubles runner cost for one tier.
+- **Only two scenarios are gated in CI.** `pyramid_cpu` and `rollback_reference` are headless, so they need no window. Whether the rest of the headless set runs usefully on a hosted runner is untested, and the renderer ones cannot: see `release.yml`'s `verify_game`.
 - **Rollback pairs are never compared.** For each `rollback_reference` / `rollback_replay` pair, a matching hash is the pass condition, but nothing checks it. This is priority A item 1.
 - **Most math contracts still have no violation test.** `Contracts.cppm` covers eight predicates. `acos`, `orthographic`, `epsilon_equal_index`, `rotate`, the sixteen SIMD span contracts and `Circle.cppm` are untested. `rect_t`'s unconditionally-true `contract_assert` was deleted rather than tested.
 - **Stale docs.** `scenario_authoring.md:143,208` says a tripped assert hangs. It now exits 3.
@@ -40,6 +48,7 @@ Built. `Engine/Engine/Source/Test/Test.cppm` plus `Runner.cpp`. It reuses what t
 
 - `test::unit{ .tags, .needs_gpu, .isolated }` marks an in-process test; `test::violation{ .expect }` marks one that must end in a contract or `gse::assert` failure whose comment contains `.expect`.
 - Checks return `bool` so a test can stop early with `if (!ctx.expect(...)) return;`: `expect`, `expect_eq`, `expect_near`, `expect_value`, `expect_error`. Each is constrained on `std::formattable`, so quantities, vectors and matrices print through their own formatters and `expect_near` never strips units.
+- The checks live on `test::check_sink`, which `test::context` and `scenario::context` both derive from, so a scenario expectation reads the same as a unit one. A sink constructed with a `test::report_fn` reports each failure as it is recorded rather than only through its `failures()` span; the runner uses the span, and a scenario run logs live because its body can run for thousands of frames after a failure.
 - `test::registry<^^Ns>()` sweeps a namespace tree with `members_of`. There is no static-init registration, and the sweep must happen in the executable's own TU.
 - `test::run({ .tables, .options, .flag_prefix })` returns 0 on a pass and 1 on any failure. `test::config` is reflected into flags by `parse_args`: `filter`, `tags`, `only`, `list`, `repeat`.
 - A violation test and an `.isolated` test run out of process: the runner re-launches its own executable with `<prefix>-only <name>` through `gse::process::run_capture` and reads the child's captured output. A violation passes when the child exits 3 and that output names the predicate. In Release, where contracts are `ignore`, violation tests report as skipped.
@@ -85,7 +94,7 @@ Tests also cost build time on a tree that is already critical-path bound, so few
 1. **Rollback pairs** (scenario tier, `.compare_with`). Each `rollback_replay*` must match its reference hash. The pass condition already exists and nothing checks it, which makes this the largest unguarded correctness property in the engine.
 2. **CPU/GPU identity and run-to-run determinism** (scenario tier). The same scenario twice, and CPU against GPU, must produce one world-state hash. Retires the identity half of `parity_gate.py`.
 3. **State dump** (`Runtime/StateDump`). Write/read round trip, and a version mismatch is rejected rather than misread.
-4. **Settings scope split** (`Save`). A `project_scope` field lands in the project file and everything else in the user ini, both round-tripping against a temp root. Gets this wrong and a user's project silently loses settings.
+4. **Settings scope split** (`Save`). A `project_scope` field lands in the project file and everything else in the user ini, both round-tripping against a temp root. Gets this wrong and a user's project silently loses settings. `SaveRegistry.cppm` covers merge-on-save against a single `.user` path; the scope split is the remaining half.
 5. **Archive across a schema change** (`Containers/Archive`). Extends the existing round trip: a field added, removed and `archive_skip`ed still reads, and `skipped_fields()` reports it.
 
 ### B: unreachable by playing
@@ -113,9 +122,11 @@ Tests also cost build time on a tree that is already critical-path bound, so few
 
 ## Verdict plumbing
 
-Independent of which tests exist, the checks below report into a log instead of failing a run. Fixing that is worth more than any new test, because an unread verdict is not a check:
+**A scenario run can now fail.** `bench_state::failures` is the one authority for whether a run was sound; every site that used to only log — the settle-cap abort, a stale scenario coroutine, a `REGRESSED` baseline, zero measured frames, and the scenario's own expectations — pushes a reason into it. `bench_exit_code` prints `bench: PASSED` or `bench: FAILED` with every reason, `gse::start` returns that code, and `main` returns it. Deliberately not a failure: the frame budget expiring while a scenario body is still running, which several showcase bodies do today.
 
-1. Scenarios cannot fail. `finish_bench` returns a status, and `main` returns non-zero on a failed expectation, a settle-cap abort or a baseline regression.
-2. `scenario::context` gains the `expect` family and read-only world access, which also makes `wait_until(ctx, predicate)` possible. Priority A items 1 and 2 cannot be written until this exists.
-3. `scenario::info` gains `.compare_with = "rollback_reference"`, running the paired scenario and requiring equal world-state hashes. `parity_gate.py` keeps its positional and cascade checks until those move into scenarios as `expect_near` on state records.
-4. A build-and-test CI workflow, so a red test is seen without someone remembering to look.
+**A scenario can read the world.** `scenario::context` holds the registry and exposes `owners<C>()`, `components<C>()` and `try_component<C>(id)` as const views, read after `frame_sync::end()` where `drive_scenario` already runs.
+
+What remains:
+
+1. `scenario::info` gains `.compare_with = "rollback_reference"`, running the paired scenario and requiring equal world-state hashes. `parity_gate.py` keeps its positional and cascade checks until those move into scenarios as `expect_near` on state records.
+2. `wait_until(ctx, predicate)`, which the world read makes possible. Not written yet because nothing needs a predicate wait until the comparison gates do.

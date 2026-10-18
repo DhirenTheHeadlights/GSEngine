@@ -15,8 +15,11 @@ import std;
 
 import :font;
 import :ids;
+import :layout_ops;
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct toggle {
@@ -55,30 +58,14 @@ auto gse::gui::toggle::draw(const draw_context& ctx, const params& p, id& hot, i
 		return false;
 	}
 
-	const auto fnt = ctx.fonts.face_or(p.font);
-	const float widget_height =
-		fnt.resolve()->line_height(ctx.style.font_size) + ctx.style.padding * ctx.style.widget_height_padding;
-	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
-
-	const rectf row_rect = rectf::from_position_size(
-		{ content_rect.left(), ctx.layout_cursor.y() },
-		{ content_rect.width(), widget_height }
-	);
-
-	const bool toggled = toggle_in_rect(ctx, row_rect, p, hot);
-
-	ctx.layout_cursor.y() -= widget_height + ctx.style.padding + ctx.style.item_spacing;
-
-	return toggled;
+	return toggle_in_rect(ctx, ctx.next_row(ctx.fonts.face_or(p.font)), p, hot);
 }
 
 auto gse::gui::toggle_in_rect(const draw_context& ctx, const rectf& row_rect, const toggle::params& p, id& hot) -> bool {
-	const auto fnt = ctx.fonts.face_or(p.font);
-	const auto fnt_view = fnt.resolve();
+	const toggle_skin& skin = ctx.style.toggle;
 
 	const std::uint64_t name_key = stable_id(p.name);
 	const id widget_id = ids::make_from_key(name_key);
-	const float widget_height = row_rect.height();
 
 	const bool hovered = ctx.hovers(row_rect);
 
@@ -92,60 +79,45 @@ auto gse::gui::toggle_in_rect(const draw_context& ctx, const rectf& row_rect, co
 		toggled = true;
 	}
 
-	const float label_width = row_rect.width() * ctx.style.label_column_ratio;
-
-	const rectf label_rect = rectf::from_position_size(
-		row_rect.top_left(),
-		{ label_width, widget_height }
+	const auto [label_rect, control_rect] = layout::split_horizontal<2>(
+		row_rect,
+		{
+			layout::size_spec::ratio(ctx.style.label_column_ratio),
+			layout::size_spec::flex()
+		}
 	);
 
-	ctx.queue_text({
-		.font = fnt,
-		.text = p.name,
-		.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = label_rect
+	draw::label(ctx, label_rect, p.name, skin.label, {
+		.color = skin.label_color,
+		.font = p.font,
+		.clip_rect = label_rect,
 	});
 
-	const float track_width = 40.f * (ctx.style.font_size / 16.f);
-	const float track_height = 20.f * (ctx.style.font_size / 16.f);
-	const float knob_padding = 2.f * (ctx.style.font_size / 16.f);
-
-	const float track_x = row_rect.left() + label_width;
-	const float track_y = row_rect.center().y() + track_height / 2.f;
-
-	const rectf track_rect = rectf::from_position_size(
-		{ track_x, track_y },
-		{ track_width, track_height }
+	const rectf track_rect = layout::align_in(
+		control_rect,
+		{ skin.track_width, skin.track_height },
+		layout::halign::start,
+		layout::valign::center
 	);
 
-	const vec4f track_target = p.value ? ctx.style.color_toggle_on : ctx.style.color_toggle_off;
 	const id track_anim_id = ids::make_from_key(hash_of(name_key, "##track"));
 
-	ctx.queue_sprite({
-		.rect = track_rect,
-		.color = ctx.animated_color(track_anim_id, track_target),
-		.texture = ctx.blank_texture,
-		.corner_radius = track_height / 2.f
+	draw::fill_surface(ctx, track_rect, p.value ? skin.track_on : skin.track_off, {
+		.anim = track_anim_id,
 	});
 
-	const float knob_size = track_height - knob_padding * 2.f;
-	const float knob_x = p.value ? track_x + track_width - knob_size - knob_padding : track_x + knob_padding;
-	const float knob_y = track_y - knob_padding;
+	const float knob_size = std::max(0.f, skin.track_height - skin.knob_inset * 2.f);
+	const float knob_left = p.value
+		? track_rect.right() - knob_size - skin.knob_inset
+		: track_rect.left() + skin.knob_inset;
 
-	const rectf knob_rect = rectf::from_position_size(
-		{ knob_x, knob_y },
-		{ knob_size, knob_size }
-	);
+	surface knob = skin.knob;
+	if (hovered) {
+		knob.fill = skin.knob_hovered;
+	}
 
-	const vec4f knob_target = hovered ? ctx.style.color_handle_hovered : ctx.style.color_handle;
-
-	ctx.queue_sprite({
-		.rect = knob_rect,
-		.color = ctx.animated_color(widget_id, knob_target),
-		.texture = ctx.blank_texture,
-		.corner_radius = knob_size / 2.f
+	draw::fill_surface(ctx, rectf::from_position_size({ knob_left, track_rect.top() - skin.knob_inset }, { knob_size, knob_size }), knob, {
+		.anim = widget_id,
 	});
 
 	return toggled;

@@ -51,7 +51,7 @@ auto gse::ide::draw_scope_toggle(const gui::draw_context& ctx, const rectf& rect
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = enabled ? sty.color_widget_selected : (hovered ? sty.color_widget_hovered : sty.color_widget_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = enabled }.select(sty.list_item.surfaces).fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -73,7 +73,7 @@ auto gse::ide::draw_search_result_row(const gui::draw_context& ctx, const rectf&
 	if (selected || hovered) {
 		ctx.queue_sprite({
 			.rect = row,
-			.color = selected ? sty.color_widget_selected : sty.color_widget_hovered,
+			.color = selected ? sty.list_item.surfaces.selected.fill : sty.list_item.surfaces.hot.fill,
 			.texture = ctx.blank_texture,
 		});
 	}
@@ -132,7 +132,7 @@ auto gse::ide::draw_search_panel(gui::builder& ui, const rectf& rect, search_pan
 
 	ctx.queue_sprite({
 		.rect = query_rect,
-		.color = sty.color_input_background,
+		.color = sty.input.area.fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});

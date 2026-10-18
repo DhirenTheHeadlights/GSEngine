@@ -18,7 +18,9 @@ import :font;
 import :modal_surface;
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	enum class confirm_result : std::uint8_t {
@@ -89,22 +91,31 @@ auto gse::gui::draw::confirm_dialog(builder& ui, const confirm_params& params) -
 		.panel = dialog,
 	});
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.title,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 0.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text,
-		.clip_rect = dialog,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = params.message,
-		.position = { dialog.left() + pad * 2.f, dialog.top() - pad * 2.f - line_h * 1.5f + text_view->vertical_center_offset(fs) },
-		.scale = fs,
-		.color = sty.color_text_secondary,
-		.clip_rect = dialog,
-	});
+	const modal_skin& skin = sty.modal;
+	const float text_left = dialog.left() + pad * 2.f;
+	const float text_width = std::max(0.f, dialog.right() - pad * 2.f - text_left);
+
+	draw::label(
+		ctx,
+		rectf::from_position_size({ text_left, dialog.top() - pad * 2.f }, { text_width, line_h }),
+		params.title,
+		skin.title,
+		{
+			.color = skin.title_color,
+			.clip_rect = dialog,
+		}
+	);
+
+	draw::label(
+		ctx,
+		rectf::from_position_size({ text_left, dialog.top() - pad * 2.f - line_h }, { text_width, line_h }),
+		params.message,
+		skin.message,
+		{
+			.color = skin.message_color,
+			.clip_rect = dialog,
+		}
+	);
 
 	const float btn_w = (dialog_w - pad * 3.f) * 0.5f;
 	const rectf cancel_btn = rectf::from_position_size({ dialog.left() + pad, dialog.bottom() + pad + btn_h }, { btn_w, btn_h });

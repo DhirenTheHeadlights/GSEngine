@@ -11,11 +11,11 @@ import sandbox;
 namespace sandbox::startup {
 	auto run_game(
 		const gse::engine_config& engine
-	) -> void;
+	) -> int;
 
 	auto run_physics_parity(
 		const config& cfg
-	) -> void;
+	) -> int;
 
 	auto apply_scenario(
 		config& cfg,
@@ -23,11 +23,12 @@ namespace sandbox::startup {
 	) -> bool;
 }
 
-auto sandbox::startup::run_game(const gse::engine_config& engine) -> void {
+auto sandbox::startup::run_game(const gse::engine_config& engine) -> int {
 	gse::engine_config resolved = engine;
 	if (resolved.project_settings_path.empty()) {
 		resolved.project_settings_path = gse::config::project_settings_path();
 	}
+	resolved.default_theme = gse::gui::theme::blueprint;
 
 	const gse::network::session_role mode = gse::network::resolve_role(resolved.net);
 
@@ -36,7 +37,7 @@ auto sandbox::startup::run_game(const gse::engine_config& engine) -> void {
 		resolved.render = false;
 	}
 
-	gse::start(
+	return gse::start(
 		[render = resolved.render, mode](gse::engine& e) -> void {
 			if (mode == gse::network::session_role::dedicated) {
 				server_setup(e);
@@ -57,9 +58,9 @@ auto sandbox::startup::run_game(const gse::engine_config& engine) -> void {
 	);
 }
 
-auto sandbox::startup::run_physics_parity(const config& cfg) -> void {
+auto sandbox::startup::run_physics_parity(const config& cfg) -> int {
 	gse::system_clock::set_fixed_step_override(1);
-	gse::start(
+	const int code = gse::start(
 		[n_envs = cfg.physics_parity_envs](gse::engine& e) -> void {
 			gse::register_systems<^^sandbox::physics_parity>(e);
 			auto* scene = physics_parity_world_setup(e, n_envs);
@@ -77,6 +78,7 @@ auto sandbox::startup::run_physics_parity(const config& cfg) -> void {
 		}
 	);
 	gse::system_clock::set_fixed_step_override(std::nullopt);
+	return code;
 }
 
 auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::string> passed_flags) -> bool {
@@ -201,10 +203,7 @@ auto main(int argc, char** argv) -> int {
 		}
 	}
 	if (cfg.physics_parity) {
-		sandbox::startup::run_physics_parity(cfg);
+		return sandbox::startup::run_physics_parity(cfg);
 	}
-	else {
-		sandbox::startup::run_game(cfg.engine);
-	}
-	return 0;
+	return sandbox::startup::run_game(cfg.engine);
 }

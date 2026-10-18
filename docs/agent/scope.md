@@ -16,6 +16,8 @@ Then design. Decide what `docs/CODE_REVIEW_GUIDE.md` will demand of this change 
 
 Where the design is genuinely open, give the owner options with their tradeoffs and a recommendation. Where it is not open, do not manufacture choices.
 
+When a choice would change the plan itself rather than decorate it — so that writing the summary around either answer would commit the owner to work they did not pick — put it to them with `gse_ask` and end your turn, instead of planning around a guess. A choice you can carry in the summary as a recommendation does not need the tool; one whose answer rewrites the design does.
+
 Say plainly what you could not determine without editing or running something, and what you would do if the assumption turns out wrong.
 
 End by calling `gse_phase_done` with the plan as `summary`. The owner approves it before anything is written, so the summary is the thing being agreed to: state the design, the files it will touch, and the assumptions it rests on. Do not call it until the plan is settled and nothing material is left to decide.

@@ -24,8 +24,10 @@ import :text_buffer;
 import :font;
 import :input_layers;
 import :interaction;
+import :surface_paint;
 import :symbols;
 import :text_select;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct text_edit_snapshot {
@@ -556,7 +558,9 @@ auto gse::gui::text_area_layout::line_at(const float offset) const -> std::uint3
 
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool {
 	params resolved = p;
-	resolved.rect = p.rect.value_or(ctx.next_row(ctx.fonts.face_or(p.font, text_face::code), 8.f));
+	if (!resolved.rect) {
+		resolved.rect = ctx.next_row(ctx.fonts.face_or(p.font, text_face::code), 8.f);
+	}
 	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, active, focus);
 }
 
@@ -1501,19 +1505,17 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	view_width = placement.view_width;
 	block_layouts.assign(blocks.size(), std::nullopt);
 
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-	});
+	const input_skin& skin = ctx.style.input;
+
+	draw::fill_surface(ctx, rect, skin.area, {});
 
 	if (gutter_width > 0.f) {
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
-			.color = ctx.style.color_panel_alt,
-			.texture = ctx.blank_texture,
-			.clip_rect = rect,
-		});
+		draw::fill_surface(
+			ctx,
+			rectf::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
+			skin.gutter,
+			{ .clip_rect = rect }
+		);
 	}
 
 	const rectf content_clip = gutter_width > 0.f
@@ -1580,7 +1582,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			const float row_top = top_y - placement.line_top(static_cast<std::uint32_t>(i));
 			ctx.queue_sprite({
 				.rect = rectf::from_position_size({ x_a, row_top }, { x_b - x_a + extra, row_height }),
-				.color = ctx.style.color_selection,
+				.color = ctx.style.input.selection.fill,
 				.texture = ctx.blank_texture,
 				.clip_rect = content_clip,
 			});
@@ -1703,7 +1705,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		const float ink_bottom = fnt_view->min_glyph_bottom(scale);
 		ctx.queue_sprite({
 			.rect = rectf::from_position_size({ caret_x, baseline + ink_top }, { 2.f, ink_top - ink_bottom }),
-			.color = ctx.style.color_caret,
+			.color = ctx.style.input.caret.fill,
 			.texture = ctx.blank_texture,
 			.clip_rect = content_clip,
 		});
@@ -1773,7 +1775,7 @@ auto gse::gui::draw::follow_tail_button(builder& b, const rectf& area, text_area
 		{ extent, extent }
 	);
 
-	const interaction::press btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, rect);
+	const interaction::press btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, { .rect = rect });
 	const std::uint32_t z = ctx.current_z_order + 1;
 
 	ctx.queue_sprite({
@@ -1785,12 +1787,7 @@ auto gse::gui::draw::follow_tail_button(builder& b, const rectf& area, text_area
 	});
 	ctx.queue_sprite({
 		.rect = rect.inset({ inset, inset }),
-		.color = btn.color({
-			.idle = ctx.style.color_title_bar,
-			.hot = ctx.style.color_tab_hovered,
-			.active = ctx.style.color_tab_active,
-			.disabled = ctx.style.color_title_bar,
-		}),
+		.color = btn.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.z_order = z,
 		.corner_radius = extent * 0.5f - inset,

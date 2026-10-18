@@ -1,6 +1,7 @@
 export module sandbox;
 
 
+export import :card_backdrop;
 export import :character_controller;
 export import :client;
 export import :client_ui;
@@ -26,4 +27,6 @@ export import :sidearm;
 export import :startup;
 export import :state_dump_tools;
 export import :tumbler;
+export import :world_catalog;
 export import :world_loader;
+export import :world_tile;

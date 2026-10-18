@@ -127,18 +127,18 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 	}
 
 	if (d.render_graph) {
-		d.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
-		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
-		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
+		d.render_graph->set_gpu_timestamps_enabled(d.gpu_profiling.timestamps);
+		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_profiling.pipeline_stats);
+		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_profiling.intra_pass_marks);
 		d.render_graph->set_log_render_graph(d.log_render_graph);
 	}
 
 	d.device->set_perf_metrics({
-		.enabled = d.gpu_perf_metrics_enabled && d.gpu_timestamps_enabled,
-		.metrics = d.gpu_perf_metrics,
-		.device_index = d.gpu_perf_metrics_device,
-		.sampling_interval = d.gpu_perf_metrics_interval,
-		.lock_clocks = d.gpu_perf_metrics_lock_clocks,
+		.enabled = d.gpu_perf_metrics.enabled && d.gpu_profiling.timestamps,
+		.metrics = d.gpu_perf_metrics.names,
+		.device_index = d.gpu_perf_metrics.device,
+		.sampling_interval = d.gpu_perf_metrics.interval,
+		.lock_clocks = d.gpu_perf_metrics.lock_clocks,
 	});
 
 	return {};

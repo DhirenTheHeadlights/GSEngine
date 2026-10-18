@@ -83,6 +83,8 @@ const read_result = (id) => {
 
 const new_id = () => `${process.pid}-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1e6)}`;
 
+const max_ask_options = 6;
+
 const header = (project, extra = {}) => ({ agent: agent || null, project: project || null, ...extra });
 
 const text_result = (payload, is_error = false) => ({
@@ -368,6 +370,67 @@ const await_ = async (args) => {
 	}
 	rmSync(join(inbox, 'await', `${id}.txt`), { force: true });
 	return text_result(header(project, { outcome: 'no_editor', error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel. Nothing would wake you; keep working normally.' }), true);
+};
+
+const ask = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; the editor cannot show this chat\'s question or deliver an answer to it.' }), true);
+	}
+	const question = String(args.question ?? '').trim();
+	if (!question) {
+		return text_result(header(project, { error: '`question` is required: what you need the owner to decide.' }), true);
+	}
+	const options = (Array.isArray(args.options) ? args.options : [])
+		.map((option) => String(option).replace(/[\r\n\t]+/g, ' ').trim())
+		.filter(Boolean);
+	if (options.length < 2) {
+		return text_result(header(project, {
+			error: 'pass at least two `options`. The owner answers by picking, so name the concrete directions you are choosing between - an open question with nothing to pick is the stalling this tool exists to replace. If you genuinely have only one course, you do not have a question: take it and say so in your phase summary.',
+		}), true);
+	}
+	if (options.length > max_ask_options) {
+		return text_result(header(project, {
+			options: options.length,
+			error: `at most ${max_ask_options} options. The owner is picking, not reading a menu - collapse the near-duplicates, drop the ones you would not actually do, and put the detail in the option text rather than in more options. Nothing was asked.`,
+		}), true);
+	}
+
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'asks'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`multi ${args.multi ? 1 : 0}`,
+		`context ${String(args.context ?? '').trim().replace(/[\r\n\t]+/g, ' ')}`,
+		...options.map((option) => `option ${option}`),
+		'question',
+		question,
+		'',
+	].join('\n'));
+
+	for (let waited = 0; waited < 15; waited += 1) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			if (result.status === 'ok') {
+				return text_result(header(project, {
+					outcome: 'asked',
+					instruction: 'END YOUR TURN NOW. Do not poll and do not guess the answer. The owner answers in the editor, and whatever they pick - with any steering they type beside it - arrives as your next message.',
+					editor_said: result.body,
+				}));
+			}
+			return text_result(header(project, { outcome: 'refused', editor_said: result.body, next: 'Nothing was asked - keep working.' }), true);
+		}
+		await sleep(1000);
+	}
+	rmSync(join(inbox, 'asks', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		outcome: 'no_editor',
+		error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so nobody owns it. Nothing will answer this question.',
+		next: 'Decide it yourself: take the option you would have recommended, and say in your summary which one you took and what you assumed.',
+	}), true);
 };
 
 const phase_done = async (args) => {
@@ -881,6 +944,88 @@ const symbol_query = async (args) => {
 	}), true);
 };
 
+// A panel answer is flat on purpose: 'count' and 'field' set scalars, 'section' opens a named
+// list and 'item' starts an element of it, so nothing has to be nested to be read back. 'count'
+// always lands on the report itself, which is why totals can be emitted before or after a list.
+const parse_panel_answer = (body) => {
+	const out = {};
+	let list;
+	let current;
+	for (const line of body.split('\n')) {
+		const space = line.indexOf(' ');
+		const key = space > 0 ? line.slice(0, space) : line;
+		const rest = space > 0 ? line.slice(space + 1) : '';
+		switch (key) {
+			case 'panel':
+				out.panel = rest;
+				break;
+			case 'error':
+				out.error = rest;
+				break;
+			case 'section':
+				list = [];
+				current = undefined;
+				out[rest] = list;
+				break;
+			case 'item':
+				current = {};
+				list?.push(current);
+				break;
+			case 'count': {
+				const inner = rest.indexOf(' ');
+				if (inner > 0) {
+					out[rest.slice(0, inner)] = Number(rest.slice(inner + 1));
+				}
+				break;
+			}
+			case 'field': {
+				const inner = rest.indexOf(' ');
+				if (inner > 0) {
+					(current ?? out)[rest.slice(0, inner)] = rest.slice(inner + 1);
+				}
+				break;
+			}
+		}
+	}
+	return out;
+};
+
+const panel_query = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const panel = String(args.panel ?? '').trim();
+	const id = new_id();
+	const timeout = Math.min(60, Math.max(1, Number(args.timeout ?? 15)));
+
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'panels'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`panel ${panel}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`project ${project}`,
+		`rows ${Math.max(0, Math.trunc(Number(args.max_rows ?? 0)) || 0)}`,
+		'',
+	].join('\n'));
+
+	const deadline = Date.now() + timeout * 1000;
+	while (Date.now() < deadline) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const answer = parse_panel_answer(result.body);
+			return text_result(header(project, answer), Boolean(answer.error));
+		}
+		await sleep(50);
+	}
+	rmSync(join(inbox, 'panels', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		panel: panel || null,
+		outcome: 'no_editor',
+		error: `no editor answered within ${timeout}s - it is not running, or none is open on this project.`,
+		next: 'The editor is the only thing that knows its panel state; there is no file to read instead. Ask the user to open the editor on this project, or carry on without it.',
+	}), true);
+};
+
 // A gap is the select API admitting it did not cover something. It is recorded rather than
 // worked around silently, so the editor can show what chats are reaching for that no tool
 // serves, instead of that need disappearing into an untyped shell command.
@@ -1027,6 +1172,20 @@ const tools = {
 		},
 		run: symbol_query,
 	},
+	gse_panel_query: {
+		description:
+			'Read what the running editor is actually showing in one of its panels. Call it with no `panel` first to get the catalogue: every panel that can be reported, whether it is currently visible, behind a tab, pinned to the shelf or closed, and what its report contains. Then pass a `panel` name for that panel\'s live contents - Problems returns the diagnostics with the panel\'s own severity filters applied, Source Control the repositories with branch, ahead/behind and per-file change state, Code the open documents with caret and dirty state, Terminal the instance list with tail output, Agent the chats with phase and unbuilt files, and so on for Explorer, Search, Lints, Game, Profile, Alloc, Graph and Quick Search. A closed panel still reports: its state lives in the editor whether or not it is on screen. This is the only way to see this - panel contents are in-memory editor state, so there is no file to read and no shell command that will show it.',
+		schema: {
+			type: 'object',
+			properties: {
+				panel: { type: 'string', description: 'Panel to report, as named in the catalogue (case-insensitive), e.g. "Problems" or "Source Control". Omit to list every panel with its current state.' },
+				max_rows: { type: 'number', description: 'Cap on rows per list in the report (default 50). Totals are reported in full even when the list is capped.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				timeout: { type: 'number', description: 'Seconds to wait for the editor (default 15).' },
+			},
+		},
+		run: panel_query,
+	},
 	gse_trace_query: {
 		description:
 			'Query a captured run trace under .gse/data/eval (train_*, smoke_*, parity_*, play_* logs, incl. .partN continuations) without reading the file. Lines are parsed into numeric fields (tuples become name.x/.y/.z, units stripped). Call with summary=true first to see the line families in a run, then filter by family/pattern/step range, pick fields, thin with every, or request aggregate for min/max/mean per field. Replaces cd + grep + tail on these files.',
@@ -1137,6 +1296,21 @@ const tools = {
 		},
 		run: (args) => build(args, true),
 	},
+	gse_ask: {
+		description:
+			'Ask the owner a question you cannot answer for yourself, and let them decide. The editor shows it in the agents panel as a prompt they pick from, with a text box beside it for steering you a different way, and delivers their answer as this chat\'s next message. Returns immediately: END YOUR TURN after calling it, exactly like gse_hibernate - the answer may be minutes or hours away and nothing is lost by waiting. Pass at least two concrete `options`, because the owner answers by picking one; `multi: true` when several can hold at once. Use it when two readings of the task would lead to materially different work, when the design is genuinely open, or when you would otherwise guess at something the owner knows. Do NOT use it for what you can settle by reading the code, to ask for approval of a phase (gse_phase_done is how that is reported), or to ask for a capability a phase withheld (that is gse_report_gap). Only chats started from the editor agent panel can be answered; anywhere else this tells you so, and then the decision is yours to make and state.',
+		schema: {
+			type: 'object',
+			properties: {
+				question: { type: 'string', description: 'What you need decided, in a sentence or two. Say what hinges on it.' },
+				options: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: max_ask_options, description: `The concrete choices, one line each: at least two and at most ${max_ask_options}. Put the one you recommend first and say so in its text - the owner is picking, not designing.` },
+				multi: { type: 'boolean', description: 'True when more than one option can be chosen together. Defaults to pick-one.' },
+				context: { type: 'string', description: 'One line of background: what you already established, or what you will do with each answer.' },
+			},
+			required: ['question', 'options'],
+		},
+		run: ask,
+	},
 	gse_phase_done: {
 		description:
 			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed); steering ends with a `next` verdict. Only chats started from the editor agent panel have phases.',
@@ -1189,7 +1363,7 @@ const handle = async (message) => {
 			capabilities: { tools: {} },
 			serverInfo: { name: 'gse', version: '0.1.0' },
 			instructions:
-				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Delete files with gse_delete_file, not a shell. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping. A steering run waits on a long job with gse_await and ends its turn.',
+				'GSE editor tools. Build with gse_build (never cmake/ninja/compilers). If it returns "deferred", call gse_hibernate and end your turn. Read logs with gse_log_query, not by opening the file. Look code up with gse_symbol_query before reading a source file to find a symbol. Read what the editor is showing with gse_panel_query - panel contents are in-memory state, so no file or shell command can show them. Delete files with gse_delete_file, not a shell. When a decision is the owner\'s to make, ask with gse_ask and end your turn - a question written into chat text is not a question anyone is waiting on. If your system prompt names a current phase, end that phase with gse_phase_done rather than simply stopping. A steering run waits on a long job with gse_await and ends its turn.',
 		});
 		return;
 	}

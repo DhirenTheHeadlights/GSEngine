@@ -14,6 +14,12 @@ Makefile
 /.gcc-src-cache/
 *.sfx.exe
 
+# Experimental wasm32 cross compiler (Tools/build_gcc_wasm.py)
+/.gcc-dl/
+/.gcc-wasm/
+/.gcc-wasm-build/
+/.wasm-dialect/
+
 # IDE / editor
 /.vs
 .idea/

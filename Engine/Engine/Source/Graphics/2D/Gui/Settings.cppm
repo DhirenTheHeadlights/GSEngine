@@ -20,10 +20,13 @@ import :menu_stack;
 import :section_widget;
 import :selectable_widget;
 import :slider_widget;
+import :styles;
+import :surface_paint;
 import :text_input_widget;
 import :text_widget;
 import :toggle_widget;
 import :types;
+import :widget_skin;
 
 export namespace gse::settings {
 	struct dimensioned_input_state {
@@ -423,12 +426,8 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 		{ unit_width, widget_height }
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = display_label,
-		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+	gui::draw::label(ctx, label_rect, display_label, ctx.style.input.label, {
+		.color = ctx.style.input.label_color,
 		.clip_rect = label_rect,
 	});
 
@@ -484,7 +483,7 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 		return;
 	}
 	auto& ctx = b.ctx;
-	const float subline_size = ctx.style.font_size * 0.85f;
+	const float subline_size = ctx.style.font_size * ctx.style.screen.note.size_mult;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float subline_height = text_view->line_height(subline_size) + ctx.style.padding * 0.25f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -492,13 +491,8 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 		{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
 		{ content_rect.width() - ctx.style.padding, subline_height }
 	);
-	const vec4f badge_color = modified ? ctx.style.color_accent : ctx.style.color_text_secondary;
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = "Requires restart to take effect",
-		.position = { subline_rect.left(), subline_rect.center().y() + text_view->vertical_center_offset(subline_size) },
-		.scale = subline_size,
-		.color = badge_color,
+	gui::draw::label(ctx, subline_rect, "Requires restart to take effect", ctx.style.screen.note, {
+		.color = modified ? ctx.style.color_accent : ctx.style.color_text_secondary,
 		.clip_rect = subline_rect,
 	});
 	ctx.layout_cursor.y() -= subline_height;

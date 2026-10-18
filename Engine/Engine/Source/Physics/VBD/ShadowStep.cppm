@@ -37,28 +37,10 @@ export namespace gse::physics::shadow_step {
 		std::vector<body_sample> cpu_post;
 	};
 
-	struct [[= system_state<"Shadow Step">{}, = settings::category<"ShadowStep">{}, = deferred_system{}]] data {
-		[[
-			= settings::describe<"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
-									  "every tick and log the one-step residual, then discard it. A parity instrument: it "
-									  "denies divergence any time to amplify, so a residual is a defect rather than chaos. "
-									  "Stalls the device once per tick, so timings from such a run are meaningless. "
-									  "Requires a restart, and requires the CPU solver.">{},
-			= settings::restart_required{}
-		]]
+	struct [[= system_state<"Shadow Step">{}, = deferred_system{}]] data {
 		bool enabled = false;
-
-		[[
-			= settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
-									  "Choose the step from the aggregate column rather than letting a magnitude trigger "
-									  "choose it: the steps just after first contact carry a large backend-independent "
-									  "residual from the per-tick reseed, so any threshold fires there instead of at the "
-									  "step where the backends actually part company.">{}
-		]]
 		int detail_step = -1;
-
 		std::uint32_t step_index = 0;
-		bool buffers_ready = false;
 		bool conflict_reported = false;
 		std::vector<pending_step> pending;
 		std::vector<joint_definition> joints;

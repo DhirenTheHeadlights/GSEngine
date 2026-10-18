@@ -50,6 +50,8 @@ export namespace gse {
 	};
 
 	struct deactivate_active_scene_request {};
+
+	struct reset_active_scene_request {};
 }
 
 export namespace gse::network {

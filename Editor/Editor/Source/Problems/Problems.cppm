@@ -27,6 +27,11 @@ export namespace gse::ide {
 		const workspace::data& ws,
 		channel_write<jump_to_request> channels
 	) -> void;
+
+	[[nodiscard]] auto collect_problems(
+		const problems_view_state& state,
+		const workspace::data& ws
+	) -> std::vector<problem_row>;
 }
 
 namespace gse::ide {
@@ -39,11 +44,6 @@ namespace gse::ide {
 		const problems_view_state& state,
 		gse::analysis::severity level
 	) -> bool;
-
-	[[nodiscard]] auto collect_problems(
-		const problems_view_state& state,
-		const workspace::data& ws
-	) -> std::vector<problem_row>;
 
 	auto draw_problem_row(
 		const gui::draw_context& ctx,
@@ -129,7 +129,7 @@ auto gse::ide::draw_filter_toggle(const gui::draw_context& ctx, const rectf& rec
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = enabled ? sty.color_widget_selected : (hovered ? sty.color_widget_hovered : sty.color_widget_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = enabled }.select(sty.list_item.surfaces).fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -152,7 +152,7 @@ auto gse::ide::draw_problems_header(gui::builder& ui, const rectf& row, problems
 
 	ctx.queue_sprite({
 		.rect = row,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -189,7 +189,7 @@ auto gse::ide::draw_problem_row(const gui::draw_context& ctx, const rectf& row, 
 	if (hovered) {
 		ctx.queue_sprite({
 			.rect = row,
-			.color = sty.color_widget_hovered,
+			.color = sty.list_item.surfaces.hot.fill,
 			.texture = ctx.blank_texture,
 		});
 	}

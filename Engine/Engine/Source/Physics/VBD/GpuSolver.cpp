@@ -1024,17 +1024,25 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	const std::span<const joint_constraint> joints = payload.joints;
 	const std::span<const impulse_constraint> impulses = payload.impulses;
 
-	assert(bodies.size() <= m_capacities.max_bodies, "body count {} exceeds max_bodies {}", bodies.size(), m_capacities.max_bodies);
-	assert(motors.size() <= m_capacities.max_motors, "motor count {} exceeds max_motors {}", motors.size(),
-		m_capacities.max_motors);
-	assert(
-		impulses.size() <= m_capacities.max_impulses,
-		"impulse count {} exceeds max_impulses {}",
-		impulses.size(),
-		m_capacities.max_impulses
-	);
-	assert(joints.size() <= m_capacities.max_joints, "joint count {} exceeds max_joints {}", joints.size(),
-		m_capacities.max_joints);
+	assert(m_buffers_created, "gpu_solver::upload writes the device upload channels, so ensure_capacity has to have built them first");
+
+	const auto outgrown = [&](const std::string_view what, const std::size_t count, const std::uint32_t capacity) {
+		assert(
+			count <= capacity,
+			"the gpu solver sized for {} {} when the scene was first stepped and the scene now has {}. Capacities are derived from the scene at that point and the solver's buffers and shaders are built against them, so a scene that grows past them has to be the scene the solver starts with: restart to re-size for it",
+			capacity,
+			what,
+			count
+		);
+	};
+
+	outgrown("bodies", bodies.size(), m_capacities.max_bodies);
+	outgrown("motors", motors.size(), m_capacities.max_motors);
+	outgrown("impulses", impulses.size(), m_capacities.max_impulses);
+	outgrown("joints", joints.size(), m_capacities.max_joints);
+	outgrown("muscles", payload.muscles.size(), m_capacities.max_muscles);
+	outgrown("muscle path points", payload.muscle_points.size(), m_capacities.max_muscle_points);
+	outgrown("hull uints", payload.hull_data.size(), m_capacities.max_hull_uints);
 
 	m_body_count = static_cast<std::uint32_t>(bodies.size());
 	m_steps = static_cast<std::uint32_t>(std::max(payload.steps, 1));
@@ -1905,28 +1913,15 @@ auto gse::vbd::gpu_solver::wait_for_latest_dispatch() const -> void {
 	m_frame->wait_queue_fence(gpu::queue_type::compute, m_recorded_ring);
 }
 
-auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gpu::context::data> gpu_s, const vbd_capacities& capacities, const readback_options& readback) -> async::task<> {
+auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gpu::context::data> gpu_s, const readback_options& readback) -> async::task<> {
 	assert(gpu_s.device != nullptr, "gpu_solver::initialize_compute requires gpu::context to be initialized first");
 	m_sync_readback = readback.sync;
 	m_full_snapshot = readback.full_snapshot;
 	m_joint_snapshot = readback.joint_snapshot;
 	m_contact_snapshot = readback.contact_snapshot;
-	m_capacities = capacities;
-	assert(
-		m_capacities.max_bodies <= (1u << 20) && m_capacities.max_contacts <= (1u << 20) && limits.adjacency_workgroup_size <= 1024u,
-		"restitution sort key packs 20-bit body indices, 20-bit contact indices and a 10-bit island slot: max_bodies {} max_contacts {} adjacency_workgroup_size {}",
-		m_capacities.max_bodies,
-		m_capacities.max_contacts,
-		limits.adjacency_workgroup_size
-	);
 	m_topology_key.clear();
 	m_topology_body_count = 0;
 	m_topology_island_count = 0;
-
-	const auto capacity_constants = shaders::emit_slang_constants(m_capacities);
-	const auto build = [&](const auto& pod) {
-		return gpu::build_compute_program(*gpu_s.device, pod, {}, capacity_constants);
-	};
 
 	for (std::uint32_t color = 0; color < limits.max_colors; ++color) {
 		m_solve_marks.color[color] = find_or_generate_id(std::format("vbd::solve::color[{}]", color));
@@ -1938,6 +1933,71 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	m_solve_marks.update_lambda = find_or_generate_id("vbd::solve::update_lambda");
 	m_solve_marks.joint_lambda = find_or_generate_id("vbd::solve::joint_lambda");
 	m_solve_marks.convergence = find_or_generate_id("vbd::solve::convergence");
+
+	m_compute.initialized = true;
+	co_return;
+}
+
+auto gse::vbd::gpu_solver::measure_scene(const solver_upload& payload) -> void {
+	if (m_buffers_created) {
+		return;
+	}
+
+	m_scene_counts.merge({
+		.bodies = static_cast<std::uint32_t>(payload.bodies.size()),
+		.joints = static_cast<std::uint32_t>(payload.joints.size()),
+		.impulses = static_cast<std::uint32_t>(payload.impulses.size()),
+		.motors = static_cast<std::uint32_t>(payload.motors.size()),
+		.muscles = static_cast<std::uint32_t>(payload.muscles.size()),
+		.muscle_points = static_cast<std::uint32_t>(payload.muscle_points.size()),
+		.hull_uints = static_cast<std::uint32_t>(payload.hull_data.size()),
+	});
+	m_capacities = capacities_for(m_scene_counts);
+}
+
+auto gse::vbd::gpu_solver::ensure_capacity(const shared_view<gpu::context::data> gpu_s) -> void {
+	if (m_buffers_created || m_scene_counts.bodies == 0) {
+		return;
+	}
+
+	assert(
+		m_capacities.max_bodies <= (1u << 20) && m_capacities.max_contacts <= (1u << 20) && limits.adjacency_workgroup_size <= 1024u,
+		"restitution sort key packs 20-bit body indices, 20-bit contact indices and a 10-bit island slot: max_bodies {} max_contacts {} adjacency_workgroup_size {}",
+		m_capacities.max_bodies,
+		m_capacities.max_contacts,
+		limits.adjacency_workgroup_size
+	);
+
+	log::println(
+		log::category::physics,
+		"vbd gpu capacities sized from the scene: {} bodies, {} contacts, {} joints, {} islands, {} motors, {} impulses, {} muscles over {} path points, {} hull uints, {} grid cells",
+		m_capacities.max_bodies,
+		m_capacities.max_contacts,
+		m_capacities.max_joints,
+		m_capacities.max_islands,
+		m_capacities.max_motors,
+		m_capacities.max_impulses,
+		m_capacities.max_muscles,
+		m_capacities.max_muscle_points,
+		m_capacities.max_hull_uints,
+		m_capacities.grid_table_size
+	);
+
+	build_compute(gpu_s);
+}
+
+auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> gpu_s) -> void {
+	trace::scope_guard _{ trace_id<"vbd_gpu::build_compute">() };
+
+	static_assert(
+		limits.adjacency_workgroup_size <= 1024u,
+		"the restitution sort key packs a 10-bit island slot, so an adjacency workgroup cannot exceed 1024 threads"
+	);
+
+	const auto capacity_constants = shaders::emit_slang_constants(m_capacities);
+	const auto build = [&](const auto& pod) {
+		return gpu::build_compute_program(*gpu_s.device, pod, {}, capacity_constants);
+	};
 
 	m_compute.predict_pipeline = build(predict_entry::pod);
 	m_compute.solve_color_pipeline = build(solve_color_entry::pod);
@@ -1979,9 +2039,6 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	m_compute.gather_snapshot_pipeline = build(gather_snapshot_entry::pod);
 
 	create_buffers(gpu_s);
-
-	m_compute.initialized = true;
-	co_return;
 }
 
 auto gse::vbd::gpu_solver::capacities() const -> const vbd_capacities& {

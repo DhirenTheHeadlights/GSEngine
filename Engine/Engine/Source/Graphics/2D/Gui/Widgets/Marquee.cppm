@@ -48,6 +48,10 @@ export namespace gse::gui {
 
 auto gse::gui::draw::marquee_text(const draw_context& ctx, const marquee_info& info) -> void {
 	const auto fnt = ctx.fonts.face_or(info.font);
+	if (!fnt.valid()) {
+		return;
+	}
+
 	const auto fnt_view = fnt.resolve();
 	const float baseline = info.area.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size);
 	const float width = fnt_view->width(info.text, ctx.style.font_size);

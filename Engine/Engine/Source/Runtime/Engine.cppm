@@ -73,6 +73,7 @@ export namespace gse {
 		bool custom_chrome = false;
 		vec2i launcher_size{ 0, 0 };
 		bool scale_ui_with_resolution = true;
+		gui::theme default_theme = gui::theme::midnight;
 		bool load_settings = true;
 		bool persist_settings = true;
 		bool author_baked_assets = true;

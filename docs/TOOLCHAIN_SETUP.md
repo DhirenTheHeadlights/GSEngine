@@ -45,6 +45,14 @@ dispatch:
 > The scheduled trigger only fires for the workflow on the repository's **default
 > branch**, so this file must be present on `main` for weekly builds to run.
 
+## Installing MSYS2 locally
+
+Only needed if you are building a toolchain rather than downloading one.
+`python Tools/install_msys2.py` extracts MSYS2's self-extracting base archive into
+`<repo>/msys64` (gitignored) and installs the same package closure CI uses — it reads
+the `install:` list straight out of `.github/workflows/build-gcc-trunk.yml`, so the two
+cannot drift. Re-running it just updates packages; `--force` re-extracts.
+
 ## Building the toolchain yourself
 
 Same entry point CI uses (needs an MSYS2 install with `base-devel` + the GCC build
@@ -58,3 +66,17 @@ Produces `dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
 Windows patch stack; a plain `configure && make` of GCC trunk does **not** build on
 native Windows. When trunk drifts enough that a vendored patch stops applying, the
 weekly build fails loudly — update `Tools/gcc-toolchain/recipe/` and re-dispatch.
+
+## The experimental wasm32 cross compiler
+
+Separate from everything above, and not part of the distributed zip.
+`python Tools/build_gcc_wasm.py` builds a `wasm32-unknown-unknown` GCC into
+`<repo>/.gcc-wasm` from a pinned trunk snapshot plus the out-of-tree WebAssembly
+backend patches in `Tools/gcc-toolchain/wasm/` (provenance in the README there). It
+stops at `make all-gcc`: driver, `cc1`, `cc1plus`, and no target runtime — there is no
+libc, no libstdc++ and no linker for wasm32 yet, so it compiles translation units and
+cannot link a program.
+
+It does not go through the vendored `makepkg` recipe and does not touch `/mingw64`, so
+it cannot affect the toolchain the engine builds with. See `docs/wasm_pipeline_plan.md`
+for what it is for and what it has measured.

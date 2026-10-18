@@ -45,22 +45,33 @@ export namespace gse::ide::agent {
 			.prefix = "~ ",
 			.color = &gui::style::color_warning,
 		}]],
+		gap [[= row_style{
+			.prefix = "? ",
+			.color = &gui::style::color_warning,
+		}]],
+		question [[= row_style{
+			.prefix = "> ",
+			.color = &gui::style::color_folder,
+		}]],
 	};
 
 	struct phase_policy {
 		char label[24] = "";
 		char enter_label[24] = "";
 		char opening[96] = "";
+		char record[24] = "";
 		vec4f gui::style::* color = &gui::style::color_text_secondary;
 		bool read_only = false;
 		bool fresh_context = false;
 		bool side_thread = false;
 		bool gated = false;
+		bool record_brief = false;
 	};
 
 	enum class task_phase : std::uint8_t {
 		scope [[= phase_policy{
 			.label = "scoping",
+			.record = "Scope",
 			.color = &gui::style::color_folder,
 			.read_only = true,
 			.fresh_context = true,
@@ -70,7 +81,9 @@ export namespace gse::ide::agent {
 			.label = "applying",
 			.enter_label = "Start applying",
 			.opening = "The scope is approved. Implement it now, following your phase instructions.",
+			.record = "Implementation",
 			.color = &gui::style::color_added,
+			.record_brief = true,
 		}]],
 		review [[= phase_policy{
 			.label = "reviewing",
@@ -79,15 +92,19 @@ export namespace gse::ide::agent {
 			.read_only = true,
 			.fresh_context = true,
 			.side_thread = true,
+			.record_brief = true,
 		}]],
 		revise [[= phase_policy{
 			.label = "revising",
 			.opening = "Address the review findings now, following your phase instructions.",
+			.record = "Revision",
 			.color = &gui::style::color_warning,
+			.record_brief = true,
 		}]],
 		summarize [[= phase_policy{
 			.label = "summarizing",
 			.opening = "Write the owner's summary of this task now, following your phase instructions.",
+			.record = "Summary",
 			.color = &gui::style::color_file,
 			.read_only = true,
 			.fresh_context = true,
@@ -175,22 +192,26 @@ export namespace gse::ide::agent {
 		std::filesystem::path cwd;
 	};
 
-	struct draft_file {
+	struct sync_file {
 		std::filesystem::path relative;
 		char code = '\0';
 		int added = 0;
 		int deleted = 0;
 	};
 
-	struct draft_request {
+	struct sync_request {
 		std::filesystem::path root;
 		std::string branch;
-		std::vector<draft_file> files;
+		std::string upstream;
+		std::string message;
+		int ahead = 0;
+		int behind = 0;
+		std::vector<sync_file> files;
 	};
 
-	struct draft_ready {
+	struct sync_finished {
 		std::filesystem::path root;
-		std::string message;
+		std::string summary;
 		std::string failure;
 	};
 
@@ -375,6 +396,10 @@ export namespace gse::ide::agent {
 			.label = "waiting on the goal",
 			.color = &gui::style::color_file,
 		}]],
+		awaiting_answer [[= state_style{
+			.label = "waiting on your answer",
+			.color = &gui::style::color_folder,
+		}]],
 		rate_limited [[= state_style{
 			.label = "usage limit reached",
 			.color = &gui::style::color_warning,
@@ -433,6 +458,20 @@ export namespace gse::ide::agent {
 		std::filesystem::path goal;
 	};
 
+	struct question_option {
+		std::string label;
+		bool chosen = false;
+	};
+
+	struct pending_question {
+		std::string question;
+		std::string context;
+		std::vector<question_option> options;
+		bool multi = false;
+		bool answered = false;
+		std::string note;
+	};
+
 	struct handoff_capture {
 		std::filesystem::path scratch;
 		std::filesystem::path record;
@@ -440,10 +479,14 @@ export namespace gse::ide::agent {
 		std::filesystem::path diff;
 		std::filesystem::path log;
 		std::vector<std::filesystem::path> roots;
+		std::filesystem::path root;
+		std::filesystem::path gaps;
 		std::string heading;
 		std::string summary;
 		std::vector<std::filesystem::path> written;
 		std::vector<transcript_row> edits;
+		std::vector<transcript_row> shortfalls;
+		bool replace_record = false;
 	};
 
 	struct queued_build {
@@ -521,10 +564,14 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<std::uint32_t> expanded_groups;
 		bool hibernating = false;
 		std::string wake_prompt;
+		[[= archive_skip{}]] std::string asleep_blocker;
+		std::optional<sync_request> sync;
+		std::optional<std::string> sync_report;
 		std::vector<phase_run> runs;
 		std::optional<phase_gate> gate;
 		std::optional<phase_gate> pending_transition;
 		std::optional<goal_state> goal;
+		std::optional<pending_question> question;
 		[[= archive_skip{}]]
 		task::pending<bool> handoff;
 		std::string model_id;
@@ -538,6 +585,9 @@ export namespace gse::ide::agent {
 		gse::id blame_build;
 		retry_state retry;
 		bool turn_open = false;
+		[[= archive_skip{}]] bool editor_turn = false;
+		[[= archive_skip{}]] bool turn_ended = false;
+		[[= archive_skip{}]] std::uint32_t nudges = 0;
 		std::uint32_t resume_attempts = 0;
 		std::int64_t limited_until = 0;
 		[[= archive_skip{}]] bool running = false;
@@ -552,9 +602,9 @@ export namespace gse::ide::agent {
 	};
 
 	struct [[= system_state<"Agent">{}, = settings::category<"Agent">{}]] data {
-		std::vector<session> sessions;
+		[[= shared]] std::vector<session> sessions;
 		std::uint32_t next_id = 0;
-		std::uint32_t active = 0;
+		[[= shared]] std::uint32_t active = 0;
 		std::uint32_t renaming = 0;
 		std::uint32_t pending_close = 0;
 		[[= archive_skip{}]] bool naming_new_chat = false;
@@ -602,6 +652,5 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<queued_build> inbox_active;
 		[[= archive_skip{}]] time inbox_dispatch_deadline;
 		[[= archive_skip{}]] bool inbox_started = false;
-		[[= archive_skip{}]] task::pending<draft_ready> draft;
 	};
 }

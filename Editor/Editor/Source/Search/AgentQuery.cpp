@@ -10,18 +10,6 @@ import :agent_query;
 import :index;
 import :types;
 
-auto gse::ide::search::owns_query(const build_inbox::symbol_query& query) -> bool {
-	if (!query.cwd.empty() && !config::owning_worktree(query.cwd)) {
-		return false;
-	}
-	if (query.project.empty()) {
-		return true;
-	}
-	std::error_code ec;
-	const bool same_project = std::filesystem::equivalent(query.project, config::project_root(), ec);
-	return !ec && same_project;
-}
-
 auto gse::ide::search::query_file(const build_inbox::symbol_query& query) -> std::filesystem::path {
 	if (query.file.is_absolute()) {
 		return query.file;
@@ -318,7 +306,7 @@ auto gse::ide::search::answer_query(const index_state& index, const build_inbox:
 
 auto gse::ide::search::poll_agent_queries(const index_state& index) -> void {
 	for (const build_inbox::symbol_query& query : build_inbox::peek_symbol_queries()) {
-		if (!owns_query(query)) {
+		if (!config::owns_request(query.cwd, query.project)) {
 			continue;
 		}
 		build_inbox::consume_symbol_query(query.id);

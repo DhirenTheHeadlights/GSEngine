@@ -72,21 +72,6 @@ namespace gse::ide::package_sdk {
 		const std::string& command
 	) -> int;
 
-	auto owns_request(
-		const build_inbox::package_request& incoming
-	) -> bool;
-}
-
-auto gse::ide::package_sdk::owns_request(const build_inbox::package_request& incoming) -> bool {
-	if (!incoming.cwd.empty() && !config::owning_worktree(incoming.cwd)) {
-		return false;
-	}
-	if (incoming.project.empty()) {
-		return true;
-	}
-	std::error_code ec;
-	const bool same_project = std::filesystem::equivalent(incoming.project, config::project_root(), ec);
-	return !ec && same_project;
 }
 
 auto gse::ide::package_sdk::plan_for(const config::worktree& tree, const sdk::pack_kind kind, const std::string_view scenario) -> launch_plan {
@@ -167,7 +152,7 @@ auto gse::ide::package_system::run(context& ctx, data& d, const channel_read<pac
 	}
 	std::string inbox_id;
 	for (const build_inbox::package_request& incoming : build_inbox::peek_package_requests()) {
-		if (!package_sdk::owns_request(incoming)) {
+		if (!config::owns_request(incoming.cwd, incoming.project)) {
 			continue;
 		}
 		build_inbox::consume_package_request(incoming.id);

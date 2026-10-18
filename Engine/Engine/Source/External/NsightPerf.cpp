@@ -583,7 +583,7 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 			log::level::warning,
 			log::category::gpu_perf,
 			"sample record buffer overflowed after {} samples; the driver stops recording until the session "
-			"restarts. raise Graphics.gpu_perf_metrics_interval",
+			"restarts. raise Graphics.gpu_perf_metrics.interval",
 			decoded_samples
 		);
 	}
@@ -597,7 +597,7 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 				log::level::warning,
 				log::category::gpu_perf,
 				"{} of {} record bytes unread at decode; dropping to the newest records. "
-				"raise Graphics.gpu_perf_metrics_interval to attribute every frame",
+				"raise Graphics.gpu_perf_metrics.interval to attribute every frame",
 				status_params.numUnreadBytes,
 				status_params.totalSize
 			);

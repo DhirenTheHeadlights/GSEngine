@@ -19,3 +19,4 @@ export import gse.ide.search;
 export import gse.ide.git;
 export import gse.ide.graph;
 export import gse.ide.profile;
+export import gse.ide.panel_query;

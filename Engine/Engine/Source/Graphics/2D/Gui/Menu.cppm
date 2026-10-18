@@ -52,6 +52,7 @@ namespace gse::gui {
 		const input::state& input_state,
 		const std::string& name,
 		render_layer layer,
+		bool translucent,
 		const std::function<void(builder&)>& build
 	) -> void;
 }

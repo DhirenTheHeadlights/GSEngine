@@ -11,14 +11,13 @@ import gse.ide.net;
 
 import :blame;
 import :chats;
-import :draft;
 import :model;
 import :panel;
 import :phase;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, draft_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, draft_ready, build_runner::build_request> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, sync_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, sync_finished, build_runner::build_request> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
@@ -30,7 +29,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		d.initialized = true;
 	}
 
-	if (d.sessions.empty()) {
+	if (std::ranges::none_of(d.sessions, is_chat)) {
 		create_session(d, config::primary().project_root, task_phase::scope);
 	}
 
@@ -51,27 +50,39 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 			d.sessions.pop_back();
 			continue;
 		}
-		send_to_session(started, request.prompt, {});
+		send_to_session(started, request.prompt, {}, true);
 	}
 
-	if (std::optional<draft_ready> drafted = d.draft.take()) {
-		if (!drafted->failure.empty()) {
-			log::println(log::level::error, log::category::task, "agent: could not draft a commit message for {}: {}", drafted->root, drafted->failure);
-		}
-		events_out.push<draft_ready>(std::move(*drafted));
-	}
-
-	for (const draft_request& request : requests_in.of<draft_request>()) {
-		if (d.draft.active()) {
-			events_out.push<draft_ready>({
+	for (const sync_request& request : requests_in.of<sync_request>()) {
+		if (session* running = sync_session(d)) {
+			log::println(log::level::warning, log::category::task, "agent: a sync chat for {} is already open, so the one asked for {} was refused", running->sync->root, request.root);
+			events_out.push<sync_finished>({
 				.root = request.root,
-				.failure = "another commit message is still being drafted",
+				.failure = "a sync conversation is already open",
 			});
 			continue;
 		}
-		d.draft.start([wanted = request, model = d.default_model.value](const std::stop_token& cancel) {
-			return draft_commit_message(wanted, model, cancel);
-		}, trace_id<"agent::draft">(), task::lane::background);
+
+		session& started = create_sync_session(d, request);
+		if (!launch_session(started)) {
+			const std::filesystem::path root = started.sync->root;
+			erase_session(d, started.id);
+			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' for the {} sync - is it on PATH?", root);
+			events_out.push<sync_finished>({
+				.root = root,
+				.failure = "could not launch 'claude' - is it on PATH?",
+			});
+			continue;
+		}
+		send_to_session(started, sync_opening, {}, true);
+	}
+
+	if (session* reported = sync_session(d); reported && reported->sync_report && !is_busy(*reported)) {
+		events_out.push<sync_finished>({
+			.root = reported->sync->root,
+			.summary = *reported->sync_report,
+		});
+		erase_session(d, reported->id);
 	}
 
 	for (const gui::context_menu_result& result : requests_in.of<gui::context_menu_result>()) {
@@ -149,6 +160,16 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		},
 	});
 
+	if (sync_session(d)) {
+		events_out.push<gui::menu_content>({
+			.menu = std::string(source_control_panel_name),
+			.layer = render_layer::content,
+			.build = [d = &d, jump_out = events_out](gui::builder& b) {
+				draw_sync_chat(b, *d, b.ctx.clip_stack.back(), jump_out);
+			},
+		});
+	}
+
 	return {};
 }
 
@@ -171,7 +192,7 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 	hand_off_builds(d, relaunching);
 
 	for (session& s : d.sessions) {
-		if (relaunching && hand_off_session(s)) {
+		if (relaunching && is_chat(s) && hand_off_session(s)) {
 			continue;
 		}
 		close_session(s);

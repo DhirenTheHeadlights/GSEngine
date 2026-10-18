@@ -6,7 +6,9 @@ import std;
 
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :types;
+import :widget_skin;
 
 namespace gse::gui {
 	struct modal_surface {
@@ -25,27 +27,23 @@ auto gse::gui::draw_modal_surface(const draw_context& ctx, const modal_surface& 
 
 	layer_scope scope = ctx.scoped_layer(render_layer::modal);
 
+	const modal_skin& skin = sty.modal;
+
 	ctx.register_hit_region(render_layer::modal, surface.host);
-	ctx.queue_sprite({
-		.rect = surface.host,
-		.color = sty.color_scrim,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size(
+
+	draw::fill_surface(ctx, surface.host, skin.scrim, {});
+
+	draw::fill_surface(
+		ctx,
+		rectf::from_position_size(
 			{ surface.panel.left() + sty.modal_shadow_offset, surface.panel.top() - sty.modal_shadow_offset },
 			{ surface.panel.width(), surface.panel.height() }
 		),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = surface.panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+		skin.shadow,
+		{}
+	);
+
+	draw::fill_surface(ctx, surface.panel, skin.panel, {});
 
 	return scope;
 }

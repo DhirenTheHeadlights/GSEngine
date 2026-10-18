@@ -27,6 +27,10 @@ export namespace gse::ide {
 		std::optional<lint_rule> confirming;
 	};
 
+	auto group_lints(
+		const search::lint_snapshot& snapshot
+	) -> std::vector<lint_rule_group>;
+
 	auto draw_lint_panel(
 		gui::builder& ui,
 		const rectf& rect,
@@ -77,29 +81,15 @@ namespace gse::ide {
 	) -> void;
 }
 
-auto gse::ide::sync_lint_groups(lint_panel_state& state, const search::index_state* index) -> void {
-	const std::shared_ptr<const search::search_snapshot> current = index->query_snapshot();
-	const std::shared_ptr<const search::lint_snapshot> lints = current->lints;
-	if (state.snapshot && state.snapshot->symbol_generation == lints->symbol_generation) {
-		return;
-	}
-
+auto gse::ide::group_lints(const search::lint_snapshot& snapshot) -> std::vector<lint_rule_group> {
 	std::vector<lint_rule_group> groups;
 	for (const lint_rule rule : enum_values<lint_rule>()) {
 		groups.push_back({
 			.rule = rule,
 		});
 	}
-	for (const lint_rule_group& previous : state.groups) {
-		for (lint_rule_group& group : groups) {
-			if (group.rule == previous.rule) {
-				group.expanded = previous.expanded;
-				break;
-			}
-		}
-	}
 
-	const std::span<const search::lint_site> sites = *lints->sites;
+	const std::span<const search::lint_site> sites = *snapshot.sites;
 	for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(sites.size()); ++i) {
 		const search::lint_site& site = sites[i];
 		for (lint_rule_group& group : groups) {
@@ -121,6 +111,26 @@ auto gse::ide::sync_lint_groups(lint_panel_state& state, const search::index_sta
 			files.insert(sites[row.site].path.generic_native_encoded_string());
 		}
 		group.file_count = files.size();
+	}
+
+	return groups;
+}
+
+auto gse::ide::sync_lint_groups(lint_panel_state& state, const search::index_state* index) -> void {
+	const std::shared_ptr<const search::search_snapshot> current = index->query_snapshot();
+	const std::shared_ptr<const search::lint_snapshot> lints = current->lints;
+	if (state.snapshot && state.snapshot->symbol_generation == lints->symbol_generation) {
+		return;
+	}
+
+	std::vector<lint_rule_group> groups = group_lints(*lints);
+	for (const lint_rule_group& previous : state.groups) {
+		for (lint_rule_group& group : groups) {
+			if (group.rule == previous.rule) {
+				group.expanded = previous.expanded;
+				break;
+			}
+		}
 	}
 
 	state.snapshot = lints;
@@ -179,7 +189,7 @@ auto gse::ide::draw_lint_rule_row(const gui::draw_context& ctx, const rectf& row
 
 	ctx.queue_sprite({
 		.rect = row,
-		.color = hovered ? sty.color_widget_hovered : sty.color_panel_alt,
+		.color = hovered ? sty.list_item.surfaces.hot.fill : sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -231,7 +241,7 @@ auto gse::ide::draw_lint_site_row(const gui::draw_context& ctx, const rectf& row
 	if (hovered) {
 		ctx.queue_sprite({
 			.rect = row,
-			.color = sty.color_widget_hovered,
+			.color = sty.list_item.surfaces.hot.fill,
 			.texture = ctx.blank_texture,
 		});
 	}
@@ -313,7 +323,7 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 	);
 	ctx.queue_sprite({
 		.rect = header_rect,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 	const search::index_phase phase = index->phase.load(std::memory_order_acquire);

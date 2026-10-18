@@ -50,6 +50,7 @@ export namespace gse::gui::symbol {
 	auto hammer() -> std::span<const stroke>;
 	auto play() -> std::span<const stroke>;
 	auto stop() -> std::span<const stroke>;
+	auto restart() -> std::span<const stroke>;
 	auto square() -> std::span<const stroke>;
 	auto terminal() -> std::span<const stroke>;
 	auto check() -> std::span<const stroke>;
@@ -313,6 +314,15 @@ auto gse::gui::symbol::stop() -> std::span<const stroke> {
 	return data;
 }
 
+auto gse::gui::symbol::restart() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 3> data{
+		arc({ 0.5f, 0.5f }, 0.30f, degrees(60.f), degrees(300.f)),
+		segment({ 0.65f, 0.76f }, { 0.51f, 0.79f }),
+		segment({ 0.65f, 0.76f }, { 0.69f, 0.62f }),
+	};
+	return data;
+}
+
 auto gse::gui::symbol::square() -> std::span<const stroke> {
 	static constexpr std::array<stroke, 4> data{
 		segment({ 0.18f, 0.18f }, { 0.82f, 0.18f }),
@@ -378,7 +388,7 @@ auto gse::gui::symbol::to_arc_command(const stroke& st, const vec2f center, cons
 		.shape = renderer::sprite_shape::arc,
 		.arc_radius = radius,
 		.arc_half_sweep = half_sweep,
-		.arc_thickness = half_thickness,
+		.stroke_thickness = half_thickness,
 	};
 }
 

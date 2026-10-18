@@ -1,0 +1,959 @@
+diff --git a/gcc/testsuite/c-c++-common/analyzer/errno-1.c b/gcc/testsuite/c-c++-common/analyzer/errno-1.c
+index 6b9d28c1079..810da3afeec 100644
+--- a/gcc/testsuite/c-c++-common/analyzer/errno-1.c
++++ b/gcc/testsuite/c-c++-common/analyzer/errno-1.c
+@@ -1,3 +1,5 @@
++/* { dg-xfail-if "wasi-libc errno not picked up by analyzer; pr125463" { wasm*-*-* } } */
++
+ #include <errno.h>
+ #include "analyzer-decls.h"
+ 
+diff --git a/gcc/testsuite/c-c++-common/analyzer/isatty-1.c b/gcc/testsuite/c-c++-common/analyzer/isatty-1.c
+index c5d376da498..af4ba4721d6 100644
+--- a/gcc/testsuite/c-c++-common/analyzer/isatty-1.c
++++ b/gcc/testsuite/c-c++-common/analyzer/isatty-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-skip-if "" { powerpc*-*-aix* } } */
+ /* { dg-skip-if "" { "avr-*-*" } } */
++/* { dg-skip-if "" { "wasm*-*-*" } } */
+ 
+ #include <errno.h>
+ #include "../../gcc.dg/analyzer/analyzer-decls.h"
+diff --git a/gcc/testsuite/c-c++-common/builtin-has-attribute-4.c b/gcc/testsuite/c-c++-common/builtin-has-attribute-4.c
+index c9ab9cf3c79..d581af436e3 100644
+--- a/gcc/testsuite/c-c++-common/builtin-has-attribute-4.c
++++ b/gcc/testsuite/c-c++-common/builtin-has-attribute-4.c
+@@ -4,6 +4,7 @@
+    { dg-options "-Wall -ftrack-macro-expansion=0" }
+    { dg-options "-Wall -Wno-narrowing -Wno-unused -ftrack-macro-expansion=0" { target c++ } }
+    { dg-additional-options "-DSKIP_ALIAS" { target *-*-darwin* } }
++   { dg-require-effective-target named_sections } */
+    { dg-require-visibility "hidden" }
+ */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/compile/20000804-1.c b/gcc/testsuite/gcc.c-torture/compile/20000804-1.c
+index 6fddddf1149..972e7118a26 100644
+--- a/gcc/testsuite/gcc.c-torture/compile/20000804-1.c
++++ b/gcc/testsuite/gcc.c-torture/compile/20000804-1.c
+@@ -6,6 +6,7 @@
+ /* { dg-xfail-if "Inconsistent constraint on asm" { csky-*-* } { "-O0" } { "" } } */
+ /* { dg-xfail-if "Inconsistent constraint on asm" { bpf-*-* } { "-O0" } { "" } } */
+ /* { dg-xfail-if "" { h8300-*-* } } */
++/* { dg-skip-if "" { wasm*-*-* } } */
+ /* { dg-require-stack-size "99*4+16" } */
+ /* { dg-additional-options "-std=gnu89" } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/compile/pr40291.c b/gcc/testsuite/gcc.c-torture/compile/pr40291.c
+index dc37cd776c1..3430a3eb525 100644
+--- a/gcc/testsuite/gcc.c-torture/compile/pr40291.c
++++ b/gcc/testsuite/gcc.c-torture/compile/pr40291.c
+@@ -1,5 +1,8 @@
+ /* PR middle-end/40291 */
+ /* { dg-additional-options "-fpermissive" } */
++/* { dg-xfail-if "wasm requires decl signatures to match call sites" { wasm*-*-* } } */
++/* expand_builtin still doesn't correctly convert the size in some cases, but
++   this is only visible on wasm.  */
+ 
+ int
+ foo (void *x, char *y, unsigned long long z)
+diff --git a/gcc/testsuite/gcc.c-torture/compile/pr55921.c b/gcc/testsuite/gcc.c-torture/compile/pr55921.c
+index cf9084e33f0..1c14284067e 100644
+--- a/gcc/testsuite/gcc.c-torture/compile/pr55921.c
++++ b/gcc/testsuite/gcc.c-torture/compile/pr55921.c
+@@ -1,6 +1,7 @@
+ /* PR tree-optimization/55921 */
+ /* { dg-skip-if "Not enough registers" { "pdp11-*-*" } } */
+ /* { dg-skip-if "exceeds eBPF stack limit" { bpf-*-* } } */
++/* { dg-skip-if "" { wasm*-*-* } } */
+ 
+ typedef union
+ {
+diff --git a/gcc/testsuite/gcc.c-torture/compile/pr60655-1.c b/gcc/testsuite/gcc.c-torture/compile/pr60655-1.c
+index 6911e0d278e..1b0d53c8c2d 100644
+--- a/gcc/testsuite/gcc.c-torture/compile/pr60655-1.c
++++ b/gcc/testsuite/gcc.c-torture/compile/pr60655-1.c
+@@ -1,4 +1,4 @@
+-/* { dg-options "-fdata-sections" { target { { ! { { hppa*-*-hpux* } && { ! lp64 } } } && { ! "nvptx-*-* pdp11-*-*" } } } } */
++/* { dg-options "-fdata-sections" { target { { ! { { hppa*-*-hpux* } && { ! lp64 } } } && { ! "nvptx-*-* pdp11-*-* wasm*-*-*" } } } } */
+ 
+ typedef unsigned char unit;
+ typedef unit *unitptr;
+diff --git a/gcc/testsuite/gcc.c-torture/execute/20030222-1.c b/gcc/testsuite/gcc.c-torture/execute/20030222-1.c
+index d619b8159b4..c8a73d4de3c 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/20030222-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/20030222-1.c
+@@ -3,7 +3,7 @@
+    succeeded at all.  We use volatile to make sure the long long is
+    actually truncated to int, in case a single register is wide enough
+    for a long long.  */
+-/* { dg-skip-if "asm requires register allocation" { nvptx-*-* } } */
++/* { dg-skip-if "asm requires register allocation" { nvptx-*-* wasm*-*-* } } */
+ #include <limits.h>
+ 
+ void abort (void);
+diff --git a/gcc/testsuite/gcc.c-torture/execute/builtins/20010124-1.x b/gcc/testsuite/gcc.c-torture/execute/builtins/20010124-1.x
+index c38970d40c0..864eef6b779 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/builtins/20010124-1.x
++++ b/gcc/testsuite/gcc.c-torture/execute/builtins/20010124-1.x
+@@ -1,6 +1,6 @@
+ load_lib target-supports.exp
+ 
+-if [istarget "nvptx-*-*"] {
++if { [istarget "nvptx-*-*"] || [istarget "wasm*-*-*"] } {
+     # This test uses memcpy for block move in the same file as it
+     # defines it.  The two decls are not the same, by design, and we
+     # end up emitting a definition of memcpy, along with a .extern
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/bfloat16-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/bfloat16-builtin-issignaling-1.c
+index 0e428db792b..f5f06008bf5 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/bfloat16-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/bfloat16-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target bfloat16_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/builtin-issignaling-1.c
+index 60125b2b656..4e47ed2e1e7 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/builtin-issignaling-1.c
+@@ -1,6 +1,7 @@
+ /* { dg-do run } */
+ /* { dg-add-options ieee } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float128-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float128-builtin-issignaling-1.c
+index 3299ffd5666..acd9677297d 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float128-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float128-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float128_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float128x-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float128x-builtin-issignaling-1.c
+index af0b25af8a5..ca765f34ff5 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float128x-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float128x-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float128x_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float16-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float16-builtin-issignaling-1.c
+index a0747e4240b..0dbe2c976fc 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float16-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float16-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float16_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float32-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float32-builtin-issignaling-1.c
+index 38e56c2c00c..9e0d9b33c9b 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float32-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float32-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float32_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float32x-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float32x-builtin-issignaling-1.c
+index 88eefdbc1d6..ecd8a596306 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float32x-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float32x-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float32x_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float64-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float64-builtin-issignaling-1.c
+index 07d755b37be..ec13f17fd51 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float64-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float64-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float64_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/ieee/float64x-builtin-issignaling-1.c b/gcc/testsuite/gcc.c-torture/execute/ieee/float64x-builtin-issignaling-1.c
+index fe6420aaa95..7665afc3c5b 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/ieee/float64x-builtin-issignaling-1.c
++++ b/gcc/testsuite/gcc.c-torture/execute/ieee/float64x-builtin-issignaling-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-add-options ieee } */
+ /* { dg-require-effective-target float64x_runtime } */
+ /* { dg-additional-options "-fsignaling-nans" } */
++/* { dg-skip-if "WASM does not have signaling NaNs" { wasm*-*-* } } */
+ /* Workaround for PR57484 on ia32: */
+ /* { dg-additional-options "-msse2 -mfpmath=sse" { target { ia32 && sse2_runtime } } } */
+ 
+diff --git a/gcc/testsuite/gcc.c-torture/execute/pr67037-1.c b/gcc/testsuite/gcc.c-torture/execute/pr67037-1.c
+new file mode 100644
+index 00000000000..5e506972202
+--- /dev/null
++++ b/gcc/testsuite/gcc.c-torture/execute/pr67037-1.c
+@@ -0,0 +1,56 @@
++/* { dg-additional-options "-std=gnu17" } */
++ 
++long __attribute__((noipa))
++sink1(void)
++{
++  return 0;
++}
++long __attribute__((noipa))
++sink2(void*)
++{
++  return 0;
++}
++ 
++ 
++static inline void lstrcpynW( short *d, const short *s, int n )
++{
++    unsigned int count = n;
++ 
++    while ((count > 1) && *s)
++    {
++        count--;
++        *d++ = *s++;
++    }
++    if (count) *d = 0;
++}
++ 
++int __attribute__((noinline,noclone))
++badfunc(int u0, int u1, int u2, int u3,
++  short *fsname, unsigned int fsname_len)
++{
++    static const short ntfsW[] = {'N','T','F','S',0};
++    char superblock[2048+3300];
++    int ret = 0;
++    short *p;
++ 
++    if (sink1())
++        return 0;
++    p = (void *)sink1();
++    if (p != 0)
++        goto done;
++ 
++    sink2(superblock);
++ 
++    lstrcpynW(fsname, ntfsW, fsname_len);
++ 
++    ret = 1;
++done:
++    return ret;
++}
++ 
++ 
++int main()
++{
++    short buf[6];
++    return !badfunc(0, 0, 0, 0, buf, 6);
++}
+diff --git a/gcc/testsuite/gcc.c-torture/execute/pr67037.c b/gcc/testsuite/gcc.c-torture/execute/pr67037.c
+index da626e8da8c..4ba9cbdc667 100644
+--- a/gcc/testsuite/gcc.c-torture/execute/pr67037.c
++++ b/gcc/testsuite/gcc.c-torture/execute/pr67037.c
+@@ -1,5 +1,7 @@
+ /* { dg-additional-options "-std=gnu17" } */
+-
++/* { dg-skip-if "" { wasm*-*-* } } */
++/* wasm doesn't play well with unprototyped fns when called with mismatching
++   number of args */
+ long (*extfunc)();
+ 
+ static inline void lstrcpynW( short *d, const short *s, int n )
+diff --git a/gcc/testsuite/gcc.dg/20060410.c b/gcc/testsuite/gcc.dg/20060410.c
+index b4d00cb991d..233aec72ef9 100644
+--- a/gcc/testsuite/gcc.dg/20060410.c
++++ b/gcc/testsuite/gcc.dg/20060410.c
+@@ -13,4 +13,4 @@ int bar (void)
+     return ((struct foo *)0x1234)->i;
+ }
+ 
+-/* { dg-final { scan-assembler "foo" { xfail nvptx-*-* } } } */
++/* { dg-final { scan-assembler "foo" { xfail nvptx-*-* wasm*-*-* } } } */
+diff --git a/gcc/testsuite/gcc.dg/analyzer/fd-access-mode-target-headers.c b/gcc/testsuite/gcc.dg/analyzer/fd-access-mode-target-headers.c
+index 1386ac2de1e..0f2eb5267df 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/fd-access-mode-target-headers.c
++++ b/gcc/testsuite/gcc.dg/analyzer/fd-access-mode-target-headers.c
+@@ -1,5 +1,6 @@
+ /* { dg-skip-if "" { { powerpc*-*-aix* avr-*-* *-*-vxworks* } || newlib } } */
+ /* { dg-skip-if "PR analyzer/107750" { *-*-solaris2* } } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <sys/stat.h>
+ #include <fcntl.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/fd-mktemp-family.c b/gcc/testsuite/gcc.dg/analyzer/fd-mktemp-family.c
+index db690256c05..5a0784cb9f3 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/fd-mktemp-family.c
++++ b/gcc/testsuite/gcc.dg/analyzer/fd-mktemp-family.c
+@@ -1,5 +1,6 @@
+ /* Tests for fd leak and errno handling of mktemp-family functions.  */
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdlib.h>
+ #include <fcntl.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-1.c b/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-1.c
+index 3c1eac18dfe..1372459528f 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-1.c
+@@ -1,4 +1,5 @@
+ /* { dg-additional-options "-O2" } */
++/* { dg-require-effective-target label_values } */
+ 
+ char __printf_buffer_spec;
+ int __printf_buffer_offset;
+diff --git a/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-2.c b/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-2.c
+index e20a43946bf..ff964664940 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-2.c
++++ b/gcc/testsuite/gcc.dg/analyzer/ice-pr124375-2.c
+@@ -1,3 +1,5 @@
++/* { dg-require-effective-target label_values } */
++
+ int __wcslen_spec, __wcslen_offset;
+ void *__wcslen_ptr;
+ long __wcslen() {
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mkdtemp-1.c b/gcc/testsuite/gcc.dg/analyzer/mkdtemp-1.c
+index da77ce78651..48a012c8d83 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mkdtemp-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mkdtemp-1.c
+@@ -1,4 +1,5 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mkostemp-1.c b/gcc/testsuite/gcc.dg/analyzer/mkostemp-1.c
+index 55135ffd947..8dade236acb 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mkostemp-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mkostemp-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
+ /* { dg-prune-output "leak of file descriptor" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mkostemps-1.c b/gcc/testsuite/gcc.dg/analyzer/mkostemps-1.c
+index 013906092d5..c3b045ad3ad 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mkostemps-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mkostemps-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
+ /* { dg-prune-output "leak of file descriptor" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mkstemp-1.c b/gcc/testsuite/gcc.dg/analyzer/mkstemp-1.c
+index e7a7a724abf..f88103f9f76 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mkstemp-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mkstemp-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
+ /* { dg-prune-output "leak of file descriptor" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mkstemps-1.c b/gcc/testsuite/gcc.dg/analyzer/mkstemps-1.c
+index 75fcb9dbb08..a927cf05bb1 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mkstemps-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mkstemps-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
+ /* { dg-prune-output "leak of file descriptor" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+diff --git a/gcc/testsuite/gcc.dg/analyzer/mktemp-1.c b/gcc/testsuite/gcc.dg/analyzer/mktemp-1.c
+index 0f4b448a6aa..141a5c9cced 100644
+--- a/gcc/testsuite/gcc.dg/analyzer/mktemp-1.c
++++ b/gcc/testsuite/gcc.dg/analyzer/mktemp-1.c
+@@ -1,4 +1,5 @@
+ /* { dg-additional-options "-Wno-analyzer-null-argument" } */
++/* { dg-skip-if "wasi-libc doesn't work well with analyzer" { wasm*-*-* } } */
+ 
+ /* TODO: mktemp is deprecated per MSC24-C
+    (https://wiki.sei.cmu.edu/confluence/x/hNYxBQ).
+diff --git a/gcc/testsuite/gcc.dg/array-quals-1.c b/gcc/testsuite/gcc.dg/array-quals-1.c
+index e379f6121b7..eb238fee136 100644
+--- a/gcc/testsuite/gcc.dg/array-quals-1.c
++++ b/gcc/testsuite/gcc.dg/array-quals-1.c
+@@ -5,6 +5,7 @@
+ /* { dg-do compile } */
+ /* { dg-options "-Wno-discarded-array-qualifiers" } */
+ /* { dg-additional-options "-fno-pie" { target pie } } */
++/* { dg-skip-if "No sections on wasm" { wasm*-*-* } } */
+ /* The MMIX port always switches to the .data section at the end of a file.  */
+ /* { dg-final { scan-assembler-not "\\.data(?!\\.rel\\.ro)" { xfail powerpc*-*-aix* mmix-*-* x86_64-*-mingw* } } } */
+ /* { dg-final { scan-assembler-symbol-section {^_?a$} {^\.(const|rodata|srodata|sdata)|\[RO\]} } } */
+diff --git a/gcc/testsuite/gcc.dg/atomic-noinline.c b/gcc/testsuite/gcc.dg/atomic-noinline.c
+index 99912cc87e7..14dfb7f229e 100644
+--- a/gcc/testsuite/gcc.dg/atomic-noinline.c
++++ b/gcc/testsuite/gcc.dg/atomic-noinline.c
+@@ -3,6 +3,7 @@
+ /* { dg-options "-w -fno-inline-atomics" } */
+ /* { dg-do run } */
+ /* { dg-additional-sources "atomic-noinline-aux.c" } */
++/* { dg-xfail-if "wasm requires decl signatures to match call sites" { wasm*-*-* } } */
+ 
+ /* Test that -fno-inline-atomics works as expected.  
+    atomic-generic-aux provide the expected routines which simply set the
+diff --git a/gcc/testsuite/gcc.dg/attr-weakref-1.c b/gcc/testsuite/gcc.dg/attr-weakref-1.c
+index 1d25d9c2d41..abf77474ae2 100644
+--- a/gcc/testsuite/gcc.dg/attr-weakref-1.c
++++ b/gcc/testsuite/gcc.dg/attr-weakref-1.c
+@@ -8,6 +8,9 @@
+ // { dg-skip-if "" { "hppa*-*-hpux*" "*-*-aix*" "nvptx-*-*" } }
+ // { dg-skip-if PR119369 { amdgcn-*-* } }
+ 
++// WebAssembly does support undefined weak symbols, just not weakrefs
++/* { dg-skip-if "" { wasm*-*-* } } */
++
+ // For kernel modules and static RTPs, the loader treats undefined weak
+ // symbols in the same way as undefined strong symbols.  The test
+ // therefore fails to load, so skip it.
+diff --git a/gcc/testsuite/gcc.dg/builtin-addc-1.c b/gcc/testsuite/gcc.dg/builtin-addc-1.c
+index c875d8f66e8..2617088261e 100644
+--- a/gcc/testsuite/gcc.dg/builtin-addc-1.c
++++ b/gcc/testsuite/gcc.dg/builtin-addc-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-do run } */
+ /* { dg-options "-O2 -g" } */
++/* { dg-skip-if "debug unsupported" { wasm*-*-* } } */
+ 
+ int
+ main ()
+diff --git a/gcc/testsuite/gcc.dg/builtin-apply5.c b/gcc/testsuite/gcc.dg/builtin-apply5.c
+index 16892f76a8a..b02267bfce5 100644
+--- a/gcc/testsuite/gcc.dg/builtin-apply5.c
++++ b/gcc/testsuite/gcc.dg/builtin-apply5.c
+@@ -1,6 +1,7 @@
+ /* { dg-options "-O2 -Wmissing-noreturn -fgnu89-inline" } */
+ /* { dg-additional-options "-mno-mmx" { target { { i?86-*-* x86_64-*-* } && ia32 } } } */
+ /* { dg-do compile } */
++/* { dg-skip-if "Unprototyped calls not supported" { wasm*-*-* } } */
+ 
+ extern void abort (void);
+ 
+diff --git a/gcc/testsuite/gcc.dg/builtin-arith-overflow-1.c b/gcc/testsuite/gcc.dg/builtin-arith-overflow-1.c
+index 5db9368927e..4e12eabc150 100644
+--- a/gcc/testsuite/gcc.dg/builtin-arith-overflow-1.c
++++ b/gcc/testsuite/gcc.dg/builtin-arith-overflow-1.c
+@@ -1,5 +1,6 @@
+ /* { dg-do run } */
+ /* { dg-options "-O2 -fdump-tree-optimized -g" } */
++/* { dg-skip-if "debug unsupported" { wasm*-*-* } } */
+ 
+ /* SUB_OVERFLOW should be folded into unsigned subtraction,
+    because ovf is never used.  */
+diff --git a/gcc/testsuite/gcc.dg/builtins-config.h b/gcc/testsuite/gcc.dg/builtins-config.h
+index 5e27c1deb33..b262ce33a9d 100644
+--- a/gcc/testsuite/gcc.dg/builtins-config.h
++++ b/gcc/testsuite/gcc.dg/builtins-config.h
+@@ -12,6 +12,8 @@
+ 
+ #if defined(__hppa) && defined(__hpux)
+ /* PA HP-UX doesn't have the entire C99 runtime.  */
++#elif defined(__wasm32__)
++/* WebAssembly doesn't have the entire C99 runtime.  */
+ #elif defined(__INTERIX)
+ /* Interix6 doesn't have the entire C99 runtime.  */
+ #elif defined(__AVR__)
+diff --git a/gcc/testsuite/gcc.dg/c99-stdint-1.c b/gcc/testsuite/gcc.dg/c99-stdint-1.c
+index f5c2cda77c9..6b86a8d67a7 100644
+--- a/gcc/testsuite/gcc.dg/c99-stdint-1.c
++++ b/gcc/testsuite/gcc.dg/c99-stdint-1.c
+@@ -11,6 +11,7 @@
+ /* { dg-options "-std=iso9899:1999 -pedantic-errors -fhosted" } */
+ /* { dg-require-effective-target ptr32plus } */
+ /* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
++/* { dg-xfail-if "intptr_t is long despite (intptr_t)0+0 being int" { wasm*-*-* } } */
+ 
+ #include <limits.h>
+ #include <stdint.h>
+diff --git a/gcc/testsuite/gcc.dg/c99-stdint-2.c b/gcc/testsuite/gcc.dg/c99-stdint-2.c
+index 08d9f6023d9..2c83aba18ae 100644
+--- a/gcc/testsuite/gcc.dg/c99-stdint-2.c
++++ b/gcc/testsuite/gcc.dg/c99-stdint-2.c
+@@ -4,6 +4,7 @@
+ /* { dg-options "-std=iso9899:1999 -pedantic-errors -ffreestanding" } */
+ /* { dg-require-effective-target ptr32plus } */
+ /* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
++/* { dg-skip-if "wasi-libc doesn't support int width" { wasm*-*-* } } */
+ 
+ /* The test is that there are no diagnostics, so just include the
+    hosted version.  */
+diff --git a/gcc/testsuite/gcc.dg/c99-stdint-7.c b/gcc/testsuite/gcc.dg/c99-stdint-7.c
+index 777e895b506..83b5e57e675 100644
+--- a/gcc/testsuite/gcc.dg/c99-stdint-7.c
++++ b/gcc/testsuite/gcc.dg/c99-stdint-7.c
+@@ -3,6 +3,7 @@
+    conditions.  */
+ /* { dg-do compile } */
+ /* { dg-options "-std=iso9899:1999 -fhosted" } */
++/* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
+ 
+ #include <stdint.h>
+ 
+@@ -191,12 +192,14 @@
+ #error "PTRDIFF_MAX not usable in #if or wrong value"
+ #endif
+ 
++#ifndef SIGNAL_SUPPRESS
+ #if SIG_ATOMIC_MIN != __SIG_ATOMIC_MIN__
+ #error "SIG_ATOMIC_MIN not usable in #if or wrong value"
+ #endif
+ #if SIG_ATOMIC_MAX != __SIG_ATOMIC_MAX__
+ #error "SIG_ATOMIC_MAX not usable in #if or wrong value"
+ #endif
++#endif
+ 
+ #if SIZE_MAX != __SIZE_MAX__
+ #error "SIZE_MAX not usable in #if or wrong value"
+diff --git a/gcc/testsuite/gcc.dg/c99-stdint-8.c b/gcc/testsuite/gcc.dg/c99-stdint-8.c
+index c64b3feb4f6..9daba2375fa 100644
+--- a/gcc/testsuite/gcc.dg/c99-stdint-8.c
++++ b/gcc/testsuite/gcc.dg/c99-stdint-8.c
+@@ -3,6 +3,7 @@
+    conditions.  Freestanding version.  */
+ /* { dg-do compile } */
+ /* { dg-options "-std=iso9899:1999 -ffreestanding" } */
++/* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
+ 
+ /* The test is that there are no diagnostics, so just include the
+    hosted version.  */
+diff --git a/gcc/testsuite/gcc.dg/charset/function.c b/gcc/testsuite/gcc.dg/charset/function.c
+index 5aba6511bd0..a589fa064f5 100644
+--- a/gcc/testsuite/gcc.dg/charset/function.c
++++ b/gcc/testsuite/gcc.dg/charset/function.c
+@@ -1,6 +1,6 @@
+ /* { dg-do compile }
+    { dg-require-iconv "IBM1047" }
+-   { dg-final { scan-assembler-not "\"foobar\"" } } */
++   { dg-final { scan-assembler-not "\"foobar\"" { xfail wasm*-*-* } } } */
+ 
+ const char *str;
+ 
+diff --git a/gcc/testsuite/gcc.dg/cpp/escape-3.i b/gcc/testsuite/gcc.dg/cpp/escape-3.i
+index cb4758190f7..0659942c372 100644
+--- a/gcc/testsuite/gcc.dg/cpp/escape-3.i
++++ b/gcc/testsuite/gcc.dg/cpp/escape-3.i
+@@ -6,6 +6,7 @@
+ 
+ /* { dg-do compile } */
+ /* { dg-options "-g1" } */
++/* { dg-skip-if "wasm doesn't support -g" { wasm*-*-* } } */
+ 
+ int foo (int a, int b)
+ {
+diff --git a/gcc/testsuite/gcc.dg/format/pr78304.c b/gcc/testsuite/gcc.dg/format/pr78304.c
+index f6ad80793c7..dc278d5fe39 100644
+--- a/gcc/testsuite/gcc.dg/format/pr78304.c
++++ b/gcc/testsuite/gcc.dg/format/pr78304.c
+@@ -1,4 +1,5 @@
+ /* { dg-do compile { target inttypes_types } } */
++/* { dg-skip-if "wasi-libc does not support PRIuN" { wasm*-*-* } } */
+ /* { dg-options "-O2 -Wall -Wextra" } */
+ 
+ #include <inttypes.h>
+diff --git a/gcc/testsuite/gcc.dg/ipa/symver1.c b/gcc/testsuite/gcc.dg/ipa/symver1.c
+index d120ed5d76b..6d1bdb8abe8 100644
+--- a/gcc/testsuite/gcc.dg/ipa/symver1.c
++++ b/gcc/testsuite/gcc.dg/ipa/symver1.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-skip-if "only works for ELF targets" { *-*-darwin* *-*-aix* } } */
++/* { dg-skip-if "only works for ELF targets" { ! elf } } */
+ 
+ __attribute__ ((__symver__ ("foo@VER_2")))
+ __attribute__ ((__symver__ ("foo@VER_3")))
+diff --git a/gcc/testsuite/gcc.dg/lower-subreg-1.c b/gcc/testsuite/gcc.dg/lower-subreg-1.c
+index c62db2c466c..749c85269cb 100644
+--- a/gcc/testsuite/gcc.dg/lower-subreg-1.c
++++ b/gcc/testsuite/gcc.dg/lower-subreg-1.c
+@@ -1,4 +1,4 @@
+-/* { dg-do compile { target { ! { mips64 || { aarch64*-*-* arm*-*-* i?86-*-* ia64-*-* pru-*-* sparc*-*-* x86_64-*-* } } } } } */
++/* { dg-do compile { target { ! { mips64 || { aarch64*-*-* arm*-*-* i?86-*-* ia64-*-* pru-*-* sparc*-*-* x86_64-*-* wasm*-*-* } } } } } */
+ /* { dg-options "-O -fdump-rtl-subreg1" } */
+ /* { dg-require-effective-target ilp32 } */
+ 
+diff --git a/gcc/testsuite/gcc.dg/pch/valid-1.c b/gcc/testsuite/gcc.dg/pch/valid-1.c
+index b950d0d4c64..1704317ed69 100644
+--- a/gcc/testsuite/gcc.dg/pch/valid-1.c
++++ b/gcc/testsuite/gcc.dg/pch/valid-1.c
+@@ -1,4 +1,5 @@
+ /* { dg-options "-I. -Winvalid-pch -g" } */
++/* { dg-skip-if "wasm doesn't support -g" { wasm*-*-* } } */
+ 
+ #include "valid-1.h"/* { dg-warning "created with .none. debug info, but used with" } */
+ /* { dg-error "No such file" "no such file" { target *-*-* } 0 } */
+diff --git a/gcc/testsuite/gcc.dg/pr115066.c b/gcc/testsuite/gcc.dg/pr115066.c
+index d79233f2e79..79f4780cd2e 100644
+--- a/gcc/testsuite/gcc.dg/pr115066.c
++++ b/gcc/testsuite/gcc.dg/pr115066.c
+@@ -1,5 +1,5 @@
+ /* { dg-do compile } */
+-/* { dg-skip-if "split DWARF unsupported" { hppa*-*-hpux* powerpc*-ibm-aix* *-*-darwin* } } */
++/* { dg-skip-if "split DWARF unsupported" { hppa*-*-hpux* powerpc*-ibm-aix* *-*-darwin* wasm*-*-* } } */
+ /* { dg-options "-gsplit-dwarf -g3 -dA -gdwarf-4 -gno-strict-dwarf" } */
+ /* { dg-final { scan-assembler-times {\.section\t"?\.debug_macro} 1 } } */
+ /* { dg-final { scan-assembler-not {\.byte\t0x5\t[^\n\r]* Define macro strp} } } */
+diff --git a/gcc/testsuite/gcc.dg/pr28755.c b/gcc/testsuite/gcc.dg/pr28755.c
+index 50b56fb8907..5e76ea40d62 100644
+--- a/gcc/testsuite/gcc.dg/pr28755.c
++++ b/gcc/testsuite/gcc.dg/pr28755.c
+@@ -3,7 +3,7 @@
+ /* { dg-require-effective-target ptr32plus } */
+ /* { dg-options "-Os" } */
+ /* { dg-final { scan-assembler-times "2112543726\|7deadbee" 2 } } */
+-/* { dg-skip-if "integer output is different here" { nvptx-*-* } } */
++/* { dg-skip-if "integer output is different here" { nvptx-*-* wasm*-*-* } } */
+ 
+ struct S
+ {
+diff --git a/gcc/testsuite/gcc.dg/pr49551.c b/gcc/testsuite/gcc.dg/pr49551.c
+index dda0667f3e6..0b99475fe47 100644
+--- a/gcc/testsuite/gcc.dg/pr49551.c
++++ b/gcc/testsuite/gcc.dg/pr49551.c
+@@ -1,6 +1,6 @@
+ /* { dg-do compile } */
+ /* { dg-options "-O -fdata-sections" } */
+-/* { dg-skip-if "-fdata-sections not supported" { hppa*-*-hpux* nvptx-*-* } } */
++/* { dg-skip-if "-fdata-sections not supported" { hppa*-*-hpux* nvptx-*-* wasm*-*-* } } */
+ 
+ int x = 1;
+ int x;
+diff --git a/gcc/testsuite/gcc.dg/profile-info-section.c b/gcc/testsuite/gcc.dg/profile-info-section.c
+index 8f31f3b2c07..baf8a5f3de7 100644
+--- a/gcc/testsuite/gcc.dg/profile-info-section.c
++++ b/gcc/testsuite/gcc.dg/profile-info-section.c
+@@ -1,6 +1,7 @@
+ /* { dg-do compile } */
+ /* { dg-skip-if "profile-info-section" { powerpc-ibm-aix* } } */
+ /* { dg-options "-fprofile-arcs -fprofile-info-section -fdump-tree-optimized" } */
++/* { dg-require-effective-target named_sections } */
+ 
+ int foo()
+ {
+diff --git a/gcc/testsuite/gcc.dg/stdint-width-1.c b/gcc/testsuite/gcc.dg/stdint-width-1.c
+index 3eba9f6cb15..8143a7b1604 100644
+--- a/gcc/testsuite/gcc.dg/stdint-width-1.c
++++ b/gcc/testsuite/gcc.dg/stdint-width-1.c
+@@ -2,6 +2,7 @@
+ /* { dg-do compile } */
+ /* { dg-options "-std=c11 -ffreestanding" } */
+ /* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
++/* { dg-skip-if "wasi-libc doesn't support int width" { wasm*-*-* } } */
+ 
+ #include <stddef.h>
+ #define __STDC_WANT_IEC_60559_BFP_EXT__
+diff --git a/gcc/testsuite/gcc.dg/stdint-width-2.c b/gcc/testsuite/gcc.dg/stdint-width-2.c
+index a48333a3ec5..6233c76b55f 100644
+--- a/gcc/testsuite/gcc.dg/stdint-width-2.c
++++ b/gcc/testsuite/gcc.dg/stdint-width-2.c
+@@ -2,6 +2,7 @@
+ /* { dg-do compile } */
+ /* { dg-options "-std=c23 -ffreestanding" } */
+ /* { dg-additional-options "-DSIGNAL_SUPPRESS" { target { ! signal } } } */
++/* { dg-skip-if "wasi-libc doesn't support int width" { wasm*-*-* } } */
+ 
+ #include <stddef.h>
+ #include <stdint.h>
+diff --git a/gcc/testsuite/gcc.dg/tls/thr-cse-1.c b/gcc/testsuite/gcc.dg/tls/thr-cse-1.c
+index 7145671eb95..38f03c3a4a4 100644
+--- a/gcc/testsuite/gcc.dg/tls/thr-cse-1.c
++++ b/gcc/testsuite/gcc.dg/tls/thr-cse-1.c
+@@ -19,7 +19,7 @@ int foo (int b, int c, int d)
+   return a;
+ }
+ 
+-/* { dg-final { scan-assembler-not "emutls_get_address.*emutls_get_address.*" { target { ! { "*-wrs-vxworks"  "*-*-darwin8"  "hppa*-*-hpux*" "i?86-*-mingw*" "x86_64-*-mingw*" visium-*-* nvptx-*-* } } } } } */
++/* { dg-final { scan-assembler-not "emutls_get_address.*emutls_get_address.*" { target { ! { "*-wrs-vxworks"  "*-*-darwin8"  "hppa*-*-hpux*" "i?86-*-mingw*" "x86_64-*-mingw*" visium-*-* nvptx-*-* wasm*-*-* } } } } } */
+ /* { dg-final { scan-assembler-not "call\tL___emutls_get_address.stub.*call\tL___emutls_get_address.stub.*" { target "*-*-darwin8" } } } */
+ /* { dg-final { scan-assembler-not "(b,l|bl) __emutls_get_address.*(b,l|bl) __emutls_get_address.*" { target "hppa*-*-hpux*" } } } */
+ /* { dg-final { scan-assembler-not "tls_lookup.*tls_lookup.*" { target *-wrs-vxworks } } } */
+diff --git a/gcc/testsuite/gcc.misc-tests/gcov-23.c b/gcc/testsuite/gcc.misc-tests/gcov-23.c
+index 72ba0aa1389..d32ec99f51e 100644
+--- a/gcc/testsuite/gcc.misc-tests/gcov-23.c
++++ b/gcc/testsuite/gcc.misc-tests/gcov-23.c
+@@ -1,5 +1,6 @@
+ /* { dg-options "-fcondition-coverage -ftest-coverage -O2" } */
+ /* { dg-do compile } */
++/* { dg-skip-if "wasi-libc doesn't implement longjmp" { wasm*-*-* } } */
+ 
+ #include <stdint.h>
+ #include <limits.h>
+diff --git a/gcc/testsuite/gcc.misc-tests/gcov.exp b/gcc/testsuite/gcc.misc-tests/gcov.exp
+index 0e31804b37c..e2a6a93ef01 100644
+--- a/gcc/testsuite/gcc.misc-tests/gcov.exp
++++ b/gcc/testsuite/gcc.misc-tests/gcov.exp
+@@ -39,6 +39,10 @@ if ![info exists GCOV_UNDER_TEST] {
+ # Initialize harness.
+ dg-init
+ 
++if [istarget wasm*-*-*] then {
++  return 0;
++}
++
+ # Delete old .gcda files.
+ set files [glob -nocomplain gcov*.gcda]
+ if { $files != "" } {
+diff --git a/gcc/testsuite/gcc.misc-tests/options.exp b/gcc/testsuite/gcc.misc-tests/options.exp
+index 0a634f7939f..de1f4efabb5 100644
+--- a/gcc/testsuite/gcc.misc-tests/options.exp
++++ b/gcc/testsuite/gcc.misc-tests/options.exp
+@@ -59,9 +59,12 @@ proc check_for_all_options {language gcc_options compiler_pattern as_pattern ld_
+     set as_options [list "additional_flags=-print-prog-name=as"]
+     set as_prog [lindex [gcc_target_compile "" "" "none" $as_options] 0]
+     if {![regexp -line -- " ${as_prog}(\\.exe)? .*$as_pattern" $gcc_output]} {
+-
+-	fail "$test (assembler options)"
+-	return
++	# wasm does not use a standard assembler, its options are very different
++	# from gas and the like
++	if { ![istarget "wasm*-*-*"] } {
++	    fail "$test (assembler options)"
++	    return
++	}
+     }
+     # Match /collect2, /ld, or *-ld.
+     if {![regexp -- "(/collect2|\[-/\]ld)(\\.exe)? .*$ld_pattern" $gcc_output]} {
+diff --git a/gcc/testsuite/lib/file-format.exp b/gcc/testsuite/lib/file-format.exp
+index b36812a1fa4..5b4194d4161 100644
+--- a/gcc/testsuite/lib/file-format.exp
++++ b/gcc/testsuite/lib/file-format.exp
+@@ -28,6 +28,9 @@ proc gcc_target_object_format { } {
+ 
+     if [info exists gcc_target_object_format_saved] {
+         verbose "gcc_target_object_format returning saved $gcc_target_object_format_saved" 2
++    } elseif { [istarget wasm*-*-*] } {
++	# WebAssembly has its own assembly and objerct file format.
++	set gcc_target_object_format_saved wasm
+     } elseif { [istarget *-*-darwin*] } {
+ 	# Darwin doesn't necessarily have objdump, so hand-code it.
+ 	set gcc_target_object_format_saved mach-o
+@@ -83,7 +86,10 @@ proc gcc_target_object_format { } {
+                 }
+                 som          {
+                     set gcc_target_object_format_saved som
+-                } 
++                }
++                wasm         {
++                    set gcc_target_object_format_saved wasm
++                }
+                 default      {
+                     verbose "Unknown file format: $objformat" 3
+                     set gcc_target_object_format_saved unknown
+diff --git a/gcc/testsuite/lib/scanasm.exp b/gcc/testsuite/lib/scanasm.exp
+index 08dbf1a8118..9ae83b131d7 100644
+--- a/gcc/testsuite/lib/scanasm.exp
++++ b/gcc/testsuite/lib/scanasm.exp
+@@ -145,10 +145,11 @@ proc hidden-scan-for { symbol } {
+     set objformat [gcc_target_object_format]
+ 
+     switch $objformat {
+-        coff     { return "$symbol\[,\d\]*hidden" }
+-        elf      { return "hidden\[ \t_\]*$symbol" }
+-        mach-o   { return "private_extern\[ \t_\]*_?$symbol" }
+-        default  { return "" }
++	coff     { return "$symbol\[,\d\]*hidden" }
++	elf      { return "hidden\[ \t_\]*$symbol" }
++	mach-o   { return "private_extern\[ \t_\]*_?$symbol" }
++	wasm     { return "(@sym(.import.data)? \\$$symbol|\\$$symbol \\\(@sym) (|weak |local )hidden" }
++	default  { return "" }
+     }
+ 
+ }
+@@ -158,7 +159,8 @@ proc weak-scan-for { symbol } {
+     set objformat [gcc_target_object_format]
+ 
+     switch $objformat {
+-        default  { return "weak\[^ \t\]*\[ \t\]_?$symbol" }
++	default  { return "weak\[^ \t\]*\[ \t\]_?$symbol" }
++	wasm     { return "(@sym(.import.data)? \\$$symbol|\\$$symbol \\\(@sym) weak" }
+     }
+ }
+ 
+diff --git a/gcc/testsuite/lib/target-supports.exp b/gcc/testsuite/lib/target-supports.exp
+index d1fcf943b21..681a6eec02e 100644
+--- a/gcc/testsuite/lib/target-supports.exp
++++ b/gcc/testsuite/lib/target-supports.exp
+@@ -351,6 +351,7 @@ proc check_weak_available { } {
+ 	a.out    { return 1 }
+ 	mach-o	 { return 1 }
+ 	som	 { return 1 }
++	wasm	 { return 1 }
+ 	unknown  { return -1 }
+ 	default  { return 0 }
+     }
+@@ -496,6 +497,10 @@ proc check_visibility_available { what_kind } {
+ # be determined.
+ 
+ proc check_alias_available { } {
++    if { [istarget wasm*-*-*] } {
++      return 0;
++    }
++
+     global tool
+ 
+     return [check_cached_effective_target alias_available {
+@@ -651,7 +656,8 @@ proc check_effective_target_trampolines { } {
+ 	 || [istarget nvptx-*-*]
+ 	 || [istarget ft32-*-*]
+ 	 || [istarget pru-*-*]
+-	 || [istarget bpf-*-*] } {
++	 || [istarget bpf-*-*]
++	 || [istarget wasm*-*-*] } {
+ 	return 0;
+     }
+     return 1
+@@ -722,6 +728,9 @@ proc dg-effective-target-value { effective_target } {
+ # Return 1 if signal.h is supported.
+ 
+ proc check_effective_target_signal { } {
++    if { [istarget wasm*-*-*] } {
++      return 0
++    }
+     if [target_info exists gcc,signal_suppress] {
+       return 0
+     }
+@@ -989,7 +998,7 @@ proc add_options_for_check_function_bodies { flags } {
+ # Return 1 if indirect jumps are supported, 0 otherwise.
+ 
+ proc check_effective_target_indirect_jumps {} {
+-    if { [istarget nvptx-*-*] || [istarget bpf-*-*] } {
++    if { [istarget nvptx-*-*] || [istarget bpf-*-*] || [istarget wasm*-*-*] } {
+ 	return 0
+     }
+     return 1
+@@ -998,7 +1007,7 @@ proc check_effective_target_indirect_jumps {} {
+ # Return 1 if nonlocal goto is supported, 0 otherwise.
+ 
+ proc check_effective_target_nonlocal_goto {} {
+-    if { [istarget nvptx-*-*] || [istarget bpf-*-*] } {
++    if { [istarget nvptx-*-*] || [istarget bpf-*-*] || [istarget wasm*-*-*] } {
+ 	return 0
+     }
+     return 1
+@@ -1016,7 +1025,8 @@ proc check_effective_target_global_constructor {} {
+ # Return 1 if taking label values is supported, 0 otherwise.
+ 
+ proc check_effective_target_label_values {} {
+-    if { [istarget nvptx-*-*] || [target_info exists gcc,no_label_values] } {
++    if { [istarget nvptx-*-*] || [istarget wasm*-*-*]
++	 || [target_info exists gcc,no_label_values] } {
+ 	return 0
+     }
+ 
+@@ -1043,7 +1053,7 @@ proc check_effective_target_return_address {} {
+ 	return 0
+     }
+     # No notion of return address in eBPF.
+-    if { [istarget bpf-*-*] } {
++    if { [istarget bpf-*-*] || [istarget wasm*-*-*] } {
+ 	return 0
+     }
+     # It could be supported on amdgcn, but isn't yet.
+@@ -1058,7 +1068,7 @@ proc check_effective_target_return_address {} {
+ # with K&R C function declarations.
+ 
+ proc check_effective_target_untyped_assembly {} {
+-    if { [istarget nvptx-*-*] } {
++    if { [istarget wasm*-*-*] || [istarget nvptx-*-*] } {
+ 	return 0
+     }
+     return 1
+@@ -1273,6 +1283,9 @@ proc check_effective_target_fgnu_tm {} {
+ # Return 1 if the target supports mmap, 0 otherwise.
+ 
+ proc check_effective_target_mmap {} {
++    if [istarget wasm*-*-*] {
++      return 0;
++    }
+     return [check_function_available "mmap"]
+ }
+ 
+@@ -4915,6 +4928,9 @@ proc check_effective_target_vect_intdouble_cvt { } {
+ #Return 1 if we're supporting __int128 for target, 0 otherwise.
+ 
+ proc check_effective_target_int128 { } {
++    if [istarget wasm*-*-*] {
++        return 0;
++    }
+     return [check_no_compiler_messages int128 object {
+ 	int dummy[
+     	#ifndef __SIZEOF_INT128__
+@@ -12221,7 +12237,8 @@ proc check_effective_target_lto { } {
+ 	return 0
+     }
+     if { [istarget nvptx-*-*]
+-	 || [istarget amdgcn-*-*] } {
++	 || [istarget amdgcn-*-*]
++	 || [istarget wasm*-*-*] } {
+ 	return 0;
+     }
+     return [check_no_compiler_messages lto object {
+@@ -13030,6 +13047,7 @@ proc check_effective_target_fenv_exceptions_long_double {} {
+ proc check_effective_target_exceptions {} {
+     if { [istarget amdgcn*-*-*]
+ 	 || [istarget bpf-*-*]
++	 || [istarget wasm*-*-*]
+ 	 || [istarget nvptx-*-*] } {
+ 	return 0
+     }
+@@ -14045,7 +14063,7 @@ foreach N {df} {
+ # Return 1 if this target uses an LLVM assembler and/or linker
+ proc check_effective_target_llvm_binutils { } {
+     return [check_cached_effective_target llvm_binutils {
+-	      expr { [istarget amdgcn*-*-*]
++	      expr { [istarget amdgcn*-*-*] || [istarget wasm*-*-*]
+ 		     || [check_effective_target_offload_gcn] }}]
+ }
+ 
+@@ -14121,7 +14139,7 @@ proc check_effective_target_large_initializer { } {
+ # in the assembly.
+ 
+ proc check_effective_target_non_strict_prototype { } {
+-    if { [istarget nvptx*-*-*] } {
++    if { [istarget wasm*-*-*] || [istarget nvptx*-*-*] } {
+ 	return 0
+     }
+ 
+@@ -14323,6 +14341,9 @@ proc check_effective_target_lra { } {
+ # Return 1 if 'asm goto' with outputs is supported, 0 otherwise.
+ 
+ proc check_effective_target_asm_goto_with_outputs { } {
++    if { [istarget wasm*-*-*] } {
++	    return 0
++    }
+     if { [istarget nvptx-*-*] } {
+ 	return 1
+     }

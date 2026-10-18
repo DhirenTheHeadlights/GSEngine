@@ -267,7 +267,7 @@ auto gse::ide::draw_shelf_strips(gui::builder& ui, const rectf& frame, const she
 		const rectf band = bands.of(edge);
 		ctx.queue_sprite({
 			.rect = band,
-			.color = sty.color_tab_background,
+			.color = sty.tab.cell.idle.fill,
 			.texture = ctx.blank_texture,
 			.clip_rect = band,
 		});
@@ -356,21 +356,21 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	};
 
 	if (app_controls) {
-		if (gui::caption_button(ui, slot(1.f), "##chrome_settings", gui::symbol::gear(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(1.f), "##chrome_settings", gui::symbol::gear(), sty.caption_button)) {
 			m_channels.push<toggle_settings_request>({});
 		}
-		if (gui::caption_button(ui, slot(2.f), "##chrome_rebuild", rebuild_glyph(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(2.f), "##chrome_rebuild", rebuild_glyph(), sty.caption_button)) {
 			m_channels.push<build_runner::build_request>({
 				.target = build_runner::build_target::editor,
 			});
 		}
-		if (gui::caption_button(ui, slot(3.f), "##chrome_project", gui::symbol::project(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(3.f), "##chrome_project", gui::symbol::project(), sty.caption_button)) {
 			m_channels.push<toggle_project_switcher_request>({});
 		}
 	}
 
 	const rectf panels_rect = slot(app_controls ? 4.f : 1.f);
-	if (gui::caption_button(ui, panels_rect, "##chrome_panels", gui::symbol::chevron_down(), sty.color_widget_hovered)) {
+	if (gui::caption_button(ui, panels_rect, "##chrome_panels", gui::symbol::chevron_down(), sty.caption_button)) {
 		m_channels.push<open_panels_menu_request>({
 			.position = { panels_rect.left(), panels_rect.bottom() },
 			.window = m_window,
@@ -418,7 +418,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	std::string status;
 	std::string status_tooltip;
 	bool spinning = false;
-	vec4f pill_color = sty.color_input_background;
+	vec4f pill_color = sty.input.area.fill;
 	vec4f pill_fg = sty.color_text_secondary;
 	const search::index_phase phase = m_index->phase.load(std::memory_order_acquire);
 	if (phase != search::index_phase::idle) {
@@ -571,7 +571,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 	);
 	ctx.queue_sprite({
 		.rect = list_rect,
-		.color = { vec3f(sty.color_menu_body), 1.f },
+		.color = sty.modal.panel.fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -587,7 +587,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 		if (state.driver.selected == static_cast<int>(i)) {
 			ctx.queue_sprite({
 				.rect = row,
-				.color = sty.color_selection,
+				.color = sty.input.selection.fill,
 				.texture = ctx.blank_texture,
 			});
 		}
@@ -775,7 +775,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 	const float search_height = text_view->line_height(ctx.style.font_size) + pad * 0.8f;
 	const rectf panel = ui.draw<gui::panel_backdrop>({
 		.rect = body,
-		.background = ctx.style.color_input_background,
+		.background = ctx.style.input.area.fill,
 	});
 
 	const rectf content = panel.inset({ pad, pad });

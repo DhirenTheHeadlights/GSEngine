@@ -92,6 +92,7 @@ export namespace gse::ide::build_inbox {
 		std::string_view id
 	) -> void;
 
+
 	struct symbol_query {
 		std::string id;
 		std::string agent;
@@ -110,6 +111,23 @@ export namespace gse::ide::build_inbox {
 	auto peek_symbol_queries() -> std::vector<symbol_query>;
 
 	auto consume_symbol_query(
+		std::string_view id
+	) -> void;
+
+	struct panel_query {
+		std::string id;
+		std::string agent;
+		std::string panel;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		std::uint32_t rows = 0;
+	};
+
+	auto panels_dir() -> std::filesystem::path;
+
+	auto peek_panel_queries() -> std::vector<panel_query>;
+
+	auto consume_panel_query(
 		std::string_view id
 	) -> void;
 
@@ -163,6 +181,43 @@ export namespace gse::ide::build_inbox {
 	auto peek_awaits() -> std::vector<await_request>;
 
 	auto consume_await(
+		std::string_view id
+	) -> void;
+
+	constexpr std::size_t max_ask_options = 6;
+
+	struct ask_request {
+		std::string id;
+		std::string agent;
+		std::string question;
+		std::string context;
+		std::vector<std::string> options;
+		std::filesystem::path cwd;
+		bool multi = false;
+	};
+
+	auto asks_dir() -> std::filesystem::path;
+
+	auto peek_ask_requests() -> std::vector<ask_request>;
+
+	auto consume_ask_request(
+		std::string_view id
+	) -> void;
+
+	struct gap_report {
+		std::string id;
+		std::string agent;
+		std::string kind;
+		std::string need;
+		std::string tried;
+		std::filesystem::path cwd;
+	};
+
+	auto gaps_dir() -> std::filesystem::path;
+
+	auto peek_gap_reports() -> std::vector<gap_report>;
+
+	auto consume_gap_report(
 		std::string_view id
 	) -> void;
 }

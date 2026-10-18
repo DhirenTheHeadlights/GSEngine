@@ -20,9 +20,11 @@ import :interaction;
 import :modal_surface;
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :symbols;
 import :texture;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct image_strip_params {
@@ -214,16 +216,16 @@ auto gse::gui::draw_image_attachments(const draw_context& ctx, id& hot_widget_id
 		const id close_id = ids::make_from_key(hash_of(thumb_id.number(), "close"));
 		const rectf close = close_button_rect(frame, sty);
 
-		const interaction::press discard = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, close);
-		const interaction::press open = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, thumb_id, frame);
+		const interaction::press discard = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, { .rect = close });
+		const interaction::press open = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, thumb_id, { .rect = frame });
 
-		ctx.queue_sprite({
-			.rect = frame,
-			.color = open.hovered ? sty.color_tab_hovered : sty.color_tab_background,
-			.texture = ctx.blank_texture,
+		surface thumb_surface = open.select(sty.icon_button.surfaces);
+		thumb_surface.radii = uniform_radii(sty.corner_radius);
+
+		draw::fill_surface(ctx, frame, thumb_surface, {
 			.clip_rect = area,
-			.corner_radius = sty.corner_radius,
 		});
+
 		ctx.queue_sprite({
 			.rect = fitted_rect(frame, images.items[i].size),
 			.texture = images.items[i].preview,
@@ -231,17 +233,11 @@ auto gse::gui::draw_image_attachments(const draw_context& ctx, id& hot_widget_id
 			.corner_radius = sty.corner_radius,
 		});
 
-		draw_icon_button(ctx, {
+		draw_icon_button(ctx, sty.icon_button_danger, {
 			.rect = close,
 			.glyph = symbol::close(),
-			.background = ctx.animated_color(close_id, discard.color({
-				.idle = sty.color_tab_background,
-				.hot = sty.color_danger_hovered,
-				.active = sty.color_danger_hovered,
-				.disabled = sty.color_tab_background,
-			})),
-			.icon = discard.hovered ? sty.color_icon_hovered : sty.color_icon,
-			.corner_radius = close.width() * 0.5f,
+			.state = discard,
+			.anim = close_id,
 			.clip_rect = area,
 		});
 
@@ -311,34 +307,22 @@ auto gse::gui::draw_image_viewer(const draw_context& ctx, id& hot_widget_id, id&
 	const id close_id = ids::make_from_key(hash_of(widget_id.number(), "viewer_close"));
 	const id discard_id = ids::make_from_key(hash_of(widget_id.number(), "viewer_discard"));
 
-	const interaction::press close_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, close);
-	const interaction::press discard_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, discard_id, discard);
+	const interaction::press close_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, close_id, { .rect = close });
+	const interaction::press discard_press = interaction::press_in_rect(ctx, hot_widget_id, active_widget_id, discard_id, { .rect = discard });
 
-	draw_icon_button(ctx, {
+	draw_icon_button(ctx, sty.icon_button, {
 		.rect = close,
 		.glyph = symbol::close(),
-		.background = ctx.animated_color(close_id, close_press.color({
-			.idle = sty.color_tab_background,
-			.hot = sty.color_tab_hovered,
-			.active = sty.color_tab_hovered,
-			.disabled = sty.color_tab_background,
-		})),
-		.icon = close_press.hovered ? sty.color_icon_hovered : sty.color_icon,
-		.corner_radius = close.width() * 0.5f,
+		.state = close_press,
+		.anim = close_id,
 		.clip_rect = body,
 	});
 
-	draw_icon_button(ctx, {
+	draw_icon_button(ctx, sty.icon_button_danger, {
 		.rect = discard,
 		.glyph = symbol::trash(),
-		.background = ctx.animated_color(discard_id, discard_press.color({
-			.idle = sty.color_tab_background,
-			.hot = sty.color_danger_hovered,
-			.active = sty.color_danger_hovered,
-			.disabled = sty.color_tab_background,
-		})),
-		.icon = discard_press.hovered ? sty.color_icon_hovered : sty.color_icon,
-		.corner_radius = discard.width() * 0.5f,
+		.state = discard_press,
+		.anim = discard_id,
 		.clip_rect = body,
 	});
 

@@ -20,7 +20,8 @@ import gse.gpu_record;
 export namespace gse::renderer {
 	enum class sprite_shape : std::uint8_t {
 		rect,
-		arc
+		arc,
+		ring
 	};
 
 	struct sprite_command {
@@ -32,11 +33,11 @@ export namespace gse::renderer {
 		angle rotation;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
-		float corner_radius = 0.f;
+		vec4f corner_radius{};
 		sprite_shape shape = sprite_shape::rect;
 		float arc_radius = 0.f;
 		angle arc_half_sweep;
-		float arc_thickness = 0.f;
+		float stroke_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 		id window;
@@ -75,11 +76,11 @@ namespace gse::renderer::ui {
 		vec4f color;
 		vec2f local_pos;
 		vec2f half_size;
-		float corner_radius = 0.f;
+		vec4f corner_radius{};
 		std::uint32_t shape_kind = 0;
 		float arc_radius = 0.f;
 		angle arc_half_sweep;
-		float arc_thickness = 0.f;
+		float stroke_thickness = 0.f;
 	};
 
 	struct draw_batch {
@@ -122,11 +123,11 @@ namespace gse::renderer::ui {
 		vec4f color;
 		vec4f uv_rect;
 		angle rotation;
-		float corner_radius = 0.f;
+		vec4f corner_radius{};
 		sprite_shape shape = sprite_shape::rect;
 		float arc_radius = 0.f;
 		angle arc_half_sweep;
-		float arc_thickness = 0.f;
+		float stroke_thickness = 0.f;
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 

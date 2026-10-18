@@ -49,6 +49,9 @@ export namespace gse {
 	template <typename T>
 	consteval auto archive_field_size() -> std::uint32_t;
 
+	template <typename T>
+	consteval auto archive_width_is_portable() -> bool;
+
 	auto next_archive_type_id() -> std::uint64_t;
 
 	template <typename T>
@@ -373,6 +376,38 @@ consteval auto gse::archive_field_size() -> std::uint32_t {
 	}
 }
 
+template <typename T>
+consteval auto gse::archive_width_is_portable() -> bool {
+	using bare = std::remove_cv_t<T>;
+	if constexpr (std::is_pointer_v<bare> || std::is_member_pointer_v<bare> || std::is_reference_v<bare>) {
+		return false;
+	}
+	else if constexpr (std::same_as<bare, long> || std::same_as<bare, unsigned long> || std::same_as<bare, long double> || std::same_as<bare, wchar_t>) {
+		return false;
+	}
+	else if constexpr (std::is_enum_v<bare>) {
+		return archive_width_is_portable<std::underlying_type_t<bare>>();
+	}
+	else if constexpr (std::is_array_v<bare>) {
+		return archive_width_is_portable<std::remove_extent_t<bare>>();
+	}
+	else if constexpr ((std::is_class_v<bare> || std::is_union_v<bare>) && !std::is_trivially_copyable_v<bare>) {
+		return true;
+	}
+	else if constexpr (std::is_class_v<bare> || std::is_union_v<bare>) {
+		bool portable = true;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^bare, std::meta::access_context::unchecked()))) {
+			if constexpr (!archive_width_is_portable<typename [:std::meta::type_of(m):]>()) {
+				portable = false;
+			}
+		}
+		return portable;
+	}
+	else {
+		return true;
+	}
+}
+
 auto gse::next_archive_type_id() -> std::uint64_t {
 	static std::atomic<std::uint64_t> counter{ 0 };
 	return counter.fetch_add(1, std::memory_order_relaxed);
@@ -403,6 +438,10 @@ auto gse::binary_writer::valid() const -> bool {
 template <typename T>
 requires(std::is_trivially_copyable_v<T> && !gse::archive_schema_type<T>)
 auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
+	static_assert(
+		archive_width_is_portable<T>(),
+		"archived type has a field whose width depends on the data model: the value is memcpy'd at its native size and that size is recorded in the on-disk schema, so a reader built for a different data model (ILP32 wasm32, or LP64 Linux against Windows) fails the field-size match in binary_reader::operator& and silently skips the field, leaving it at its default. Use a fixed-width type -- std::int32_t, std::uint64_t, double -- rather than long, unsigned long, long double, wchar_t or a pointer."
+	);
 	if constexpr (std::same_as<T, bool>) {
 		const std::uint8_t encoded = value ? 1 : 0;
 		m_stream.write(reinterpret_cast<const char*>(&encoded), sizeof(encoded));
@@ -532,6 +571,10 @@ auto gse::binary_writer::operator&(const std::unordered_map<K, V>& map) -> binar
 
 template <typename T>
 auto gse::binary_writer::operator&(const raw_blob<T>& blob) -> binary_writer& {
+	static_assert(
+		archive_width_is_portable<T>(),
+		"raw_blob element type has a field whose width depends on the data model: the blob is bulk-copied at size() * sizeof(T) and the reader only rejects a byte count that is not a whole multiple of its own sizeof(T), so a width change that leaves no remainder is not detected -- the blob is reinterpreted at the wrong stride and loads as silent garbage. Use a fixed-width type -- std::int32_t, std::uint64_t, double -- rather than long, unsigned long, long double, wchar_t or a pointer."
+	);
 	const auto byte_size = static_cast<std::uint64_t>(blob.data.size() * sizeof(T));
 	m_stream.write(reinterpret_cast<const char*>(&byte_size), sizeof(byte_size));
 	if (byte_size > 0) {
@@ -636,6 +679,10 @@ auto gse::binary_reader::skip_bytes(const std::uint64_t size) -> bool {
 template <typename T>
 requires(std::is_trivially_copyable_v<T> && !gse::archive_schema_type<T>)
 auto gse::binary_reader::operator&(T& value) -> binary_reader& {
+	static_assert(
+		archive_width_is_portable<T>(),
+		"archived type has a field whose width depends on the data model: the value is memcpy'd at its native size and that size is recorded in the on-disk schema, so a reader built for a different data model (ILP32 wasm32, or LP64 Linux against Windows) fails the field-size match in binary_reader::operator& and silently skips the field, leaving it at its default. Use a fixed-width type -- std::int32_t, std::uint64_t, double -- rather than long, unsigned long, long double, wchar_t or a pointer."
+	);
 	if constexpr (std::same_as<T, bool>) {
 		std::uint8_t encoded = 0;
 		read_bytes(&encoded, sizeof(encoded));
@@ -828,6 +875,10 @@ auto gse::binary_reader::operator&(std::unordered_map<K, V>& map) -> binary_read
 
 template <typename T>
 auto gse::binary_reader::operator&(const raw_blob<T>& blob) -> binary_reader& {
+	static_assert(
+		archive_width_is_portable<T>(),
+		"raw_blob element type has a field whose width depends on the data model: the blob is bulk-copied at size() * sizeof(T) and the reader only rejects a byte count that is not a whole multiple of its own sizeof(T), so a width change that leaves no remainder is not detected -- the blob is reinterpreted at the wrong stride and loads as silent garbage. Use a fixed-width type -- std::int32_t, std::uint64_t, double -- rather than long, unsigned long, long double, wchar_t or a pointer."
+	);
 	std::uint64_t byte_size = 0;
 	read_bytes(&byte_size, sizeof(byte_size));
 	if (!m_valid || byte_size > m_remaining || byte_size % sizeof(T) != 0) {

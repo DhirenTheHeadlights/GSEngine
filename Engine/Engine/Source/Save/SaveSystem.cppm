@@ -14,6 +14,7 @@ import gse.fs;
 export namespace gse::save {
 	enum class value_provenance : std::uint8_t {
 		code_default,
+		app_default,
 		project,
 		user,
 		app_pin,
@@ -53,6 +54,17 @@ export namespace gse::save {
 		) -> void;
 
 		auto set_pin(
+			std::string_view category,
+			std::string_view key,
+			std::string_view value
+		) -> void;
+
+		template <typename State, fixed_string Key>
+		auto default_for(
+			const auto& value
+		) -> void;
+
+		auto set_app_default(
 			std::string_view category,
 			std::string_view key,
 			std::string_view value
@@ -191,6 +203,7 @@ export namespace gse::save {
 
 		doc m_loaded;
 		doc m_loaded_project;
+		doc m_app_defaults;
 		doc m_pins;
 		doc m_overrides;
 		doc m_staged;
@@ -224,6 +237,19 @@ auto gse::save::registry::pin(const auto& value) -> void {
 		"pinned key does not name an annotated setting on that state"
 	);
 	set_pin(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
+}
+
+template <typename State, gse::fixed_string Key>
+auto gse::save::registry::default_for(const auto& value) -> void {
+	static_assert(
+		!settings::category_of<State>().empty(),
+		"defaulted state has no settings::category annotation, so its keys are unreachable"
+	);
+	static_assert(
+		settings::settings_key_exists<State>(std::string_view(Key)),
+		"defaulted key does not name an annotated setting on that state"
+	);
+	set_app_default(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
 }
 
 gse::save::registry::~registry() {
@@ -277,6 +303,10 @@ auto gse::save::registry::set_pin(const std::string_view category, const std::st
 	apply_one_key(category, key, stored);
 }
 
+auto gse::save::registry::set_app_default(const std::string_view category, const std::string_view key, const std::string_view value) -> void {
+	m_app_defaults[std::string(category)][std::string(key)] = std::string(value);
+}
+
 auto gse::save::registry::set_override(const std::string_view category, const std::string_view key, const std::string_view value) -> void {
 	auto& stored = m_overrides[std::string(category)][std::string(key)];
 	stored = std::string(value);
@@ -288,7 +318,7 @@ auto gse::save::registry::clear_override(const std::string_view category, const 
 	if (cat_it == m_overrides.end() || cat_it->second.erase(std::string(key)) == 0) {
 		return;
 	}
-	for (const doc* source : { &m_pins, &m_loaded, &m_loaded_project, &m_defaults }) {
+	for (const doc* source : { &m_pins, &m_loaded, &m_loaded_project, &m_app_defaults, &m_defaults }) {
 		const auto sc = source->find(std::string(category));
 		if (sc == source->end()) {
 			continue;
@@ -352,6 +382,9 @@ auto gse::save::registry::provenance_of(const std::string_view category, const s
 	if (holds(m_loaded_project)) {
 		return value_provenance::project;
 	}
+	if (holds(m_app_defaults)) {
+		return value_provenance::app_default;
+	}
 	return value_provenance::code_default;
 }
 
@@ -391,6 +424,9 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	}
 
 	if (entry.read && entry.settings_ptr) {
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::app);
 		entry.read(m_loaded, entry.category, entry.settings_ptr, settings::scope_kind::user);
 		entry.read(m_loaded_project, entry.category, entry.settings_ptr, settings::scope_kind::project);
 		for (const doc* layer : { &m_pins, &m_overrides }) {
@@ -446,7 +482,7 @@ auto gse::save::registry::find_key(const std::string_view category, const std::s
 
 auto gse::save::registry::baseline_of(const std::string_view category, const std::string_view key, const settings::scope_kind scope) const -> std::string_view {
 	const doc& loaded = scope == settings::scope_kind::project ? m_loaded_project : m_loaded;
-	for (const doc* layer : { &loaded, &m_defaults }) {
+	for (const doc* layer : { &loaded, &m_app_defaults, &m_defaults }) {
 		const auto cat_it = layer->find(std::string(category));
 		if (cat_it == layer->end()) {
 			continue;
@@ -633,6 +669,9 @@ auto gse::save::registry::read_file(const std::filesystem::path& path) -> std::e
 	const auto size = std::filesystem::file_size(path, ec);
 	if (ec) {
 		return std::unexpected(ec);
+	}
+	if (!std::in_range<std::size_t>(size)) {
+		return std::unexpected(std::make_error_code(std::errc::file_too_large));
 	}
 
 	std::ifstream file(path, std::ios::binary);

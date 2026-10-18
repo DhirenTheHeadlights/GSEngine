@@ -1,0 +1,132 @@
+name: Set up a GSE build on windows-latest
+description: >
+  Resolves the toolchain release, installs it with Ninja and the Vulkan SDK, pins CMake to the
+  version the import-std UUID targets, and configures the preset. Composite rather than a
+  reusable workflow on purpose: these steps run in the caller's job, so the build tree they
+  produce is still there for the caller's own build, package and verify steps.
+
+inputs:
+  token:
+    description: A token with contents:read, used to find the newest published gcc-trunk-v* release
+    required: true
+  toolchain:
+    description: Toolchain release tag to build with (blank resolves the newest published one)
+    required: false
+    default: ""
+  preset:
+    description: CMake preset to configure
+    required: false
+    default: x64-mingw-gcc-Release
+  vcpkg-cache:
+    description: Directory for the vcpkg binary archives
+    required: false
+    default: ${{ github.workspace }}/.vcpkg-cache
+
+outputs:
+  toolchain:
+    description: The toolchain release tag this setup installed
+    value: ${{ steps.resolve.outputs.toolchain }}
+
+runs:
+  using: composite
+  steps:
+    # The toolchain the image is built with and stamped against. Resolved before the caches so
+    # the toolchain cache can be keyed on it.
+    - id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        set -euo pipefail
+        toolchain="${INPUT_TOOLCHAIN:-}"
+        if [[ -z "$toolchain" ]]; then
+          latest=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[] | select(.draft == false) | .tag_name' \
+            | sed -nE 's/^gcc-trunk-v([0-9]+)$/\1/p' | sort -n | tail -1)
+          [[ -n "$latest" ]] || { echo "no published gcc-trunk-v* release to build with"; exit 1; }
+          toolchain="gcc-trunk-v$latest"
+        fi
+        echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+        echo "building with $toolchain"
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Free runner disk space
+      shell: pwsh
+      run: |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+          "$env:AGENT_TOOLSDIRECTORY\Ruby", "$env:AGENT_TOOLSDIRECTORY\Go", `
+          "$env:AGENT_TOOLSDIRECTORY\PyPy", "$env:AGENT_TOOLSDIRECTORY\CodeQL"
+        Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
+    # The toolchain zip is large and never changes within a tag, so it is cached by tag.
+    - name: Cache the GCC toolchain
+      uses: actions/cache@v4
+      with:
+        path: ~/.gcc-trunk
+        key: gcc-trunk-${{ steps.resolve.outputs.toolchain }}
+
+    # vcpkg's dependency tree is the expensive part of a cold run - bootstrap.py puts it
+    # at 30-60 minutes - so its binary cache is what makes repeat runs tolerable. The
+    # compiled engine BMIs are deliberately NOT cached: they are path- and
+    # toolchain-sensitive under the module mapper, and a stale one fails in ways that
+    # cost far more than the compile it saves.
+    - name: Cache the vcpkg binary archives
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.vcpkg-cache }}
+        key: vcpkg-${{ inputs.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-overlays/**') }}-${{ hashFiles('.gitmodules') }}
+        restore-keys: |
+          vcpkg-${{ inputs.preset }}-
+
+    # The tree's own bootstrap installs the toolchain and puts Ninja at
+    # ~/.gcc-trunk/ninja, which is where the preset's PATH already looks. Submodules came
+    # with the checkout, the cppreference index is an editor-only asset, and the build is
+    # driven by target by the caller, so all three are skipped.
+    - name: Bootstrap the toolchain and Ninja
+      shell: pwsh
+      env:
+        VCPKG_DEFAULT_BINARY_CACHE: ${{ inputs.vcpkg-cache }}
+      run: |
+        New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+        "VCPKG_DEFAULT_BINARY_CACHE=$env:VCPKG_DEFAULT_BINARY_CACHE" >> $env:GITHUB_ENV
+        python bootstrap.py `
+          --skip-submodules --skip-cppref --skip-build `
+          --tag ${{ steps.resolve.outputs.toolchain }} --persist
+
+    # Engine/CMakeLists.txt compiles the SDK's own vulkan.cppm out of Vulkan_INCLUDE_DIR,
+    # so the headers alone are not enough and a missing SDK fails configure with a
+    # "Vulkan_INCLUDE_DIR-NOTFOUND/vulkan/vulkan.cppm" source path.
+    - name: Install the Vulkan SDK
+      shell: pwsh
+      run: |
+        choco install vulkan-sdk --no-progress -y
+        $sdk = Get-ChildItem "C:/VulkanSDK" -Directory -ErrorAction SilentlyContinue |
+          Sort-Object Name -Descending | Select-Object -First 1
+        if (-not $sdk) { Write-Error "no Vulkan SDK under C:/VulkanSDK after install"; exit 1 }
+        "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+        Write-Output "Vulkan SDK: $($sdk.FullName)"
+
+    # `Engine/cmake/GSEEngine.cmake` sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD to a UUID, and
+    # that UUID is specific to one CMake version - a newer CMake silently refuses `import
+    # std` ("Experimental `import std` support not enabled when detecting toolchain"). The
+    # runner image ships whatever is current, so the version is pinned here to match the
+    # UUID in the tree. Bumping one means bumping the other.
+    - name: Pin CMake to the version the import-std UUID targets
+      shell: pwsh
+      env:
+        CMAKE_VERSION: "4.3.3"
+      run: |
+        $name = "cmake-$env:CMAKE_VERSION-windows-x86_64"
+        Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$env:CMAKE_VERSION/$name.zip" `
+          -OutFile "$env:RUNNER_TEMP/cmake.zip"
+        Expand-Archive "$env:RUNNER_TEMP/cmake.zip" -DestinationPath "$env:RUNNER_TEMP/cmake" -Force
+        "$env:RUNNER_TEMP/cmake/$name/bin" >> $env:GITHUB_PATH
+
+    - name: Configure
+      shell: pwsh
+      run: |
+        cmake --version
+        cmake --preset ${{ inputs.preset }}

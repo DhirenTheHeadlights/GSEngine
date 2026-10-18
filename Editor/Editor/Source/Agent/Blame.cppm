@@ -82,6 +82,11 @@ namespace gse::ide::agent {
 		id key
 	) -> std::int64_t;
 
+	auto edits_built(
+		const data& d,
+		const session& s
+	) -> bool;
+
 	auto refresh_stale(
 		data& d
 	) -> void;
@@ -206,6 +211,11 @@ namespace gse::ide::agent {
 		const std::filesystem::path& cwd
 	) -> session*;
 
+	auto resume_with(
+		session& s,
+		std::string message
+	) -> void;
+
 	auto wake_session(
 		session& s,
 		std::string_view lead
@@ -227,6 +237,10 @@ namespace gse::ide::agent {
 	auto hibernating_count(
 		const data& d
 	) -> std::size_t;
+
+	auto nudge_unclosed_phases(
+		data& d
+	) -> void;
 
 	auto poll_build_inbox(
 		data& d,

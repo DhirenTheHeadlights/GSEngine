@@ -74,6 +74,10 @@ namespace gse::physics {
 		data& d
 	) -> void;
 
+	auto clear_step_caches(
+		data& d
+	) -> void;
+
 	auto absorb_upload_report(
 		data& d,
 		const gpu_upload_report& report
@@ -84,11 +88,6 @@ namespace gse::physics {
 		write<transform_component>& transform,
 		write<motion_component>& motion
 	) -> void;
-
-	template <typename Settings>
-	auto capacities_of(
-		const Settings& d
-	) -> vbd::vbd_capacities;
 
 	template <typename Flagged>
 	auto flagged_indices(
@@ -111,10 +110,6 @@ namespace gse::physics {
 		write<motion_component>& motion,
 		std::span<const solver_seed_request> seeds
 	) -> bool;
-
-	auto trace_body_index(
-		const data& d
-	) -> std::uint32_t;
 
 	auto initialize_joint_rest_orientations(
 		data& d,
@@ -351,6 +346,12 @@ auto gse::physics::clear_runtime_state(data& d) -> void {
 		d.contact_cache
 	);
 	d.vbd_solver.seed_previous_velocities(std::span<const vec3<velocity>>{});
+}
+
+auto gse::physics::clear_step_caches(data& d) -> void {
+	d.sleep_counters.clear();
+	d.contact_cache.clear();
+	d.kinematic_step_start.clear();
 }
 
 auto gse::physics::absorb_upload_report(data& d, const gpu_upload_report& report) -> void {
@@ -595,32 +596,6 @@ auto gse::physics::is_sleeping(const shared_view<data> d, const id entity_id) ->
 	return d.body_sleeping[it->second] != 0;
 }
 
-template <typename Settings>
-auto gse::physics::capacities_of(const Settings& d) -> vbd::vbd_capacities {
-	return {
-		.max_bodies = static_cast<std::uint32_t>(d.gpu_max_bodies),
-		.max_contacts = static_cast<std::uint32_t>(d.gpu_max_contacts),
-		.max_collision_pairs = static_cast<std::uint32_t>(d.gpu_max_collision_pairs),
-		.max_joints = static_cast<std::uint32_t>(d.gpu_max_joints),
-		.max_islands = static_cast<std::uint32_t>(d.gpu_max_islands),
-		.max_impulses = static_cast<std::uint32_t>(d.gpu_max_impulses),
-		.max_motors = static_cast<std::uint32_t>(d.gpu_max_motors),
-		.max_muscles = static_cast<std::uint32_t>(d.gpu_max_muscles),
-		.max_muscle_points = static_cast<std::uint32_t>(d.gpu_max_muscle_points),
-		.grid_table_size = static_cast<std::uint32_t>(d.gpu_grid_table_size),
-		.ring_max_bodies = static_cast<std::uint32_t>(d.gpu_ring_max_bodies),
-		.ring_max_contacts = static_cast<std::uint32_t>(d.gpu_ring_max_contacts),
-	};
-}
-
-auto gse::physics::capacities_from_settings(const data& d) -> vbd::vbd_capacities {
-	return capacities_of(d);
-}
-
-auto gse::physics::capacities_from_settings(const shared_view<data> d) -> vbd::vbd_capacities {
-	return capacities_of(d);
-}
-
 auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_config {
 	assert(d.max_linear_step >= meters(1e-4f), "Physics.max_linear_step must be at least 1e-4 m: a zero or negative trust region freezes every body");
 	assert(d.max_angular_step >= radians(1e-4f), "Physics.max_angular_step must be at least 1e-4 rad: a zero or negative trust region freezes every body");
@@ -648,12 +623,12 @@ auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_con
 		.jacobi_omega = d.jacobi_omega,
 		.max_linear_step = d.max_linear_step,
 		.max_angular_step = d.max_angular_step,
-		.trace_hashes = d.trace_hashes,
+		.trace_hashes = d.trace.hashes,
 		.use_solve_fold = (d.gpu_solve_fold && !d.gpu_sweep_fold_bailed) ? 1u : 0u,
 		.color_cap = static_cast<std::uint32_t>(d.gpu_color_cap < 0 ? d.gpu_color_cap_resolved : d.gpu_color_cap),
 		.sweep_workgroups = static_cast<std::uint32_t>(d.gpu_sweep_workgroups),
-		.trace_body = trace_body_index(d),
-		.trace_island_convergence = d.trace_island_convergence ? 1u : 0u,
+		.trace_body = trace_body_index(d).value_or(0xFFFFFFFFu),
+		.trace_island_convergence = d.trace.island_convergence ? 1u : 0u,
 		.island_colored_sweep = d.gpu_island_colored_sweep ? 1u : 0u,
 		.island_pack = d.gpu_island_pack ? 1u : 0u,
 		.convergence_probe_iterations = static_cast<std::uint32_t>(d.convergence_probe_iterations),
@@ -678,7 +653,7 @@ auto gse::physics::accumulate_island_convergence(data& d, const std::span<const 
 }
 
 auto gse::physics::report_island_convergence(data& d) -> void {
-	if (++d.island_convergence_samples < d.trace_island_convergence_ticks) {
+	if (++d.island_convergence_samples < d.trace.island_convergence_ticks) {
 		return;
 	}
 
@@ -711,8 +686,20 @@ auto gse::physics::report_island_convergence(data& d) -> void {
 	d.island_convergence_samples = 0;
 }
 
-auto gse::physics::trace_body_index(const data& d) -> std::uint32_t {
-	return d.trace_body < 0 ? 0xFFFFFFFFu : static_cast<std::uint32_t>(d.trace_body);
+auto gse::physics::trace_body_index(const data& d) -> std::optional<std::uint32_t> {
+	if (d.trace.body == 0) {
+		return std::nullopt;
+	}
+	const auto it = d.id_to_body_index.find(generate_temp_id(d.trace.body));
+	return it == d.id_to_body_index.end() ? std::nullopt : std::optional(it->second);
+}
+
+auto gse::physics::trace_body_index(const shared_view<data> d) -> std::optional<std::uint32_t> {
+	if (d.trace.body == 0) {
+		return std::nullopt;
+	}
+	const auto it = d.id_to_body_index.find(generate_temp_id(d.trace.body));
+	return it == d.id_to_body_index.end() ? std::nullopt : std::optional(it->second);
 }
 
 auto gse::physics::gpu_solver_active(const data& d) -> bool {
@@ -721,6 +708,14 @@ auto gse::physics::gpu_solver_active(const data& d) -> bool {
 
 auto gse::physics::gpu_solver_active(const shared_view<data> d) -> bool {
 	return d.use_gpu_solver && d.gpu_solver.buffers_created();
+}
+
+auto gse::physics::gpu_solver_driving(const data& d) -> bool {
+	return d.use_gpu_solver && d.gpu_solver.compute_initialized();
+}
+
+auto gse::physics::gpu_solver_driving(const shared_view<data> d) -> bool {
+	return d.use_gpu_solver && d.gpu_solver.compute_initialized();
 }
 
 auto gse::physics::gpu_solver_frame_info_of(const data& d) -> gpu_solver_frame_info {
@@ -1934,7 +1929,6 @@ auto gse::physics::init(context& ctx, const std::optional<shared_view<gpu::conte
 		co_await d.gpu_solver.initialize_compute(
 			ctx,
 			*gpu_s,
-			capacities_from_settings(d),
 			{
 				.sync = d.gpu_sync_readback,
 				.full_snapshot = d.gpu_full_snapshot,
@@ -2150,7 +2144,7 @@ auto gse::physics::prepare(context& ctx, data& d, const channel_write<interpolat
 	d.interpolation.advancing = d.update_phys;
 	d.interpolation.readback_age_steps = gpu_solver_active(d) ? d.gpu_solver.readback_age_steps() : 0;
 
-	if (d.trace_readback_age && gpu_solver_active(d)) {
+	if (d.trace.readback_age && gpu_solver_active(d)) {
 		log::println(
 			log::category::physics,
 			"gpu readback age: step={} age={} dispatch_gen={} served_gen={} sync={}",
@@ -2247,7 +2241,7 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 	}
 	const auto frame_inputs = [&] {
 		trace::scope_guard _{ trace_id<"physics::gather_step_inputs">() };
-		if (gpu_solver_active(d)) {
+		if (gpu_solver_driving(d)) {
 			return step_inputs{
 				.impulses = std::vector<impulse_request>(impulses.begin(), impulses.end())
 			};
@@ -2255,19 +2249,23 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 		return gather_step_inputs(motor, transform, motion, impulses);
 	}();
 
-	if (d.use_gpu_solver && !d.gpu_solver.buffers_created() && !d.gpu_unavailable_reported) {
+	if (d.use_gpu_solver && !d.gpu_solver.compute_initialized() && !d.gpu_unavailable_reported) {
 		d.gpu_unavailable_reported = true;
 		log::println(
 			log::level::error,
 			log::category::physics,
-			"Physics.use_gpu_solver is on but the gpu solver has no buffers, which is what setting it after startup looks like. The settings panel stages this one for the next boot; a session override or a command-line assignment does not. Stepping the cpu solver instead; restart to run on the gpu"
+			"Physics.use_gpu_solver is on but the gpu solver was never initialized, which is what setting it after startup looks like. The settings panel stages this one for the next boot; a session override or a command-line assignment does not. Stepping the cpu solver instead; restart to run on the gpu"
 		);
+	}
+
+	if (reset) {
+		clear_step_caches(d);
 	}
 
 	if (motion.empty() && collision.empty() && motor.empty()) {
 		clear_runtime_state(d);
 	}
-	else if (gpu_solver_active(d)) {
+	else if (gpu_solver_driving(d)) {
 		trace::scope_guard _{ trace_id<"physics::tick_gpu">() };
 		update_vbd_gpu(
 			steps,
@@ -2308,9 +2306,6 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		initialize_joint_rest_orientations(d, transform);
 
 		if (reset) {
-			d.sleep_counters.clear();
-			d.contact_cache.clear();
-			d.kinematic_step_start.clear();
 			d.gpu_reset_ticks.clear();
 			d.gpu_sweep_fold_bailed = false;
 		}
@@ -2325,7 +2320,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 		const auto solved = d.gpu_solver.read_body_snapshots();
 		const auto readback = d.gpu_solver.readback_tick();
 
-		if (d.trace_readback_age) {
+		if (d.trace.readback_age) {
 			log::println(
 				log::category::physics,
 				"gpu readback serve: step={} age={} dispatch_gen={} served_gen={}",
@@ -2439,7 +2434,7 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 
 		const auto diag = d.gpu_solver.diagnostics();
 		d.gpu_solver.set_color_launch_hint(diag.max_used_color);
-		if (d.trace_island_convergence) {
+		if (d.trace.island_convergence) {
 			trace_island_convergence(d);
 		}
 
@@ -3077,7 +3072,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 		}
 
 		d.vbd_solver.solve(sub_dt);
-		if (d.trace_island_convergence) {
+		if (d.trace.island_convergence) {
 			accumulate_island_convergence(d, d.vbd_solver.convergence_counts());
 			if ((step + 1) % substeps == 0) {
 				report_island_convergence(d);
@@ -3165,17 +3160,31 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 }
 
 auto gse::physics::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_read<vbd::solver_upload> uploads_in, const channel_write<gpu_solver_frame_info> frame_out, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
-	if (!gpu_s || !gpu_solver_active(d) || !d.gpu_solver.compute_initialized()) {
+	if (!gpu_s || !gpu_solver_driving(d)) {
 		co_return;
 	}
 
-	if (const auto payloads = ctx.drain_channel<gpu_upload_payload>(); !payloads.empty()) {
-		trace::scope_guard _{ trace_id<"physics::frame::upload">() };
-		d.gpu_solver.upload(payloads.back().upload);
+	const auto payloads = ctx.drain_channel<gpu_upload_payload>();
+	const auto& uploads = uploads_in.of<vbd::solver_upload>();
+	const vbd::solver_upload* payload = nullptr;
+	if (!payloads.empty()) {
+		payload = &payloads.back().upload;
 	}
-	else if (const auto& uploads = uploads_in.of<vbd::solver_upload>(); !uploads.empty()) {
+	else if (!uploads.empty()) {
+		payload = &uploads[0];
+	}
+
+	if (payload) {
 		trace::scope_guard _{ trace_id<"physics::frame::upload">() };
-		d.gpu_solver.upload(uploads[0]);
+		d.gpu_solver.measure_scene(*payload);
+		d.gpu_solver.ensure_capacity(*gpu_s);
+		if (d.gpu_solver.buffers_created()) {
+			d.gpu_solver.upload(*payload);
+		}
+	}
+
+	if (!d.gpu_solver.buffers_created()) {
+		co_return;
 	}
 
 	d.gpu_solver.ensure_ring(*gpu_s->device, static_cast<std::uint32_t>(history_steps(d)));

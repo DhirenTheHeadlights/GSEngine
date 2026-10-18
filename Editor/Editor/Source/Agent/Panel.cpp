@@ -146,9 +146,9 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 		rows.emplace_back(window.label, usage_label(window));
 	}
 
-	if (d.sessions.size() > 1) {
+	if (std::ranges::count_if(d.sessions, is_chat) > 1) {
 		rows.emplace_back("all chats", "");
-		for (const session& other : d.sessions) {
+		for (const session& other : d.sessions | std::views::filter(is_chat)) {
 			rows.emplace_back(
 				other.name.empty() ? std::string("unnamed") : other.name,
 				other.stale ? status_label(d, other) + " \xC2\xB7 unbuilt" : status_label(d, other)
@@ -176,18 +176,13 @@ auto gse::ide::agent::draw_session_info(const gui::draw_context& ctx, data& d, c
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
 
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 
 	for (std::size_t i = 0; i < rows.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f) + text_view->vertical_center_offset(fs);
@@ -261,18 +256,13 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
 
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 	ctx.register_hit_region(render_layer::popup, panel);
 
 	if (d.history.empty()) {
@@ -318,7 +308,7 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 			if (over) {
 				c.queue_sprite({
 					.rect = row,
-					.color = sty.color_widget_hovered,
+					.color = sty.list_item.surfaces.hot.fill,
 					.texture = c.blank_texture,
 					.clip_rect = clip,
 					.corner_radius = sty.corner_radius,
@@ -387,7 +377,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 	const float line_h = text_view->line_height(fs) * 1.3f;
 	const float _ = line_h * 3.f + pad;
 
-	if (d.sessions.empty()) {
+	if (std::ranges::none_of(d.sessions, is_chat)) {
 		constexpr std::string_view empty = "No agents yet - open a chat with the + tab";
 		ctx.queue_text({
 			.font = ctx.fonts.text,
@@ -437,7 +427,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 
 			c.queue_sprite({
 				.rect = row,
-				.color = sty.color_panel_alt,
+				.color = sty.panel_alt.fill,
 				.texture = c.blank_texture,
 				.clip_rect = clip,
 				.corner_radius = sty.corner_radius,
@@ -480,7 +470,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 
 			c.queue_sprite({
 				.rect = rectf::from_position_size({ row.left(), row.bottom() }, { row.width(), 1.f }),
-				.color = sty.color_separator,
+				.color = sty.separator_line.fill,
 				.texture = c.blank_texture,
 				.clip_rect = clip,
 			});
@@ -520,7 +510,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 			draw_build_row(queued, false);
 		}
 
-		for (const session& s : d.sessions) {
+		for (const session& s : d.sessions | std::views::filter(is_chat)) {
 			const std::string task = overview_task(s);
 			const bool busy = is_busy(s) && build_wait_for(d, s) == build_wait::none;
 
@@ -543,7 +533,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 			if (over || s.id == d.active) {
 				c.queue_sprite({
 					.rect = row,
-					.color = over ? sty.color_widget_hovered : sty.color_panel_alt,
+					.color = over ? sty.list_item.surfaces.hot.fill : sty.panel_alt.fill,
 					.texture = c.blank_texture,
 					.clip_rect = clip,
 					.corner_radius = sty.corner_radius,
@@ -620,7 +610,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 
 			c.queue_sprite({
 				.rect = rectf::from_position_size({ row.left(), row.bottom() }, { row.width(), 1.f }),
-				.color = sty.color_separator,
+				.color = sty.separator_line.fill,
 				.texture = c.blank_texture,
 				.clip_rect = clip,
 			});
@@ -644,6 +634,21 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 	}
 }
 
+auto gse::ide::agent::chat_at(data& d, const std::size_t index) -> std::vector<session>::iterator {
+	auto found = d.sessions.end();
+	std::size_t seen = 0;
+	for (auto at = d.sessions.begin(); at != d.sessions.end(); ++at) {
+		if (!is_chat(*at)) {
+			continue;
+		}
+		found = at;
+		if (seen++ == index) {
+			break;
+		}
+	}
+	return found;
+}
+
 auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& body) -> float {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
@@ -654,15 +659,15 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	descs.push_back({
 		.tab_id = overview_tab_id(),
 		.caption = "Agents",
-		.dirty = hibernating_count(d) > 0,
+		.dirty = hibernating_count(d) > 0 || std::ranges::any_of(d.sessions | std::views::filter(is_chat), awaiting_answer),
 		.closeable = false,
 		.pinned = true,
 	});
-	for (const session& s : d.sessions) {
+	for (const session& s : d.sessions | std::views::filter(is_chat)) {
 		descs.push_back({
 			.tab_id = session_tab_id(s.id),
 			.caption = s.name,
-			.dirty = s.hibernating || s.gate.has_value() || build_wait_for(d, s) != build_wait::none,
+			.dirty = s.hibernating || s.gate.has_value() || awaiting_answer(s) || build_wait_for(d, s) != build_wait::none,
 			.busy = is_busy(s),
 			.warning = s.stale,
 			.error = !s.blame.empty() || !s.info.failure.empty(),
@@ -684,7 +689,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 
 	ctx.queue_sprite({
 		.rect = strip,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -732,8 +737,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	if (const auto from = tabs.reorder_id.exists() ? std::ranges::find_if(d.sessions, [&](const session& s) {
 		return session_tab_id(s.id) == tabs.reorder_id;
 	}) : d.sessions.end(); from != d.sessions.end()) {
-		const std::size_t dropped_at = tabs.reorder_to > 0 ? tabs.reorder_to - 1 : 0;
-		const auto to = d.sessions.begin() + static_cast<std::ptrdiff_t>(std::min(dropped_at, d.sessions.size() - 1));
+		const auto to = chat_at(d, tabs.reorder_to > 0 ? tabs.reorder_to - 1 : 0);
 		if (from < to) {
 			std::rotate(from, from + 1, to + 1);
 		}
@@ -777,7 +781,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		d.renaming = 0;
 	}
 
-	if (gui::caption_button(ui, history, "##agent_history", gui::symbol::chevron_down(), sty.color_widget_hovered)) {
+	if (gui::caption_button(ui, history, "##agent_history", gui::symbol::chevron_down(), sty.caption_button)) {
 		d.history_open = !d.history_open;
 		if (d.history_open) {
 			d.history = past_chats(config::primary().project_root);
@@ -792,7 +796,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		return strip_h;
 	}
 
-	if (gui::caption_button(ui, info, std::format("##agent_info_{}", s->id), gui::symbol::info(), sty.color_widget_hovered)) {
+	if (gui::caption_button(ui, info, std::format("##agent_info_{}", s->id), gui::symbol::info(), sty.caption_button)) {
 		d.info_open = !d.info_open;
 	}
 	d.info_anchor = info;
@@ -873,20 +877,16 @@ auto gse::ide::agent::draw_transcript_hint(const gui::draw_context& ctx, const s
 	}
 }
 
-auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view& v, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+auto gse::ide::agent::draw_transcript(gui::builder& ui, session& s, transcript_view& v, const rectf& area, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const vec2f mouse = ctx.mouse_position();
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
-	session* s = active_session(d);
-	if (!s) {
-		return;
-	}
-	if (!std::ranges::any_of(s->rows, [&](const transcript_row& row) { return shows(v.filter, row); })) {
+	if (!std::ranges::any_of(s.rows, [&](const transcript_row& row) { return shows(v.filter, row); })) {
 		draw_transcript_hint(ctx, v.filter == row_filter::changes
 			? std::string("No file edits yet.")
-			: "Type a prompt below to start claude in " + s->cwd.generic_display_string() + ".", area);
+			: "Type a prompt below to start claude in " + s.cwd.generic_display_string() + ".", area);
 		return;
 	}
 
@@ -900,7 +900,7 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 		.width = std::max(0.f, area.width() - pad * 2.f - gui::scroll_config{}.scrollbar_width),
 		.scale = sty.font_size,
 	};
-	sync_transcript(*s, v, sty, metrics);
+	sync_transcript(s, v, sty, metrics);
 
 	if (v.buffer.lines.empty()) {
 		v.buffer.lines.emplace_back();
@@ -944,13 +944,13 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 
 	const auto context_row = v.line_rows[hovered];
 	if (const group_marker* group = toggle ? group_at(v, hovered) : nullptr) {
-		ctx.set_tooltip(gui::ids::make(std::format("##agent_group_{}_{}", s->id, group->row)), group_detail(*s, *group));
+		ctx.set_tooltip(gui::ids::make(std::format("##agent_group_{}_{}", s.id, group->row)), group_detail(s, *group));
 	}
-	else if (ctx.hovers(area) && !tail_press.hovered && context_row < s->rows.size() && !hovered_text.empty() && s->rows[context_row].stamped > 0) {
-		ctx.set_tooltip(gui::ids::make(std::format("##agent_row_{}_{}", s->id, context_row)), local_time_label(s->rows[context_row].stamped));
+	else if (ctx.hovers(area) && !tail_press.hovered && context_row < s.rows.size() && !hovered_text.empty() && s.rows[context_row].stamped > 0) {
+		ctx.set_tooltip(gui::ids::make(std::format("##agent_row_{}_{}", s.id, context_row)), local_time_label(s.rows[context_row].stamped));
 	}
-	const bool context_mine = ctx.hovers(area) && context_row < s->rows.size() && s->rows[context_row].kind == row_kind::user;
-	const std::optional<std::uint32_t> rewind = context_mine ? rewind_anchor(*s, context_row) : std::nullopt;
+	const bool context_mine = ctx.hovers(area) && context_row < s.rows.size() && s.rows[context_row].kind == row_kind::user;
+	const std::optional<std::uint32_t> rewind = context_mine ? rewind_anchor(s, context_row) : std::nullopt;
 
 	if (rewind && ctx.mouse_pressed_for(area, mouse_button::button_2)) {
 		ctx.open_context_menu({
@@ -962,23 +962,23 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 					.destructive = true,
 				},
 			},
-			.target = (static_cast<std::uint64_t>(s->id) << 32) | context_row,
+			.target = (static_cast<std::uint64_t>(s.id) << 32) | context_row,
 			.tag = agent_context_tag(),
 		});
 	}
 
 	if (ctx.clicked_in_rect(area)) {
 		if (toggle) {
-			toggle_marker(*s, v, *toggle);
-			sync_transcript(*s, v, sty, metrics);
+			toggle_marker(s, v, *toggle);
+			sync_transcript(s, v, sty, metrics);
 		}
 		else if (link) {
-			const transcript_row& owner = s->rows[std::min<std::size_t>(*link, s->rows.size() - 1)];
+			const transcript_row& owner = s.rows[std::min<std::size_t>(*link, s.rows.size() - 1)];
 			const bool edit = !owner.added.empty() || !owner.removed.empty();
 
 			if (edit && v.filter != row_filter::changes) {
-				s->changes_open = true;
-				s->changes_focus = *link;
+				s.changes_open = true;
+				s.changes_focus = *link;
 			}
 			else {
 				const std::uint32_t first = jump_line_for(owner);
@@ -1015,8 +1015,8 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 		relayout_from(v, *stale_diff);
 	}
 
-	if (v.filter == row_filter::changes && s->changes_focus) {
-		const auto found = std::ranges::find(v.line_rows, *s->changes_focus);
+	if (v.filter == row_filter::changes && s.changes_focus) {
+		const auto found = std::ranges::find(v.line_rows, *s.changes_focus);
 		if (found != v.line_rows.end()) {
 			const gui::text_area_layout placement = gui::text_area_layout_of(ctx, {
 				.buffer = v.buffer,
@@ -1031,7 +1031,7 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, data& d, transcript_view
 			v.state.scroll.y.target = v.state.scroll.y.offset;
 			v.state.tail_pinned = false;
 		}
-		s->changes_focus.reset();
+		s.changes_focus.reset();
 	}
 }
 
@@ -1051,7 +1051,7 @@ auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const re
 	}
 
 	const gui::dropdown_result picked = ui.draw<gui::dropdown<std::string_view>>({
-		.name = "##agent_model",
+		.name = std::format("##agent_model_{}", s.id),
 		.current_index = current,
 		.options = models,
 		.state = s.model_dropdown,
@@ -1065,7 +1065,7 @@ auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const re
 		: enum_to_string(s.requested_effort);
 
 	ui.draw<gui::slider<int>>({
-		.name = "##agent_effort",
+		.name = std::format("##agent_effort_{}", s.id),
 		.value = level,
 		.min = 0,
 		.max = static_cast<int>(levels.size()) - 1,
@@ -1079,6 +1079,155 @@ auto gse::ide::agent::draw_model_controls(gui::builder& ui, session& s, const re
 	s.requested_effort = static_cast<agent_effort>(std::clamp<int>(level, 0, static_cast<int>(levels.size()) - 1));
 }
 
+auto gse::ide::agent::question_prompt(const session& s) -> std::string {
+	const pending_question& asked = *s.question;
+	std::string out = asked.multi ? "Pick any that apply, or type instead" : "Pick one, or type instead";
+	if (!asked.context.empty()) {
+		out += " \xC2\xB7 " + asked.context;
+	}
+	return out;
+}
+
+auto gse::ide::agent::wrapped_block(const gui::draw_context& ctx, const std::string_view text, const float width, const std::size_t limit) -> std::vector<std::string> {
+	std::vector<std::string> out;
+	for (const std::string_view line : ctx.fonts.text.resolve()->wrap(text, width, ctx.style.font_size)) {
+		if (out.size() >= limit) {
+			return out;
+		}
+		out.emplace_back(line);
+	}
+	return out;
+}
+
+auto gse::ide::agent::layout_question(const gui::draw_context& ctx, const session& s, const float width, const float room) -> question_block {
+	question_block laid;
+	if (!awaiting_answer(s)) {
+		return laid;
+	}
+
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const pending_question& asked = *s.question;
+
+	laid.line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
+	laid.body = std::max(sty.font_size, width - pad * 2.f);
+	laid.label = std::max(sty.font_size, laid.body - gui::checkbox_extent(sty) - pad * 3.f);
+
+	const std::string prompt = question_prompt(s);
+	for (const std::size_t limit : { max_question_lines, min_question_lines }) {
+		laid.head = wrapped_block(ctx, asked.question, laid.body, limit);
+		laid.hint = wrapped_block(ctx, prompt, laid.body, limit);
+		laid.options.clear();
+		laid.extent = pad * 2.5f + static_cast<float>(laid.head.size() + laid.hint.size()) * laid.line_h;
+
+		const float fits = room - laid.line_h;
+		for (const question_option& option : asked.options) {
+			std::vector<std::string> lines = wrapped_block(ctx, option.label, laid.label, std::min(limit, max_option_lines));
+			const float row = static_cast<float>(lines.size()) * laid.line_h + pad * 1.5f;
+			if (laid.extent + row > fits && !laid.options.empty()) {
+				break;
+			}
+			laid.extent += row;
+			laid.options.push_back(std::move(lines));
+		}
+
+		if (laid.options.size() == asked.options.size()) {
+			return laid;
+		}
+	}
+
+	laid.hint.push_back(std::format(
+		"{} more option(s) do not fit here - they are in the transcript above, and the box answers in your own words",
+		asked.options.size() - laid.options.size()
+	));
+	laid.extent += laid.line_h;
+	return laid;
+}
+
+auto gse::ide::agent::draw_question(gui::builder& ui, session& s, const rectf& area, const question_block& laid) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const float fs = sty.font_size;
+	const float line_h = laid.line_h;
+	const auto text_view = ctx.fonts.text.resolve();
+	pending_question& asked = *s.question;
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+
+	const auto push_lines = [&](const std::vector<std::string>& lines, const float left, const float top, const vec4f& color) {
+		float y = top;
+		for (const std::string& line : lines) {
+			ctx.queue_text({
+				.font = ctx.fonts.text,
+				.text = line,
+				.position = { left, y - line_h * 0.5f + text_view->vertical_center_offset(fs) },
+				.scale = fs,
+				.color = color,
+				.clip_rect = area,
+			});
+			y -= line_h;
+		}
+		return y;
+	};
+
+	float cursor = push_lines(laid.head, area.left() + pad, area.top() - pad, sty.color_text);
+	cursor = push_lines(laid.hint, area.left() + pad, cursor, sty.color_text_secondary);
+	cursor -= pad * 0.5f;
+
+	const float box_extent = gui::checkbox_extent(sty);
+	const gui::item_skin& skin = sty.list_item;
+	for (std::size_t at = 0; at < laid.options.size(); ++at) {
+		question_option& option = asked.options[at];
+		const std::vector<std::string>& lines = laid.options[at];
+		const float row_h = static_cast<float>(lines.size()) * line_h + pad;
+		const rectf row = rectf::from_position_size(
+			{ area.left() + pad, cursor },
+			{ laid.body, row_h }
+		);
+		cursor -= row_h + pad * 0.5f;
+
+		const id row_id = gui::ids::make(std::format("##agent_option_{}_{}", s.id, at));
+		const gui::interaction::press press = gui::interaction::press_in_rect(ctx, ui.hot_widget_id, ui.active_widget_id, row_id, {
+			.rect = row,
+			.selected = option.chosen,
+		});
+
+		gui::draw::fill_surface(ctx, row, press.select(skin.surfaces), {
+			.anim = row_id,
+		});
+
+		const rectf box = rectf::from_position_size(
+			{ row.left() + pad, row.top() - pad * 0.5f - line_h * 0.5f + box_extent * 0.5f },
+			{ box_extent, box_extent }
+		);
+		gui::draw_checkbox(ctx, box, option.chosen, {
+			.color_frame = press.select(sty.checkbox.frame),
+			.color_mark = press.select(sty.checkbox.mark),
+			.extent = box_extent,
+			.clip_rect = area,
+		});
+
+		push_lines(lines, box.right() + pad, row.top() - pad * 0.5f, press.select(skin.label_colors));
+
+		if (!press.activated) {
+			continue;
+		}
+
+		const bool was = option.chosen;
+		if (!asked.multi) {
+			for (question_option& other : asked.options) {
+				other.chosen = false;
+			}
+		}
+		option.chosen = !was;
+	}
+}
+
 auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layout& layout) -> void {
 	const rectf& area = layout.area;
 	const rectf& body = layout.body;
@@ -1086,7 +1235,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 
-	const id input_id = gui::ids::make("##agent_input");
+	const id input_id = gui::ids::make(std::format("##agent_input_{}", s.id));
 	const bool focused = ui.focus_widget_id == input_id;
 	const bool ctrl = ctx.key_held(key::left_control) || ctx.key_held(key::right_control);
 	const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
@@ -1095,7 +1244,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 
 	ctx.queue_sprite({
 		.rect = area,
-		.color = sty.color_input_background,
+		.color = sty.input.area.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1117,8 +1266,10 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 
 	const float button_extent = sty.font_size * 1.4f;
 	const bool gated = s.gate.has_value() && !s.pending_transition;
-	const std::string approve_text = gated ? gate_label(s, *s.gate) : std::string{};
-	const float action_width = gated ? text_view->width(approve_text, sty.font_size) + pad * 2.f : button_extent;
+	const bool asking = awaiting_answer(s);
+	constexpr std::string_view answer_text = "Answer";
+	const std::string action_text = asking ? std::string(answer_text) : gated ? gate_label(s, *s.gate) : std::string{};
+	const float action_width = gated || asking ? text_view->width(action_text, sty.font_size) + pad * 2.f : button_extent;
 	const rectf stop = rectf::from_position_size(
 		{ area.right() - pad - action_width, first_row_center + button_extent * 0.5f },
 		{ action_width, button_extent }
@@ -1180,9 +1331,26 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 		draw_model_controls(ui, s, model_rect, effort_rect);
 	}
 
+	if (asking) {
+		const bool answerable = !input_empty(s.draft) || std::ranges::any_of(s.question->options, [](const question_option& option) {
+			return option.chosen;
+		});
+		const bool pressed = ui.draw<gui::button>({
+			.text = action_text,
+			.rect = stop,
+			.key = std::format("##agent_answer_{}", s.id),
+			.enabled = answerable,
+		});
+		if (answerable && (pressed || enter)) {
+			answer_question(s, input_text(s.draft));
+			reset_input(s);
+		}
+		return;
+	}
+
 	if (gated) {
 		if (ui.draw<gui::button>({
-			.text = approve_text,
+			.text = action_text,
 			.rect = stop,
 			.key = std::format("##agent_phase_approve_{}", s.id),
 		})) {
@@ -1190,7 +1358,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 			reset_input(s);
 		}
 	}
-	else if (gui::caption_button(ui, stop, "##agent_stop", gui::symbol::stop(), sty.color_tab_hovered, busy || pausable)) {
+	else if (gui::caption_button(ui, stop, std::format("##agent_stop_{}", s.id), gui::symbol::stop(), sty.caption_button, busy || pausable)) {
 		if (busy) {
 			interrupt_session(s);
 		}
@@ -1248,7 +1416,7 @@ auto gse::ide::agent::draw_context_bar(const gui::draw_context& ctx, session& s,
 
 	ctx.queue_sprite({
 		.rect = area,
-		.color = sty.color_widget_background,
+		.color = sty.list_item.surfaces.idle.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1327,7 +1495,7 @@ auto gse::ide::agent::draw_activity(const gui::draw_context& ctx, const data& d,
 
 	ctx.queue_sprite({
 		.rect = area,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1401,7 +1569,7 @@ auto gse::ide::agent::draw_phase(gui::builder& ui, session& s, const rectf& area
 
 	ctx.queue_sprite({
 		.rect = area,
-		.color = sty.color_panel_alt,
+		.color = sty.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1474,6 +1642,103 @@ auto gse::ide::agent::draw_view_toggles(gui::builder& ui, session& s, const rect
 	return area.right() - mode.left() + pad;
 }
 
+auto gse::ide::agent::cancel_sync(session& s) -> void {
+	stop_session(s);
+	append_row(s, {
+		.kind = row_kind::note,
+		.text = "cancelled from the panel",
+	});
+	s.sync_report = "the sync was cancelled from the panel before it finished";
+}
+
+auto gse::ide::agent::draw_sync_header(gui::builder& ui, session& s, const rectf& area) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const auto text_view = ctx.fonts.text.resolve();
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ area.left(), area.top() }, { sty.accent_bar_width, area.height() }),
+		.color = sty.color_accent,
+		.texture = ctx.blank_texture,
+	});
+
+	constexpr std::string_view cancel_label = "Cancel";
+	const float button_w = text_view->width(cancel_label, sty.font_size) + pad * 2.f;
+	const float button_h = std::min(area.height() - pad * 0.5f, sty.font_size * 1.6f);
+	const rectf cancel = rectf::from_position_size(
+		{ area.right() - pad - button_w, area.center().y() + button_h * 0.5f },
+		{ button_w, button_h }
+	);
+	if (ui.draw<gui::button>({
+		.text = cancel_label,
+		.rect = cancel,
+		.key = std::format("##sync_cancel_{}", s.id),
+		.role = gui::button_role::danger,
+	})) {
+		cancel_sync(s);
+	}
+
+	const float text_left = area.left() + sty.accent_bar_width + pad;
+	const std::string title = std::format("Syncing {} \xC2\xB7 {}", s.sync->root.filename().generic_display_string(), s.sync->branch);
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = title,
+		.position = { text_left, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
+		.clip_rect = rectf::from_position_size({ text_left, area.top() }, { std::max(0.f, cancel.left() - pad - text_left), area.height() }),
+	});
+}
+
+auto gse::ide::agent::draw_sync_chat(gui::builder& ui, data& d, const rectf& body, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
+	session* hosted = sync_session(d);
+	if (!hosted) {
+		return;
+	}
+
+	session& s = *hosted;
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+
+	const float input_line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
+	const auto input_rows = static_cast<float>(std::clamp<std::size_t>(s.draft.line_count(), 1, max_input_rows));
+	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f) + gui::image_strip_extent(ctx, s.attachments);
+	const float activity_h = is_busy(s) ? sty.font_size * 1.75f : 0.f;
+	const float header_h = sty.font_size * 2.f;
+	const float context_h = std::max(2.f, std::round(3.f * sty.scale_factor));
+	const question_block question = layout_question(ctx, s, body.width(), body.height() * question_body_share);
+
+	const rectf context_area = rectf::from_position_size({ body.left(), body.bottom() + context_h }, { body.width(), context_h });
+	const rectf input_area = rectf::from_position_size({ body.left(), context_area.top() + input_h }, { body.width(), input_h });
+	const rectf question_area = rectf::from_position_size({ body.left(), input_area.top() + question.extent }, { body.width(), question.extent });
+	const rectf activity_area = rectf::from_position_size({ body.left(), question_area.top() + activity_h }, { body.width(), activity_h });
+	const rectf header_area = rectf::from_position_size(body.top_left(), { body.width(), header_h });
+	const rectf transcript = rectf::from_position_size(
+		{ body.left(), header_area.bottom() },
+		{ body.width(), std::max(0.f, body.height() - header_h - context_h - input_h - question.extent - activity_h) }
+	);
+
+	draw_transcript(ui, s, shown_view(s), transcript, jump_out);
+	if (activity_h > 0.f) {
+		draw_activity(ctx, d, s, activity_area);
+	}
+	if (question.extent > 0.f) {
+		draw_question(ui, s, question_area, question);
+	}
+	draw_input(ui, s, {
+		.area = input_area,
+		.body = body,
+	});
+	draw_context_bar(ctx, s, context_area);
+	draw_sync_header(ui, s, header_area);
+}
+
 auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
@@ -1503,13 +1768,21 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 	const float input_h = std::max(sty.font_size * 2.f, input_rows * input_line_h + sty.padding * 2.f) + attachments_h;
 	const float activity_h = shown && is_busy(*shown) ? sty.font_size * 1.75f : 0.f;
 	const float phase_h = shown ? sty.font_size * 1.75f : 0.f;
+	const question_block question = shown
+		? layout_question(ctx, *shown, body.width(), body.height() * question_body_share)
+		: question_block{};
+	const float question_h = question.extent;
 
 	const float context_h = std::max(2.f, std::round(3.f * sty.scale_factor));
 
 	const rectf context_area = rectf::from_position_size({ body.left(), body.bottom() + context_h }, { body.width(), context_h });
 	const rectf input_area = rectf::from_position_size({ body.left(), context_area.top() + input_h }, { body.width(), input_h });
+	const rectf question_area = rectf::from_position_size(
+		{ body.left(), input_area.top() + question_h },
+		{ body.width(), question_h }
+	);
 	const rectf activity_area = rectf::from_position_size(
-		{ body.left(), input_area.top() + activity_h },
+		{ body.left(), question_area.top() + activity_h },
 		{ body.width(), activity_h }
 	);
 	const rectf phase_area = rectf::from_position_size(
@@ -1518,11 +1791,14 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 	);
 	const rectf transcript = rectf::from_position_size(
 		{ body.left(), body.top() - strip_h },
-		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - activity_h - phase_h) }
+		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - question_h - activity_h - phase_h) }
 	);
 
 	if (activity_h > 0.f) {
 		draw_activity(ctx, d, *shown, activity_area);
+	}
+	if (question_h > 0.f) {
+		draw_question(ui, *shown, question_area, question);
 	}
 	if (shown) {
 		draw_phase(ui, *shown, phase_area);
@@ -1534,7 +1810,7 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		draw_transcript_hint(ctx, "No agents yet. Type a prompt below, or press + to add a session, in " + config::primary().name + ".", transcript);
 	}
 	else if (!shown->changes_open) {
-		draw_transcript(ui, d, shown_view(*shown), transcript, jump_out);
+		draw_transcript(ui, *shown, shown_view(*shown), transcript, jump_out);
 	}
 	else {
 		const vec2f mouse = ctx.mouse_position();
@@ -1565,8 +1841,8 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 			});
 		}
 
-		draw_transcript(ui, d, shown_view(*shown), split.first, jump_out);
-		draw_transcript(ui, d, shown->changes, split.second, jump_out);
+		draw_transcript(ui, *shown, shown_view(*shown), split.first, jump_out);
+		draw_transcript(ui, *shown, shown->changes, split.second, jump_out);
 	}
 	draw_session_info(ctx, d, body);
 	draw_history(ui, d, body);

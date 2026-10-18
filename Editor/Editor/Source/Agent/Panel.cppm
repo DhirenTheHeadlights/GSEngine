@@ -13,10 +13,21 @@ export namespace gse::ide::agent {
 		data& d,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
+
+	auto draw_sync_chat(
+		gui::builder& ui,
+		data& d,
+		const rectf& body,
+		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
+	) -> void;
 }
 
 namespace gse::ide::agent {
 	constexpr std::size_t max_input_rows = 12;
+	constexpr std::size_t max_question_lines = 4;
+	constexpr std::size_t min_question_lines = 2;
+	constexpr std::size_t max_option_lines = 3;
+	constexpr float question_body_share = 0.6f;
 	constexpr std::size_t history_visible_rows = 12;
 	constexpr std::int64_t base_context_window = 200'000;
 	constexpr std::int64_t large_context_window = 1'000'000;
@@ -70,6 +81,11 @@ namespace gse::ide::agent {
 		const rectf& body
 	) -> void;
 
+	auto chat_at(
+		data& d,
+		std::size_t index
+	) -> std::vector<session>::iterator;
+
 	auto session_tab_id(
 		std::uint32_t session_id
 	) -> id;
@@ -112,7 +128,7 @@ namespace gse::ide::agent {
 
 	auto draw_transcript(
 		gui::builder& ui,
-		data& d,
+		session& s,
 		transcript_view& v,
 		const rectf& area,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
@@ -128,6 +144,16 @@ namespace gse::ide::agent {
 		const rectf& area
 	) -> float;
 
+	auto cancel_sync(
+		session& s
+	) -> void;
+
+	auto draw_sync_header(
+		gui::builder& ui,
+		session& s,
+		const rectf& area
+	) -> void;
+
 	auto draw_phase_pipeline(
 		const gui::draw_context& ctx,
 		const session& s,
@@ -139,6 +165,41 @@ namespace gse::ide::agent {
 		gui::builder& ui,
 		session& s,
 		const rectf& area
+	) -> void;
+
+	struct question_block {
+		std::vector<std::string> head;
+		std::vector<std::string> hint;
+		std::vector<std::vector<std::string>> options;
+		float line_h = 0.f;
+		float body = 0.f;
+		float label = 0.f;
+		float extent = 0.f;
+	};
+
+	auto question_prompt(
+		const session& s
+	) -> std::string;
+
+	auto wrapped_block(
+		const gui::draw_context& ctx,
+		std::string_view text,
+		float width,
+		std::size_t limit
+	) -> std::vector<std::string>;
+
+	auto layout_question(
+		const gui::draw_context& ctx,
+		const session& s,
+		float width,
+		float room
+	) -> question_block;
+
+	auto draw_question(
+		gui::builder& ui,
+		session& s,
+		const rectf& area,
+		const question_block& laid
 	) -> void;
 
 	auto draw_model_controls(

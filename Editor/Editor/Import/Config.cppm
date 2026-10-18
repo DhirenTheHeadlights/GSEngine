@@ -47,6 +47,11 @@ export namespace gse::ide::config {
 		const std::filesystem::path& file
 	) -> const worktree&;
 
+	auto owns_request(
+		const std::filesystem::path& cwd,
+		const std::filesystem::path& project
+	) -> bool;
+
 	auto canonical_path(
 		const std::filesystem::path& file
 	) -> std::filesystem::path;

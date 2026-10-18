@@ -40,6 +40,12 @@ export namespace gse::log_settings {
 		log::level network_level = log::level::info;
 
 		[[
+			= settings::describe<"Minimum level for HTTP client messages.">{},
+			= settings::hot_reloadable
+		]]
+		log::level http_level = log::level::info;
+
+		[[
 			= settings::describe<"Minimum level for Vulkan messages.">{},
 			= settings::hot_reloadable
 		]]
@@ -68,6 +74,12 @@ export namespace gse::log_settings {
 			= settings::hot_reloadable
 		]]
 		log::level dx12_validation_level = log::level::info;
+
+		[[
+			= settings::describe<"Minimum level for GPU hardware counter sampling messages.">{},
+			= settings::hot_reloadable
+		]]
+		log::level gpu_perf_level = log::level::info;
 
 		[[
 			= settings::describe<"Minimum level for asset pipeline messages.">{},
@@ -114,6 +126,8 @@ namespace gse::log_settings {
 		std::string_view category
 	) -> bool;
 
+	consteval auto every_category_has_a_field() -> bool;
+
 	auto set_category_fields(
 		data& d,
 		log::level level
@@ -130,6 +144,26 @@ consteval auto gse::log_settings::category_field(const std::string_view member, 
 		&& member.starts_with(category)
 		&& member.ends_with(suffix);
 }
+
+consteval auto gse::log_settings::every_category_has_a_field() -> bool {
+	bool complete = true;
+	template for (constexpr auto category : std::define_static_array(std::meta::enumerators_of(^^log::category))) {
+		bool found = false;
+		template for (constexpr auto member : std::define_static_array(std::meta::nonstatic_data_members_of(^^data, std::meta::access_context::unchecked()))) {
+			if constexpr (category_field(meta::member_name(member), std::meta::identifier_of(category))) {
+				found = true;
+			}
+		}
+		complete = complete && found;
+	}
+	return complete;
+}
+
+static_assert(
+	gse::log_settings::every_category_has_a_field(),
+	"every log::category enumerator needs a matching '<enumerator>_level' setting on log_settings::data; "
+	"set_category_fields and apply_categories bind them by name, so a category without one is silently unreachable"
+);
 
 auto gse::log_settings::set_category_fields(data& d, const log::level level) -> void {
 	template for (constexpr auto category : std::define_static_array(std::meta::enumerators_of(^^log::category))) {

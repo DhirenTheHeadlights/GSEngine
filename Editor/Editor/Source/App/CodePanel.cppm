@@ -841,19 +841,16 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 		h.scroll_x = std::clamp(h.scroll_x - wheel_x * char_w * 4.f, 0.f, max_scroll_x);
 
 		const auto _ = ctx.scoped_layer(render_layer::popup);
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-			.color = sty.color_shadow,
-			.texture = ctx.blank_texture,
+		gui::draw::fill_surface(
+			ctx,
+			rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+			sty.modal.shadow,
+			{
+				.z_order = z,
+			}
+		);
+		gui::draw::fill_surface(ctx, panel, sty.modal.panel, {
 			.z_order = z,
-			.corner_radius = sty.corner_radius_menu,
-		});
-		ctx.queue_sprite({
-			.rect = panel,
-			.color = { vec3f(sty.color_menu_body), 1.f },
-			.texture = ctx.blank_texture,
-			.z_order = z,
-			.corner_radius = sty.corner_radius_menu,
 		});
 
 		for (std::size_t i = 0; i < header.size(); ++i) {
@@ -1000,19 +997,16 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 	bool link_clicked = false;
 
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{
+			.z_order = z,
+		}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {
 		.z_order = z,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.z_order = z,
-		.corner_radius = sty.corner_radius_menu,
 	});
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
@@ -1084,18 +1078,13 @@ auto gse::ide::draw_diagnostic_tooltip(const gui::draw_context& ctx, const rectf
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
 		ctx.queue_text({
@@ -1567,18 +1556,13 @@ auto gse::ide::draw_quickfix_tooltip(const gui::draw_context& ctx, const rectf& 
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 
 	for (std::size_t i = 0; i < info.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
@@ -1600,7 +1584,7 @@ auto gse::ide::draw_quickfix_tooltip(const gui::draw_context& ctx, const rectf& 
 		if (row.contains(mouse)) {
 			ctx.queue_sprite({
 				.rect = row,
-				.color = sty.color_input_background,
+				.color = sty.input.area.fill,
 				.texture = ctx.blank_texture,
 				.corner_radius = sty.corner_radius_menu,
 			});
@@ -1666,18 +1650,13 @@ auto gse::ide::draw_document_prompt(gui::builder& ui, workspace::data& ws, const
 		{ center.x() - dialog_width * 0.5f, center.y() + dialog_height * 0.5f },
 		{ dialog_width, dialog_height }
 	);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_width, dialog_height }),
-		.color = style.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = style.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = dialog,
-		.color = { vec3f(style.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = style.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_width, dialog_height }),
+		style.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, dialog, style.modal.panel, {});
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = title,
@@ -1821,7 +1800,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 	);
 	ctx.queue_sprite({
 		.rect = tab_bar,
-		.color = ctx.style.color_tab_background,
+		.color = ctx.style.tab.cell.idle.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1927,7 +1906,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 
 		ctx.queue_sprite({
 			.rect = status_rect,
-			.color = ctx.style.color_input_background,
+			.color = ctx.style.input.area.fill,
 			.texture = ctx.blank_texture,
 		});
 
@@ -2016,18 +1995,19 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				ui.hot_widget_id,
 				ui.active_widget_id,
 				gui::ids::make_from_key(hash_of(active_document_id->number(), "doc_view_toggle")),
-				toggle_rect
+				{ .rect = toggle_rect }
 			);
 			ctx.queue_text({
 				.font = ctx.fonts.text,
 				.text = label,
 				.position = { toggle_rect.left() + pad, toggle_rect.center().y() + text_view->vertical_center_offset(font_sz) },
 				.scale = font_sz,
-				.color = toggle.color({
+				.color = toggle.select(gui::state_set<vec4f>{
 					.idle = ctx.style.color_text_secondary,
 					.hot = ctx.style.color_text,
 					.active = ctx.style.color_accent,
 					.disabled = ctx.style.color_text_disabled,
+					.selected = ctx.style.color_text,
 				}),
 				.clip_rect = status_rect,
 			});

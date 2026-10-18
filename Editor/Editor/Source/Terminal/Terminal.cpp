@@ -698,7 +698,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 		);
 		ui.draw<gui::panel_backdrop>({
 			.rect = banner,
-			.background = ctx.style.color_panel_alt,
+			.background = ctx.style.panel_alt.fill,
 		});
 
 		const float text_x = banner.left() + pad;
@@ -838,7 +838,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 
 	ctx.queue_sprite({
 		.rect = input_rect,
-		.color = ctx.style.color_input_background,
+		.color = ctx.style.input.area.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1091,7 +1091,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 	});
 	ctx.queue_sprite({
 		.rect = body,
-		.color = ctx.style.color_panel_alt,
+		.color = ctx.style.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1125,7 +1125,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 			ui.hot_widget_id,
 			ui.active_widget_id,
 			gui::ids::make_from_key(stable_id(std::format("##profile_row{}", i))),
-			entry
+			{ .rect = entry }
 		);
 		if (pressed.activated) {
 			d.editing_index = i;
@@ -1135,7 +1135,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 		if (i == d.editing_index || pressed.hovered) {
 			ctx.queue_sprite({
 				.rect = entry,
-				.color = i == d.editing_index ? ctx.style.color_accent_dim : ctx.style.color_widget_hovered,
+				.color = i == d.editing_index ? ctx.style.color_accent_dim : ctx.style.list_item.surfaces.hot.fill,
 				.texture = ctx.blank_texture,
 			});
 		}
@@ -1382,7 +1382,7 @@ auto gse::ide::terminal::draw_panel(gui::builder& ui, data& d, channel_write<age
 
 	ui.draw<gui::panel_backdrop>({
 		.rect = strip,
-		.background = sty.color_panel_alt,
+		.background = sty.panel_alt.fill,
 	});
 
 	d.tab_descs.clear();

@@ -472,6 +472,77 @@ auto gse::ide::build_inbox::peek_symbol_queries() -> std::vector<symbol_query> {
 	return out;
 }
 
+auto gse::ide::build_inbox::panels_dir() -> std::filesystem::path {
+	return directory() / "panels";
+}
+
+auto gse::ide::build_inbox::consume_panel_query(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(panels_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_panel_queries() -> std::vector<panel_query> {
+	const std::filesystem::path dir = panels_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::seconds(60);
+
+	std::vector<panel_query> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		panel_query parsed;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "panel") {
+					parsed.panel.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "project") {
+					parsed.project.assign(value);
+				}
+				else if (key == "rows") {
+					std::from_chars(value.data(), value.data() + value.size(), parsed.rows);
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable panel query", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
 auto gse::ide::build_inbox::packages_dir() -> std::filesystem::path {
 	return directory() / "package";
 }
@@ -706,6 +777,162 @@ auto gse::ide::build_inbox::peek_awaits() -> std::vector<await_request> {
 
 		if (parsed.id.empty() || parsed.agent.empty() || parsed.id != entry.path().stem().generic_display_string()) {
 			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable await request", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
+auto gse::ide::build_inbox::asks_dir() -> std::filesystem::path {
+	return directory() / "asks";
+}
+
+auto gse::ide::build_inbox::consume_ask_request(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(asks_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_ask_requests() -> std::vector<ask_request> {
+	const std::filesystem::path dir = asks_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::minutes(5);
+
+	std::vector<ask_request> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			log::println(log::level::warning, log::category::task, "build inbox: dropping '{}' - no editor claimed it, so no project here owns that chat", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		ask_request parsed;
+		bool in_question = false;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				if (in_question) {
+					if (!parsed.question.empty()) {
+						parsed.question += '\n';
+					}
+					parsed.question += line;
+					continue;
+				}
+				if (line == "question") {
+					in_question = true;
+					continue;
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "context") {
+					parsed.context.assign(value);
+				}
+				else if (key == "multi") {
+					parsed.multi = value == "1";
+				}
+				else if (key == "option") {
+					parsed.options.emplace_back(value);
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.agent.empty() || parsed.question.empty() || parsed.options.size() < 2 || parsed.options.size() > max_ask_options || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable question", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
+auto gse::ide::build_inbox::gaps_dir() -> std::filesystem::path {
+	return directory() / "gaps";
+}
+
+auto gse::ide::build_inbox::consume_gap_report(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(gaps_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_gap_reports() -> std::vector<gap_report> {
+	const std::filesystem::path dir = gaps_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::minutes(5);
+
+	std::vector<gap_report> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			log::println(log::level::warning, log::category::task, "build inbox: dropping '{}' - no editor claimed it, so no project here owns that chat", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		gap_report parsed;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "kind") {
+					parsed.kind.assign(value);
+				}
+				else if (key == "need") {
+					parsed.need.assign(value);
+				}
+				else if (key == "tried") {
+					parsed.tried.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.agent.empty() || parsed.need.empty() || parsed.id != entry.path().stem().generic_display_string()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable gap report", entry.path());
 			std::filesystem::remove(entry.path(), ec);
 			continue;
 		}

@@ -41,6 +41,54 @@ namespace gse::tests::archive {
 		std::int32_t scratch = 0;
 	};
 
+	struct portable_fields {
+		std::int32_t a = 0;
+		std::uint64_t b = 0;
+		double c = 0.;
+		bool d = false;
+	};
+
+	struct long_field {
+		unsigned long width = 0;
+	};
+
+	struct nested_long_field {
+		std::int32_t head = 0;
+		long_field inner;
+	};
+
+	struct pointer_field {
+		const char* text = nullptr;
+	};
+
+	enum class long_enum : long { none = 0 };
+
+	struct long_enum_field {
+		long_enum value = long_enum::none;
+	};
+
+	struct long_array_field {
+		long values[2]{};
+	};
+
+	struct wide_char_field {
+		wchar_t glyph = L'\0';
+	};
+
+	union portable_union {
+		std::int32_t narrow;
+		float real;
+	};
+
+	union long_union {
+		std::int32_t narrow;
+		long wide;
+	};
+
+	struct size_t_field {
+		std::size_t count = 0;
+	};
+
 	constexpr std::uint32_t payload_magic = 0x54535447;
 	constexpr std::uint32_t payload_version = 3;
 
@@ -179,4 +227,30 @@ auto gse::tests::archive::version_mismatch_is_rejected(test::context& ctx) -> vo
 	}
 	ctx.expect(opened.error().readable);
 	ctx.expect_eq(opened.error().version, payload_version - 1);
+}
+
+namespace gse::tests::archive {
+	static_assert(archive_width_is_portable<std::int32_t>());
+	static_assert(archive_width_is_portable<std::uint64_t>());
+	static_assert(archive_width_is_portable<double>());
+	static_assert(archive_width_is_portable<portable_fields>());
+	static_assert(archive_width_is_portable<payload>());
+	static_assert(archive_width_is_portable<portable_union>());
+
+	static_assert(!archive_width_is_portable<unsigned long>());
+	static_assert(!archive_width_is_portable<long double>());
+	static_assert(!archive_width_is_portable<long_field>());
+	static_assert(!archive_width_is_portable<nested_long_field>());
+	static_assert(!archive_width_is_portable<pointer_field>());
+	static_assert(!archive_width_is_portable<long_enum_field>());
+	static_assert(!archive_width_is_portable<long_array_field>());
+	static_assert(!archive_width_is_portable<wchar_t>());
+	static_assert(!archive_width_is_portable<wide_char_field>());
+	static_assert(!archive_width_is_portable<long_union>());
+
+	static_assert(std::meta::is_type_alias(^^std::size_t));
+	static_assert(
+		!std::meta::is_type_alias(std::meta::type_of(^^size_t_field::count)),
+		"std::meta::type_of has begun preserving a member's type alias, so archive_width_is_portable can now reject size_t, ptrdiff_t, intptr_t and uintptr_t fields by identifier instead of depending on how the target spells them."
+	);
 }

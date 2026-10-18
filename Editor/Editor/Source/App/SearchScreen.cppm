@@ -91,13 +91,8 @@ auto gse::ide::search_screen::draw_backdrop(gui::draw_context& ctx, const vec2f 
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 	});
-	const rectf card = body_rect(ctx.style, viewport_size);
-	ctx.sprites.push_back({
-		.rect = card,
-		.color = { vec3f(ctx.style.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
+	gui::draw::fill_surface(ctx, body_rect(ctx.style, viewport_size), ctx.style.modal.panel, {
 		.layer = render_layer::overlay,
-		.corner_radius = ctx.style.corner_radius_menu,
 	});
 }
 
@@ -111,7 +106,7 @@ auto gse::ide::search_screen::draw_row(gui::draw_context& ctx, const rectf& row,
 	if (selected) {
 		ctx.queue_sprite({
 			.rect = row,
-			.color = sty.color_selection,
+			.color = sty.input.selection.fill,
 			.texture = ctx.blank_texture,
 			.corner_radius = sty.corner_radius,
 		});

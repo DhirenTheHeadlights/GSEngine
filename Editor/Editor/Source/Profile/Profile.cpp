@@ -593,7 +593,7 @@ auto gse::ide::draw_pill(const gui::draw_context& ctx, const rectf& row, const f
 	const bool hovered = ctx.hovers(cell);
 	ctx.queue_sprite({
 		.rect = cell,
-		.color = active ? ctx.style.color_tab_active : (hovered ? ctx.style.color_tab_hovered : ctx.style.color_tab_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = active }.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = row,
 		.corner_radius = ctx.style.corner_radius,
@@ -701,7 +701,7 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rect, const std::deque<captured_frame>& frames, profile_view_state& state) -> void {
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.style.color_input_background,
+		.color = ctx.style.input.area.fill,
 		.texture = ctx.blank_texture,
 	});
 	if (frames.empty() || rect.width() <= 0.f) {
@@ -823,7 +823,7 @@ auto gse::ide::draw_flame(gui::draw_context& ctx, const rectf& rect, const captu
 			const bool hovered = ctx.hovers(bar);
 			if (hovered) {
 				state.hovered = n.id;
-				color = ctx.style.color_widget_hovered;
+				color = ctx.style.list_item.surfaces.hot.fill;
 			}
 			if (n.id == state.selected) {
 				color = ctx.style.color_accent;
@@ -969,7 +969,7 @@ auto gse::ide::draw_row_section(const gui::draw_context& ctx, const rectf& rect,
 		if (row.id == state.selected) {
 			ctx.queue_sprite({
 				.rect = line,
-				.color = ctx.style.color_widget_selected,
+				.color = ctx.style.list_item.surfaces.selected.fill,
 				.texture = ctx.blank_texture,
 				.clip_rect = rect,
 			});
@@ -1209,7 +1209,7 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.style.color_panel_alt,
+		.color = ctx.style.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1259,7 +1259,7 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 	const bool hovered = ctx.hovers(button);
 	ctx.queue_sprite({
 		.rect = button,
-		.color = active ? ctx.style.color_tab_active : (hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = active }.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = rect,
 		.corner_radius = ctx.style.corner_radius,

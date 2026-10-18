@@ -20,6 +20,30 @@ namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	auto expect_bodies_sane(
+		gse::scenario::context& ctx
+	) -> void;
+
+	auto sample_body_positions(
+		gse::scenario::context& ctx
+	) -> std::flat_map<gse::id, gse::vec3<gse::position>>;
+
+	auto displaced_bodies(
+		const std::flat_map<gse::id, gse::vec3<gse::position>>& from,
+		const std::flat_map<gse::id, gse::vec3<gse::position>>& to,
+		gse::length tolerance
+	) -> std::size_t;
+
+	auto expect_reset_restores_spawn_poses(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto record_static_shot(
+		gse::scenario::context& ctx,
+		std::uint64_t settle_frames,
+		std::uint64_t record_frames
+	) -> gse::async::task<>;
+
 	auto orbit_at(
 		const gse::vec3<gse::position>& center,
 		gse::length radius,
@@ -256,12 +280,159 @@ auto sandbox::scenarios::render_stress(gse::scenario::context& ctx) -> gse::asyn
 	co_await build_stress_workload(ctx);
 }
 
+auto sandbox::scenarios::expect_bodies_sane(gse::scenario::context& ctx) -> void {
+	const auto owners = ctx.owners<gse::physics::transform_component>();
+	const auto transforms = ctx.components<gse::physics::transform_component>();
+	const auto bound = gse::kilometers(10.f);
+
+	std::size_t unsound = 0;
+	for (std::size_t index = 0; index < transforms.size(); ++index) {
+		const auto& position = transforms[index].position;
+		if (gse::isfinite(position) && gse::magnitude(position) < bound) {
+			continue;
+		}
+		++unsound;
+		gse::log::println(
+			gse::log::level::error,
+			gse::log::category::physics,
+			"scenario: body {} left the world at {}",
+			owners[index],
+			position
+		);
+	}
+
+	ctx.expect(!transforms.empty());
+	ctx.expect_eq(unsound, std::size_t{ 0 });
+}
+
+auto sandbox::scenarios::sample_body_positions(gse::scenario::context& ctx) -> std::flat_map<gse::id, gse::vec3<gse::position>> {
+	const auto owners = ctx.owners<gse::physics::transform_component>();
+	const auto transforms = ctx.components<gse::physics::transform_component>();
+
+	std::vector<std::pair<gse::id, gse::vec3<gse::position>>> staging;
+	staging.reserve(transforms.size());
+	for (std::size_t index = 0; index < transforms.size(); ++index) {
+		staging.emplace_back(owners[index], transforms[index].position);
+	}
+
+	std::flat_map<gse::id, gse::vec3<gse::position>> sampled;
+	sampled.insert(staging.begin(), staging.end());
+	return sampled;
+}
+
+auto sandbox::scenarios::displaced_bodies(const std::flat_map<gse::id, gse::vec3<gse::position>>& from, const std::flat_map<gse::id, gse::vec3<gse::position>>& to, const gse::length tolerance) -> std::size_t {
+	std::size_t displaced = 0;
+	for (const auto& [owner, position] : from) {
+		const auto it = to.find(owner);
+		if (it == to.end() || gse::magnitude(it->second - position) > tolerance) {
+			++displaced;
+		}
+	}
+	return displaced;
+}
+
+auto sandbox::scenarios::expect_reset_restores_spawn_poses(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 30;
+	constexpr std::uint64_t strike_frames = 8;
+	constexpr std::uint64_t collapse_frames = 60;
+	constexpr std::uint64_t rebuild_frames = 4;
+	const auto tolerance = gse::meters(0.25f);
+
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+
+	const auto spawned = sample_body_positions(ctx);
+
+	for (std::uint64_t frame = 0; frame < strike_frames; ++frame) {
+		ctx.channels().push<strike_pyramid_request>({});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+	co_await gse::scenario::wait_frames(ctx, collapse_frames);
+
+	const auto struck = sample_body_positions(ctx);
+
+	ctx.channels().push<gse::reset_active_scene_request>({});
+	co_await gse::scenario::wait_frames(ctx, rebuild_frames);
+
+	const auto rebuilt = sample_body_positions(ctx);
+
+	const auto knocked_over = displaced_bodies(spawned, struck, tolerance);
+	const auto still_displaced = displaced_bodies(spawned, rebuilt, tolerance);
+
+	gse::log::println(
+		"scenario: scene reset rebuilt {} bodies from {}, strike moved {}, {} still away from their spawn pose",
+		rebuilt.size(),
+		spawned.size(),
+		knocked_over,
+		still_displaced
+	);
+
+	ctx.expect(!spawned.empty());
+	ctx.expect_eq(rebuilt.size(), spawned.size());
+	ctx.expect(knocked_over > 0);
+	ctx.expect_eq(still_displaced, std::size_t{ 0 });
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::scene_reset(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await expect_reset_restores_spawn_poses(ctx);
+}
+
+auto sandbox::scenarios::scene_reset_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await expect_reset_restores_spawn_poses(ctx);
+}
+
+auto sandbox::scenarios::record_static_shot(gse::scenario::context& ctx, const std::uint64_t settle_frames, const std::uint64_t record_frames) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+	co_await gse::scenario::wait_frames(ctx, record_frames);
+	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::carousel_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 250);
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::machines_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 350);
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::dominoes_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 250);
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::swings_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 350);
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::carousel_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await record_static_shot(ctx, 90, 900);
+}
+
+auto sandbox::scenarios::dominoes_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await record_static_shot(ctx, 60, 420);
+}
+
 auto sandbox::scenarios::pyramid_cpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 500);
+	expect_bodies_sane(ctx);
 }
 
 auto sandbox::scenarios::pyramid_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, 500);
+	expect_bodies_sane(ctx);
 }
 
 auto sandbox::scenarios::rollback_reference(gse::scenario::context& ctx) -> gse::async::task<> {

@@ -1,0 +1,83 @@
+name: ci
+
+# The point of this workflow is that nobody has to remember to run the suite. Until it
+# existed, the only engine build in CI was release.yml's, which is tag-triggered, so a red
+# test was seen by whoever happened to run it locally.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+# A cold run is long enough that superseded commits must not keep burning a runner.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    env:
+      BUILD_DIR: out/build/x64-mingw-gcc-Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/gse-build-setup
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Sandbox is the only target that sweeps ^^gse::tests and the only one the editor's
+      # build row produces, so it is what the suite runs out of. Not the Editor: it is the
+      # heaviest target in the tree.
+      - name: Build the game
+        shell: pwsh
+        run: cmake --build $env:BUILD_DIR --target Sandbox
+
+      # main calls test::run and returns its code before the engine starts a window, so
+      # this needs no display.
+      - name: Run the unit suite
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-test-all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The queue tests are soak tests, not proofs: a publish-before-write or a lost steal
+      # is only detected if the interleaving happens to occur, so passing once says much
+      # less than passing a hundred times.
+      - name: Soak the concurrent queues
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-test-tags concurrency --engine-test-repeat 100
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Headless scenarios only. They create no window and never touch shaders, which is
+      # why release.yml's render_stress verify is still staged off. Their exit code only
+      # started meaning anything with the verdict plumbing - before that a failed
+      # expectation, a settle-cap abort and a REGRESSED baseline all exited 0.
+      - name: Run the headless scenario gates
+        shell: pwsh
+        run: |
+          foreach ($scenario in @("pyramid_cpu", "rollback_reference")) {
+            Write-Output "::group::$scenario"
+            & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-bench-scenario $scenario
+            $code = $LASTEXITCODE
+            Write-Output "::endgroup::"
+            if ($code -ne 0) {
+              Write-Error "scenario $scenario failed (exit $code)"
+              exit $code
+            }
+          }
+
+      - name: Upload the run logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-${{ github.run_id }}
+          path: ~/AppData/Local/GSE/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 14

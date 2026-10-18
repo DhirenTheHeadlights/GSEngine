@@ -32,7 +32,6 @@ jobs:
       contents: read
     outputs:
       tag: ${{ steps.r.outputs.tag }}
-      toolchain: ${{ steps.r.outputs.toolchain }}
       draft: ${{ steps.r.outputs.draft }}
     steps:
       - id: r
@@ -59,18 +58,13 @@ jobs:
             tag="v${date}.$((used + 1))"
           fi
 
-          # The toolchain release the image is built with and stamped against. Resolved
-          # here so the build job can key its toolchain cache on it before installing.
-          toolchain=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[] | select(.draft == false) | .tag_name' \
-            | sed -nE 's/^gcc-trunk-v([0-9]+)$/\1/p' | sort -n | tail -1)
-          [[ -n "$toolchain" ]] || { echo "no published gcc-trunk-v* release to build with"; exit 1; }
-
+          # The toolchain is resolved by .github/actions/gse-build-setup, which both this
+          # workflow and ci.yml share, so there is one copy of that lookup.
           {
             echo "tag=$tag"
-            echo "toolchain=gcc-trunk-v$toolchain"
             echo "draft=${INPUT_DRAFT:-true}"
           } >> "$GITHUB_OUTPUT"
-          echo "resolved: tag=$tag toolchain=gcc-trunk-v$toolchain"
+          echo "resolved: tag=$tag"
 
   build:
     needs: resolve
@@ -81,91 +75,20 @@ jobs:
     env:
       PRESET: x64-mingw-gcc-Release
       BUILD_DIR: out/build/x64-mingw-gcc-Release
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      # The environment, the two caches and the configure are shared with ci.yml. Composite
+      # rather than a reusable workflow: these steps have to run in this job, because the
+      # packaging steps below need the tree they produce.
+      - id: setup
+        uses: ./.github/actions/gse-build-setup
         with:
-          python-version: "3.12"
-
-      - name: Free runner disk space
-        shell: pwsh
-        run: |
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
-            "$env:AGENT_TOOLSDIRECTORY\Ruby", "$env:AGENT_TOOLSDIRECTORY\Go", `
-            "$env:AGENT_TOOLSDIRECTORY\PyPy", "$env:AGENT_TOOLSDIRECTORY\CodeQL"
-          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
-
-      # The toolchain zip is large and never changes within a tag, so it is cached by tag.
-      - name: Cache the GCC toolchain
-        uses: actions/cache@v4
-        with:
-          path: ~/.gcc-trunk
-          key: gcc-trunk-${{ needs.resolve.outputs.toolchain }}
-
-      # vcpkg's dependency tree is the expensive part of a cold run - bootstrap.py puts it
-      # at 30-60 minutes - so its binary cache is what makes repeat runs tolerable. The
-      # compiled engine BMIs are deliberately NOT cached: they are path- and
-      # toolchain-sensitive under the module mapper, and a stale one fails in ways that
-      # cost far more than the compile it saves.
-      - name: Cache the vcpkg binary archives
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ env.PRESET }}-${{ hashFiles('vcpkg.json', 'vcpkg-overlays/**') }}-${{ hashFiles('.gitmodules') }}
-          restore-keys: |
-            vcpkg-${{ env.PRESET }}-
-
-      # The tree's own bootstrap installs the toolchain and puts Ninja at
-      # ~/.gcc-trunk/ninja, which is where the preset's PATH already looks. Submodules came
-      # with the checkout, the cppreference index is an editor-only asset, and the build is
-      # driven by target below, so all three are skipped.
-      - name: Bootstrap the toolchain and Ninja
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
-          python bootstrap.py `
-            --skip-submodules --skip-cppref --skip-build `
-            --tag ${{ needs.resolve.outputs.toolchain }} --persist
-
-      # Engine/CMakeLists.txt compiles the SDK's own vulkan.cppm out of Vulkan_INCLUDE_DIR,
-      # so the headers alone are not enough and a missing SDK fails configure with a
-      # "Vulkan_INCLUDE_DIR-NOTFOUND/vulkan/vulkan.cppm" source path.
-      - name: Install the Vulkan SDK
-        shell: pwsh
-        run: |
-          choco install vulkan-sdk --no-progress -y
-          $sdk = Get-ChildItem "C:/VulkanSDK" -Directory -ErrorAction SilentlyContinue |
-            Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $sdk) { Write-Error "no Vulkan SDK under C:/VulkanSDK after install"; exit 1 }
-          "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
-          Write-Output "Vulkan SDK: $($sdk.FullName)"
-
-      # `Engine/cmake/GSEEngine.cmake` sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD to a UUID, and
-      # that UUID is specific to one CMake version - a newer CMake silently refuses `import
-      # std` ("Experimental `import std` support not enabled when detecting toolchain"). The
-      # runner image ships whatever is current, so the version is pinned here to match the
-      # UUID in the tree. Bumping one means bumping the other.
-      - name: Pin CMake to the version the import-std UUID targets
-        shell: pwsh
-        env:
-          CMAKE_VERSION: "4.3.3"
-        run: |
-          $name = "cmake-$env:CMAKE_VERSION-windows-x86_64"
-          Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$env:CMAKE_VERSION/$name.zip" `
-            -OutFile "$env:RUNNER_TEMP/cmake.zip"
-          Expand-Archive "$env:RUNNER_TEMP/cmake.zip" -DestinationPath "$env:RUNNER_TEMP/cmake" -Force
-          "$env:RUNNER_TEMP/cmake/$name/bin" >> $env:GITHUB_PATH
-
-      - name: Configure
-        shell: pwsh
-        run: |
-          cmake --version
-          cmake --preset $env:PRESET
+          token: ${{ secrets.GITHUB_TOKEN }}
+          preset: ${{ env.PRESET }}
 
       # Not the Editor: it is the heaviest target in the tree and ships in neither image.
       - name: Build the game, the installer stubs, the launcher and the packager
@@ -245,6 +168,20 @@ jobs:
           "EOF" >> $env:GITHUB_OUTPUT
           Write-Output $body
 
+      # The Packer writes every transcript line to dist/<kind>/packer-<kind>.log on both
+      # success and failure, and on a hosted runner that file is the only account of why a
+      # pack failed - the step log carries the one-line error, the transcript carries the
+      # commands and their output. Uploaded on failure only, and late enough to also catch
+      # the verify, zip and hash steps.
+      - name: Upload the packaging transcripts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-transcripts-${{ needs.resolve.outputs.tag }}
+          path: dist/*/packer-*.log
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -258,7 +195,7 @@ jobs:
             dist/engine-sdk/*-setup.exe
             dist/*.zip
           body: |
-            **Sandbox ${{ needs.resolve.outputs.tag }}** for Windows x64, built with `${{ needs.resolve.outputs.toolchain }}`.
+            **Sandbox ${{ needs.resolve.outputs.tag }}** for Windows x64, built with `${{ steps.setup.outputs.toolchain }}`.
 
             ## Play it
 

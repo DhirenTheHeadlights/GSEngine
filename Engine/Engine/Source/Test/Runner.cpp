@@ -55,29 +55,34 @@ namespace gse::test {
 	) -> void;
 }
 
-gse::test::context::context(const std::string_view name) : m_name(name) {}
+gse::test::check_sink::check_sink(const report_fn report) : m_report(report) {}
 
-auto gse::test::context::name() const -> std::string_view {
-	return m_name;
-}
-
-auto gse::test::context::failures() const -> std::span<const failure> {
+auto gse::test::check_sink::failures() const -> std::span<const failure> {
 	return m_failures;
 }
 
-auto gse::test::context::expect(const bool condition, const std::source_location loc) -> bool {
+auto gse::test::check_sink::expect(const bool condition, const std::source_location loc) -> bool {
 	if (condition) {
 		return true;
 	}
 	return record("expectation failed", loc);
 }
 
-auto gse::test::context::record(std::string message, const std::source_location& loc) -> bool {
-	m_failures.push_back({
+auto gse::test::check_sink::record(std::string message, const std::source_location& loc) -> bool {
+	const failure& recorded = m_failures.emplace_back(failure{
 		.location = loc,
 		.message = std::move(message),
 	});
+	if (m_report) {
+		m_report(recorded);
+	}
 	return false;
+}
+
+gse::test::context::context(const std::string_view name) : m_name(name) {}
+
+auto gse::test::context::name() const -> std::string_view {
+	return m_name;
 }
 
 auto gse::test::split_tags(const std::string_view text) -> std::vector<std::string_view> {

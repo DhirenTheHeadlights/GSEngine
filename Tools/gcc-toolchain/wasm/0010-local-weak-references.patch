@@ -1,0 +1,39 @@
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -555,13 +555,32 @@
+ 				    params.address ());
+ }
+ 
+-/* Note a symbol this unit refers to but does not define.  Only a function needs
+-   anything said about it: a data symbol is a plain undefined reference that the
+-   linker resolves, while a call cannot even be assembled without its callee's
+-   signature in scope.  */
++/* Note a symbol this unit refers to but does not define.  Beyond its binding,
++   only a function needs anything said about it: a data symbol is a plain
++   undefined reference that the linker resolves, while a call cannot even be
++   assembled without its callee's signature in scope.  */
+ void
+ assemble_import (const char *name, const_tree decl)
+ {
++  /* A weak *reference* -- a symbol declared weak that nothing defines -- is a
++     different thing from the weak definitions MAKE_DECL_ONE_ONLY produces, and
++     saying nothing about it here left it an ordinary undefined symbol that
++     fails the link.  It is what `__attribute__((weak))' on an extern means, and
++     libstdc++ asks for it by deriving _GLIBCXX_USE_WEAK_REF from __GXX_WEAK__,
++     which this target now sets: cow-stdexcept.cc refers to libitm's _ITM_* and
++     _ZGTtnam that way, so a target claiming __GXX_WEAK__ without this cannot
++     link a std::string.  `weak_undef' in Tools/wasm_dialect_probe.py is the
++     measurement that the assembler and the linker carry it.
++
++     Written here rather than beside the reference because this is where an
++     undefined symbol's directives go, so a data symbol gets its binding too --
++     which is the one thing about one this target does have to say.
++
++     DECL_P because a libcall's entry carries the function *type* and not a decl
++     -- record_libcall builds one -- and a type has no binding to ask about.  */
++  if (DECL_P (decl) && DECL_WEAK (decl))
++    emit_named_directive (saved_asm_out_file, ".weak", name);
++
+   const_tree type = imported_type_of (decl);
+   if (!FUNC_OR_METHOD_TYPE_P (type))
+     return;
