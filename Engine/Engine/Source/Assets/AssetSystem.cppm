@@ -114,6 +114,7 @@ export namespace gse::asset {
 template <gse::asset::has_compile_path T>
 auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> asset_result {
 	typename T::baked b{};
+#if __cpp_exceptions
 	try {
 		if (!bake(src, b)) {
 			return std::unexpected(asset_error{
@@ -137,6 +138,15 @@ auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::files
 			.detail = "Asset compiler failed"
 		});
 	}
+#else
+	if (!bake(src, b)) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::load_failure,
+			.path = src,
+			.detail = "Asset compiler rejected the source file"
+		});
+	}
+#endif
 	auto written = write_baked(dst, b);
 	if (!written) {
 		return written;
@@ -147,39 +157,58 @@ auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::files
 
 template <gse::asset::has_compile_path T>
 auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> std::expected<bool, asset_error> {
-	try {
-		if (!std::filesystem::exists(dst)) {
-			return true;
+	const auto io_failure = [](const std::filesystem::path& path, const std::error_code& ec) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::io_failure,
+			.path = path,
+			.detail = ec.message()
+		});
+	};
+
+	std::error_code ec;
+	if (!std::filesystem::exists(dst, ec)) {
+		if (ec) {
+			return io_failure(dst, ec);
 		}
-		constexpr auto fmt = format_of<typename T::baked>();
-		const auto dst_time = std::filesystem::last_write_time(dst);
-		if (std::filesystem::last_write_time(src) > dst_time) {
-			return true;
-		}
-		if constexpr (fmt.meta_sidecar) {
-			const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
-			if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
+		return true;
+	}
+	constexpr auto fmt = format_of<typename T::baked>();
+	const auto dst_time = std::filesystem::last_write_time(dst, ec);
+	if (ec) {
+		return io_failure(dst, ec);
+	}
+	const auto src_time = std::filesystem::last_write_time(src, ec);
+	if (ec) {
+		return io_failure(src, ec);
+	}
+	if (src_time > dst_time) {
+		return true;
+	}
+	if constexpr (fmt.meta_sidecar) {
+		const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
+		if (std::filesystem::exists(meta, ec)) {
+			const auto meta_time = std::filesystem::last_write_time(meta, ec);
+			if (ec) {
+				return io_failure(meta, ec);
+			}
+			if (meta_time > dst_time) {
 				return true;
 			}
 		}
-		std::ifstream in(dst, std::ios::binary);
-		if (!in.is_open()) {
-			return true;
+		else if (ec) {
+			return io_failure(meta, ec);
 		}
-		std::uint32_t header[3]{};
-		in.read(reinterpret_cast<char*>(header), sizeof(header));
-		if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
-			return true;
-		}
-		return false;
 	}
-	catch (const std::filesystem::filesystem_error& error) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = error.path1(),
-			.detail = error.what()
-		});
+	std::ifstream in(dst, std::ios::binary);
+	if (!in.is_open()) {
+		return true;
 	}
+	std::uint32_t header[3]{};
+	in.read(reinterpret_cast<char*>(header), sizeof(header));
+	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
+		return true;
+	}
+	return false;
 }
 
 template <typename T>

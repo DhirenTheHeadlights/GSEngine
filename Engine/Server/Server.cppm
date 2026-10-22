@@ -14,7 +14,6 @@ import gse.diag;
 import gse.log;
 import gse.ecs;
 import gse.os;
-import gse.win32;
 import gse.assets;
 import gse.gpu;
 import gse.runtime;
@@ -131,6 +130,10 @@ export namespace gse::server {
 	};
 }
 
+namespace gse::server {
+	auto prepare_dashboard_console() -> void;
+}
+
 template <typename MessagePack, typename... Components>
 gse::server::host<MessagePack, Components...>::host(network::config cfg) : m_config(std::move(cfg)) {
 }
@@ -162,16 +165,7 @@ auto gse::server::host<MessagePack, Components...>::initialize() -> void {
 template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::draw_dashboard(const shared_view<physics::data>& phys_s) -> void {
 	if (!m_dashboard_started) {
-		const auto out = win32::GetStdHandle(win32::std_output_handle);
-		win32::DWORD mode = 0;
-		if (win32::GetConsoleMode(out, &mode)) {
-			win32::SetConsoleMode(out, mode | win32::enable_virtual_terminal_processing);
-		}
-		const auto in = win32::GetStdHandle(win32::std_input_handle);
-		win32::DWORD in_mode = 0;
-		if (win32::GetConsoleMode(in, &in_mode)) {
-			win32::SetConsoleMode(in, (in_mode & ~win32::enable_quick_edit_mode) | win32::enable_extended_flags);
-		}
+		prepare_dashboard_console();
 		std::print("\x1b[?25l\x1b[2J");
 		m_dashboard_started = true;
 	}

@@ -4,6 +4,7 @@ import std;
 
 import :video_encoder;
 import :command_contract;
+import :device_contract;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -16,8 +17,6 @@ import gse.save;
 import gse.math;
 
 export namespace gse::gpu {
-	struct gpu_dispatch;
-
 	class device final : public non_copyable {
 	public:
 		[[nodiscard]]

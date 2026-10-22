@@ -26,7 +26,7 @@ auto gse::copy_fatal_field(char* field, const std::size_t capacity, const std::s
 	field[count] = '\0';
 }
 
-auto gse::set_fatal_pipe(const win32::HANDLE editor_pipe) -> void {
+auto gse::set_fatal_pipe(void* const editor_pipe) -> void {
 	fatal_pipe.store(editor_pipe, std::memory_order_release);
 }
 
@@ -48,7 +48,7 @@ auto gse::report_fatal_to_editor(const std::source_location& loc, const std::str
 	win32::WriteFile(pipe, &message, sizeof(message), &written, nullptr);
 }
 
-auto gse::drain_editor_pipe(win32::HANDLE& editor_pipe, attached_pipe_reader& reader, engine& e) -> void {
+auto gse::drain_editor_pipe(void*& editor_pipe, attached_pipe_reader& reader, engine& e) -> void {
 	win32::DWORD available = 0;
 	while (win32::PeekNamedPipe(editor_pipe, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
 		win32::DWORD read = 0;
@@ -98,4 +98,13 @@ auto gse::drain_editor_pipe(win32::HANDLE& editor_pipe, attached_pipe_reader& re
 		reader.expected = sizeof(std::uint32_t);
 		reader.have_magic = false;
 	}
+}
+
+auto gse::announce_attached_surface(void* const editor_pipe, const attached_surface_message& message) -> void {
+	win32::DWORD written = 0;
+	win32::WriteFile(editor_pipe, &message, sizeof(message), &written, nullptr);
+}
+
+auto gse::attached_process_id() -> std::uint32_t {
+	return win32::GetCurrentProcessId();
 }

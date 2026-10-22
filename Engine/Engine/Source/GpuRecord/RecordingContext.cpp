@@ -208,7 +208,7 @@ auto gse::gpu::recording_context::ensure_descriptor_heaps() -> void {
 auto gse::gpu::recording_context::sample_image(const image& img, const pipeline_stage_flags stages) -> void {
 	check_active();
 	const resource_ref ref{
-		.ptr = std::bit_cast<const void*>(img.handle()),
+		.id = std::bit_cast<std::uint64_t>(img.handle()),
 		.type = resource_type::image,
 		.aspects = image_aspect_for(img.format()),
 	};
@@ -216,12 +216,12 @@ auto gse::gpu::recording_context::sample_image(const image& img, const pipeline_
 }
 
 auto gse::gpu::recording_context::note_touched(const resource_ref ref, const pipeline_stage_flags stages, const access_flags access) -> void {
-	if (!ref.ptr) {
+	if (!ref.id) {
 		return;
 	}
 	bool changed = emit_intra_pass_barrier(ref, stages, access);
 	for (auto& existing : m_touched) {
-		if (existing.ref.ptr == ref.ptr) {
+		if (existing.ref.id == ref.id) {
 			const auto prev_stages = existing.stages.bits();
 			const auto prev_access = existing.access.bits();
 			existing.stages |= stages;
@@ -286,9 +286,9 @@ auto gse::gpu::recording_context::emit_intra_pass_barrier(const resource_ref& re
 		pipeline_stage_flag::vertex_attribute_input, pipeline_stage_flag::pre_rasterization_shaders,
 		pipeline_stage_flag::mesh_shader, pipeline_stage_flag::task_shader };
 
-	const auto it = m_last_access.find(ref.ptr);
+	const auto it = m_last_access.find(ref.id);
 	if (it == m_last_access.end()) {
-		m_last_access.emplace(ref.ptr, access_track{ .stages = stages, .access = access, .generation = m_access_generation });
+		m_last_access.emplace(ref.id, access_track{ .stages = stages, .access = access, .generation = m_access_generation });
 		return true;
 	}
 
@@ -444,7 +444,7 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(src.handle()),
+			.id = std::bit_cast<std::uint64_t>(src.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(src),
 		},
@@ -453,7 +453,7 @@ auto gse::gpu::recording_context::copy_buffer(const buffer& src, const buffer& d
 	);
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(dst.handle()),
+			.id = std::bit_cast<std::uint64_t>(dst.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(dst),
 		},
@@ -476,7 +476,7 @@ auto gse::gpu::recording_context::fill_buffer(const buffer& dst, const std::size
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(dst.handle()),
+			.id = std::bit_cast<std::uint64_t>(dst.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(dst),
 		},
@@ -491,7 +491,7 @@ auto gse::gpu::recording_context::build_acceleration_structure(const acceleratio
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(build_info.dst.value),
+			.id = build_info.dst.value,
 			.type = resource_type::acceleration_structure,
 		},
 		pipeline_stage_flag::acceleration_structure_build,
@@ -699,7 +699,7 @@ auto gse::gpu::recording_context::dispatch_indirect(const buffer& buf, const std
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(buf),
 		},
@@ -714,7 +714,7 @@ auto gse::gpu::recording_context::draw_indirect(const buffer& buf, const std::si
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(buf),
 		},
@@ -729,7 +729,7 @@ auto gse::gpu::recording_context::draw_mesh_tasks_indirect(const buffer& buf, co
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(buf),
 		},
@@ -744,7 +744,7 @@ auto gse::gpu::recording_context::bind_index(const buffer& buf, const index_type
 	check_active();
 	note_touched(
 		{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 			.host_buffer = std::addressof(buf),
 		},

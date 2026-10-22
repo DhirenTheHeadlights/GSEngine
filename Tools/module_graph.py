@@ -34,19 +34,38 @@ loop:
 
     python Tools/module_graph.py                 # the module table and the host frontier
     python Tools/module_graph.py gse.math        # one closure, in compile order
+    python Tools/module_graph.py --impls gse     # and the impl units a link of it needs
 """
 import collections
 import json
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
 from msys2 import REPO_ROOT
 
-# Where interface units live. Import/ carries the primary interface of almost every
-# module and Source/ carries the partitions, so neither alone is the engine.
-INTERFACE_ROOTS = ("Engine/Engine/Source", "Engine/Engine/Import")
+# Where module units live, interface and implementation alike -- both walks below read
+# this one tuple. Import/ carries the primary interface of almost every module and
+# Source/ carries the partitions, so neither alone is a target.
+#
+# The Sandbox is here because the scenario is. `scene_reset_cpu` is declared in
+# `sandbox:scenarios` and nothing under Engine/ provides it, so a link that stopped at
+# the engine could compile every unit the browser port needs and still have nothing to
+# run; `LINK_SUBJECT`'s own comment in build_gcc_wasm.py recorded that as the reason the
+# engine went first and the Sandbox second. Adding the two directories is the whole of
+# the second half: the walks key on a module declaration and a suffix, neither of which
+# knows which tree it is reading, and CMake does not read this file -- the four data
+# files it does share with these walks name units, not roots, and are untouched.
+# `Engine/Server` is the third, and the first link of the Sandbox is what named it:
+# `gse.server` lives there, in two interface units with no implementation unit at all, and
+# `Sandbox/Source/NetSetup.cpp` is its only importer in the tree. A root that stopped at
+# Engine/Engine therefore left that module with no BMI and rejected the one unit defining
+# `server_setup`, which `Main.cpp` needs whether or not a headless scenario ever takes the
+# dedicated-server branch.
+INTERFACE_ROOTS = ("Engine/Engine/Source", "Engine/Engine/Import",
+                   "Engine/Server",
+                   "Sandbox/Sandbox/Source", "Sandbox/Sandbox/Import")
 
 # The host frontier's roots, and they are a structural fact about the tree rather than a
 # judgment about portability: every module under Source/External is a wrapper over a
@@ -55,6 +74,62 @@ INTERFACE_ROOTS = ("Engine/Engine/Source", "Engine/Engine/Import")
 # host-bound is host-bound *because its closure reaches one of these*, which is derived
 # below and printed as a chain. Nothing is excused by being named in a list here.
 HOST_DIR = "Engine/Engine/Source/External"
+
+# The exception the sentence above did not allow for, and it is not a judgment either.
+# "There is no such thing as porting one" is true of a wrapper over a platform API and
+# false of a wrapper over a *portable* vendored library: `Moodycamel.cppm` is twelve lines
+# over a header whose Windows arm (concurrentqueue.h's `GetCurrentThreadId`) is one of
+# four, and the arm wasm32 selects is a thread_local address. A module named here is
+# treated as an ordinary unit -- offered to the compiler, and its verdict propagated to
+# its dependents like any other -- rather than short-circuited into a host-bound row.
+#
+# This is the one list in this file that *is* a claim, so it is kept honest by what it
+# does NOT do: it does not excuse the unit, it exposes it. Membership means the sweep
+# compiles the file every run, so the row is a measurement that can go red; a wrapper
+# named here that stops translating reports `failed`, which is news, instead of
+# `host-bound`, which is arithmetic. Nothing belongs here until a sweep has shown it
+# green.
+#
+# The test an #ifdef-armed wrapper has to pass, since two of the three here are one.
+# `gse.win32` would fail it and is the reason the test is written down: its non-Windows
+# arm is EMPTY, so every caller still names `win32::` symbols that are not there, and
+# listing it would move the failure from one host-bound row to a hundred rejections --
+# the OS seam's work dressed up as a measurement trick. `gse.winhttp`'s non-Windows arm
+# is the other thing entirely: it carries the whole surface its one caller names
+# (`handle`, `supported`, every `error_*` constant), and `Http/Client.cpp` already has
+# the `#else` body that uses it. So the question is not whether the wrapper has an
+# #ifdef, it is whether the neutral arm is COMPLETE for the callers there are -- and a
+# wrapper that is wrong about that answers with a rejection, here, every run.
+PORTED_HOST_ROOTS = ("gse.moodycamel", "gse.winhttp")
+
+# Units a target with no native GPU backend does not have, interface and impl alike, and
+# the one thing in this file that is not derived from the tree -- so it is not written here
+# either. CMake drops the same list from the engine target
+# (`gse_drop_native_gpu_backend_units`), and the file explains why both sides read it
+# rather than each testing a directory. Both walks below read it, since which of them a
+# listed unit falls in is a property of its suffix and not of the claim.
+#
+# Not a portability judgment, and not the same kind of claim as PORTED_HOST_ROOTS above.
+# A unit named here is one the wasm link would not contain, so measuring it would report
+# the absence of a backend that configuration never asked for; a unit named there is one
+# the sweep compiles every run.
+NATIVE_GPU_BACKEND_LIST = "Engine/cmake/native_gpu_backend_units.txt"
+
+# The other three data files CMake and this walk both read, on the other half of the
+# engine: its implementation units. The two arm lists carry directory NAMES and the
+# exclusion list carries paths, so they are read by the two different helpers below --
+# see each file for why it is a file.
+#
+# The policy those arm names are selected BY is not shared and is stated here: the wasm
+# link keeps the Web arm of every platform choice and the Null arm of the profiling
+# backend, because it has no Windows and no Nsight Perf SDK. CMake's own sentence is the
+# other one -- Win32 plus Native, and the backend find_package found -- and the two are
+# not a common datum dressed up as a difference.
+PLATFORM_ARMS_LIST = "Engine/cmake/platform_impl_arms.txt"
+BACKEND_ARMS_LIST = "Engine/cmake/gpu_profile_backend_arms.txt"
+EXCLUDED_IMPLS_LIST = "Engine/cmake/excluded_impl_units.txt"
+WASM_PLATFORM_ARM = "Web"
+WASM_BACKEND_ARM = "Null"
 
 # Where CMake leaves the dependency scan. One configuration directory under it, and the
 # sweep names the one it read: merging two would union the #ifdef arms that reading
@@ -78,10 +153,72 @@ MODULE_DECL = re.compile(
 # starts a thread, which is a host port rather than a translation question.
 SOURCE_SUFFIX = "*.cppm"
 
+# And the implementation units the paragraph above says this measurement leaves out. It
+# leaves them out of the SWEEP, which is a question about translation and is answered one
+# interface unit at a time; a LINK is the other question, and there is no such thing as
+# linking the engine without them. So they are enumerated here too, separately, and no
+# sweep reads them: `impls_of` is what the wasm link's unit list is built from, and the
+# sweep order is still interfaces alone.
+IMPL_SUFFIX = "*.cpp"
+
 
 def module_of(logical: str) -> str:
     """The module a logical name belongs to: `gse.math:units` is gse.math's."""
     return logical.split(":", 1)[0]
+
+
+def wraps_host(logical: str, path: str) -> bool:
+    """Whether this unit is a host root: a wrapper, and not one measured as ported.
+
+    One function because there were two copies of the directory test -- `Graph.is_host_root`
+    and the `is_root` set `scan` builds -- and they answer the same question for the two
+    halves of the same verdict. Two copies of it is how a ported wrapper could be compiled
+    by the sweep while still propagating host-boundness to everything that imports it,
+    which is the one outcome worse than either answer alone.
+    """
+    return path.startswith(HOST_DIR) and module_of(logical) not in PORTED_HOST_ROOTS
+
+
+def listing(repo_root: Path, name: str) -> tuple:
+    """One of the shared data files, as its meaningful lines.
+
+    What a line means has to be the same here as in CMake's `_gse_read_listing`, because
+    these files exist to be read by both: a blank or a # comment is not an entry, and the
+    whitespace around one is not part of it.
+    """
+    return tuple(entry for entry in
+                 (line.strip() for line in
+                  (repo_root / name).read_text(encoding="utf-8").splitlines())
+                 if entry and not entry.startswith("#"))
+
+
+def path_listing(repo_root: Path, name: str) -> frozenset:
+    """One of them whose lines are repo-relative paths, as posix paths.
+
+    A listed path that does not exist raises. The list is the one declaration two
+    enumerators read, so a renamed unit that silently stopped being excluded would leave
+    CMake and this walk disagreeing about what a build contains -- which is the failure
+    the single declaration exists to prevent, arriving by the back door.
+    """
+    paths = listing(repo_root, name)
+    for rel in paths:
+        if not (repo_root / rel).exists():
+            raise SystemExit(f"{name} names {rel}, which does not exist; the list is "
+                             f"read by CMake too and has to name the unit's current path")
+    return frozenset(paths)
+
+
+def kept_arm(rel: str, arms: tuple, selected: str) -> bool:
+    """Whether this impl unit survives one selection axis.
+
+    The same test as CMake's two `gse_select_*_impls`: a `.cpp` directly under an arm
+    directory belongs to that arm, and every arm but the selected one is dropped. A file
+    under no arm directory at all is under no choice and is kept by every configuration --
+    most of the engine's impl units are, which is why this asks whether a DECLARED arm
+    names the parent rather than whether the parent looks like a platform.
+    """
+    parent = PurePosixPath(rel).parent.name
+    return parent not in arms or parent == selected
 
 
 class Graph(NamedTuple):
@@ -99,6 +236,11 @@ class Graph(NamedTuple):
     # one. See `host_roots_of`.
     roots_of: dict
     unexported: tuple
+    # Module -> its implementation units for a wasm configuration, and the `.cpp` files
+    # that declared no module. Not nodes in the graph and not in any sweep: see
+    # `scan_impls` and `impls_of`.
+    impls: dict
+    undeclared_impls: tuple
     # A `.cppm` carrying no module declaration at all. Not a node in the graph, and
     # reported rather than dropped -- see `scan_interfaces`.
     undeclared: tuple
@@ -192,12 +334,109 @@ class Graph(NamedTuple):
                              f"{len(self.units_by_module)} modules were scanned")
         return self.paths(self.units_of(module))
 
+    def link_closure(self, module: str) -> tuple:
+        """Every interface unit a LINK of MODULE needs, as repo-relative paths.
+
+        Wider than `closure`, and the first engine link is what proved it has to be.
+        `closure` follows import edges, so for a dependency module it brings in the
+        partitions something in the closure imports and no others -- which is exactly
+        right for a translation question, because an interface nothing imports cannot
+        affect whether another interface compiles.
+
+        It is wrong for a link. An implementation unit of gse.gpu imports
+        `gse.gpu:command_dispatch` whether or not any interface does, and `.cpp` files
+        contribute no edges to this graph at all: `scan_requires` reads `*.cppm.ddi`, and
+        `scan_impls` reads a module declaration and nothing else. So the partition was
+        absent from the unit list, its BMI was whatever a previous run had left in the
+        shared module cache, and sixteen impl units were rejected with `import 'std' has
+        CRC mismatch` -- a measurement artifact of the driver, reported as though the
+        engine had sixteen more portability gaps than it has.
+
+        Hence: every unit of every module the closure reaches, to a fixpoint, since a
+        partition pulled in this way may name a module no other unit did. A module's own
+        units are already all of `closure`'s roots; this says the same of its
+        dependencies.
+        """
+        return self.paths(self.link_roots(module))
+
+    def link_roots(self, module: str) -> tuple:
+        """The unit list `link_closure` and `impls_of` are both derived from.
+
+        One derivation and not two, which is the whole reason this is its own function:
+        the interfaces a link compiles and the bodies it compiles are halves of one unit
+        list, and a module present in one half and absent from the other is precisely the
+        artifact `link_closure` exists to remove -- interfaces compiled with no bodies
+        behind them, reported as undefined symbols. Each half computing the set for
+        itself would agree today and only one of them would be updated.
+
+        The fixpoint is over modules because a partition pulled in by the widening may
+        name a module no other unit did. It adds no module to this engine as it stands --
+        all nine units it adds are partitions of modules already reached -- so the loop
+        runs twice and stops; it is here for the case that makes the two halves differ,
+        which is the case that would otherwise be silent.
+
+        Every PORTED_HOST_ROOT is a root here too, because the fixpoint cannot reach one
+        that only an implementation unit imports and `gse.winhttp` is exactly that: the
+        docstring above says `.cpp` files contribute no edges to this graph, and
+        `Http/Client.cpp` is the sole importer in the tree. Without this the wrapper is in
+        neither half -- not short-circuited as host-bound, since it is named as ported,
+        and not offered either -- so its one consumer is rejected for a BMI nobody was
+        ever going to build. Naming them unconditionally also keeps membership in that
+        list meaning what it says it means: the file is compiled every run, so the row is
+        a measurement rather than an argument.
+        """
+        reached = {module_of(logical)
+                   for logical in self.order(self.units_of(module))}
+        reached |= {root for root in PORTED_HOST_ROOTS
+                    if root in self.units_by_module}
+        while True:
+            roots = tuple(logical for m in sorted(reached)
+                          for logical in self.units_of(m))
+            grown = {module_of(logical) for logical in self.order(roots)}
+            if grown == reached:
+                return roots
+            reached = grown
+
+    def impls_of(self, module: str) -> tuple:
+        """Every implementation unit needed to LINK MODULE, as repo-relative paths.
+
+        `closure` is the other half and comes first: these are compiled after every
+        interface unit, because a plain implementation unit of gse.x can only be compiled
+        once gse.x has a BMI, and the whole closure has to exist for that to be true of
+        all of them at once.
+
+        Over `link_roots` and not `units_of`, so that the bodies cover exactly the
+        modules whose interfaces `link_closure` compiles. See that function: a module in
+        one half and not the other is an artifact, not a measurement.
+
+        Ordered by their module's position in that list, which is topological, and by path
+        within a module. Nothing in this tree needs that order -- no unit imports an
+        implementation partition, so there are no edges among these at all -- but an order
+        derived from the one that is already correct costs nothing and is the one that
+        stays correct if something does.
+
+        Repeats `closure`'s refusal on an unknown module for its reason: an empty list
+        makes a link compile zero bodies and report every symbol undefined, which is a red
+        measuring nothing where `closure`'s was a green measuring nothing.
+        """
+        if module not in self.units_by_module:
+            raise SystemExit(f"no module named {module} in the engine's graph; "
+                             f"{len(self.units_by_module)} modules were scanned")
+        ordered, seen = [], set()
+        for logical in self.order(self.link_roots(module)):
+            owner = module_of(logical)
+            if owner in seen:
+                continue
+            seen.add(owner)
+            ordered.extend(sorted(self.impls.get(owner, ())))
+        return tuple(ordered)
+
     def sweep_order(self) -> tuple:
         """Every interface unit in the engine, dependencies first."""
         return self.order(sorted(self.path_of))
 
     def is_host_root(self, logical: str) -> bool:
-        return self.path_of[logical].startswith(HOST_DIR)
+        return wraps_host(logical, self.path_of[logical])
 
     def host_chain(self, module: str) -> list:
         """The shortest import chain from MODULE to a host root, or [] if there is none.
@@ -320,9 +559,16 @@ def scan_interfaces(repo_root: Path) -> tuple:
     pattern, so neither is mistaken for a declaration.
     """
     path_of, unexported, undeclared = {}, [], []
+    excluded = path_listing(repo_root, NATIVE_GPU_BACKEND_LIST)
     for root in INTERFACE_ROOTS:
         for source in sorted((repo_root / root).rglob(SOURCE_SUFFIX)):
             rel = source.relative_to(repo_root).as_posix()
+            # Before the node exists, which is the only place it can go. Dropping the
+            # unit later would report it as `undeclared`, and dropping only its edges
+            # would leave it in `path_of` for the staleness join to demand a scan entry
+            # for a unit this configuration does not build.
+            if rel in excluded:
+                continue
             with open(source, "r", encoding="utf-8", errors="replace") as f:
                 found = next(filter(None, map(MODULE_DECL.match, f)), None)
             if found is None:
@@ -337,6 +583,49 @@ def scan_interfaces(repo_root: Path) -> tuple:
             if not exported:
                 unexported.append(logical)
     return path_of, tuple(unexported), tuple(undeclared)
+
+
+def scan_impls(repo_root: Path) -> tuple:
+    """Module -> its implementation units for a wasm configuration; the undeclared ones.
+
+    Keyed by MODULE and not by logical name, which is the one structural difference from
+    `scan_interfaces`. An interface unit's logical name identifies it -- declaring one
+    twice is the error that function raises on -- while a plain implementation unit says
+    only `module gse.graphics;`, and there are a dozen of those per large module. So
+    `gse.x:y_impl` and a nameless body of `gse.x` are both simply gse.x's, and the
+    duplicate check cannot be made here.
+
+    The selection is CMake's, through the three data files rather than through a second
+    copy of its tests: the exclusions first, because a unit no configuration compiles is
+    not an arm of anything, then one `kept_arm` per axis. Nothing is ordered here; see
+    `impls_of`.
+
+    A `.cpp` declaring no module is returned rather than dropped, for `scan_interfaces`'
+    reason pointed the other way: it is a real translation unit of this engine that this
+    walk cannot place, and a link built from a silently shortened list fails as a missing
+    symbol -- the loudest possible symptom with its cause erased, in the one arm whose
+    entire output is a list of missing symbols.
+    """
+    excluded = (path_listing(repo_root, EXCLUDED_IMPLS_LIST)
+                | path_listing(repo_root, NATIVE_GPU_BACKEND_LIST))
+    platform_arms = listing(repo_root, PLATFORM_ARMS_LIST)
+    backend_arms = listing(repo_root, BACKEND_ARMS_LIST)
+    impls, undeclared = collections.defaultdict(list), []
+    for root in INTERFACE_ROOTS:
+        for source in sorted((repo_root / root).rglob(IMPL_SUFFIX)):
+            rel = source.relative_to(repo_root).as_posix()
+            if rel in excluded:
+                continue
+            if not (kept_arm(rel, platform_arms, WASM_PLATFORM_ARM)
+                    and kept_arm(rel, backend_arms, WASM_BACKEND_ARM)):
+                continue
+            with open(source, "r", encoding="utf-8", errors="replace") as f:
+                found = next(filter(None, map(MODULE_DECL.match, f)), None)
+            if found is None:
+                undeclared.append(rel)
+                continue
+            impls[found.group(2)].append(rel)
+    return {k: tuple(v) for k, v in impls.items()}, tuple(undeclared)
 
 
 def scan_requires(build: Path) -> dict:
@@ -386,6 +675,7 @@ def scan() -> Graph:
     """The graph, joined on the logical name, with both halves of the join reported."""
     chosen = config_dir(REPO_ROOT)
     path_of, unexported, undeclared = scan_interfaces(REPO_ROOT)
+    impls, undeclared_impls = scan_impls(REPO_ROOT)
     requires = scan_requires(chosen)
     stale = tuple(sorted(logical for logical in path_of if logical not in requires))
     unresolved = {logical: tuple(sorted(req for req in needs if req not in path_of))
@@ -403,11 +693,12 @@ def scan() -> Graph:
                         if module_of(req) != module and module_of(req) in units_by_module}
                for module, units in units_by_module.items()}
     is_root = {module for module, units in units_by_module.items()
-               if any(path_of[logical].startswith(HOST_DIR) for logical in units)}
+               if any(wraps_host(logical, path_of[logical]) for logical in units)}
     return Graph(build=chosen, path_of=path_of, units_by_module=units_by_module,
                  requires={k: v for k, v in requires.items() if k in path_of},
                  roots_of=host_roots(units_by_module, imports, is_root),
-                 unexported=unexported, undeclared=undeclared,
+                 unexported=unexported, impls=impls,
+                 undeclared_impls=undeclared_impls, undeclared=undeclared,
                  stale_interfaces=stale,
                  unresolved={k: v for k, v in unresolved.items() if v})
 
@@ -456,13 +747,25 @@ def main() -> None:
         print("\nedges naming something no interface on disk provides:")
         for logical, names in sorted(graph.unresolved.items()):
             print(f"  {logical:44} {', '.join(names)}")
+    if graph.undeclared_impls:
+        print(f"\n{len(graph.undeclared_impls)} .cpp files declare no module, so no "
+              f"module's link enumerates them:")
+        for path in graph.undeclared_impls:
+            print(f"  {path}")
 
-    if len(sys.argv) > 1:
-        for module in sys.argv[1:]:
+    args = [arg for arg in sys.argv[1:] if arg != "--impls"]
+    if args:
+        impls = "--impls" in sys.argv[1:]
+        for module in args:
             print(f"\n== {module}: {len(graph.closure(module))} interface units, "
                   f"in compile order ==")
             for path in graph.closure(module):
                 print(f"  {path}")
+            if impls:
+                print(f"\n== {module}: {len(graph.impls_of(module))} implementation "
+                      f"units for a wasm link, after all of the above ==")
+                for path in graph.impls_of(module):
+                    print(f"  {path}")
         return
 
     print("\n== host frontier ==")

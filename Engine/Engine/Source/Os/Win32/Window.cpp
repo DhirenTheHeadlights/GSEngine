@@ -1623,7 +1623,7 @@ auto gse::window::tick(scheduler& sched, data& d) -> void {
 	if (++d.housekeeping_frame % housekeeping_interval_frames == 0) {
 		{
 			trace::scope_guard _{ trace_id<"window::clipboard">() };
-			clipboard::sync(to_hwnd(d.primary.handle));
+			clipboard::sync(d.primary.handle);
 		}
 
 		{
@@ -2022,14 +2022,6 @@ auto gse::window::sync_primary_geometry(data& d) -> void {
 	}
 }
 
-auto gse::window::frame_buffer_resized(window_surface& s) -> bool {
-	if (s.framebuffer_resized) {
-		s.framebuffer_resized = false;
-		return true;
-	}
-	return false;
-}
-
 auto gse::window::create_secondary(data& d, const secondary_window_desc& desc) -> window_surface* {
 	auto surface = std::make_unique<window_surface>();
 	surface->id = generate_temp_id(stable_id(desc.title));
@@ -2051,16 +2043,6 @@ auto gse::window::create_secondary(data& d, const secondary_window_desc& desc) -
 	window_surface* raw = surface.get();
 	d.secondaries.push_back(std::move(surface));
 	return raw;
-}
-
-auto gse::window::find_surface(data& d, const id id) -> window_surface* {
-	if (!id.exists() || d.primary.id == id) {
-		return &d.primary;
-	}
-	const auto it = std::ranges::find_if(d.secondaries, [id](const auto& held) {
-		return held->id == id;
-	});
-	return it == d.secondaries.end() ? nullptr : it->get();
 }
 
 auto gse::window::destroy_secondary(data& d, window_surface* surface) -> void {

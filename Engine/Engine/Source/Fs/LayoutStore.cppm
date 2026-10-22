@@ -6,7 +6,6 @@ import gse.log;
 import gse.math;
 import gse.meta;
 import gse.time;
-import gse.win32;
 import std;
 
 export namespace gse::layout_store {
@@ -125,6 +124,8 @@ namespace gse::layout_store {
 		const std::filesystem::path& path,
 		std::string_view content
 	) -> void;
+
+	auto temp_suffix() -> std::string;
 
 	auto merged(
 		const std::filesystem::path& path,
@@ -405,7 +406,7 @@ auto gse::layout_store::write_disk(const std::filesystem::path& path, const std:
 	}
 
 	std::filesystem::path temp = path;
-	temp += std::format(".{}.tmp", win32::GetCurrentProcessId());
+	temp += std::format(".{}.tmp", temp_suffix());
 	const auto _ = make_scope_exit([&temp] {
 		std::error_code remove_ec;
 		std::filesystem::remove(temp, remove_ec);

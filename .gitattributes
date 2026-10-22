@@ -4,3 +4,20 @@
 # integrity check fails. Keep the whole vendored GCC recipe LF on every platform.
 Tools/gcc-toolchain/recipe/** text eol=lf
 Tools/gcc-toolchain/recipe/PKGBUILD text eol=lf
+
+# The same hazard one directory over, and it bites harder: build_gcc_wasm.py's
+# apply_patches keys its stamp on a patch's bytes and refuses to re-apply a changed one,
+# naming "delete that source tree" as the fix. A Windows checkout rewriting these to CRLF
+# changes every digest, so the script demands a multi-hour toolchain rebuild for a patch
+# series that is in fact already applied -- and a CRLF patch against GCC's LF sources is
+# a rejected hunk waiting to happen on a clean clone.
+Tools/gcc-toolchain/wasm/** text eol=lf
+
+# CMake's file(STRINGS) keeps a trailing carriage return, so a CRLF checkout of this list
+# yields paths that fail EXISTS. Both readers strip their lines, which makes this a pin
+# rather than the fix -- but a data file two build systems parse has no reason to carry
+# platform line endings.
+Engine/cmake/native_gpu_backend_units.txt text eol=lf
+Engine/cmake/platform_impl_arms.txt text eol=lf
+Engine/cmake/gpu_profile_backend_arms.txt text eol=lf
+Engine/cmake/excluded_impl_units.txt text eol=lf

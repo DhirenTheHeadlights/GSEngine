@@ -3,6 +3,7 @@ export module gse.gpu;
 export import gse.gpu_backend;
 export import :sync_token;
 export import :gpu_task;
+export import :device_contract;
 export import :device;
 export import :video_encoder;
 export import :swap_chain;

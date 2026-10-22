@@ -1,6 +1,8 @@
 module gse.concurrency:task_impl;
 
+#ifdef _WIN32
 import gse.win32;
+#endif
 
 import :task;
 

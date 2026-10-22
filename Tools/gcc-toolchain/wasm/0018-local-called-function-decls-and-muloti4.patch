@@ -1,0 +1,259 @@
+A declaration for a called function, and __muloti4.
+
+Two unrelated link blockers, together because they want the same rebuild.
+
+The first is the last thing standing between this port and a linked engine
+module, and it is 0013 one layer further out.  A module that defines an
+`inline thread_local' makes every unit that touches the variable emit two
+comdat symbols -- the variable itself and the `_ZTW' access wrapper -- while
+the `_ZTH' init function those wrappers call is emitted once, in the module
+interface's own object, as an alias to that translation unit's `__tls_init'.
+That is correct, and it links.  What does not work is the declaration: the
+front end builds the `_ZTH' decl with DECL_EXTERNAL copied from the *variable*
+(cp/decl2.cc, get_tls_init_fn), which is false in a unit that defines the
+variable -- so assemble_external declines it, ASM_OUTPUT_EXTERNAL never fires,
+and the call is emitted naming a symbol the assembler has never been told
+about.  llvm-mc rejects the unit outright: `missing .functype'.
+
+Fixed on the target side rather than in the front end, because the backend
+already carries exactly this repair one case over.  A function's address
+*stored in data* reaches wasm_assemble_integer, which asks for the declaration
+there for the same reason; a function named in the instruction stream had no
+such site.  Both go through the undefined-decl hook so one place derives a
+signature, and both it and declare_func are idempotent, so a function defined
+in the unit is unaffected.  Guarded on the symbol having a FUNCTION_DECL, so
+it cannot fire for data.
+
+Measured: Engine/Engine/Source/Diag/Trace.cpp was the one unit of 497 that
+llvm-mc refused, on `call _ZTHN3gse5traceW3gseW4diag3tlsE' at link-0389.s:11568,
+and the eight undefined `gse::trace::*' symbols in that link were that unit's
+own contents.  Trace.cppm's object already carried both the definition and a
+correct `.functype' for it, through the alias path of 0007 -- so this adds a
+declaration for a definition that exists, and does not paper over a missing one.
+
+The second is __muloti4, which is __multi3's story exactly and was found the
+same way: wasi-libc's clock_nanosleep.c calls it, this compiler can never emit
+a call to a TImode routine, and the symbol is undefined in any link whose
+program can sleep -- whether or not that program ever reaches the call.  The
+ABI is read off the calling object rather than assumed, and the overflow half
+is computed from a full 256-bit product rather than by the division compiler-rt
+uses, which would have meant writing __udivti3 as well.  See muloti4.c.
+
+Measured: the signature matches the import in clock_nanosleep.c.obj, and the
+arithmetic was checked against __int128 on the host over all 361 pairs of a
+boundary set built around MIN, MAX and the powers of two either side of each
+word edge, plus four million random pairs across the whole magnitude range --
+product and overflow flag both, zero mismatches.
+
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -1210,6 +1210,31 @@
+ 	    break;
+ 	  }
+ 
++	/* A function named in the instruction stream, which is a `call's callee
++	   and the one remaining way to reach a function without saying anything
++	   about it.  The data case above asks for the declaration when a
++	   function's address is *stored*; this is the same requirement when it
++	   is called or its address is pushed, and a `call' is rejected outright
++	   unless the callee's signature is already in scope.
++
++	   The gap it closes is narrow and was invisible until a module defined a
++	   thread-local: a consumer emits the comdat TLS wrapper, which calls the
++	   `_ZTH' init function, and the front end builds that decl with
++	   DECL_EXTERNAL copied from the *variable* (cp/decl2.cc, get_tls_init_fn)
++	   -- false, because the variable is defined right here.  assemble_external
++	   declines a decl that is not DECL_EXTERNAL, so ASM_OUTPUT_EXTERNAL never
++	   fires, and the call goes out naming a symbol the assembler has not been
++	   told about.  The definition is real and lives in the module interface's
++	   own object, as an alias to its `__tls_init'; only the declaration was
++	   missing.  Same shape as 0013, one layer further out.
++
++	   Routed through the undefined-decl hook for the same reason the data
++	   case gives: one place derives a signature, and both it and declare_func
++	   are idempotent, so a function defined in this unit is unaffected.  */
++	if (SYMBOL_REF_P (op) && SYMBOL_REF_DECL (op)
++	    && TREE_CODE (SYMBOL_REF_DECL (op)) == FUNCTION_DECL)
++	  wasm_handle_import (stream, XSTR (op, 0), SYMBOL_REF_DECL (op));
++
+ 	if (mode == 'i')
+ 	  fprintf (stream, "i32.const\t");
+ 
+--- a/libgcc/config/wasm/muloti4.c
++++ b/libgcc/config/wasm/muloti4.c
+@@ -0,0 +1,164 @@
++/* 128-bit signed multiply with overflow detection for WebAssembly, for
++   compatibility with clang-built objects.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++/* Nothing this compiler emits calls this, for the reason multi3.c states at
++   length: TImode is vetoed, so GCC's wasm32 has no __int128 and generates no
++   call to a TImode routine.  It is here for the same reason as __multi3 and
++   found the same way -- wasi-libc's clock_nanosleep.c calls it, from the
++   overflow-checked timespec arithmetic, and that object is pulled into any
++   link whose program can sleep.  Whether a given program ever *reaches* the
++   call is beside the point: the symbol is undefined at link time either way.
++
++   THE SIGNATURE IS MEASURED, NOT ASSUMED, as multi3.c insists.  Read off the
++   object that calls it, by decoding its type and import sections:
++
++     import env.__muloti4: type[1] (i32, i64, i64, i64, i64, i32) -> ()
++
++   which is clang's wasm32 ABI for `ti_int __muloti4 (ti_int, ti_int, int *)':
++   the result comes back through a pointer the caller passes first, each
++   128-bit argument is two i64s low word first, and the overflow flag is the
++   trailing out-parameter.  That is __multi3's ABI with one pointer appended,
++   as it should be.  Getting it wrong would not be quiet -- wasm-ld compares an
++   undefined symbol's signature against the definition and says `function
++   signature mismatch'.
++
++   The overflow half is the part that could be wrong *quietly*, which is what
++   multi3.c's warning about dropped carries was about.  compiler-rt computes it
++   by dividing MAX by the smaller magnitude; that needs 128-bit division, which
++   would mean writing __udivti3 as well.  This instead forms the full 256-bit
++   product of the magnitudes in four 64-bit limbs and asks whether it fits,
++   which needs nothing wider than the target has and no second routine.  The
++   bound is asymmetric because two's complement is: a negative result may reach
++   2^127 exactly, a positive one may not.
++
++   Checked against __int128 on the build host rather than by a probe here, for
++   the reason the probe table could not do it: nothing this compiler emits
++   calls this routine, so there is no wasm32 program that exercises it short of
++   hand-writing the call.  The reference is compiler-rt's algorithm, the subject
++   is every pair drawn from a boundary set built around MIN, MAX and the powers
++   of two either side of each word edge, plus four million random pairs spread
++   across the magnitude range, and both the product and the flag are compared.
++   The boundary pairs are the point: MIN has no special case here, where
++   compiler-rt needs three, and those are the inputs an implementation gets
++   wrong.  */
++
++#include "tconfig.h"
++#include "tsystem.h"
++#include "coretypes.h"
++#include "tm.h"
++
++typedef unsigned long long uint64;
++
++/* The low and high halves of a 64x64 -> 128 product, from four 32-bit partial
++   products.  Identical to multi3.c's; see the comment there on the carry out
++   of the two middle products, which is the classic way this goes wrong.  */
++
++static uint64
++umul_lo_hi (uint64 a, uint64 b, uint64 *hi)
++{
++  uint64 a_lo = a & 0xffffffffULL, a_hi = a >> 32;
++  uint64 b_lo = b & 0xffffffffULL, b_hi = b >> 32;
++
++  uint64 ll = a_lo * b_lo;
++  uint64 lh = a_lo * b_hi;
++  uint64 hl = a_hi * b_lo;
++  uint64 hh = a_hi * b_hi;
++
++  uint64 mid = lh + hl;
++  uint64 mid_carry = (mid < lh) ? (1ULL << 32) : 0;
++
++  uint64 lo = ll + (mid << 32);
++  uint64 lo_carry = (lo < ll) ? 1 : 0;
++
++  *hi = hh + (mid >> 32) + mid_carry + lo_carry;
++  return lo;
++}
++
++/* The magnitude of the 128-bit two's-complement value (LO, HI), and whether it
++   was negative.  -MIN is MIN in two's complement, but its magnitude as an
++   unsigned 128-bit quantity is 2^127, which is what this returns and what lets
++   the bound below handle MIN without a special case.  */
++
++static int
++magnitude (uint64 *lo, uint64 *hi)
++{
++  if (!(*hi >> 63))
++    return 0;
++
++  uint64 n_lo = ~*lo + 1;
++  *hi = ~*hi + (n_lo == 0 ? 1 : 0);
++  *lo = n_lo;
++  return 1;
++}
++
++void
++__muloti4 (uint64 *result, uint64 a_lo, uint64 a_hi, uint64 b_lo, uint64 b_hi,
++	   int *overflow)
++{
++  /* The truncated product, which is the same bit pattern whether the operands
++     are read as signed or unsigned, so it is taken from them unchanged.  */
++  uint64 hi;
++  uint64 lo = umul_lo_hi (a_lo, b_lo, &hi);
++  hi += a_lo * b_hi + a_hi * b_lo;
++
++  result[0] = lo;
++  result[1] = hi;
++
++  /* The full 256-bit product of the magnitudes, in four limbs.  Nothing is
++     discarded here, unlike above: the discarded part is precisely what decides
++     the question.  */
++  int a_negative = magnitude (&a_lo, &a_hi);
++  int b_negative = magnitude (&b_lo, &b_hi);
++  int negative = a_negative ^ b_negative;
++
++  uint64 ll_hi, lh_hi, hl_hi, hh_hi;
++  uint64 ll_lo = umul_lo_hi (a_lo, b_lo, &ll_hi);
++  uint64 lh_lo = umul_lo_hi (a_lo, b_hi, &lh_hi);
++  uint64 hl_lo = umul_lo_hi (a_hi, b_lo, &hl_hi);
++  uint64 hh_lo = umul_lo_hi (a_hi, b_hi, &hh_hi);
++
++  uint64 p0 = ll_lo;
++
++  uint64 c1 = 0;
++  uint64 p1 = ll_hi;
++  p1 += lh_lo; if (p1 < lh_lo) c1++;
++  p1 += hl_lo; if (p1 < hl_lo) c1++;
++
++  uint64 c2 = 0;
++  uint64 p2 = hh_lo;
++  p2 += lh_hi; if (p2 < lh_hi) c2++;
++  p2 += hl_hi; if (p2 < hl_hi) c2++;
++  p2 += c1;    if (p2 < c1) c2++;
++
++  uint64 p3 = hh_hi + c2;
++
++  /* A signed 128-bit result holds magnitudes up to 2^127 - 1 when positive and
++     2^127 when negative, so anything above the low 127 bits overflows, with
++     the one exact value 2^127 permitted to a negative result.  */
++  int above_127 = (p3 | p2 | (p1 >> 63)) != 0;
++  int exactly_2_127 = (p3 == 0 && p2 == 0 && p1 == (1ULL << 63) && p0 == 0);
++
++  *overflow = above_127 && !(negative && exactly_2_127);
++}
+--- a/libgcc/config/wasm/t-wasm
++++ b/libgcc/config/wasm/t-wasm
+@@ -15,3 +15,8 @@
+ # __muldi3 at LIBGCC2_UNITS_PER_WORD 8 needs TImode, and the expanders ICE on
+ # it.  See multi3.c.
+ LIB2ADD += $(srcdir)/config/wasm/multi3.c
++
++# __muloti4, on the same terms and found the same way: wasi-libc's
++# clock_nanosleep.c calls it, so it is undefined in any link whose program can
++# sleep.  See muloti4.c.
++LIB2ADD += $(srcdir)/config/wasm/muloti4.c

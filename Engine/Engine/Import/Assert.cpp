@@ -4,7 +4,6 @@ import std;
 
 import gse.log;
 import gse.stacktrace;
-import gse.win32;
 
 namespace gse {
 	std::atomic<fatal_reporter> installed_fatal_reporter = nullptr;
@@ -38,9 +37,7 @@ auto gse::arm_fatal_report_watchdog() -> void {
 }
 
 auto gse::fatal_exit(const int code) noexcept -> void {
-	if (win32::IsDebuggerPresent()) {
-		win32::DebugBreak();
-	}
+	break_into_debugger();
 	std::_Exit(code);
 }
 

@@ -13,23 +13,22 @@ file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm")
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
+gse_drop_native_gpu_backend_units(ENGINE_MODULES)
+
+find_package(unofficial-nsight-perf CONFIG QUIET)
+if(TARGET unofficial::nsight-perf::nsight-perf)
+    set(GSE_GPU_PROFILE_BACKEND "Nvidia")
+else()
+    set(GSE_GPU_PROFILE_BACKEND "Null")
+endif()
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
-list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+gse_drop_excluded_impls(ENGINE_IMPLS)
+gse_drop_native_gpu_backend_units(ENGINE_IMPLS)
+gse_select_platform_impls(ENGINE_IMPLS)
+gse_select_backend_impls(ENGINE_IMPLS "${GSE_GPU_PROFILE_BACKEND}")
 
-# A .cpp that declares an implementation partition (module gse.x:y;) provides a
-# module and must live in a CXX_MODULES file set; a plain implementation unit
-# (module gse.x;) or global-module .cpp stays an ordinary source.
-set(ENGINE_MODULE_IMPLS "")
-set(ENGINE_PLAIN_IMPLS "")
-foreach(_impl IN LISTS ENGINE_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_0-9]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
-    if(_part_decl)
-        list(APPEND ENGINE_MODULE_IMPLS "${_impl}")
-    else()
-        list(APPEND ENGINE_PLAIN_IMPLS "${_impl}")
-    endif()
-endforeach()
+gse_split_module_impls(ENGINE_IMPLS ENGINE_MODULE_IMPLS ENGINE_PLAIN_IMPLS)
 
 add_library(Engine)
 
@@ -65,7 +64,6 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan)
 find_package(unofficial-nsight-aftermath CONFIG QUIET)
-find_package(unofficial-nsight-perf CONFIG QUIET)
 
 add_library(VulkanModule STATIC)
 target_sources(VulkanModule PUBLIC
@@ -203,6 +201,29 @@ target_sources(EngineServer
             "${CMAKE_CURRENT_SOURCE_DIR}/Server/Application.cppm"
             "${CMAKE_CURRENT_SOURCE_DIR}/Server/Server.cppm"
 )
+# Its console handling is platform-armed like the engine's own, so the same two rules run
+# over this target: one arm of each platform choice is kept, and a .cpp declaring an
+# implementation partition goes in a CXX_MODULES file set rather than among the plain
+# sources. Both arms of Server/Console.cpp declare gse.server:console_impl, so the second
+# rule is not optional here -- a provider among the plain sources configures and scans
+# cleanly and then fails dyndep collation, with no compiler diagnostic to show for it.
+file(GLOB_RECURSE ENGINE_SERVER_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Server/*.cpp")
+gse_select_platform_impls(ENGINE_SERVER_IMPLS)
+gse_split_module_impls(ENGINE_SERVER_IMPLS ENGINE_SERVER_MODULE_IMPLS ENGINE_SERVER_PLAIN_IMPLS)
+
+if(ENGINE_SERVER_MODULE_IMPLS)
+    target_sources(EngineServer
+        PRIVATE
+            FILE_SET gse_server_module_impls TYPE CXX_MODULES
+            BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server"
+            FILES ${ENGINE_SERVER_MODULE_IMPLS}
+    )
+endif()
+
+if(ENGINE_SERVER_PLAIN_IMPLS)
+    target_sources(EngineServer PRIVATE ${ENGINE_SERVER_PLAIN_IMPLS})
+endif()
+
 target_link_libraries(EngineServer PUBLIC Engine)
 
 # Code tooling: lexing, highlighting, compiler diagnostics, formatting, completion and its

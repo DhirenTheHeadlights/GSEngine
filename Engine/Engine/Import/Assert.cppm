@@ -48,6 +48,8 @@ namespace gse {
 		std::source_location loc,
 		std::string_view comment
 	) noexcept -> void;
+
+	auto break_into_debugger() noexcept -> void;
 }
 
 template <class... Args>

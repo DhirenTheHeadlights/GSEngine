@@ -6,7 +6,9 @@ import :alloc_track;
 
 import gse.log;
 import gse.math;
+#ifdef _WIN32
 import gse.win32;
+#endif
 
 namespace gse::alloc {
 	constexpr std::size_t site_capacity = 1u << 13;

@@ -14,19 +14,7 @@ file(GLOB_RECURSE SANDBOX_MODULES CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cppm")
 file(GLOB_RECURSE SANDBOX_IMPLS CONFIGURE_DEPENDS "${SANDBOX_DIR}/*.cpp")
 list(REMOVE_ITEM SANDBOX_IMPLS "${MAIN_CPP}")
 
-# A .cpp that declares an implementation partition (module sandbox:y;) provides a
-# module and must live in a CXX_MODULES file set; a plain implementation unit
-# (module sandbox;) or global-module .cpp stays an ordinary source.
-set(SANDBOX_MODULE_IMPLS "")
-set(SANDBOX_PLAIN_IMPLS "")
-foreach(_impl IN LISTS SANDBOX_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module sandbox:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
-    if(_part_decl)
-        list(APPEND SANDBOX_MODULE_IMPLS "${_impl}")
-    else()
-        list(APPEND SANDBOX_PLAIN_IMPLS "${_impl}")
-    endif()
-endforeach()
+gse_split_module_impls(SANDBOX_IMPLS SANDBOX_MODULE_IMPLS SANDBOX_PLAIN_IMPLS)
 
 add_library(SandboxLib)
 

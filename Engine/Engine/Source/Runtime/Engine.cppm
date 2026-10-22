@@ -79,6 +79,9 @@ export namespace gse {
 		bool author_baked_assets = true;
 		bool dump_settings = false;
 		bool trace = true;
+		bool restart_on_device_lost = false;
+		bool restarted_after_device_lost = false;
+		bool simulate_device_lost = false;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
@@ -86,6 +89,7 @@ export namespace gse {
 		std::uint32_t parent_pid = 0;
 		std::uint32_t worker_threads = 0;
 		time exit_after{};
+		time init_stall_dump{};
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
 		bench_config bench;
@@ -212,6 +216,10 @@ export namespace gse {
 
 		auto install_actions() -> void;
 
+		auto handle_device_lost(
+			std::string_view cause
+		) -> void;
+
 		engine_config m_config;
 		scheduler m_scheduler;
 		save::registry m_save;
@@ -223,6 +231,7 @@ export namespace gse {
 		std::atomic<bool> m_boot_tasks_done = false;
 		std::size_t m_actions_revision = 0;
 		clock m_persist_clock;
+		clock m_uptime_clock;
 		std::uint32_t m_boot_init_baseline_settled = 0;
 		bool m_boot_init_baseline_captured = false;
 		bool m_settings_audited = false;

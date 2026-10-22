@@ -1,6 +1,5 @@
 module;
 
-#ifdef GSE_HAVE_NSIGHT_PERF
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <x86intrin.h>
@@ -13,31 +12,18 @@ module;
 #include <NvPerfPeriodicSamplerCommon.h>
 #include <NvPerfPeriodicSamplerGpu.h>
 #include <windows-desktop-x64/nvperf_host_impl.h>
-#endif
 
-module gse.nsight_perf;
+module gse.gpu_profile;
 
 import std;
 
 import gse.log;
 import gse.math;
-import gse.meta;
 
-namespace gse::nsight_perf {
-	std::atomic<session_status> current_status{ session_status::idle };
-	std::vector<std::string> active_metrics;
-	time active_interval;
-	std::vector<time_t<std::uint64_t>> sample_times;
-	std::vector<double> sample_values;
-	std::uint64_t decoded_samples = 0;
-	std::uint64_t skipped_windows = 0;
-	std::atomic<std::uint64_t> session_generation{ 0 };
+import :backend;
+import :session;
 
-	auto publish(
-		session_status status
-	) -> session_status;
-
-#ifdef GSE_HAVE_NSIGHT_PERF
+namespace gse::gpu_profile::backend {
 	constexpr std::uint32_t buffered_samples = 65536;
 
 	struct sdk_state {
@@ -81,13 +67,16 @@ namespace gse::nsight_perf {
 
 	auto initialize_sdk() -> session_status;
 
-	auto resolve_metrics() -> session_status;
+	auto resolve_metrics(
+		session_state& state
+	) -> session_status;
 
 	auto suggest_metric_names(
 		std::string_view rejected
 	) -> void;
 
 	auto build_config(
+		session_state& state,
 		std::uint32_t& passes
 	) -> session_status;
 
@@ -98,39 +87,17 @@ namespace gse::nsight_perf {
 	auto lock_clocks() -> void;
 
 	auto start_sdk_session(
+		session_state& state,
 		const session_settings& settings
 	) -> session_status;
 
-	auto stop_sdk_session() -> void;
-
 	auto skip_to_newest_records(
+		session_state& state,
 		std::size_t unread_bytes
 	) -> void;
-
-	auto decode_sdk_samples() -> void;
-#endif
 }
 
-auto gse::nsight_perf::publish(const session_status status) -> session_status {
-	current_status.store(status, std::memory_order_release);
-
-	if (status == session_status::running) {
-		return status;
-	}
-
-	const status_remedy remedy = annotation_from_enum(status, status_remedy{});
-	log::println(
-		log::level::warning,
-		log::category::gpu_perf,
-		"no hardware counters ({}): {}",
-		status,
-		std::string_view(remedy.text)
-	);
-	return status;
-}
-
-#ifdef GSE_HAVE_NSIGHT_PERF
-auto gse::nsight_perf::forward_sdk_log(
+auto gse::gpu_profile::backend::forward_sdk_log(
 	const char*,
 	const char*,
 	const char*,
@@ -154,7 +121,7 @@ auto gse::nsight_perf::forward_sdk_log(
 	);
 }
 
-auto gse::nsight_perf::route_sdk_logs() -> void {
+auto gse::gpu_profile::backend::route_sdk_logs() -> void {
 	static bool routed = false;
 	if (routed) {
 		return;
@@ -165,7 +132,7 @@ auto gse::nsight_perf::route_sdk_logs() -> void {
 	nv::perf::UserLogEnableCustom(&forward_sdk_log, nullptr);
 }
 
-auto gse::nsight_perf::map_status(const NVPA_Status status, const session_status fallback) -> session_status {
+auto gse::gpu_profile::backend::map_status(const NVPA_Status status, const session_status fallback) -> session_status {
 	switch (status) {
 		case NVPA_STATUS_INSUFFICIENT_PRIVILEGE:
 		case NVPA_STATUS_PROFILING_NOT_ALLOWED:
@@ -183,7 +150,7 @@ auto gse::nsight_perf::map_status(const NVPA_Status status, const session_status
 	}
 }
 
-auto gse::nsight_perf::report_sdk_failure(const std::string_view call, const NVPA_Status status) -> void {
+auto gse::gpu_profile::backend::report_sdk_failure(const std::string_view call, const NVPA_Status status) -> void {
 	const char* status_text = "";
 	const char* comment = "";
 	NVPW_NVPAStatusToString(status, &status_text, &comment);
@@ -197,7 +164,7 @@ auto gse::nsight_perf::report_sdk_failure(const std::string_view call, const NVP
 	);
 }
 
-auto gse::nsight_perf::initialize_sdk() -> session_status {
+auto gse::gpu_profile::backend::initialize_sdk() -> session_status {
 	route_sdk_logs();
 
 	NVPW_InitializeHost_Params host_params{ NVPW_InitializeHost_Params_STRUCT_SIZE };
@@ -234,7 +201,7 @@ auto gse::nsight_perf::initialize_sdk() -> session_status {
 	return session_status::running;
 }
 
-auto gse::nsight_perf::resolve_metrics() -> session_status {
+auto gse::gpu_profile::backend::resolve_metrics(session_state& state) -> session_status {
 	const auto identifiers = nv::perf::GetDeviceIdentifiers(sdk.device_index);
 	if (!identifiers.pChipName) {
 		return session_status::no_device;
@@ -249,11 +216,11 @@ auto gse::nsight_perf::resolve_metrics() -> session_status {
 	sdk.evaluator = nv::perf::MetricsEvaluator(evaluator, std::move(scratch));
 
 	std::vector<std::string> resolved;
-	resolved.reserve(active_metrics.size());
+	resolved.reserve(state.metrics.size());
 	sdk.requests.clear();
-	sdk.requests.reserve(active_metrics.size());
+	sdk.requests.reserve(state.metrics.size());
 
-	for (const auto& metric : active_metrics) {
+	for (const auto& metric : state.metrics) {
 		NVPW_MetricEvalRequest request{};
 		if (!nv::perf::ToMetricEvalRequest(sdk.evaluator, metric.c_str(), request)) {
 			log::println(
@@ -273,12 +240,12 @@ auto gse::nsight_perf::resolve_metrics() -> session_status {
 		return session_status::no_metrics;
 	}
 
-	active_metrics = std::move(resolved);
+	state.metrics = std::move(resolved);
 	sdk.evaluated.assign(sdk.requests.size(), 0.0);
 	return session_status::running;
 }
 
-auto gse::nsight_perf::suggest_metric_names(const std::string_view rejected) -> void {
+auto gse::gpu_profile::backend::suggest_metric_names(const std::string_view rejected) -> void {
 	constexpr std::size_t max_suggestions = 6;
 	const std::string_view base = rejected.substr(0, rejected.find('.'));
 
@@ -329,7 +296,7 @@ auto gse::nsight_perf::suggest_metric_names(const std::string_view rejected) -> 
 	}
 }
 
-auto gse::nsight_perf::metrics_fitting_one_pass(const char* const chip_name) -> std::size_t {
+auto gse::gpu_profile::backend::metrics_fitting_one_pass(const char* const chip_name) -> std::size_t {
 	for (std::size_t count = 1; count <= sdk.requests.size(); ++count) {
 		NVPW_RawCounterConfig* const raw_config =
 			nv::perf::sampler::DeviceCreateRawCounterConfig(chip_name);
@@ -353,7 +320,7 @@ auto gse::nsight_perf::metrics_fitting_one_pass(const char* const chip_name) -> 
 	return sdk.requests.size();
 }
 
-auto gse::nsight_perf::build_config(std::uint32_t& passes) -> session_status {
+auto gse::gpu_profile::backend::build_config(session_state& state, std::uint32_t& passes) -> session_status {
 	const auto identifiers = nv::perf::GetDeviceIdentifiers(sdk.device_index);
 	NVPW_RawCounterConfig* const raw_config =
 		nv::perf::sampler::DeviceCreateRawCounterConfig(identifiers.pChipName);
@@ -372,7 +339,7 @@ auto gse::nsight_perf::build_config(std::uint32_t& passes) -> session_status {
 				log::level::warning,
 				log::category::gpu_perf,
 				"the device refused metric {}",
-				active_metrics[i]
+				state.metrics[i]
 			);
 			return session_status::config_needs_replay;
 		}
@@ -386,14 +353,14 @@ auto gse::nsight_perf::build_config(std::uint32_t& passes) -> session_status {
 	passes = static_cast<std::uint32_t>(configuration.numPasses);
 	if (configuration.numPasses != 1) {
 		if (const auto fits = metrics_fitting_one_pass(identifiers.pChipName);
-			fits < active_metrics.size()) {
+			fits < state.metrics.size()) {
 			log::println(
 				log::level::warning,
 				log::category::gpu_perf,
 				"one pass holds the first {} of {} metrics; {} is the first that does not fit",
 				fits,
-				active_metrics.size(),
-				active_metrics[fits]
+				state.metrics.size(),
+				state.metrics[fits]
 			);
 		}
 		return session_status::config_needs_replay;
@@ -431,30 +398,30 @@ auto gse::nsight_perf::build_config(std::uint32_t& passes) -> session_status {
 	return session_status::running;
 }
 
-auto gse::nsight_perf::lock_clocks() -> void {
+auto gse::gpu_profile::backend::lock_clocks() -> void {
 	sdk.restore_clocks = nv::perf::GetDeviceClockState(sdk.device_index);
 	sdk.clocks_locked =
 		nv::perf::SetDeviceClockState(sdk.device_index, NVPW_DEVICE_CLOCK_SETTING_LOCK_TO_RATED_TDP);
 }
 
-auto gse::nsight_perf::start_sdk_session(const session_settings& settings) -> session_status {
+auto gse::gpu_profile::backend::start_sdk_session(session_state& state, const session_settings& settings) -> session_status {
 	sdk.device_index = settings.device_index;
 
 	if (const auto status = initialize_sdk(); status != session_status::running) {
 		return status;
 	}
-	if (const auto status = resolve_metrics(); status != session_status::running) {
+	if (const auto status = resolve_metrics(state); status != session_status::running) {
 		return status;
 	}
 
 	std::uint32_t passes = 0;
-	if (const auto status = build_config(passes); status != session_status::running) {
+	if (const auto status = build_config(state, passes); status != session_status::running) {
 		if (status == session_status::config_needs_replay && passes > 1) {
 			log::println(
 				log::level::warning,
 				log::category::gpu_perf,
 				"{} metrics need {} passes; the periodic sampler collects one",
-				active_metrics.size(),
+				state.metrics.size(),
 				passes
 			);
 		}
@@ -513,10 +480,10 @@ auto gse::nsight_perf::start_sdk_session(const session_settings& settings) -> se
 	log::println(
 		log::category::gpu_perf,
 		"sampling {} metrics on {} ({}) every {:.1f:us} in 1 pass, buffer {} samples ({}), clocks {}",
-		active_metrics.size(),
+		state.metrics.size(),
 		std::string_view(identifiers.pDeviceName ? identifiers.pDeviceName : "?"),
 		std::string_view(identifiers.pChipName ? identifiers.pChipName : "?"),
-		active_interval,
+		state.interval,
 		buffered_samples,
 		sdk.keep_latest ? "keep latest" : "keep oldest",
 		sdk.clocks_locked ? "locked to rated tdp" : "untouched"
@@ -524,7 +491,7 @@ auto gse::nsight_perf::start_sdk_session(const session_settings& settings) -> se
 	return session_status::running;
 }
 
-auto gse::nsight_perf::stop_sdk_session() -> void {
+auto gse::gpu_profile::backend::stop_session() -> void {
 	if (sdk.sampling) {
 		sdk.sampler.StopSampling();
 		sdk.sampling = false;
@@ -546,7 +513,7 @@ auto gse::nsight_perf::stop_sdk_session() -> void {
 	sdk.stall_reported = false;
 }
 
-auto gse::nsight_perf::skip_to_newest_records(const std::size_t unread_bytes) -> void {
+auto gse::gpu_profile::backend::skip_to_newest_records(session_state& state, const std::size_t unread_bytes) -> void {
 	nv::perf::sampler::GpuPeriodicSampler::GetRecordBufferStatusParams status_params{};
 	status_params.queryWriteOffset = true;
 	if (!sdk.sampler.GetRecordBufferStatus(status_params)) {
@@ -566,10 +533,10 @@ auto gse::nsight_perf::skip_to_newest_records(const std::size_t unread_bytes) ->
 	if (!sdk.sampler.AcknowledgeRecordBuffer(unread_bytes)) {
 		return;
 	}
-	++skipped_windows;
+	++state.skipped_windows;
 }
 
-auto gse::nsight_perf::decode_sdk_samples() -> void {
+auto gse::gpu_profile::backend::decode_samples(session_state& state) -> void {
 	nv::perf::sampler::GpuPeriodicSampler::GetRecordBufferStatusParams status_params{};
 	status_params.queryNumUnreadBytes = true;
 	status_params.queryOverflow = true;
@@ -584,7 +551,7 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 			log::category::gpu_perf,
 			"sample record buffer overflowed after {} samples; the driver stops recording until the session "
 			"restarts. raise Graphics.gpu_perf_metrics.interval",
-			decoded_samples
+			state.decoded_samples
 		);
 	}
 	if (status_params.numUnreadBytes == 0) {
@@ -602,7 +569,7 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 				status_params.totalSize
 			);
 		}
-		skip_to_newest_records(status_params.numUnreadBytes);
+		skip_to_newest_records(state, status_params.numUnreadBytes);
 		return;
 	}
 
@@ -633,7 +600,7 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 				static_cast<std::uint32_t>(stop_reason)
 			);
 		}
-		skip_to_newest_records(status_params.numUnreadBytes - consumed_bytes);
+		skip_to_newest_records(state, status_params.numUnreadBytes - consumed_bytes);
 		return;
 	}
 	if (!sdk.counter_data.UpdatePut()) {
@@ -646,8 +613,8 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 	}
 
 	const auto metric_count = sdk.requests.size();
-	sample_times.reserve(ranges);
-	sample_values.reserve(static_cast<std::size_t>(ranges) * metric_count);
+	state.times.reserve(ranges);
+	state.values.reserve(static_cast<std::size_t>(ranges) * metric_count);
 
 	std::uint32_t decoded = 0;
 	sdk.counter_data.ConsumeData(
@@ -667,8 +634,8 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 				)) {
 				return false;
 			}
-			sample_times.push_back(nanoseconds(stamp.start));
-			sample_values.insert(sample_values.end(), sdk.evaluated.begin(), sdk.evaluated.end());
+			state.times.push_back(nanoseconds(stamp.start));
+			state.values.insert(state.values.end(), sdk.evaluated.begin(), sdk.evaluated.end());
 			++decoded;
 			return true;
 		}
@@ -678,80 +645,23 @@ auto gse::nsight_perf::decode_sdk_samples() -> void {
 		return;
 	}
 	sdk.counter_data.UpdateGet(decoded);
-	decoded_samples += decoded;
+	state.decoded_samples += decoded;
 }
-#endif
 
-auto gse::nsight_perf::begin_session(const session_settings& settings) -> session_status {
-	end_session();
-
-	active_metrics.clear();
-	active_metrics.reserve(settings.metrics.size());
-	for (const std::string_view metric : settings.metrics) {
-		active_metrics.emplace_back(metric);
-	}
-	active_interval = settings.sampling_interval;
-	session_generation.fetch_add(1, std::memory_order_relaxed);
-
-#ifndef GSE_HAVE_NSIGHT_PERF
-	return publish(session_status::not_compiled_in);
-#else
-	if (active_metrics.empty()) {
-		return publish(session_status::no_metrics);
+auto gse::gpu_profile::backend::start_session(session_state& state, const session_settings& settings) -> session_status {
+	if (state.metrics.empty()) {
+		return session_status::no_metrics;
 	}
 
-	const auto status = start_sdk_session(settings);
+	const auto status = start_sdk_session(state, settings);
 	if (status != session_status::running) {
-		stop_sdk_session();
-		active_metrics.clear();
+		stop_session();
+		state.metrics.clear();
 	}
-	return publish(status);
-#endif
+	return status;
 }
 
-auto gse::nsight_perf::end_session() -> void {
-	if (current_status.exchange(session_status::idle, std::memory_order_acq_rel) == session_status::running) {
-		log::println(
-			log::category::gpu_perf,
-			"session ended after {} samples, {} windows dropped",
-			decoded_samples,
-			skipped_windows
-		);
-#ifdef GSE_HAVE_NSIGHT_PERF
-		stop_sdk_session();
-#endif
-	}
-
-	active_metrics.clear();
-	active_interval = {};
-	sample_times.clear();
-	sample_values.clear();
-	decoded_samples = 0;
-	skipped_windows = 0;
-}
-
-auto gse::nsight_perf::info() -> session_info {
-	const auto status = current_status.load(std::memory_order_acquire);
-	const auto generation = session_generation.load(std::memory_order_relaxed);
-	if (status != session_status::running) {
-		return {
-			.status = status,
-			.generation = generation,
-		};
-	}
-	return {
-		.status = status,
-		.generation = generation,
-		.metrics = active_metrics,
-		.sampling_interval = active_interval,
-	};
-}
-
-auto gse::nsight_perf::gpu_timestamp() -> std::optional<time_t<std::uint64_t>> {
-#ifdef GSE_HAVE_NSIGHT_PERF
-	if (current_status.load(std::memory_order_acquire) != session_status::running) {
-		return std::nullopt;
-	}
+auto gse::gpu_profile::backend::raw_gpu_timestamp() -> std::optional<time_t<std::uint64_t>> {
 	NVPW_GPU_PeriodicSampler_GetGpuTimestamp_Params params{
 		NVPW_GPU_PeriodicSampler_GetGpuTimestamp_Params_STRUCT_SIZE
 	};
@@ -760,23 +670,4 @@ auto gse::nsight_perf::gpu_timestamp() -> std::optional<time_t<std::uint64_t>> {
 		return std::nullopt;
 	}
 	return nanoseconds(params.timestamp);
-#else
-	return std::nullopt;
-#endif
-}
-
-auto gse::nsight_perf::decode() -> sample_window {
-	sample_times.clear();
-	sample_values.clear();
-
-#ifdef GSE_HAVE_NSIGHT_PERF
-	if (current_status.load(std::memory_order_acquire) == session_status::running) {
-		decode_sdk_samples();
-	}
-#endif
-
-	return {
-		.times = sample_times,
-		.values = sample_values,
-	};
 }

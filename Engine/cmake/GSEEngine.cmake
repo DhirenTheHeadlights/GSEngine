@@ -31,6 +31,170 @@ if(CMAKE_HOST_WIN32 AND EXISTS "$ENV{USERPROFILE}/.gcc-trunk/current/bin/x86_64-
     set(ENV{PATH} "${_gcc_trunk_bin};$ENV{PATH}")
 endif()
 
+# One of the data files under this directory, as a list of its meaningful lines.
+#
+# Every one of them is read by CMake and by Tools/module_graph.py both, which is what they
+# are for, so the two sides have to agree on what a line means as well as on which lines
+# there are: blanks and # comments are not entries, and a trailing carriage return is not
+# part of one. file(STRINGS) keeps the carriage return a CRLF checkout leaves, and a path
+# carrying one fails EXISTS silently while an arm name carrying one matches nothing -- the
+# first reports a renamed unit and the second drops no arm at all, both without a word.
+#
+# GSE_ENGINE_ROOT and not CMAKE_CURRENT_LIST_DIR: inside a function that is the CALLER's
+# listfile, so it would resolve to the consumer's directory and file(STRINGS) fails the
+# whole configure on a file it cannot open.
+function(_gse_read_listing name out_var)
+    set(_listing "${GSE_ENGINE_ROOT}/Engine/cmake/${name}")
+    file(STRINGS "${_listing}" _lines)
+    set(_entries "")
+    foreach(_line IN LISTS _lines)
+        string(STRIP "${_line}" _entry)
+        if(NOT _entry STREQUAL "" AND NOT _entry MATCHES "^#")
+            list(APPEND _entries "${_entry}")
+        endif()
+    endforeach()
+    set(${out_var} "${_entries}" PARENT_SCOPE)
+endfunction()
+
+# Repo-relative paths from one of those files, as absolute ones, with a missing path fatal.
+#
+# Fatal and not skipped, because the list is the one declaration two enumerators read: a
+# renamed unit that silently stopped being excluded leaves CMake and the wasm walk
+# disagreeing about what a build contains, which is the failure the single declaration
+# exists to prevent arriving by the back door. The check runs on every configuration
+# including the one that drops nothing, so the native build -- the only configuration
+# anyone here can run -- is what catches a stale list.
+function(_gse_read_path_listing name out_var)
+    _gse_read_listing("${name}" _rels)
+    set(_absolute "")
+    foreach(_rel IN LISTS _rels)
+        if(NOT EXISTS "${GSE_ENGINE_ROOT}/${_rel}")
+            message(FATAL_ERROR "${name} names ${_rel}, which does not exist. The list is the one declaration CMake and Tools/module_graph.py both read, so a renamed unit has to be renamed in it too.")
+        endif()
+        list(APPEND _absolute "${GSE_ENGINE_ROOT}/${_rel}")
+    endforeach()
+    set(${out_var} "${_absolute}" PARENT_SCOPE)
+endfunction()
+
+# Implementation units no configuration compiles on its own. See excluded_impl_units.txt.
+function(gse_drop_excluded_impls list_var)
+    _gse_read_path_listing("excluded_impl_units.txt" _excluded)
+    list(REMOVE_ITEM ${list_var} ${_excluded})
+    set(${list_var} "${${list_var}}" PARENT_SCOPE)
+endfunction()
+
+# An implementation-unit list split into the ones CMake must be told are module providers
+# and the ones it must not. A .cpp that declares an implementation partition
+# (`module gse.x:y;`, `module sandbox:y;`) PROVIDES a module and has to live in a
+# CXX_MODULES file set; a plain implementation unit (`module gse.x;`) or a global-module
+# .cpp is an ordinary source, and putting one in the file set is as wrong as leaving the
+# other out.
+#
+# One function because three targets need the rule -- Engine, SandboxLib and EngineServer
+# -- and it was written out twice before the third went without it. A provider handed to
+# target_sources as a plain source configures and scans cleanly and then fails in dyndep
+# collation, which is a `cmake -E` step: no compiler runs, so there is no diagnostic for a
+# build panel to parse and no object is produced anywhere. That is a failure mode worth
+# exactly one definition.
+#
+# The test is the declaration's SHAPE and not a module name, so this needs no argument
+# saying which module the caller's units belong to: a partition is a partition.
+function(gse_split_module_impls list_var module_impls_var plain_impls_var)
+    set(_module_impls "")
+    set(_plain_impls "")
+    foreach(_impl IN LISTS ${list_var})
+        file(STRINGS "${_impl}" _part_decl
+             REGEX "^module [A-Za-z_0-9.]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+        if(_part_decl)
+            list(APPEND _module_impls "${_impl}")
+        else()
+            list(APPEND _plain_impls "${_impl}")
+        endif()
+    endforeach()
+    set(${module_impls_var} "${_module_impls}" PARENT_SCOPE)
+    set(${plain_impls_var} "${_plain_impls}" PARENT_SCOPE)
+endfunction()
+
+# Platform implementation units live in a directory named after their platform, and
+# exactly one arm of each is compiled: Fs/Win32/LayoutStore.cpp and Fs/Web/LayoutStore.cpp
+# both define gse.fs:layout_store_impl, so offering the build both is a duplicate module.
+# There is one OS per binary, so the choice is the build's and not a runtime branch.
+#
+# The arm directory names come from platform_impl_arms.txt rather than from a literal list
+# here -- see that file. Which of them this configuration keeps does not: a native build
+# keeps Win32 and Native, every other keeps Web, and those are two different sentences
+# rather than one shared datum.
+#
+# Only .cpp is filtered, deliberately. The .cppm files under Os/Win32 are platform-neutral
+# interface partitions that merely sit in that directory -- :keys, :input, :window -- and
+# dropping them would break the native build.
+function(gse_select_platform_impls list_var)
+    _gse_read_listing("platform_impl_arms.txt" _arms)
+    if(WIN32)
+        set(_selected Win32 Native)
+    else()
+        set(_selected Web)
+    endif()
+    set(_kept "")
+    foreach(_source IN LISTS ${list_var})
+        set(_drop OFF)
+        foreach(_platform IN LISTS _arms)
+            if(NOT _platform IN_LIST _selected AND _source MATCHES "/${_platform}/[^/]+\\.cpp$")
+                set(_drop ON)
+            endif()
+        endforeach()
+        if(NOT _drop)
+            list(APPEND _kept "${_source}")
+        endif()
+    endforeach()
+    set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()
+
+# The same, on the axis of which GPU profiling backend this build has rather than which OS
+# it is for. Arm names from gpu_profile_backend_arms.txt; `selected` is the caller's, since
+# the SDK's presence is something only the configure can see.
+function(gse_select_backend_impls list_var selected)
+    _gse_read_listing("gpu_profile_backend_arms.txt" _arms)
+    set(_kept "")
+    foreach(_source IN LISTS ${list_var})
+        set(_drop OFF)
+        foreach(_backend IN LISTS _arms)
+            if(NOT _backend STREQUAL selected AND _source MATCHES "/${_backend}/[^/]+\\.cpp$")
+                set(_drop ON)
+            endif()
+        endforeach()
+        if(NOT _drop)
+            list(APPEND _kept "${_source}")
+        endif()
+    endforeach()
+    set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()
+
+# The other half of the same idea, one level up: a unit that exists only for a native GPU
+# backend. Unlike the two above there is no arm to swap in -- a configuration without a GPU
+# backend compiles none of them -- so this drops rather than selects, and the set is read
+# from native_gpu_backend_units.txt because Tools/module_graph.py has to drop exactly the
+# same units from the wasm sweep. See that file.
+#
+# Call it on the interface list and the impl list both: the list names .cppm and .cpp
+# alike, and REMOVE_ITEM on a list holding neither is simply a no-op.
+#
+# WIN32 is a no-op by construction: native compiles every listed unit, so the Vulkan/DX12
+# backend selection and gpu_dispatch are untouched by this.
+#
+# The reading, the stripping and the fatal-on-missing are _gse_read_path_listing's above,
+# which is where the four data files under this directory agree on what a line is. The
+# read happens before the WIN32 return so the native build -- the only configuration
+# anyone here can run -- is what catches a stale list.
+function(gse_drop_native_gpu_backend_units list_var)
+    _gse_read_path_listing("native_gpu_backend_units.txt" _excluded)
+    if(WIN32)
+        return()
+    endif()
+    list(REMOVE_ITEM ${list_var} ${_excluded})
+    set(${list_var} "${${list_var}}" PARENT_SCOPE)
+endfunction()
+
 function(gse_configure_compiler)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-freflection -fcontracts -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)

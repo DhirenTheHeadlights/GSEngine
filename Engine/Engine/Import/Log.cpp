@@ -8,22 +8,14 @@ import gse.config;
 import gse.meta;
 import gse.moodycamel;
 import gse.time;
-import gse.win32;
-import gse.win32.environment;
 import std;
 
 namespace gse::log {
 	auto log_file_path() -> std::filesystem::path;
 
-	auto console_output() -> bool;
-
 	auto timestamp_string() -> std::string;
 
 	auto current_thread_tag() -> std::uint64_t;
-
-	auto thread_display() -> std::string;
-
-	auto describe_os_thread() -> void;
 
 	auto should_flush(
 		level lvl
@@ -192,7 +184,7 @@ auto gse::log::instance() -> logger& {
 }
 
 auto gse::log::log_file_path() -> std::filesystem::path {
-	return config::logs_dir() / std::format("{}.{}.{}.log", config::executable_stem(), win32::GetCurrentProcessId(), system_clock::timestamp_filename());
+	return config::logs_dir() / std::format("{}.{}.{}.log", config::executable_stem(), process_id_text(), system_clock::timestamp_filename());
 }
 
 auto gse::log::timestamp_string() -> std::string {
@@ -239,10 +231,6 @@ auto gse::log::level_of(const category cat) -> level {
 
 auto gse::log::enabled(const level lvl, const category cat) -> bool {
 	return lvl >= category_levels[static_cast<std::size_t>(cat)].load(std::memory_order_relaxed);
-}
-
-auto gse::log::describe_os_thread() -> void {
-	win32::SetThreadDescription(win32::GetCurrentThread(), win32::widen(thread_display()).c_str());
 }
 
 auto gse::log::name_thread(const thread_role role) -> void {
@@ -367,11 +355,6 @@ auto gse::log::level_sgr(const level lvl) -> int {
 }
 
 gse::log::sink::~sink() = default;
-
-auto gse::log::console_output() -> bool {
-	static const bool console = win32::GetFileType(win32::GetStdHandle(win32::std_output_handle)) == win32::file_type_char;
-	return console;
-}
 
 auto gse::log::console_sink::write(const record& rec) -> void {
 	if (!console_enabled.load(std::memory_order_relaxed)) {

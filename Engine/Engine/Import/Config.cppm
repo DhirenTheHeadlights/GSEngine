@@ -116,3 +116,17 @@ export namespace gse::config {
 
 	auto captures_dir() -> const std::filesystem::path&;
 }
+
+namespace gse::config {
+	enum class known_directory : std::uint8_t {
+		roaming_app_data,
+		user_profile,
+		local_app_data,
+	};
+
+	auto executable_path() -> std::filesystem::path;
+
+	auto known_folder(
+		known_directory folder
+	) -> std::filesystem::path;
+}

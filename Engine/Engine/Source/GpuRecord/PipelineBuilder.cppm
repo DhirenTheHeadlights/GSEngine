@@ -6,7 +6,6 @@ import gse.assert;
 import gse.log;
 import gse.core;
 import gse.config;
-import gse.slang;
 
 import gse.gpu_backend;
 import gse.gpu;

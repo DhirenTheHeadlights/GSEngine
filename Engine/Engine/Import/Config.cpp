@@ -8,7 +8,6 @@ import std;
 
 import gse.assert;
 import gse.meta;
-import gse.win32;
 
 namespace gse::config {
 	constexpr int max_walk_up = 8;
@@ -48,8 +47,6 @@ namespace gse::config {
 		std::string_view text
 	) -> std::string_view;
 
-	auto executable_path() -> std::filesystem::path;
-
 	auto find_manifest(
 		const std::filesystem::path& start
 	) -> std::filesystem::path;
@@ -57,10 +54,6 @@ namespace gse::config {
 	auto read_file(
 		const std::filesystem::path& path
 	) -> std::string;
-
-	auto known_folder(
-		const win32::GUID& folder
-	) -> std::filesystem::path;
 
 	auto env_path(
 		const char* name
@@ -103,15 +96,6 @@ auto gse::config::trim(const std::string_view text) -> std::string_view {
 	return text.substr(begin, text.find_last_not_of(blanks) - begin + 1);
 }
 
-auto gse::config::executable_path() -> std::filesystem::path {
-	wchar_t buffer[win32::max_path]{};
-	const win32::DWORD length = win32::GetModuleFileNameW(nullptr, buffer, win32::max_path);
-	if (length == 0 || length >= win32::max_path) {
-		return {};
-	}
-	return { std::wstring_view(buffer, length) };
-}
-
 auto gse::config::find_manifest(const std::filesystem::path& start) -> std::filesystem::path {
 	std::filesystem::path directory = start;
 	for (int level = 0; level < max_walk_up; ++level) {
@@ -148,17 +132,6 @@ auto gse::config::manifest_value(const std::string_view text, const std::string_
 	return {};
 }
 
-auto gse::config::known_folder(const win32::GUID& folder) -> std::filesystem::path {
-	wchar_t* buffer = nullptr;
-	const auto status = win32::SHGetKnownFolderPath(folder, win32::kf_flag_default, nullptr, &buffer);
-	std::filesystem::path result;
-	if (status == 0) {
-		result = std::filesystem::path(std::wstring_view(buffer));
-	}
-	win32::CoTaskMemFree(buffer);
-	return result;
-}
-
 auto gse::config::env_path(const char* name) -> std::filesystem::path {
 	const char* value = std::getenv(name);
 	if (value == nullptr || *value == '\0') {
@@ -176,7 +149,7 @@ auto gse::config::env_flag(const char* name) -> bool {
 }
 
 auto gse::config::generic(const std::filesystem::path& value) -> std::filesystem::path {
-	return { value.generic_wstring() };
+	return { value.generic_string<std::filesystem::path::value_type>() };
 }
 
 auto gse::config::resolve() -> resolved {
@@ -199,11 +172,15 @@ auto gse::config::resolve() -> resolved {
 	const bool installed = active == run_mode::installed;
 
 	const std::filesystem::path build = manifest.parent_path();
-	const std::filesystem::path root = root_text.empty() ? build : std::filesystem::path(root_text);
+
+	std::filesystem::path root = env_path("GSE_ROOT_DIR");
+	if (root.empty()) {
+		root = root_text.empty() ? build : std::filesystem::path(root_text);
+	}
 
 	std::filesystem::path config_root = env_path("GSE_USER_DIR");
 	if (config_root.empty()) {
-		const std::filesystem::path appdata = known_folder(win32::FOLDERID_RoamingAppData);
+		const std::filesystem::path appdata = known_folder(known_directory::roaming_app_data);
 		if (appdata.empty()) {
 			fatal("could not resolve the roaming AppData folder");
 		}
@@ -212,7 +189,7 @@ auto gse::config::resolve() -> resolved {
 
 	std::filesystem::path projects = env_path("GSE_PROJECTS_DIR");
 	if (projects.empty()) {
-		const std::filesystem::path profile = known_folder(win32::FOLDERID_Profile);
+		const std::filesystem::path profile = known_folder(known_directory::user_profile);
 		if (profile.empty()) {
 			fatal("could not resolve the user profile folder");
 		}
@@ -229,7 +206,7 @@ auto gse::config::resolve() -> resolved {
 
 	std::filesystem::path state_root = env_path("GSE_STATE_DIR");
 	if (state_root.empty()) {
-		const std::filesystem::path local = known_folder(win32::FOLDERID_LocalAppData);
+		const std::filesystem::path local = known_folder(known_directory::local_app_data);
 		if (local.empty()) {
 			fatal("could not resolve the local AppData folder");
 		}

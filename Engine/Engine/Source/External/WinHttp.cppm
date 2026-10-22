@@ -64,6 +64,8 @@ export namespace gse::winhttp {
 
 	using HINTERNET = void*;
 
+	using handle = void*;
+
 	constexpr unsigned long access_type_automatic_proxy = 0;
 	constexpr unsigned long access_type_no_proxy = 0;
 	constexpr unsigned long flag_secure = 0;

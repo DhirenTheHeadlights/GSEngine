@@ -8,29 +8,16 @@ import gse.core;
 import gse.math;
 import gse.time;
 import gse.log;
-import gse.win32;
 
 namespace gse {
 	constexpr double dedicated_polls_per_step = 2.0;
 }
 
 auto gse::pace_wait(frame_pacing& pacing, const time_t<double, seconds> deadline) -> void {
-	if (!pacing.timer_created) {
-		pacing.timer_created = true;
-		pacing.timer = win32::CreateWaitableTimerExW(nullptr, nullptr, win32::create_waitable_timer_high_resolution, win32::timer_all_access);
-		if (!pacing.timer) {
-			pacing.timer = win32::CreateWaitableTimerExW(nullptr, nullptr, 0, win32::timer_all_access);
-		}
-	}
-
 	const time_t<double, seconds> spin_margin = microseconds(400.0);
 	const auto begin = system_clock::now<time_t<double, seconds>>();
-	if (pacing.timer && deadline - begin > spin_margin) {
-		const auto wait = deadline - begin - spin_margin;
-		const win32::LARGE_INTEGER due{ .QuadPart = -static_cast<win32::LONGLONG>(wait / nanoseconds(100.0)) };
-		if (win32::SetWaitableTimer(pacing.timer, &due, 0, nullptr, nullptr, 0)) {
-			win32::WaitForSingleObject(pacing.timer, win32::infinite);
-		}
+	if (deadline - begin > spin_margin) {
+		pace_sleep_until(pacing, deadline - spin_margin);
 	}
 	while (system_clock::now<time_t<double, seconds>>() < deadline) {
 		std::this_thread::yield();

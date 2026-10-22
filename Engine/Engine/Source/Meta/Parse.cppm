@@ -112,13 +112,31 @@ template <typename T>
 requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 auto gse::parser<T>::parse(const std::string_view raw, T& out) -> bool {
 	if constexpr (std::is_floating_point_v<T>) {
-		try {
-			out = static_cast<T>(std::stod(std::string(raw)));
-			return true;
-		}
-		catch (...) {
+		const std::size_t begin = raw.find_first_not_of(" \t\n\r\f\v");
+		if (begin == std::string_view::npos) {
 			return false;
 		}
+		std::string_view text = raw.substr(begin);
+		const bool negative = text.starts_with('-');
+		if (negative || text.starts_with('+')) {
+			text.remove_prefix(1);
+		}
+		if (text.starts_with('-') || text.starts_with('+')) {
+			return false;
+		}
+		const bool hexadecimal = text.starts_with("0x") || text.starts_with("0X");
+		if (hexadecimal) {
+			text.remove_prefix(2);
+		}
+		T value{};
+		const auto* first = text.data();
+		const auto* last = first + text.size();
+		const std::chars_format format = hexadecimal ? std::chars_format::hex : std::chars_format::general;
+		if (std::from_chars(first, last, value, format).ec != std::errc{}) {
+			return false;
+		}
+		out = negative ? -value : value;
+		return true;
 	}
 	else {
 		T value{};

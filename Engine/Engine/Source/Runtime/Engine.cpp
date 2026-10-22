@@ -22,16 +22,73 @@ import gse.physics;
 import gse.save;
 import gse.system_manifest;
 import gse.time;
-import gse.win32;
 import std;
 
+import :bootstrap;
 import :engine;
 import :log_settings;
 import :profile_settings;
 import :world_system;
 
+namespace gse {
+	constexpr std::wstring_view simulate_device_lost_option = L"--engine-simulate-device-lost";
+	constexpr std::wstring_view restarted_after_device_lost_option = L"--engine-restarted-after-device-lost";
+
+	auto command_line_has(
+		std::wstring_view option
+	) -> bool;
+}
+
+auto gse::command_line_has(const std::wstring_view option) -> bool {
+	const std::vector<std::wstring> arguments = command_line_arguments();
+	return std::ranges::contains(arguments | std::views::drop(1), option);
+}
+
 gse::engine::engine(const engine_config& config)
 	: identifiable(config.title), m_config(config) {
+	m_config.simulate_device_lost = m_config.simulate_device_lost || command_line_has(simulate_device_lost_option);
+	m_config.restarted_after_device_lost = m_config.restarted_after_device_lost || command_line_has(restarted_after_device_lost_option);
+}
+
+auto gse::engine::handle_device_lost(const std::string_view cause) -> void {
+	if (!m_config.restart_on_device_lost) {
+		log::println(log::level::error, log::category::render, "Device lost during {} - terminating", cause);
+		log::flush();
+		fatal_exit(3);
+	}
+
+	if (app::relaunch_pending()) {
+		return;
+	}
+
+	const time restart_reset_age = seconds(120.f);
+	const bool restart_spent = m_config.restarted_after_device_lost && m_uptime_clock.elapsed() < restart_reset_age;
+
+	if (restart_spent) {
+		log::println(
+			log::level::error,
+			log::category::render,
+			"Device lost during {} {::s} after a restart that was itself caused by a device loss - terminating instead of restarting again",
+			cause,
+			m_uptime_clock.elapsed()
+		);
+		log::flush();
+		fatal_exit(3);
+	}
+
+	log::println(
+		log::level::error,
+		log::category::render,
+		"Device lost during {} {::s} after launch - restarting",
+		cause,
+		m_uptime_clock.elapsed()
+	);
+
+	app::relaunch_self_on_exit();
+	app::drop_relaunch_arguments(std::wstring(simulate_device_lost_option));
+	app::drop_relaunch_arguments(std::wstring(restarted_after_device_lost_option));
+	app::add_relaunch_handoff({}, std::wstring(restarted_after_device_lost_option));
+	m_scheduler.make_channel_writer().push(window_close_request{});
 }
 
 auto gse::engine::add_system_node(system_node node) -> void {
@@ -80,12 +137,8 @@ auto gse::engine::create_attached_surface(gpu::context::data& gpu_state, const v
 }
 
 auto gse::engine::close_attached_handles() -> void {
-	if (win32::valid_handle(m_attached_message.produced_semaphore_handle)) {
-		win32::CloseHandle(m_attached_message.produced_semaphore_handle);
-	}
-	if (win32::valid_handle(m_attached_message.consumed_semaphore_handle)) {
-		win32::CloseHandle(m_attached_message.consumed_semaphore_handle);
-	}
+	close_os_handle(m_attached_message.produced_semaphore_handle);
+	close_os_handle(m_attached_message.consumed_semaphore_handle);
 	m_attached_message = {};
 	m_attached_surface_ready = false;
 }
@@ -180,6 +233,7 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	m_scheduler.register_external_resource<network::config>(&m_config.net);
 	m_scheduler.register_external_resource<scheduler>(&m_scheduler);
 	network::endpoint::set_simulation(m_config.net.simulated_latency_ms, m_config.net.simulated_loss_permille);
+	m_scheduler.set_init_stall_dump(m_config.init_stall_dump);
 	m_scheduler.set_stall_probe([this] {
 		const auto late = m_scheduler.drain_channel<gpu::render_pass_request>();
 		if (late.empty()) {
@@ -498,13 +552,11 @@ auto gse::engine::render() -> void {
 		gpu_state->scheduler.report_frame_time(fence_wait.as<seconds>());
 		frame_ok = result.has_value();
 
-		if (!result && result.error() == gpu::frame_status::device_lost) {
-			log::println(
-				log::level::error,
-				log::category::render,
-				"Device lost during begin_frame - terminating"
-			);
-			fatal_exit(3);
+		if (m_config.simulate_device_lost) {
+			handle_device_lost("--engine-simulate-device-lost");
+		}
+		else if (!result && result.error() == gpu::frame_status::device_lost) {
+			handle_device_lost("begin_frame");
 		}
 
 	}

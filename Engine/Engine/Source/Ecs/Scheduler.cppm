@@ -149,6 +149,10 @@ export namespace gse {
 			std::function<void()> probe
 		) -> void;
 
+		auto set_init_stall_dump(
+			time interval
+		) -> void;
+
 	private:
 		static auto persist_node(
 			const system_node& node
@@ -227,6 +231,7 @@ export namespace gse {
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
 		std::function<void()> m_stall_probe;
+		time m_init_stall_dump{};
 		task_graph m_update_graph;
 		task_graph m_frame_graph;
 		access_guard m_guard;

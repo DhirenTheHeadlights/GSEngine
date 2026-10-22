@@ -278,8 +278,8 @@ auto gse::gpu::render_graph::ensure_profile_pools(gpu_profile_slot& slot, const 
 }
 
 auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
-	const auto session = nsight_perf::info();
-	if (session.status != nsight_perf::session_status::running) {
+	const auto session = gpu_profile::info();
+	if (session.status != gpu_profile::session_status::running) {
 		return {};
 	}
 
@@ -291,13 +291,13 @@ auto gse::gpu::render_graph::open_perf_frame() -> perf_frame {
 		profile::set_gpu_metric_names(session.metrics);
 	}
 
-	const auto gpu_now = nsight_perf::gpu_timestamp();
+	const auto gpu_now = gpu_profile::gpu_timestamp();
 	if (!gpu_now) {
 		return {};
 	}
 	const auto sampler_to_cpu = time_t<double>(system_clock::now<trace::tick_step>()) - time_t<double>(*gpu_now);
 
-	const auto decoded = nsight_perf::decode();
+	const auto decoded = gpu_profile::decode();
 	m_perf_sample_times.insert(m_perf_sample_times.end(), decoded.times.begin(), decoded.times.end());
 	m_perf_sample_values.insert(m_perf_sample_values.end(), decoded.values.begin(), decoded.values.end());
 	m_perf_read_floor.reset();
@@ -624,10 +624,10 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		return;
 	}
 
-	std::unordered_map<const void*, id> target_of;
+	std::unordered_map<std::uint64_t, id> target_of;
 	for (const auto& [name, reg] : m_framebuffer_images) {
 		if (reg->img.handle()) {
-			target_of.emplace(std::bit_cast<const void*>(reg->img.handle()), name);
+			target_of.emplace(std::bit_cast<std::uint64_t>(reg->img.handle()), name);
 		}
 	}
 
@@ -643,7 +643,7 @@ auto gse::gpu::render_graph::log_pass_graph(const std::span<const render_pass_da
 		line.clear();
 		std::size_t foreign = 0;
 		for (const auto& u : list) {
-			if (const auto it = target_of.find(u.resource.ptr); it != target_of.end()) {
+			if (const auto it = target_of.find(u.resource.id); it != target_of.end()) {
 				if (!line.empty()) {
 					line += ' ';
 				}
@@ -1021,7 +1021,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 				if (pass.depth_output) {
 					const auto* depth_img = depth_target ? depth_target : std::addressof(m_depth);
 					const auto depth_ref = resource_ref{
-						.ptr = std::bit_cast<const void*>(depth_img->handle()),
+						.id = std::bit_cast<std::uint64_t>(depth_img->handle()),
 						.type = resource_type::image,
 						.aspects = image_aspect_for(depth_img->format()),
 					};
@@ -1046,7 +1046,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 						continue;
 					}
 					const auto color_ref = resource_ref{
-						.ptr = std::bit_cast<const void*>(color_img->handle()),
+						.id = std::bit_cast<std::uint64_t>(color_img->handle()),
 						.type = resource_type::image,
 						.aspects = image_aspect_for(color_img->format()),
 					};
@@ -1270,26 +1270,26 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 		}
 
-		std::vector<std::vector<const void*>> write_sets(n);
-		std::vector<std::vector<const void*>> read_sets(n);
+		std::vector<std::vector<std::uint64_t>> write_sets(n);
+		std::vector<std::vector<std::uint64_t>> read_sets(n);
 		for (std::size_t i = 0; i < n; ++i) {
 			write_sets[i].reserve(passes[i].writes.size());
 			for (const auto& w : passes[i].writes) {
-				if (w.resource.ptr) {
-					write_sets[i].push_back(w.resource.ptr);
+				if (w.resource.id) {
+					write_sets[i].push_back(w.resource.id);
 				}
 			}
 			std::ranges::sort(write_sets[i]);
 			read_sets[i].reserve(passes[i].reads.size());
 			for (const auto& r : passes[i].reads) {
-				if (r.resource.ptr) {
-					read_sets[i].push_back(r.resource.ptr);
+				if (r.resource.id) {
+					read_sets[i].push_back(r.resource.id);
 				}
 			}
 			std::ranges::sort(read_sets[i]);
 		}
 
-		auto sets_intersect = [](std::span<const void* const> a, std::span<const void* const> b) -> bool {
+		auto sets_intersect = [](std::span<const std::uint64_t> a, std::span<const std::uint64_t> b) -> bool {
 			std::size_t x = 0;
 			std::size_t y = 0;
 			while (x < a.size() && y < b.size()) {
@@ -1514,7 +1514,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 			for (const auto& w : passes[i].writes) {
 				for (const auto& r : passes[j].reads) {
-					if (w.resource.ptr && r.resource.ptr && w.resource.ptr == r.resource.ptr) {
+					if (w.resource.id && r.resource.id && w.resource.id == r.resource.id) {
 						queue_waits_on[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)] = true;
 						auto& position = queue_wait_positions[static_cast<std::size_t>(qj)][static_cast<std::size_t>(qi)];
 						position = std::max(position, sorted_pos[i]);
@@ -1628,8 +1628,8 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			access_flags access;
 		};
 
-		std::array<std::unordered_map<const void*, prev_use_record>, queue_type_count> latest_writes;
-		std::array<std::unordered_map<const void*, std::vector<prev_use_record>>, queue_type_count> reads_since_write;
+		std::array<std::unordered_map<std::uint64_t, prev_use_record>, queue_type_count> latest_writes;
+		std::array<std::unordered_map<std::uint64_t, std::vector<prev_use_record>>, queue_type_count> reads_since_write;
 
 		auto append_prev_pass_barriers = [&](
 			const render_pass_data& cur,
@@ -1640,26 +1640,26 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			auto& reads = reads_since_write[static_cast<std::size_t>(cur_queue)];
 
 			for (const auto& [cur_resource, cur_stage, cur_access] : cur.reads) {
-				if (!cur_resource.ptr) {
+				if (!cur_resource.id) {
 					continue;
 				}
-				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
+				if (const auto it = latest.find(cur_resource.id); it != latest.end()) {
 					const auto& prev = it->second;
 					append_barrier_for_resource(prev.stages, prev.access, cur_stage, cur_access, memory_out);
 				}
 			}
 
 			for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
-				if (!cur_resource.ptr) {
+				if (!cur_resource.id) {
 					continue;
 				}
 				bool had_prev = false;
-				if (const auto it = latest.find(cur_resource.ptr); it != latest.end()) {
+				if (const auto it = latest.find(cur_resource.id); it != latest.end()) {
 					const auto& prev = it->second;
 					append_barrier_for_resource(prev.stages, prev.access, cur_stage, cur_access, memory_out);
 					had_prev = true;
 				}
-				if (const auto it = reads.find(cur_resource.ptr); it != reads.end()) {
+				if (const auto it = reads.find(cur_resource.id); it != reads.end()) {
 					for (const auto& prev_read : it->second) {
 						append_barrier_for_resource(prev_read.stages, {}, cur_stage, cur_access, memory_out);
 					}
@@ -1671,17 +1671,17 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 			}
 
 			for (const auto& [cur_resource, cur_stage, cur_access] : cur.writes) {
-				if (!cur_resource.ptr) {
+				if (!cur_resource.id) {
 					continue;
 				}
-				latest[cur_resource.ptr] = { cur_resource, cur_stage, cur_access };
-				reads.erase(cur_resource.ptr);
+				latest[cur_resource.id] = { cur_resource, cur_stage, cur_access };
+				reads.erase(cur_resource.id);
 			}
 			for (const auto& [cur_resource, cur_stage, cur_access] : cur.reads) {
-				if (!cur_resource.ptr) {
+				if (!cur_resource.id) {
 					continue;
 				}
-				reads[cur_resource.ptr].push_back({ cur_resource, cur_stage, cur_access });
+				reads[cur_resource.id].push_back({ cur_resource, cur_stage, cur_access });
 			}
 		};
 
@@ -1696,7 +1696,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 					const auto& p = passes[sorted[si]];
 					auto match = [&](const std::vector<resource_usage>& list) -> bool {
 						for (const auto& u : list) {
-							if (u.resource.type == resource_type::image && u.resource.ptr == std::bit_cast<const void*>(info.resource->handle())) {
+							if (u.resource.type == resource_type::image && u.resource.id == std::bit_cast<std::uint64_t>(info.resource->handle())) {
 								first_stages |= u.stage;
 								first_access |= u.access;
 								return true;

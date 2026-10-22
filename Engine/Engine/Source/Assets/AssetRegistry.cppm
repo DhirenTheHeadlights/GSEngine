@@ -396,6 +396,7 @@ auto gse::resource::loader<R>::prepare(const std::filesystem::path& path) const 
 	if (!m_pre_load_fn || path.empty()) {
 		return {};
 	}
+#if __cpp_exceptions
 	try {
 		return m_pre_load_fn(path);
 	}
@@ -413,6 +414,9 @@ auto gse::resource::loader<R>::prepare(const std::filesystem::path& path) const 
 			.detail = "Resource preparation failed"
 		});
 	}
+#else
+	return m_pre_load_fn(path);
+#endif
 }
 
 template <typename R>
@@ -466,6 +470,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 	};
 
 	asset_result loaded{};
+#if __cpp_exceptions
 	try {
 		loaded = co_await candidate->load(ctx);
 	}
@@ -483,12 +488,18 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 			.detail = "Resource load threw an unknown exception"
 		});
 	}
+#else
+	loaded = co_await candidate->load(ctx);
+#endif
 	if (!loaded) {
 		fail(std::move(loaded.error()));
 		co_return;
 	}
 
-	try {
+#if __cpp_exceptions
+	try
+#endif
+	{
 		auto immutable = std::shared_ptr<const R>(std::move(candidate));
 		std::lock_guard lock(m_mutex);
 		const auto version = slot->next_version++;
@@ -505,6 +516,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		slot->current_state.store(state::loaded, std::memory_order_release);
 		slot->load_in_flight = false;
 	}
+#if __cpp_exceptions
 	catch (const std::exception& exception) {
 		fail(asset_error{
 			.code = asset_error_code::load_failure,
@@ -513,6 +525,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		});
 		co_return;
 	}
+#endif
 }
 
 template <typename R>
@@ -537,7 +550,10 @@ auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& bak
 	}
 
 	std::unique_ptr<R> temp_resource;
-	try {
+#if __cpp_exceptions
+	try
+#endif
+	{
 		temp_resource = std::make_unique<R>(baked_path);
 		const id resource_id = temp_resource->id();
 
@@ -551,6 +567,7 @@ auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& bak
 		}
 		m_path_to_id[baked_path] = resource_id;
 	}
+#if __cpp_exceptions
 	catch (const std::exception& exception) {
 		return std::unexpected(asset_error{
 			.code = asset_error_code::load_failure,
@@ -558,6 +575,7 @@ auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& bak
 			.detail = exception.what()
 		});
 	}
+#endif
 	return {};
 }
 
@@ -622,6 +640,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 	}
 
 	std::unique_ptr<R> new_resource;
+#if __cpp_exceptions
 	try {
 		new_resource = std::make_unique<R>(path);
 	}
@@ -633,6 +652,9 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		});
 		co_return;
 	}
+#else
+	new_resource = std::make_unique<R>(path);
+#endif
 
 	assert(m_data.channels.bound(), "asset::run must run before finalize_reloads()");
 	asset::load_ctx ctx{
@@ -641,6 +663,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 	};
 
 	asset_result loaded{};
+#if __cpp_exceptions
 	try {
 		loaded = co_await new_resource->load(ctx);
 	}
@@ -658,12 +681,18 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 			.detail = "Resource reload threw an unknown exception"
 		});
 	}
+#else
+	loaded = co_await new_resource->load(ctx);
+#endif
 	if (!loaded) {
 		fail(std::move(loaded.error()));
 		co_return;
 	}
 
-	try {
+#if __cpp_exceptions
+	try
+#endif
+	{
 		auto immutable = std::shared_ptr<const R>(std::move(new_resource));
 		std::lock_guard lock(m_mutex);
 		const auto version = slot->next_version++;
@@ -681,6 +710,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		slot->load_in_flight = false;
 		assert(slot->started_reload == revision, "Resource reload revision changed while in flight");
 	}
+#if __cpp_exceptions
 	catch (const std::exception& exception) {
 		fail(asset_error{
 			.code = asset_error_code::load_failure,
@@ -689,6 +719,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		});
 		co_return;
 	}
+#endif
 
 	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().generic_display_string());
 }

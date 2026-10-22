@@ -312,6 +312,7 @@ namespace gse {
 }
 
 auto gse::run_hook(const system_node& node, const system_hook hook, auto (*invoke)(context&, void*) -> async::task<>, context& ctx) -> async::task<> {
+#if __cpp_exceptions
 	try {
 		co_await invoke(ctx, node.data.get());
 	}
@@ -321,6 +322,9 @@ auto gse::run_hook(const system_node& node, const system_hook hook, auto (*invok
 	catch (...) {
 		assert(false, "system {} threw a non-std::exception from {}()", node.system_name, hook);
 	}
+#else
+	co_await invoke(ctx, node.data.get());
+#endif
 }
 
 auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::task<> {
@@ -1390,6 +1394,9 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 		return;
 	}
 
+	const bool unwatched = phase == wait_phase::init && m_init_stall_dump > time{};
+	const std::size_t task_count = tasks.size();
+
 	std::atomic<bool> done_flag{ false };
 	auto wrapper = [&]() -> async::task<> {
 		co_await async::when_all(std::move(tasks));
@@ -1404,14 +1411,38 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	clock wait_clock;
 	auto seen_pulse = watchdog::dump_pulse();
 	int dump_count = 0;
+	time last_dump{};
+	constexpr int unwatched_dump_limit = 3;
 
 	while (!done_flag.load(std::memory_order_acquire) || !w.done()) {
 		if (!task::try_run_one()) {
 			std::this_thread::yield();
 		}
+		bool dump = false;
 		if (const auto pulse = watchdog::dump_pulse(); pulse != seen_pulse) {
 			seen_pulse = pulse;
+			dump = true;
+		}
+		else if (unwatched && dump_count < unwatched_dump_limit) {
+			if (const auto elapsed = wait_clock.elapsed<float>(); elapsed - last_dump >= m_init_stall_dump) {
+				last_dump = elapsed;
+				dump = true;
+			}
+		}
+		if (dump) {
 			++dump_count;
+			if (unwatched) {
+				log::println(
+					log::level::warning,
+					log::category::runtime,
+					"STALL [phase=init elapsed={::ms} dump=#{}] wait over {} task(s) (done_flag={} wrapper_done={})",
+					wait_clock.elapsed<float>(),
+					dump_count,
+					task_count,
+					done_flag.load(std::memory_order_acquire),
+					w.done()
+				);
+			}
 			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
 			if (m_stall_probe) {
 				m_stall_probe();
@@ -1423,6 +1454,10 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 
 auto gse::scheduler::set_stall_probe(std::function<void()> probe) -> void {
 	m_stall_probe = std::move(probe);
+}
+
+auto gse::scheduler::set_init_stall_dump(const time interval) -> void {
+	m_init_stall_dump = interval;
 }
 
 auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
@@ -1477,14 +1512,26 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 		if (!node.invoke_init_fn || node.init_done) {
 			continue;
 		}
+		std::string pending;
+		for (const id& dep : node.init_state_deps) {
+			if (!dep_init_done(dep)) {
+				if (!pending.empty()) {
+					pending += ", ";
+				}
+				pending += std::format("{}", dep);
+			}
+		}
 		log::println(
 			log::level::warning,
 			log::category::runtime,
-			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (slow load or stuck setup)",
+			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (launched={} in_flight={} waiting on deps: {})",
 			phase_name,
 			elapsed,
 			dump_count,
-			node.trace_id
+			node.trace_id,
+			node.init_launched,
+			node.init_in_flight,
+			pending.empty() ? "none" : pending
 		);
 	}
 

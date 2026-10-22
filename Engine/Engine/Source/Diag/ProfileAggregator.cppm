@@ -201,6 +201,12 @@ export namespace gse::profile {
 }
 
 namespace gse::profile {
+	auto process_alive(
+		std::uint32_t pid
+	) -> bool;
+
+	auto process_id_text() -> std::string;
+
 	constexpr std::size_t default_recorded_frames = 600;
 	constexpr std::size_t max_recorded_nodes = 4000000;
 	constexpr std::size_t chrome_trace_frames = 8;

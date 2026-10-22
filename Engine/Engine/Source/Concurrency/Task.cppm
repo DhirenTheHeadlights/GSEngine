@@ -683,7 +683,7 @@ auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job
 	auto& q = *per_worker_queues[worker_idx];
 	job_entry entry;
 	if (q.entries.try_pop(entry)) {
-		return std::optional<job_entry>{ std::move(entry) };
+		return std::move(entry);
 	}
 
 	std::lock_guard _(q.remote_mtx);
@@ -692,7 +692,7 @@ auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job
 	}
 	entry = std::move(q.remote_entries.back());
 	q.remote_entries.pop_back();
-	return std::optional<job_entry>{ std::move(entry) };
+	return std::move(entry);
 }
 
 auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<job_entry> {
@@ -702,7 +702,7 @@ auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<jo
 	auto& q = *per_worker_queues[victim_idx];
 	job_entry entry;
 	if (q.entries.try_steal(entry)) {
-		return std::optional<job_entry>{ std::move(entry) };
+		return std::move(entry);
 	}
 
 	std::unique_lock lk(q.remote_mtx, std::try_to_lock);
@@ -711,7 +711,7 @@ auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<jo
 	}
 	entry = std::move(q.remote_entries.front());
 	q.remote_entries.pop_front();
-	return std::optional<job_entry>{ std::move(entry) };
+	return std::move(entry);
 }
 
 auto gse::task::try_pop_or_steal(const std::optional<std::size_t> my_idx) -> std::optional<job_entry> {
@@ -852,11 +852,14 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		return;
 	}
 
+#if __cpp_exceptions
 	try {
+#endif
 		{
 			trace::scope_guard _{ entry.trace_id, entry.parent_eid };
 			entry.fn();
 		}
+#if __cpp_exceptions
 	}
 	catch (const std::exception& e) {
 		log::println(
@@ -878,6 +881,7 @@ auto gse::task::run_job(job_entry& entry) -> void {
 			capture_stacktrace(1)
 		);
 	}
+#endif
 }
 
 auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> void {

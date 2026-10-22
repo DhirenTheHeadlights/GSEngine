@@ -232,7 +232,7 @@ export namespace gse::gpu {
 		const transient_pool* m_transient_pool = nullptr;
 		device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
-		std::unordered_map<const void*, access_track> m_last_access;
+		std::unordered_map<std::uint64_t, access_track> m_last_access;
 		std::vector<memory_barrier> m_pending_memory_barriers;
 		std::uint64_t m_access_generation = 0;
 		bool m_repeat_barrier_pending = false;
@@ -390,7 +390,7 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
 		constexpr std::meta::info member = bindless_member_for<Args, T>();
 		const resource_ref ref = m_device->resource_for_slot(args.[:member:].index);
-		if (ref.ptr) {
+		if (ref.id) {
 			const auto access = (descriptor_access_v<T> == descriptor_access::read_write)
 				? access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write }
 				: access_flags{ is_image ? access_flag::shader_sampled_read : access_flag::shader_storage_read };

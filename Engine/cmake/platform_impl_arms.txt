@@ -1,0 +1,30 @@
+# The directory names that select a platform implementation unit, one per line. A .cpp
+# under one of these is an arm of a choice the build makes, and exactly one arm of each
+# choice is compiled: Fs/Win32/LayoutStore.cpp and Fs/Web/LayoutStore.cpp both define
+# gse.fs:layout_store_impl, so offering the build both is a duplicate module.
+#
+# ONE DECLARATION, READ BY TWO ENUMERATORS, for the reason
+# native_gpu_backend_units.txt records at length. CMake builds the link
+# (gse_select_platform_impls in GSEEngine.cmake); Tools/module_graph.py enumerates the
+# same impl units for the wasm link, and a fourth arm added to only one of them would
+# have the two disagree about what a build contains -- CMake compiling a Posix/ body the
+# wasm walk dropped, or the walk offering one CMake never built.
+#
+# What is NOT declared here is the POLICY. Which arms a configuration keeps is one line
+# in each enumerator and is not the same line: a native build keeps Win32 and Native, a
+# wasm build keeps Web. Those two statements genuinely differ, so sharing them would mean
+# inventing a configuration vocabulary for no gain; it is the arm NAME SET that silently
+# diverges, and it is the only thing here.
+#
+# Native is not a synonym for Win32: it is the arm for a body that is portable C++ over a
+# host-only dependency rather than over a Windows API, like the FreeType and msdfgen font
+# bake. A native build keeps both, so a later non-Windows native host keeps the portable
+# arm instead of inheriting the Web stub.
+#
+# A directory only belongs here once there is a choice to make. Most of the engine's impl
+# units sit under no arm directory at all and are compiled by every configuration; naming
+# the directory of a body that has no second arm would make every configuration but one
+# drop the only implementation there is.
+Win32
+Native
+Web

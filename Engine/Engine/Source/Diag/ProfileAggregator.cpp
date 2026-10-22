@@ -6,7 +6,6 @@ import gse.core;
 import gse.math;
 import gse.meta;
 import gse.time;
-import gse.win32;
 import std;
 
 import :frame_analysis;
@@ -495,8 +494,7 @@ auto gse::profile::stale_run(const std::filesystem::directory_entry& entry, cons
 		return false;
 	}
 
-	if (void* owner = win32::OpenProcess(win32::process_query_limited_information, 0, pid)) {
-		win32::CloseHandle(owner);
+	if (process_alive(pid)) {
 		return false;
 	}
 
@@ -531,7 +529,7 @@ auto gse::profile::prune_runs(const std::filesystem::path& dir, const std::strin
 auto gse::profile::resolve_run_dir() -> std::filesystem::path {
 	const std::filesystem::path& root = config::profile_dir();
 	const std::string prefix = std::format("{}.", config::executable_stem());
-	const std::filesystem::path dir = root / std::format("{}{}", prefix, win32::GetCurrentProcessId());
+	const std::filesystem::path dir = root / std::format("{}{}", prefix, process_id_text());
 
 	std::error_code ec;
 	std::filesystem::remove_all(dir, ec);

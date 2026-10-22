@@ -4,7 +4,6 @@ import std;
 
 import gse.containers;
 import gse.meta;
-import gse.win32;
 
 export namespace gse::sdk {
 	struct pack_kind_info {
@@ -73,6 +72,7 @@ namespace gse::sdk {
 	constexpr std::uint32_t pack_magic = 0x4B504553;
 	constexpr std::uint32_t pack_version = 2;
 	constexpr std::uint64_t trailer_magic = 0x4B41504B44534553;
+	constexpr std::size_t sha256_digest_size = 32;
 
 	struct pack_trailer {
 		std::uint64_t payload_offset = 0;
@@ -87,6 +87,16 @@ namespace gse::sdk {
 	auto compress(
 		const std::vector<char>& data
 	) -> std::expected<std::vector<char>, std::string>;
+
+	auto decompress(
+		std::span<const char> packed,
+		std::span<char> out
+	) -> bool;
+
+	auto sha256(
+		std::span<const char> data,
+		std::span<unsigned char> digest
+	) -> bool;
 
 	auto write_file(
 		const std::filesystem::path& path,
@@ -114,23 +124,6 @@ auto gse::sdk::read_bytes(const std::filesystem::path& path) -> std::expected<st
 		return std::unexpected(std::format("could not read {}", path.generic_display_string()));
 	}
 	return bytes;
-}
-
-auto gse::sdk::compress(const std::vector<char>& data) -> std::expected<std::vector<char>, std::string> {
-	if (data.empty()) {
-		return std::vector<char>{};
-	}
-	const std::size_t bound = win32::compressed_size_bound(data.data(), data.size());
-	if (bound == 0) {
-		return std::unexpected("the LZMS compressor is unavailable");
-	}
-	std::vector<char> packed(bound);
-	std::size_t written = 0;
-	if (!win32::compress_lzms(data.data(), data.size(), packed.data(), packed.size(), &written)) {
-		return std::unexpected("LZMS compression failed");
-	}
-	packed.resize(written);
-	return packed;
 }
 
 auto gse::sdk::write_file(const std::filesystem::path& path, const std::span<const char> bytes) -> std::expected<void, std::string> {
@@ -224,8 +217,8 @@ auto gse::sdk::digest_of(const std::filesystem::path& file) -> std::expected<std
 	if (!bytes) {
 		return std::unexpected(bytes.error());
 	}
-	std::array<unsigned char, win32::sha256_digest_size> digest{};
-	if (!win32::hash_sha256(bytes->data(), bytes->size(), digest.data())) {
+	std::array<unsigned char, sha256_digest_size> digest{};
+	if (!sha256(*bytes, digest)) {
 		return std::unexpected(std::format("could not hash {}", file.generic_display_string()));
 	}
 	std::string hex;
@@ -246,7 +239,7 @@ auto gse::sdk::extract_entry(std::ifstream& payload, const pack_entry& entry, co
 		return std::unexpected(std::format("{}: payload truncated", entry.path));
 	}
 	std::vector<char> bytes(static_cast<std::size_t>(entry.size));
-	if (!bytes.empty() && !win32::decompress_lzms(packed.data(), packed.size(), bytes.data(), bytes.size())) {
+	if (!bytes.empty() && !decompress(packed, bytes)) {
 		return std::unexpected(std::format("{}: LZMS decompression failed", entry.path));
 	}
 	return write_file(destination / entry.path, bytes);

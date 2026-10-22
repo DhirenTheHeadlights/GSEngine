@@ -314,6 +314,7 @@ auto gse::async::yield_to_worker() noexcept -> yield_to_worker_t {
 }
 
 auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> {
+#if __cpp_exceptions
 	try {
 		co_await child;
 	}
@@ -323,6 +324,9 @@ auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> 
 			state->first_exception = std::current_exception();
 		}
 	}
+#else
+	co_await child;
+#endif
 	if (state->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		co_await symmetric_resume{ state->continuation };
 	}
@@ -416,6 +420,7 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	std::exception_ptr ep;
 
 	auto wrapper = [&]() -> task<> {
+#if __cpp_exceptions
 		try {
 			co_await std::move(t);
 		}
@@ -423,6 +428,9 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 			has_exception = true;
 			ep = std::current_exception();
 		}
+#else
+		co_await std::move(t);
+#endif
 		done_flag.store(true, std::memory_order_release);
 	};
 

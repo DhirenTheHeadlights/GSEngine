@@ -240,6 +240,14 @@ export namespace gse::log {
 }
 
 namespace gse::log {
+	auto thread_display() -> std::string;
+
+	auto process_id_text() -> std::string;
+
+	auto describe_os_thread() -> void;
+
+	auto console_output() -> bool;
+
 	auto write_line(
 		level lvl,
 		category cat,

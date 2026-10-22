@@ -1,10 +1,10 @@
-export module gse.nsight_perf;
+export module gse.gpu_profile:session;
 
 import std;
 
 import gse.math;
 
-export namespace gse::nsight_perf {
+export namespace gse::gpu_profile {
 	constexpr bool compiled_in =
 #ifdef GSE_HAVE_NSIGHT_PERF
 		true;
@@ -13,46 +13,37 @@ export namespace gse::nsight_perf {
 #endif
 
 	struct status_remedy {
-		char text[192];
+		char text[160];
 	};
 
 	enum class session_status : std::uint8_t {
 		idle,
-
 		not_compiled_in [[= status_remedy{
 			.text = "build the engine with NSIGHT_PERF_SDK pointing at the unzipped Nsight Perf SDK root",
 		}]],
-
 		load_failed [[= status_remedy{
 			.text = "nvperf_grfx_host.dll did not load; it must sit next to the executable",
 		}]],
-
 		no_device [[= status_remedy{
 			.text = "no NVIDIA device at the configured index; set Graphics.gpu_perf_metrics.device",
 		}]],
-
 		unsupported_gpu [[= status_remedy{
 			.text = "this GPU has no periodic sampler; the SDK supports Turing and newer",
 		}]],
-
 		no_permission [[= status_remedy{
 			.text = "allow GPU performance counters for all users under NVIDIA Control Panel > Developer, "
 					"or run elevated: https://developer.nvidia.com/ERR_NVGPUCTRPERM",
 		}]],
-
 		no_metrics [[= status_remedy{
 			.text = "Graphics.gpu_perf_metrics.names named no metric this device knows",
 		}]],
-
 		config_needs_replay [[= status_remedy{
 			.text = "the metric set needs more than one pass and the periodic sampler cannot replay; "
 					"remove metrics until it fits one pass",
 		}]],
-
 		start_failed [[= status_remedy{
 			.text = "the SDK refused the session; the preceding gpu_perf line names the call that failed",
 		}]],
-
 		running
 	};
 

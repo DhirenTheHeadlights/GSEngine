@@ -32,7 +32,7 @@ export namespace gse::gpu {
 	};
 
 	struct resource_ref {
-		const void* ptr = nullptr;
+		std::uint64_t id = 0;
 		resource_type type = resource_type::buffer;
 		image_aspect_flags aspects = {};
 		const void* host_buffer = nullptr;

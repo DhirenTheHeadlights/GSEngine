@@ -2361,3 +2361,237 @@ ported here.
    sole root of anything: `gse.moodycamel` + `gse.win32` is the first move and unblocks
    thirteen modules including the whole spine. Step 19 removes the reason to postpone it
    -- moodycamel's queue needs `std::atomic` and `std::mutex`, and both now exist.
+
+---
+
+## Step 20: the first wrapper is ported, and the engine's whole rejection list is one `throw`
+
+The first step of the engine-side port proper, and it measured three things that were not
+expected to be the finding: a false tripwire in this script's own patch stamps, a recorded
+number that does not reproduce, and -- once `gse.moodycamel` stopped being invisible -- a
+single `throw` statement standing in front of the entire spine.
+
+### 20a -- `.gitattributes`, and a stamp that demanded a rebuild it did not need
+
+The sweep would not start. `apply_patches` reported
+
+    0001-wasm-New-backend.patch has changed since it was applied to ...
+    Delete that source tree and re-run
+
+which is a multi-hour toolchain rebuild, and the patch had not changed. The stamp holds
+the LF digest of the file; the working tree held CRLF. `.gitattributes` pins
+`Tools/gcc-toolchain/recipe/**` to LF for exactly this reason -- makepkg's sha256sums --
+and never covered `Tools/gcc-toolchain/wasm/**`, so `core.autocrlf` rewrites all seventeen
+patches on checkout and every digest with them. Checked against all fifteen applied
+stamps: **every one matches its LF digest and none matches its on-disk bytes**, which is
+the whole diagnosis in one table.
+
+Fixed by extending `.gitattributes` and normalising the working tree back to LF -- a
+`git diff` over the patch directory is empty afterwards, so no patch was re-cut and the
+stamps match again. Worth recording because of the shape of the failure rather than its
+size: the stamp is keyed on bytes deliberately, and keying on bytes in a repository that
+rewrites bytes on checkout makes the tripwire fire on the checkout instead of on a re-cut
+patch. A clean clone would also have fed CRLF patches to GCC's LF sources.
+
+### 20b -- 131/2/0 does not reproduce; the measured baseline is 121/3/298
+
+Re-measured before anything was changed, which is the only reason the rest of this step is
+readable:
+
+| | step 19, recorded | step 20, measured |
+|---|---|---|
+| units compiled | 131 | **121** |
+| units rejected | 2 | **3** |
+| units blocked | 0 | 0 |
+| units never offered: host-bound | 292 | **298** |
+| interface units in the sweep | 425 | **422** |
+| modules that translate whole | 16 | **14** |
+
+The arithmetic closes exactly -- `131 - 3 (interface units since deleted) - 6 (newly
+host-bound) - 1 (newly rejected) = 121` -- so there is no unexplained regression, and the
+tree having moved accounts for all of it but one row. **The third rejection is the one that
+matters and it is not new work**: `Time/Timer.cppm` fails on
+`Math/Units/Quantity.cppm:887`, and both files last changed in `18306057`, which predates
+the step 19 sweep. So the recorded "2 rejections, both math test modules" was not
+reproducible from the tree it was recorded against. Step 19's conclusion survives it --
+nothing rejected is threads, codegen or the backend -- but its count does not, which is
+what re-measuring a read number is for.
+
+### 20c -- `gse.moodycamel` translates, and the measurement had to change to say so
+
+`module_graph.py`'s host roots are structural: a `.cppm` under `Source/External` is a
+wrapper, is never offered to the compiler, and propagates host-boundness to its
+dependents. That premise -- "there is no such thing as porting one" -- is true of a
+wrapper over a platform API and false of a wrapper over a *portable* vendored library.
+`Moodycamel.cppm` is twelve lines over a header whose `GetCurrentThreadId` arm
+(`concurrentqueue.h:97`) is one of four, and the arm wasm32 selects is the `thread_local`
+address at `:158`. So the sweep could not have reported this module green no matter what
+the compiler did.
+
+`PORTED_HOST_ROOTS` is the mechanism: a wrapper named there is swept as an ordinary unit
+and its verdict propagates like any other. It is kept honest by compiling the file every
+run -- a wrapper that stops translating reports `failed`, which is news, rather than
+`host-bound`, which is arithmetic. `gse.win32` is deliberately *not* in it: an empty module
+behind `#ifdef _WIN32` still gates its callers' `win32::` uses, and that is the OS seam's
+work rather than a measurement trick.
+
+Two flag-parity notes, both the hazard 18c already recorded:
+- there was no `-I Engine/External`, because until now no unit that `#include`s a
+  vendored header was ever compiled. Without it the row reads FAILED on a header the
+  engine finds. It belongs in `target_cxxflags` and not beside `ENGINE_CXXFLAGS` at the
+  sweep's call site: the probe table reads its include flags from that same function, and
+  an engine probe whose closure reaches moodycamel -- `closure_of="gse.time"` is the next
+  one anybody would write -- has to be compiled with what the sweep used. Putting it on
+  one side only is 18c's bug with the sides swapped, and the re-run confirms the shared
+  spelling changes no row: every probe and every module verdict is identical.
+- nothing else was needed. `-fno-exceptions` leaves `__EXCEPTIONS` undefined, so
+  `MOODYCAMEL_EXCEPTIONS_ENABLED` is never defined and the header's `MOODYCAMEL_TRY/CATCH`
+  degrade to `if constexpr (true) / else if constexpr (false)` on their own.
+
+`Moodycamel.cppm` compiles. `Time/FrameSync.cppm`, the engine's only importer of it,
+compiles behind it.
+
+### 20d -- the win32 edge out of `gse.time:system_clock`, and what it exposed
+
+Seven of `gse.time`'s nine interface units import nothing host-bound. `SystemClock.cppm`
+imported `gse.win32` for **two calls in one function**, so the body of
+`from_query_performance_counter` moved to `Time/Win32/SystemClock.cpp` as
+`gse.time:system_clock_impl`, matching `Os/Win32/Window.cpp`. The declaration and its two
+callers are untouched, and CMake globs impl units, so this is a refactor that stands
+natively on its own. CMake's refreshed scan is the check: `gse.time:system_clock` now
+requires `gse.time:clock, gse.math, gse.log` and the `gse.win32` edge sits on the `.cpp`,
+which the graph does not scan.
+
+Then the unit was offered to the compiler for the first time, and **failed on
+`Quantity.cppm:887` again** -- `report_pacing`'s `"refresh={:.3f:ms}"` at
+`SystemClock.cppm:174`.
+
+### The sweep, re-run
+
+| | before | after |
+|---|---|---|
+| units compiled | 121 | **123** |
+| units rejected | 3 | **4** |
+| units blocked behind a rejected one | 0 | **70** |
+| units never offered: host-bound | 298 | **225** |
+| modules that translate whole | 14 | **15** |
+| modules host-bound | 46 | **37** |
+
+Exactly three units changed verdict, all three from never-offered:
+`External/Moodycamel.cppm` to ok, `Time/FrameSync.cppm` to ok,
+`Time/SystemClock.cppm` to failed. The other 70 moved from `host-bound` to `blocked`, which
+is the point: they were arithmetic and they are now a measurement with a named cause.
+
+**`gse.moodycamel` is off the frontier entirely**, and it took the 13-module group with it:
+
+| | before | after |
+|---|---|---|
+| `gse.win32` | sole 0, reached 33 | **sole 4**, reached 24 |
+| `gse.moodycamel` | sole 0, reached 30 | gone |
+| largest gated group | 13 modules behind `gse.moodycamel, gse.win32` | 6 modules behind five roots |
+| | | **9 modules behind `gse.win32` (+`.environment`) alone** |
+
+`sole 4` is the first non-zero `sole` column this engine has ever printed -- 18d recorded
+that it "answers zero every time", and the answer was zero because every module behind
+`gse.win32` was also behind moodycamel. Step 2 of the port is now exactly `gse.win32` and
+`gse.win32.environment`.
+
+### The finding: four rejections, one `throw`
+
+`Math/Tests/Units.cppm`, `Math/Tests/Math.cppm`, `Time/Timer.cppm` and
+`Time/SystemClock.cppm` are the engine's entire wasm32 rejection list, and all four are
+the same statement:
+
+    Quantity.cppm:887: error: exception handling disabled, use '-fexceptions' to enable
+      throw format_error("gse quantity: dynamic unit must be spelled {}");
+
+the only `throw` in all of `gse.math`. It is the malformed-spec branch of
+`std::formatter<quantity>::parse`, unreachable for every format string that reaches it --
+`"{:.3f:ms}"` takes the `else` arm -- but `-fno-exceptions` rejects the statement at
+instantiation regardless of reachability. `gse.math` itself still translates whole, because
+the throw is only instantiated when a quantity is formatted with a unit spec.
+
+So **one line gates the spine**: eight modules and 70 units are blocked on
+`gse.time:system_clock`, and `gse.time` is blocked on this. It is not the exceptions item
+on the gating list -- no EH region generation is needed to compile a program that has no
+reachable throw -- it is one site in engine code with three plausible conversions, each of
+which changes what a native build does with a malformed format spec. That makes it the
+owner's call rather than this step's.
+
+### What the gating list looks like now
+
+1. **`long double` as binary128** -- unchanged, a fork rather than a bug.
+2. **`__int128`**, if wanted for its own sake; blocked on TImode move patterns (step 13).
+3. **Real exceptions**: GCC-side EH region generation. **No longer has an engine-side
+   instance.** All four engine rejections are one unreachable `throw`, which is an engine
+   decision and not an EH gap -- this item is now wanted for `catch` sites the port has yet
+   to reach, not for anything measured today.
+4. **`Quantity.cppm:887`** -- new, and the whole of the engine's rejection list. Blocks
+   `gse.time` and the eight modules behind it.
+5. **`gse.win32` + `gse.win32.environment`** -- the port's next move, and the first one the
+   frontier can price on its own: 9 modules behind those two, 4 behind `gse.win32` alone.
+6. ~~**`gse.moodycamel`**~~ **CLOSED, 2026-10-18.** Translates; off the frontier.
+
+## Step 21: the rejection list goes to zero, and `-fno-exceptions` turns out to be an instantiation rule
+
+Step 20 ended with the engine's entire wasm32 rejection list being one `throw`. Three
+conversions later the list is empty, and the blocked pool with it.
+
+| | step 20 | step 21 |
+|---|---|---|
+| interface units offered and compiled | 152 | **197** |
+| units rejected | 1 | **0** |
+| units blocked behind a rejected one | 44 | **0** |
+| units never offered: host-bound | 225 | 225 |
+| modules that translate whole | 20 | **26** |
+| modules host-bound | 37 | 37 |
+
+Three sites, each converted on its own merits and each with the same spelling --
+`#if __cpp_exceptions` / today's statements / `#else` / a non-throwing equivalent / `#endif`,
+so that `__cpp_exceptions` being on natively makes every native arm *textually* unchanged:
+
+1. `Math/Units/Quantity.cppm:887`, the malformed-spec branch of
+   `std::formatter<quantity>::parse`; `#else` arm `__builtin_abort()`, which is no more a
+   constant expression than `throw` is, so a malformed *literal* spec stays a compile error on
+   both arms. Took rejections 4 to 1 and unblocked `gse.time`.
+2. `Concurrency/Task.cppm:856-884`, `run_job`'s two log-a-stacktrace-and-continue handlers --
+   a diagnostic boundary, not an error channel: no recovery, no rethrow, no value propagated.
+3. `Core/ScopeExit.cppm:67-72`, `try { invoke } catch (...) { std::terminate(); }` in
+   `~scope_exit() noexcept`. An escaping exception from a `noexcept` destructor already
+   terminates, so the handler is redundant natively and the `#if` removes nothing. This is the
+   one that closed the list: `failed` 1 to 0 and `blocked` 44 to 0 in a single edit.
+
+`std::exception_ptr`, `std::current_exception` and `std::rethrow_exception` are declared
+unconditionally in libstdc++, so `AsyncTask.cppm:259/277`'s bare `rethrow_exception` calls were
+never rejections and needed nothing.
+
+### The finding: only instantiated `catch` sites are blockers
+
+`Concurrency/AsyncTask.cppm` and `Meta/Parse.cppm` both still hold `catch` sites and both sweep
+`ok`. GCC rejects `try`/`catch` under `-fno-exceptions` at *instantiation*, not at parse.
+`run_job` was an ordinary function and `~scope_exit` is instantiated by `make_scope_exit` at
+`Task.cppm:821`; `async::sync_wait` and `parser<T>::parse`'s floating-point branch are
+uninstantiated template bodies in every unit offered. So the engine's ~111 `catch` sites are not
+a backlog to work through -- the blockers are only the ones something on the path instantiates,
+and three of them existed.
+
+Two sites therefore remain undecided rather than decided: `AsyncTask.cppm:383`'s
+`ep = std::current_exception()` (a genuine, if function-local, error channel) and
+`Parse.cppm:115`'s `std::stod` + `catch` (the only site where dropping the handler would change
+an answer rather than remove an unreachable branch -- its `#else` arm would be `std::from_chars`,
+the shape the integral branch twelve lines below already uses). Neither was converted
+pre-emptively. A link step that instantiates them will have to answer them.
+
+### What the gating list looks like now
+
+1. **`long double` as binary128** -- unchanged, a fork rather than a bug.
+2. **`__int128`**, if wanted for its own sake; blocked on TImode move patterns (step 13).
+3. **Real exceptions**: GCC-side EH region generation. Still no engine-side instance.
+4. ~~**`Quantity.cppm:887`**~~ **CLOSED.** With it, the whole rejection list.
+5. **`gse.win32` + `gse.win32.environment`** -- now the only frontier. `gse.win32` sole 4,
+   reached 24; `.environment` reached 19; 4 modules behind `gse.win32` alone, 5 behind the pair.
+6. ~~**`gse.moodycamel`**~~ **CLOSED, 2026-10-18.**
+
+Native stayed green throughout and `scene_reset_cpu` reprints `world-state hash
+0xe836d31697879e27` after each conversion, which is the cheap proof that "the native arm is
+textually unchanged" is a fact rather than an argument.

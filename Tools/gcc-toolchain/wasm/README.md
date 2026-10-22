@@ -131,6 +131,21 @@ reviewable and offerable back:
   for wasi-libc's missing `pthread_cancel` was written first and then deleted as dead:
   both of its hunks sit inside regions this one switches off. Its header records that,
   for whoever re-enables `GTHREAD_USE_WEAK`.
+- **`0018-local-called-function-decls-and-muloti4.patch`** (3 files, ours) — see below.
+  Applied always. Two unrelated link blockers that wanted the same rebuild. It declares a
+  function named in the instruction stream, which is the third instance of the class
+  `0013` and `0017` each met once — a call reaching the assembler with no `.functype` —
+  and the one that stood between this series and a linked engine module. It also gives
+  libgcc a hand-written `__muloti4`, on exactly `0011`'s terms: wasi-libc's
+  `clock_nanosleep.c` calls it, so it is undefined in any link whose program can sleep.
+- **`0019-local-noop-coroutine-frame-signature.patch`** (1 file, ours) — see below.
+  Applied always. The second of ours outside the backend and the first in libstdc++'s own
+  headers. `std::noop_coroutine()`'s static frame declares its resume and destroy slots
+  `void (*)()`, while generated code calls them the way it calls any coroutine's —
+  `frame->__r (frame)`. wasm type-checks `call_indirect` against the callee's declared
+  signature at run time, so there the extra argument is not ignored and every coroutine
+  that reaches final suspend with no continuation traps. The slots are pointers either
+  way, so the frame's layout is unchanged and nothing moves on any other target.
 - **`0004-local-emit-rwat-s-annotation-dialect.patch`** (2 files, ours) — **superseded by
   `0005` and no longer applied.** Kept as the record of the path not taken. The two are
   mutually exclusive: both rewrite the same templates.
@@ -296,39 +311,51 @@ To re-cut one of **our** patches after editing the backend in place, diff agains
 snapshot of the tree as it was with only the patches *before* it applied. `0005` is
 against `0001`+`0002`, so `baseline/wasm` is taken straight after those two; `0006` is
 against `0005` as well, so it has its own snapshot, `baseline-0005/wasm`; `0007` is
-against all four, so it has `baseline-0006/wasm`:
+against all four, so it has `baseline-0006/wasm`.
+
+That settles each patch's **a**-side. The **b**-side is the harder half and is why several
+of these have no command below: a patch may only be cut to the current tree if no later
+patch touches the same file, and most of this series' files have since acquired one.
 
 ```sh
 cd .gcc-wasm-build
-for f in wasm.md wasm.cc wasm-cg.cc; do
-  diff -u --label a/gcc/config/wasm/$f --label b/gcc/config/wasm/$f \
-    baseline/wasm/$f gcc-17-20260809/gcc/config/wasm/$f
-done > ../Tools/gcc-toolchain/wasm/0005-local-emit-llvm-mc-s-assembly-dialect.patch
+# 0005 has no command here either. Its a-side is baseline/wasm throughout, and of its four
+# files only wasm-cg.cc may end at the tree: wasm.md is edited after it by 0016, wasm.cc by
+# 0015, and wasm-asm.cc by 0007, 0008, 0010, 0012, 0015 and 0018. See below.
 
-for f in wasm.h wasm-asm.cc; do
-  diff -u --label a/gcc/config/wasm/$f --label b/gcc/config/wasm/$f \
-    baseline-0006/wasm/$f gcc-17-20260809/gcc/config/wasm/$f
-done > ../Tools/gcc-toolchain/wasm/0007-local-one-only-and-aliases.patch
+# 0007 has no command here any more. Its a-side is baseline-0006/wasm for both files, but
+# neither b-side may end at the tree: wasm-asm.cc is edited after it by 0008, 0010, 0012,
+# 0015 and 0018, and wasm.h by 0015. Both boundaries are unsnapshotted; see below.
 
 diff -u --label a/gcc/config/wasm/wasm-asm.cc --label b/gcc/config/wasm/wasm-asm.cc \
-  baseline-0008/wasm/wasm-asm.cc gcc-17-20260809/gcc/config/wasm/wasm-asm.cc \
+  baseline-0008/wasm/wasm-asm.cc baseline-0011/wasm/wasm-asm.cc \
   > ../Tools/gcc-toolchain/wasm/0010-local-weak-references.patch
 
 { diff -u --label a/libgcc/config/wasm/multi3.c --label b/libgcc/config/wasm/multi3.c \
     /dev/null gcc-17-20260809/libgcc/config/wasm/multi3.c
   diff -u --label a/libgcc/config/wasm/t-wasm --label b/libgcc/config/wasm/t-wasm \
-    baseline-0010/libgcc-wasm/t-wasm gcc-17-20260809/libgcc/config/wasm/t-wasm
+    baseline-0010/libgcc-wasm/t-wasm baseline-0017/libgcc-wasm/t-wasm
 } > ../Tools/gcc-toolchain/wasm/0011-local-multi3.patch
 
-diff -u --label a/gcc/config/wasm/wasm-asm.cc --label b/gcc/config/wasm/wasm-asm.cc \
-  baseline-0011/wasm/wasm-asm.cc gcc-17-20260809/gcc/config/wasm/wasm-asm.cc \
-  > ../Tools/gcc-toolchain/wasm/0012-local-host-wide-int-operands.patch
+# 0012 and 0015 both end mid-chain and have no snapshot at their boundary; see below.
+
+{ diff -u --label a/gcc/config/wasm/wasm-asm.cc --label b/gcc/config/wasm/wasm-asm.cc \
+    baseline-0017/wasm/wasm-asm.cc gcc-17-20260809/gcc/config/wasm/wasm-asm.cc
+  diff -u --label a/libgcc/config/wasm/muloti4.c --label b/libgcc/config/wasm/muloti4.c \
+    /dev/null gcc-17-20260809/libgcc/config/wasm/muloti4.c
+  diff -u --label a/libgcc/config/wasm/t-wasm --label b/libgcc/config/wasm/t-wasm \
+    baseline-0017/libgcc-wasm/t-wasm gcc-17-20260809/libgcc/config/wasm/t-wasm
+} > ../Tools/gcc-toolchain/wasm/0018-local-called-function-decls-and-muloti4.patch
 ```
 
-`0013` is the easy case in the other direction: **no other patch of ours touches
-`gcc/cp/module.cc`**, so its a-side is simply that file as the snapshot ships it. Re-cut it
-against a fresh extract of the tarball — there is no `baseline-0012/` and there should not
-be one, because a baseline directory exists only for a file two of our patches edit.
+`0013` and `0019` are the easy case in the other direction: **no other patch of ours
+touches `gcc/cp/module.cc` or `libstdc++-v3/include/std/coroutine`**, so each one's a-side
+is simply that file as the snapshot ships it. Re-cut either against a fresh extract of the
+tarball — neither needs a baseline, because a
+baseline directory exists only for a file two of our patches edit. (There is no
+`baseline-0012/`, and unlike when this was written there now *should* be: `0015` and
+`0018` both edit `wasm-asm.cc` after `0012`, so `0012`'s b-side is a boundary nothing has
+snapshotted. See the gap described below.)
 
 `0014` extends `0009`'s `unwind-wasm.c`, so that file is now in two of our patches and has
 a snapshot like any other: `baseline-0013/libgcc-wasm/unwind-wasm.c` is the file as `0009`
@@ -351,30 +378,71 @@ after `0008` — and the two live together only because they are the same patch
 generation.
 
 **A file touched by two of our patches must never be cut against the current tree**, or the
-earlier patch swallows the later one's hunks. Two files are in that position:
+earlier patch swallows the later one's hunks. Three files are in that position —
+`wasm.h`, `wasm-asm.cc` and `libgcc/config/wasm/t-wasm`:
 
-| File | `0005` side | `0006` side | `0007` side | `0008`/`0010` side |
-|---|---|---|---|---|
-| `wasm.h` | `baseline/wasm` → `baseline-0005/wasm` | `baseline-0005` → `baseline-0006` | `baseline-0006` → tree | (untouched) |
-| `wasm-asm.cc` | `baseline/wasm` → `baseline-0006/wasm` | (untouched) | `baseline-0006` → no snapshot | `baseline-0008` → `baseline-0011/wasm` |
+| File | `0005` side | `0006` side | `0007` side | `0008`/`0010` side | later |
+|---|---|---|---|---|---|
+| `wasm.h` | `baseline/wasm` → `baseline-0005/wasm` | `baseline-0005` → `baseline-0006` | `baseline-0006` → no snapshot | (untouched) | `0015`: no snapshot → tree |
+| `wasm-asm.cc` | `baseline/wasm` → `baseline-0006/wasm` | (untouched) | `baseline-0006` → no snapshot | `baseline-0008` → `baseline-0011/wasm` | `0012`, `0015`: no snapshot; `0018`: `baseline-0017/wasm` → tree |
 
-`wasm-asm.cc` is in four of our patches now: `0012`'s side is `baseline-0011/wasm` → tree,
-and `0010`'s used to end at the tree and now ends at `baseline-0011/wasm/wasm-asm.cc`,
-which is the file as `0010` left it.
+`wasm-asm.cc` is in **seven** of our patches now — `0005`, `0007`, `0008`, `0010`, `0012`,
+`0015`, `0018` — so no side of it may end at the tree except `0018`'s. Three boundaries
+are snapshotted: `0005` ends at `baseline-0006/wasm`, `0010` at `baseline-0011/wasm`, and
+`0018` is cut against `baseline-0017/wasm`. **Four are not.** `0007`, `0008`, `0012` and
+`0015` were each cut while it was the last patch to touch the file, so each ends at the
+tree *as it then stood*, and nothing snapshotted the boundary when the next one landed.
+Re-cutting any of them by a command ending at the tree today silently swallows every later
+patch's hunks — `0007`'s would absorb five patches' worth, `0012`'s two. That is why none
+of the four has a command above: reconstruct the boundary first, by applying the earlier
+patches to a fresh `baseline/wasm` copy. `baseline-0017` does cap the chain: it is the
+file as `0017` left it, which for this file is the file as `0015` left it, so it is
+`0015`'s b-side as well as `0018`'s a-side.
 
-`libgcc/config/wasm/t-wasm` is the third file in two of our patches, and it is the easy
-case: `0009` writes it against `0001`'s copy in `baseline-0008/libgcc-wasm/`, `0011`
-appends to it against `baseline-0010/libgcc-wasm/`, which is the file as `0009` left it.
+`wasm.h` is the same shape one patch shallower — `0005`, `0006`, `0007`, `0015`. `0005`
+and `0006` end at snapshots; `0007`'s b-side does not exist, because `0015` rewrites
+`ASM_SPEC` in that file after it. `0015`'s own b-side is the tree and is allowed to be,
+since nothing later touches `wasm.h`.
+
+Two more files are in the same position and are easy to miss because each has only one
+later patch: **`wasm.cc`** (`0005`, then `0015`'s `TARGET_HAVE_TLS`) and **`wasm.md`**
+(`0005`, then `0016`'s atomic instructions). In both, `0005`'s side ends at an
+unsnapshotted boundary and `0015`/`0016`'s may end at the tree. `wasm-cg.cc` is the only
+file `0005` touches that no later patch does.
+
+**Check this mechanically rather than by eye.** Every command above is a claim that no
+later patch edits the file; nothing enforces it, and four of them were silently wrong by
+the time `0018` landed — `0005`, `0007`, `0010` and `0012`, between them covering five
+files. Re-derive the ownership instead of trusting the prose:
+
+```sh
+cd Tools/gcc-toolchain/wasm
+for f in $(grep -ho '^--- a/\S*' 0*.patch | sed 's|^--- a/||' | sort -u); do
+  owners=$(grep -l "^--- a/$f\$" 0*.patch | grep -v '^000[34]' | cut -c1-4 | tr '\n' ' ')
+  case "$owners" in *" "*" "*) echo "$f: $owners";; esac
+done
+```
+
+Any file with more than one owner may appear with a tree b-side **only** in its last
+owner's command. That is the invariant; the list above is what it currently yields.
+
+`libgcc/config/wasm/t-wasm` is in three of our patches — `0009`, `0011`, `0018` — and is
+still the easy case, because every boundary has a snapshot: `0009` writes it against
+`0001`'s copy in `baseline-0008/libgcc-wasm/`, `0011` appends to it from
+`baseline-0010/libgcc-wasm/` (the file as `0009` left it) to `baseline-0017/libgcc-wasm/`
+(the file as `0011` left it, since nothing between `0011` and `0018` touches it), and
+`0018` appends from there to the tree.
 
 So each baseline has to be kept in step with every file the *next* patch does not touch, or
 that patch's next re-cut picks up its predecessor's work. Then check the result
 round-trips: apply the patches in order to a fresh copy of the baselines and `cmp`
 every file against the tree they were cut from.
 
-`wasm-asm.cc` is now in three of our patches, and the two middle sides have no snapshot:
-`0007` and `0008` were both cut against the tree as it then stood, so re-cutting either
-means reconstructing the state before it — apply the earlier patches to a fresh
-`baseline/wasm` copy. **Prefer adding a patch to re-cutting one.** A new patch
+All four of those unsnapshotted boundaries are the same accident repeated: a patch is cut
+against the tree while it is the last to touch the file, and the *next* patch to touch it
+is what invalidates the command — silently, in a document, long after the fact. Taking the
+snapshot belongs with adding the patch, not with re-cutting the old one. **Prefer adding a
+patch to re-cutting one.** A new patch
 applies cleanly to the tree already on disk and keeps every earlier stamp valid, where an
 edited one makes `apply_patches` refuse and demand the source tree be deleted — which is
 a full re-extract and a full rebuild of libgcc and libstdc++. That is the only reason the
@@ -1114,3 +1182,86 @@ real fix and is **not done**; this patch sidesteps the only consumer of it.
 `__gthread_active_p` now always answers true, so a `std::mutex` really locks rather than
 compiling to nothing. That is correct for this sysroot, where the pthreads are always
 present, and it is what makes the `std_mutex` probe a measurement rather than a tautology.
+
+
+## Local changes: `0018-local-called-function-decls-and-muloti4.patch`
+
+Two unrelated link blockers, together because they want the same rebuild. This is the
+patch that takes the engine from "every unit translates" to a linked `engine.wasm`.
+
+**The declaration.** `0013` and `0017` each met one instance of a single class: GCC emits
+a call, nothing ever marks the callee external, `assemble_external` therefore declines it,
+`ASM_OUTPUT_EXTERNAL` never fires, and llvm-mc rejects the unit with
+`symbol <name>: missing .functype`. `0013` fixed its instance in the front end by setting
+`DECL_EXTERNAL` on the synthesized decl; `0017` sidestepped its instance by switching the
+weak references off. This one fixes the class where it can be fixed once, in the backend.
+
+The instance that forced it: a module defining an `inline thread_local`. Every unit that
+touches the variable emits two comdat symbols — the variable and the `_ZTW` access wrapper
+— while the `_ZTH` init function those wrappers call is emitted once, in the module
+interface's own object, as an alias to that unit's `__tls_init`. Measured in the engine's
+own tree, where `gse.diag` declares `inline thread_local thread_buffer tls`:
+
+```
+link-0068.s  (Diag/Trace.cppm)   .functype _ZTHN3gse5traceW3gseW4diag3tlsE () -> ()
+                                 __tls_init:  ...
+                                 .set _ZTHN3gse5traceW3gseW4diag3tlsE, __tls_init
+link-0389.s  (Diag/Trace.cpp)    call _ZTHN3gse5traceW3gseW4diag3tlsE     <- no .functype
+```
+
+So the definition is real and reachable — `0007`'s alias path declares it correctly on the
+interface side — and only the *consumer's* declaration was missing. `get_tls_init_fn`
+(`gcc/cp/decl2.cc`) builds that decl with `DECL_EXTERNAL` copied from the **variable**,
+which is false in a unit that defines the variable, so the decl is never offered to
+`assemble_external` at all. That is `0013`'s bug one layer out, and it is why
+`Diag/Trace.cpp` was the single unit of 497 that would not assemble, and why the eight
+undefined `gse::trace::*` symbols in that link were simply that unit's own contents.
+
+Fixed on the target side rather than in the front end, because the backend already carries
+this exact repair one case over: a function's address *stored in data* reaches
+`wasm_assemble_integer`, which routes it through `wasm_handle_import` for the same reason
+and says so in its comment. A function named in the *instruction stream* — a call's
+callee, or an address pushed in code — had no such site. The new site is the `SYMBOL_REF`
+arm of `wasm_print_operand`, guarded on the symbol carrying a `FUNCTION_DECL` so it cannot
+fire for data, and routed through the same hook so one place still derives a signature.
+
+It is safe to declare from inside operand printing, which is the thing worth checking in a
+backend that buffers its body to reorder declarations ahead of it: `wasm_handle_import`
+only records into `import_map`, writing nothing, and that map is drained in
+`wasm_asm_file_end` ahead of both `func_decls` and `flush_buffer`. And it cannot corrupt a
+local definition's signature: `declare_func` dedups by name, and a function defined here
+registers its own RTL-derived signature during body emission, before the drain.
+
+**This may also close `0017`'s open item** — a weak reference that is actually called now
+reaches a declaration by this path — but that is unmeasured and should stay listed as open
+until something exercises it, since `GTHREAD_USE_WEAK` is still 0 and nothing calls one.
+
+**`__muloti4`** is `0011`'s story exactly, found the same way. This compiler can never emit
+a call to a TImode routine, and wasi-libc's `clock_nanosleep.c` calls this one, so it is
+undefined in any link whose program can sleep — whether or not that program ever reaches
+the call, which is why "is it reachable?" is the wrong question for it.
+
+The ABI is read off the caller rather than assumed, as `multi3.c` insists:
+
+```
+$ decode clock_nanosleep.c.obj
+  import env.__muloti4: type[1] (i32, i64, i64, i64, i64, i32) -> ()
+```
+
+`__multi3`'s ABI with the `int *overflow` out-parameter appended: result through a pointer
+passed first, each 128-bit argument two i64s low word first. The built `muloti4.o` exports
+exactly that type.
+
+The overflow half is the part that could be wrong *quietly*, so it is computed from a full
+256-bit product of the magnitudes in four limbs rather than by the division compiler-rt
+uses — that would have meant writing `__udivti3`, a second routine this target also lacks.
+The bound is asymmetric because two's complement is: a negative result may reach 2^127
+exactly, a positive one may not. `magnitude` yields 2^127 for MIN, which is what lets MIN
+need no special case here where compiler-rt needs three.
+
+Checked against `__int128` on the build host rather than by a probe, because nothing this
+compiler emits calls the routine and a probe would have to hand-write the call: every pair
+from a boundary set built around MIN, MAX and the powers of two either side of each word
+edge, plus four million random pairs across the magnitude range, product and flag both,
+**0 failures in 4,000,361 cases**. A `muloti4` subject in `Tools/wasm_dialect_probe.py`
+would make that repeatable here and is **not done**.

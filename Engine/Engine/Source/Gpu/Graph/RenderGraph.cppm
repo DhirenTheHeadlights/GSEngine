@@ -9,7 +9,7 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
-import gse.nsight_perf;
+import gse.gpu_profile;
 import gse.time;
 import std;
 
@@ -258,7 +258,7 @@ export namespace gse::gpu {
 		};
 
 		struct perf_frame {
-			nsight_perf::sample_window samples;
+			gpu_profile::sample_window samples;
 			std::span<const std::string> metrics;
 			time_t<double> sampler_to_cpu;
 			time_t<double> interval;

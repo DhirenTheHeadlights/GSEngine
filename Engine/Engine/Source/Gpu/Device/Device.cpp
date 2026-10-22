@@ -8,16 +8,14 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
-import gse.nsight_perf;
+import gse.gpu_profile;
 import gse.os;
 import std;
 
 import :backend_state;
 import :command_dispatch;
 import :device;
-import :device_dx12_backend;
-import :device_vulkan_backend;
-import :video_encoder;
+import :device_contract;
 
 namespace gse::gpu {
 	constexpr std::size_t max_perf_metrics = 32;
@@ -25,18 +23,6 @@ namespace gse::gpu {
 	auto trimmed_metric_name(
 		std::string_view field
 	) -> std::string_view;
-
-	template <typename B>
-	auto device_backend_delete(void* self) -> void {
-		delete static_cast<B*>(self);
-	}
-
-	consteval {
-		std::meta::define_aggregate(^^gpu_dispatch, meta::dispatch_specs(meta::pointer_receiver<vulkan_device_backend>::self_type(), ^^vulkan_device_backend, meta::dispatch_no_exclude));
-	}
-
-	template <typename B>
-	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
 }
 
 auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_view {
@@ -46,68 +32,6 @@ auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_
 		return {};
 	}
 	return field.substr(first, field.find_last_not_of(blanks) - first + 1);
-}
-
-auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, device_settings& device_cfg) -> std::unique_ptr<device> {
-	if (backend == backend_kind::vulkan) {
-		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
-		if (created) {
-			active_backend = backend_kind::vulkan;
-
-			std::unique_ptr<void, void (*)(void*)> backend(
-				created->backend.release(),
-				&device_backend_delete<vulkan_device_backend>
-			);
-
-			auto dev = std::unique_ptr<device>(new device(
-				std::move(backend),
-				&device_dispatch_for<vulkan_device_backend>,
-				created->commands,
-				created->surface_format,
-				created->video_encode_enabled,
-				device_cfg.pass_checkpoints
-			));
-
-			dev->m_transient = transient_executor<device>::create(
-				*dev,
-				dev->queue_family(queue_type::graphics),
-				dev->queue_family(queue_type::compute),
-				task::thread_count()
-			);
-
-			return dev;
-		}
-
-		log::println(log::category::render, "vulkan device unavailable; falling back to dx12 backend");
-		log::flush();
-		backend = backend_kind::dx12;
-	}
-
-	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
-	active_backend = backend_kind::dx12;
-
-	std::unique_ptr<void, void (*)(void*)> backend_ptr(
-		created.backend.release(),
-		&device_backend_delete<dx12_device_backend>
-	);
-
-	auto dev = std::unique_ptr<device>(new device(
-		std::move(backend_ptr),
-		&device_dispatch_for<dx12_device_backend>,
-		created.commands,
-		created.surface_format,
-		created.video_encode_enabled,
-		device_cfg.pass_checkpoints
-	));
-
-	dev->m_transient = transient_executor<device>::create(
-		*dev,
-		dev->queue_family(queue_type::graphics),
-		dev->queue_family(queue_type::compute),
-		task::thread_count()
-	);
-
-	return dev;
 }
 
 gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, const command_dispatch* commands, image_format surface_format, bool video_encode_enabled, bool pass_checkpoints_enabled)
@@ -140,7 +64,7 @@ gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const g
 }
 
 gse::gpu::device::~device() {
-	nsight_perf::end_session();
+	gpu_profile::end_session();
 	log::println(log::category::runtime, "Destroying Device");
 }
 
@@ -157,6 +81,9 @@ auto gse::gpu::device::queue_family(const queue_type queue) const -> std::uint32
 }
 
 auto gse::gpu::device::wait_idle() const -> void {
+	if (m_device_lost_reported.load(std::memory_order_relaxed)) {
+		return;
+	}
 	m_vt->wait_idle(m_backend.get());
 }
 
@@ -174,7 +101,7 @@ auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> vo
 	}
 	m_perf_metrics = config;
 
-	nsight_perf::end_session();
+	gpu_profile::end_session();
 	if (!config.enabled) {
 		return;
 	}
@@ -190,7 +117,7 @@ auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> vo
 		}
 	}
 
-	nsight_perf::begin_session({
+	gpu_profile::begin_session({
 		.device_index = m_perf_metrics.device_index,
 		.metrics = names,
 		.sampling_interval = m_perf_metrics.sampling_interval,
@@ -495,17 +422,6 @@ auto gse::gpu::device::reset_worker_command_pools(const std::uint32_t frame_inde
 
 auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> command_buffer_handle {
 	return m_vt->acquire_worker_command_buffer(m_backend.get(), queue, worker_index, frame_index);
-}
-
-auto gse::gpu::device::make_video_encoder(const encode_desc& desc) -> std::optional<video_encoder> {
-	if (!m_video_encode_enabled) {
-		return std::nullopt;
-	}
-	auto backend = m_vt->make_video_encoder_backend(m_backend.get(), desc);
-	if (!backend) {
-		return std::nullopt;
-	}
-	return video_encoder(std::move(backend));
 }
 
 auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
@@ -817,7 +733,7 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 			loc.line()
 		);
 		set_slot_resource(buf.slot().index, resource_ref{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 		});
 	}
@@ -828,7 +744,7 @@ auto gse::gpu::device::create_image(const image_desc& desc, const std::string_vi
 	auto img = m_vt->create_image(m_backend.get(), desc, tag);
 	if (desc.bindless) {
 		const resource_ref ref{
-			.ptr = std::bit_cast<const void*>(img.handle()),
+			.id = std::bit_cast<std::uint64_t>(img.handle()),
 			.type = resource_type::image,
 			.aspects = image_aspect_for(img.format()),
 		};
@@ -866,7 +782,7 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> bindless_handle
 
 auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buffer& buf, const device_size size) -> void {
 	set_slot_resource(slot.index, resource_ref{
-		.ptr = std::bit_cast<const void*>(buf.handle()),
+		.id = std::bit_cast<std::uint64_t>(buf.handle()),
 		.type = resource_type::buffer,
 	});
 	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
@@ -878,7 +794,7 @@ auto gse::gpu::device::write_acceleration_structure(const bindless_slot slot, co
 
 auto gse::gpu::device::write_sampled_image(const bindless_slot slot, const image& img) -> void {
 	set_slot_resource(slot.index, resource_ref{
-		.ptr = std::bit_cast<const void*>(img.handle()),
+		.id = std::bit_cast<std::uint64_t>(img.handle()),
 		.type = resource_type::image,
 		.aspects = image_aspect_for(img.format()),
 	});
