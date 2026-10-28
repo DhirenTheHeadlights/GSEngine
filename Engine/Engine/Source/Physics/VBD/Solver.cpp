@@ -373,8 +373,10 @@ auto gse::vbd::solver::solve_pass(const time_step dt) -> void {
 			32,
 			[&, this](std::size_t mi) {
 				auto& m = muscles_ref[mi];
+				const length path = muscle_start_path_length(m_graph.muscle_path(m), m_graph.muscle_wraps(m), m_bodies, m_curve_words);
+				advance_muscle_fiber(m, path, dt);
 				advance_muscle_activation(m, dt);
-				m.path_length_start = muscle_start_path_length(m_graph.muscle_path(m), m_graph.muscle_wraps(m), m_bodies, m_curve_words);
+				m.path_length_start = path;
 			},
 			trace_id<"vbd::warm_muscles">()
 		);
@@ -1854,11 +1856,12 @@ auto gse::vbd::contact_jacobian_of(const contact_constraint& c, const body_state
 	};
 }
 
-auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> void {
+auto gse::vbd::geometric_stiffness_diagonal(const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> vec3<angular_stiffness> {
 	length rd{};
 	for (int i = 0; i < 3; ++i) {
 		rd += r[i] * dir[i];
 	}
+	vec3<angular_stiffness> diagonal{};
 	for (int j = 0; j < 3; ++j) {
 		length col_norm{};
 		for (int i = 0; i < 3; ++i) {
@@ -1868,7 +1871,15 @@ auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec
 			}
 			col_norm += abs(h);
 		}
-		state.angular_hessian[j][j] += col_norm * abs_force / (rad * rad);
+		diagonal[j] = col_norm * abs_force / (rad * rad);
+	}
+	return diagonal;
+}
+
+auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<lever_arm>& r, const vec3f& dir, const force abs_force) -> void {
+	const auto diagonal = geometric_stiffness_diagonal(r, dir, abs_force);
+	for (int j = 0; j < 3; ++j) {
+		state.angular_hessian[j][j] += diagonal[j];
 	}
 }
 
@@ -2048,8 +2059,10 @@ auto gse::vbd::coupled_coordinates_of(const std::span<const std::uint32_t> curve
 	const std::uint32_t spatial = joint_words + curves[joint_words + limits.coupled_spatial_index];
 	const std::uint32_t count = curves[joint_words + limits.coupled_coordinate_count_index];
 
+	const std::uint32_t iterations = curves[joint_words + limits.coupled_newton_iterations_index];
+
 	vec3<angle> coordinates = coupled_initial_coordinates(curves, spatial, relative, count);
-	for (std::uint32_t i = 0; i < limits.coupled_coordinate_iterations; ++i) {
+	for (std::uint32_t i = 0; i < iterations; ++i) {
 		const auto sample = sample_spatial(curves, joint_words, spatial, coordinates);
 		const auto rows = coupled_pseudo_inverse(sample.rotation_rates);
 		const vec3<angle> phi = to_axis_angle(relative * conjugate(sample.rotation));
@@ -2065,6 +2078,9 @@ auto gse::vbd::coupled_frame_of(const std::span<const std::uint32_t> curves, con
 auto gse::vbd::shared_coupled_frame(std::optional<coupled_newton>& newton, const std::span<const std::uint32_t> curves, const std::span<const body_state> bodies, const std::uint32_t joint_words, const std::uint32_t body_a, const std::uint32_t body_b) -> coupled_frame {
 	const quat& orientation_a = bodies[body_a].predicted_orientation;
 	const quat& orientation_b = bodies[body_b].predicted_orientation;
+	if (curves[joint_words + limits.coupled_newton_iterations_index] == 0) {
+		return coupled_frame_of(curves, joint_words, orientation_a, orientation_b);
+	}
 	if (!newton || newton->joint_words != joint_words || newton->body_a != body_a || newton->body_b != body_b) {
 		newton = coupled_newton{
 			.joint_words = joint_words,
@@ -2433,6 +2449,33 @@ auto gse::vbd::compute_joint_c0(joint_constraint& j, const body_state& ba, const
 	}
 }
 
+auto gse::vbd::passive_fiber_of(const float fiber_ratio) -> passive_fiber {
+	if (fiber_ratio <= muscle.passive_start) {
+		return {};
+	}
+	if (fiber_ratio >= muscle.passive_end) {
+		return { .force = 1.f + muscle.passive_stiffness * (fiber_ratio - muscle.passive_end), .slope = muscle.passive_stiffness };
+	}
+
+	const bool toe = fiber_ratio < muscle.passive_knee;
+	const vec4f& xs = toe ? muscle.passive_toe_x : muscle.passive_rise_x;
+	const vec4f& ys = toe ? muscle.passive_toe_y : muscle.passive_rise_y;
+	const auto value = [](const vec4f& p, const float u) {
+		const float w = 1.f - u;
+		return w * w * w * w * w * p[0] + 5.f * w * w * w * u * (w + 2.f * u) * p[1] + 5.f * w * u * u * u * (2.f * w + u) * p[2] + u * u * u * u * u * p[3];
+	};
+	const auto slope = [](const vec4f& p, const float u) {
+		const float w = 1.f - u;
+		return 5.f * (w * w * w * w * (p[1] - p[0]) + 6.f * w * w * u * u * (p[2] - p[1]) + u * u * u * u * (p[3] - p[2]));
+	};
+
+	float u = (fiber_ratio - xs[0]) / (xs[3] - xs[0]);
+	for (std::uint32_t i = 0; i < muscle.passive_iterations; ++i) {
+		u = std::clamp(u - (value(xs, u) - fiber_ratio) / slope(xs, u), 0.f, 1.f);
+	}
+	return { .force = value(ys, u), .slope = slope(ys, u) / slope(xs, u) };
+}
+
 auto gse::vbd::muscle_fiber_of(const muscle_constraint& m, const length path, const length previous_path, const time_step dt) -> std::optional<muscle_fiber> {
 	const length tendon_free = path - m.tendon_slack_length;
 	if (tendon_free <= length{} || m.optimal_fiber_length <= length{} || m.max_force <= force{}) {
@@ -2456,13 +2499,9 @@ auto gse::vbd::muscle_fiber_of(const muscle_constraint& m, const length path, co
 		f.active_slope -= term * offset * (1.f - offset * muscle.active_width_slope[i]) / width;
 	}
 
-	if (f.fiber_ratio > muscle.passive_zero_ratio) {
-		const float rate = muscle.passive_shape / muscle.passive_strain;
-		const float scale = 1.f / (libm::exp(muscle.passive_shape) - 1.f);
-		const float growth = libm::exp(rate * (f.fiber_ratio - 1.f));
-		f.passive = (growth - libm::exp(rate * (muscle.passive_zero_ratio - 1.f))) * scale;
-		f.passive_slope = rate * growth * scale;
-	}
+	const auto [passive, passive_slope] = passive_fiber_of(f.fiber_ratio);
+	f.passive = passive;
+	f.passive_slope = passive_slope;
 
 	const float velocity_arg = muscle.velocity_shape[1] * velocity_ratio + muscle.velocity_shape[2];
 	f.force_velocity = muscle.velocity_shape[0] * std::asinh(velocity_arg) + muscle.velocity_shape[3];
@@ -2474,15 +2513,15 @@ auto gse::vbd::muscle_fiber_of(const muscle_constraint& m, const length path, co
 	return f;
 }
 
-auto gse::vbd::muscle_tension(const muscle_constraint& m, const length path, const length previous_path, const time_step dt) -> muscle_response {
+auto gse::vbd::damped_fiber_tension(const muscle_constraint& m, const length path, const length previous_path, const time_step dt, const float damping) -> muscle_response {
 	const auto f = muscle_fiber_of(m, path, previous_path, dt);
 	if (!f) {
 		return {};
 	}
 
-	const float fiber_force = m.activation * f->active * f->force_velocity + f->passive;
+	const float fiber_force = m.activation * f->active * f->force_velocity + f->passive + damping * (f->fiber_velocity / m.max_contraction_velocity);
 	const float length_slope = m.activation * f->active_slope * f->force_velocity + f->passive_slope;
-	const float velocity_slope = m.activation * f->active * f->force_velocity_slope;
+	const float velocity_slope = m.activation * f->active * f->force_velocity_slope + damping;
 
 	const stiffness path_stiffness = m.max_force * (
 		f->cos_pennation * f->cos_pennation * (length_slope / m.optimal_fiber_length + velocity_slope / (m.max_contraction_velocity * dt)) +
@@ -2493,6 +2532,111 @@ auto gse::vbd::muscle_tension(const muscle_constraint& m, const length path, con
 		.tension = m.max_force * fiber_force * f->cos_pennation,
 		.path_stiffness = std::max(path_stiffness, stiffness{}),
 	};
+}
+
+auto gse::vbd::muscle_tension(const muscle_constraint& m, const length path, const length previous_path, const time_step dt) -> muscle_response {
+	if (m.tendon_shape > 0.f) {
+		return compliant_fiber_of(m, path, m.fiber_projection_start, dt).response;
+	}
+	return damped_fiber_tension(m, path, previous_path, dt, 0.f);
+}
+
+auto gse::vbd::tendon_shape_of(const float strain_at_max_force) -> float {
+	return std::log((1.f + muscle.tendon_shift) / muscle.tendon_scale) / (1.f + strain_at_max_force - muscle.tendon_offset);
+}
+
+auto gse::vbd::tendon_response_of(const muscle_constraint& m, const length tendon) -> tendon_response {
+	const float growth = muscle.tendon_scale * std::exp(m.tendon_shape * (tendon / m.tendon_slack_length - muscle.tendon_offset));
+	if (growth <= muscle.tendon_shift) {
+		return {};
+	}
+	return {
+		.tension = m.max_force * (growth - muscle.tendon_shift),
+		.tendon_stiffness = m.max_force * (m.tendon_shape * growth) / m.tendon_slack_length,
+	};
+}
+
+auto gse::vbd::compliant_fiber_of(const muscle_constraint& m, const length path, const length previous_projection, const time_step dt) -> compliant_fiber {
+	const bool settled = previous_projection > length{};
+	const float damping = settled ? muscle.fiber_damping : 0.f;
+	const length thickness = m.optimal_fiber_length * sin(m.pennation_at_optimal);
+	const length shortest = std::max(thickness * (muscle.fiber_min_cos / std::sqrt(1.f - muscle.fiber_min_cos * muscle.fiber_min_cos)), m.optimal_fiber_length * muscle.fiber_min_ratio);
+	const float zero_stretch = muscle.tendon_offset + std::log(muscle.tendon_shift / muscle.tendon_scale) / m.tendon_shape;
+	const length taut = path - m.tendon_slack_length * zero_stretch;
+	const length longest = settled ? std::max(taut, previous_projection) : taut;
+	if (longest <= shortest) {
+		return { .projection = shortest };
+	}
+
+	const auto fiber_at = [&](const length x) {
+		return damped_fiber_tension(m, x + m.tendon_slack_length, (settled ? previous_projection : x) + m.tendon_slack_length, dt, damping);
+	};
+
+	length lo = shortest;
+	length hi = longest;
+	length x = settled ? std::clamp(previous_projection, lo, hi) : hi;
+	length step = hi - lo;
+	length prior = step;
+	auto tendon = tendon_response_of(m, path - x);
+	auto fiber = fiber_at(x);
+	length best = x;
+	auto best_tendon = tendon;
+	auto best_fiber = fiber;
+	for (std::uint32_t i = 0; i < muscle.fiber_iterations; ++i) {
+		const force residual = tendon.tension - fiber.tension;
+		if (abs(residual) <= m.max_force * muscle.fiber_tolerance) {
+			break;
+		}
+		if (residual > force{}) {
+			lo = x;
+		}
+		else {
+			hi = x;
+		}
+		const stiffness slope = tendon.tendon_stiffness + fiber.path_stiffness;
+		const bool newton = slope > stiffness{} && x + residual / slope >= lo && x + residual / slope <= hi && abs(residual) * 2.f <= abs(prior * slope);
+		prior = step;
+		step = newton ? residual / slope : (hi - lo) * 0.5f;
+		x = newton ? x + step : lo + step;
+		tendon = tendon_response_of(m, path - x);
+		fiber = fiber_at(x);
+		if (abs(tendon.tension - fiber.tension) < abs(best_tendon.tension - best_fiber.tension)) {
+			best = x;
+			best_tendon = tendon;
+			best_fiber = fiber;
+		}
+	}
+
+	const stiffness series = best_tendon.tendon_stiffness + best_fiber.path_stiffness;
+	return {
+		.projection = best,
+		.response = {
+			.tension = best_tendon.tension,
+			.path_stiffness = series > stiffness{} ? best_tendon.tendon_stiffness * (best_fiber.path_stiffness / series) : stiffness{},
+		},
+	};
+}
+
+auto gse::vbd::advance_muscle_fiber(muscle_constraint& m, const length path, const time_step dt) -> void {
+	if (m.tendon_shape <= 0.f) {
+		return;
+	}
+	m.fiber_projection_start = compliant_fiber_of(m, path, m.fiber_projection_start, dt).projection;
+}
+
+auto gse::vbd::muscle_isometric_stiffness(const muscle_constraint& m, const time_step dt) -> stiffness {
+	if (m.tendon_shape <= 0.f) {
+		return muscle_tension(m, m.path_length_start, m.path_length_start, dt).path_stiffness;
+	}
+	const length fiber_path = muscle_fiber_path(m);
+	const stiffness tendon = tendon_response_of(m, m.path_length_start - m.fiber_projection_start).tendon_stiffness;
+	const stiffness fiber = damped_fiber_tension(m, fiber_path, fiber_path, dt, 0.f).path_stiffness;
+	const stiffness series = tendon + fiber;
+	return series > stiffness{} ? tendon * (fiber / series) : stiffness{};
+}
+
+auto gse::vbd::muscle_fiber_path(const muscle_constraint& m) -> length {
+	return m.tendon_shape > 0.f ? m.fiber_projection_start + m.tendon_slack_length : m.path_length_start;
 }
 
 auto gse::vbd::advance_muscle_activation(muscle_constraint& m, const time_step dt) -> void {
@@ -2537,8 +2681,11 @@ auto gse::vbd::muscle_point_of(const muscle_path_point& point, const std::span<c
 
 auto gse::vbd::muscle_path_length(const std::span<const muscle_path_point> path, const std::span<const body_state> bodies, const std::optional<moving_frame>& frame) -> length {
 	length total{};
+	vec3<predicted_position> previous = muscle_point_of(path[0], bodies, frame);
 	for (std::size_t k = 0; k + 1 < path.size(); ++k) {
-		total += magnitude(muscle_point_of(path[k + 1], bodies, frame) - muscle_point_of(path[k], bodies, frame));
+		const vec3<predicted_position> next = muscle_point_of(path[k + 1], bodies, frame);
+		total += magnitude(next - previous);
+		previous = next;
 	}
 	return total;
 }
@@ -2588,7 +2735,7 @@ auto gse::vbd::solver::muscle_floor_of(const std::uint32_t body_idx, const time_
 	stiffness floor{};
 	for (const auto mi : m_graph.body_muscle_indices(body_idx)) {
 		const auto& m = m_graph.muscle_constraints()[mi];
-		const stiffness isometric = muscle_tension(m, m.path_length_start, m.path_length_start, dt).path_stiffness;
+		const stiffness isometric = muscle_isometric_stiffness(m, dt);
 		if (isometric <= stiffness{}) {
 			continue;
 		}
@@ -2617,42 +2764,85 @@ auto gse::vbd::solver::contact_normal_penalty(const contact_constraint& c) const
 }
 
 auto gse::vbd::muscle_length_gradient(const std::span<const muscle_path_point> path, const std::span<const body_state> bodies, const std::optional<moving_frame>& frame, const std::uint32_t body_idx) -> muscle_body_gradient {
-	const auto segment_direction = [&](const std::size_t from, const std::size_t to) {
-		const vec3<displacement> d = muscle_point_of(path[to], bodies, frame) - muscle_point_of(path[from], bodies, frame);
-		return magnitude(d) > meters(1e-7f) ? normalize(d) : vec3f{};
+	const auto row = muscle_row_of(path, bodies, frame, body_idx, force{});
+	return { .linear = row.linear, .angular = row.angular };
+}
+
+auto gse::vbd::muscle_row_of(const std::span<const muscle_path_point> path, const std::span<const body_state> bodies, const std::optional<moving_frame>& frame, const std::uint32_t body_idx, const force abs_force) -> muscle_row {
+	struct path_node {
+		vec3<predicted_position> position;
+		vec3<lever_arm> lever;
+		std::optional<moving_point> moving;
 	};
 
-	muscle_body_gradient result{};
-	for (std::size_t k = 0; k < path.size(); ++k) {
-		const bool moving = path[k].frame_words != limits.no_curve_words;
-		const bool on_body = path[k].body == body_idx;
-		const bool on_frame_body = moving && path[k].frame_body == body_idx;
+	struct path_segment {
+		vec3f direction;
+		bool valid = false;
+	};
+
+	const auto node_of = [&](const muscle_path_point& point) -> path_node {
+		const auto& body = bodies[point.body];
+		if (point.frame_words == limits.no_curve_words) {
+			const vec3<lever_arm> lever = rotate_vector(body.predicted_orientation, point.local_point);
+			return { .position = body.predicted_position + lever, .lever = lever };
+		}
+		const auto moving = moving_point_in(*frame, point.local_point);
+		return { .position = body.predicted_position + moving.offset, .lever = moving.offset, .moving = moving };
+	};
+
+	const auto segment_of = [](const path_node& from, const path_node& to) -> path_segment {
+		const vec3<displacement> d = to.position - from.position;
+		if (magnitude(d) <= meters(1e-7f)) {
+			return {};
+		}
+		return { .direction = normalize(d), .valid = true };
+	};
+
+	muscle_row result{};
+	const auto add_point = [&](const muscle_path_point& point, const path_node& node, const path_segment& in, const path_segment& out) {
+		const bool on_body = point.body == body_idx;
+		const bool on_frame_body = node.moving.has_value() && point.frame_body == body_idx;
 		if (!on_body && !on_frame_body) {
-			continue;
+			return;
 		}
 		vec3f g{};
-		if (k > 0) {
-			g += segment_direction(k - 1, k);
-		}
-		if (k + 1 < path.size()) {
-			g -= segment_direction(k, k + 1);
-		}
-		if (!moving) {
-			const vec3<lever_arm> r = rotate_vector(bodies[body_idx].predicted_orientation, path[k].local_point);
+		g += in.direction;
+		g -= out.direction;
+		if (!node.moving) {
 			result.linear += g;
-			result.angular += cross(r, g) / rad;
-			continue;
+			result.angular += cross(node.lever, g) / rad;
 		}
-		const auto point = moving_point_in(*frame, path[k].local_point);
-		const vec3<angular_jacobian> theta_lever = moving_point_lever(point, g);
-		if (on_body) {
-			result.linear += g;
-			result.angular += cross(point.offset, g) / rad - theta_lever;
+		else {
+			const vec3<angular_jacobian> theta_lever = moving_point_lever(*node.moving, g);
+			if (on_body) {
+				result.linear += g;
+				result.angular += cross(node.lever, g) / rad - theta_lever;
+			}
+			if (on_frame_body) {
+				result.angular += theta_lever;
+			}
 		}
-		if (on_frame_body) {
-			result.angular += theta_lever;
+		if (!on_body) {
+			return;
 		}
+		if (in.valid) {
+			result.geometric += geometric_stiffness_diagonal(node.lever, in.direction, abs_force);
+		}
+		if (out.valid) {
+			result.geometric += geometric_stiffness_diagonal(node.lever, -out.direction, abs_force);
+		}
+	};
+
+	path_node previous = node_of(path[0]);
+	path_segment in{};
+	for (std::size_t k = 0; k + 1 < path.size(); ++k) {
+		const path_node next = node_of(path[k + 1]);
+		const path_segment out = segment_of(previous, next);
+		add_point(path[k], previous, in, out);
+		previous = next;
+		in = out;
 	}
+	add_point(path.back(), previous, in, {});
 	return result;
 }
 
@@ -2702,11 +2892,18 @@ auto gse::vbd::wrap_segment(const vec3<displacement>& p1, const vec3<displacemen
 		result = wrap_result::mandatory;
 	}
 
-	const angle phi1 = atan2(p1.y(), p1.x());
-	const angle phi2 = atan2(p2.y(), p2.x());
-	const angle a1 = acos(r / rho1);
-	const angle a2 = acos(r / rho2);
-	const std::array<angle, 4> candidate = { phi1 + a1, phi1 - a1, phi2 + a2, phi2 - a2 };
+	const length l1 = sqrt(std::max(rho1 * rho1 - r * r, decltype(r * r){}));
+	const length l2 = sqrt(std::max(rho2 * rho2 - r * r, decltype(r * r){}));
+	const auto tangent_directions = [r](const vec3<displacement>& p, const length rho, const length l) -> std::array<vec2f, 2> {
+		const auto rho_squared = rho * rho;
+		return {
+			vec2f((p.x() * r - p.y() * l) / rho_squared, (p.y() * r + p.x() * l) / rho_squared),
+			vec2f((p.x() * r + p.y() * l) / rho_squared, (p.y() * r - p.x() * l) / rho_squared),
+		};
+	};
+	const auto [c0, c1] = tangent_directions(p1, rho1, l1);
+	const auto [c2, c3] = tangent_directions(p2, rho2, l2);
+	const std::array<vec2f, 4> candidate = { c0, c1, c2, c3 };
 	std::uint32_t first = 0;
 	std::uint32_t second = 3;
 	bool long_wrap = false;
@@ -2726,24 +2923,19 @@ auto gse::vbd::wrap_segment(const vec3<displacement>& p1, const vec3<displacemen
 		}
 		std::array<bool, 4> on{};
 		for (std::size_t k = 0; k < on.size(); ++k) {
-			on[k] = side_of(r * cos(candidate[k]), r * sin(candidate[k])) == 1;
+			on[k] = side_of(r * candidate[k].x(), r * candidate[k].y()) == 1;
 		}
-		const angle alpha = abs(wrap_angle(candidate[3] - candidate[0]));
-		const angle beta = abs(wrap_angle(candidate[2] - candidate[1]));
-		const bool short_pair = on[0] && on[1] ? !on[2] : on[0] ? true : on[1] ? false : on[2] ? false : on[3] ? true : alpha > beta;
+		const bool short_pair = on[0] && on[1] ? !on[2] : on[0] ? true : on[1] ? false : on[2] ? false : on[3] ? true : dot(c0, c3) < dot(c1, c2);
 		first = short_pair ? 0 : 1;
 		second = short_pair ? 3 : 2;
-		const length t1x = r * cos(candidate[first]);
-		const length t1y = r * sin(candidate[first]);
-		const length t2x = r * cos(candidate[second]);
-		const length t2y = r * sin(candidate[second]);
+		const length t1x = r * candidate[first].x();
+		const length t1y = r * candidate[first].y();
+		const length t2x = r * candidate[second].x();
+		const length t2y = r * candidate[second].y();
 		long_wrap = (t1x - p1.x() + t2x - p2.x()) * (t1x + t2x) + (t1y - p1.y() + t2y - p2.y()) * (t1y + t2y) < decltype(t1x * t1x){};
 	}
 	else {
-		const auto dot_of = [&candidate](const std::uint32_t a, const std::uint32_t b) {
-			return cos(candidate[a]) * cos(candidate[b]) + sin(candidate[a]) * sin(candidate[b]);
-		};
-		const std::array<float, 4> values = { dot_of(0, 2), dot_of(0, 3), dot_of(1, 2), dot_of(1, 3) };
+		const std::array<float, 4> values = { dot(c0, c2), dot(c0, c3), dot(c1, c2), dot(c1, c3) };
 		std::uint32_t best = 3;
 		if (values[0] > values[1] && values[0] > values[2] && values[0] > values[3]) {
 			best = 0;
@@ -2759,12 +2951,10 @@ auto gse::vbd::wrap_segment(const vec3<displacement>& p1, const vec3<displacemen
 	}
 
 	const angle full_turn = radians(2.f * std::numbers::pi_v<float>);
-	const angle ang1 = candidate[first];
-	const angle ang2 = candidate[second];
-	const angle theta = atan2(sin(ang2 - ang1), cos(ang2 - ang1));
+	const vec2f tangent1 = candidate[first];
+	const vec2f tangent2 = candidate[second];
+	const angle theta = atan2(tangent1.x() * tangent2.y() - tangent1.y() * tangent2.x(), dot(tangent1, tangent2));
 	const angle sweep = long_wrap ? full_turn - theta : abs(theta);
-	const length l1 = sqrt(std::max(rho1 * rho1 - r * r, decltype(r * r){}));
-	const length l2 = sqrt(std::max(rho2 * rho2 - r * r, decltype(r * r){}));
 	const length arc_planar = r * (sweep / rad);
 	const length planar = l1 + arc_planar + l2;
 	const length dz = p2.z() - p1.z();
@@ -2776,25 +2966,28 @@ auto gse::vbd::wrap_segment(const vec3<displacement>& p1, const vec3<displacemen
 	}
 	return {
 		.result = result,
-		.t1 = vec3<displacement>(r * cos(ang1), r * sin(ang1), z1),
-		.t2 = vec3<displacement>(r * cos(ang2), r * sin(ang2), z2),
+		.t1 = vec3<displacement>(r * tangent1.x(), r * tangent1.y(), z1),
+		.t2 = vec3<displacement>(r * tangent2.x(), r * tangent2.y(), z2),
 		.arc = hypot(arc_planar, z2 - z1),
 	};
+}
+
+auto gse::vbd::ordered_wrap(const wrap_contacts& contacts, const std::uint32_t wrap_count, const std::uint32_t rank) -> std::uint32_t {
+	const bool swapped = wrap_count == 2 && contacts[1].order < contacts[0].order;
+	return swapped ? 1 - rank : rank;
 }
 
 auto gse::vbd::wrapped_length(const std::span<const vec3<displacement>> points, const wrap_contacts& contacts, const std::uint32_t wrap_count) -> length {
 	length total{};
 	vec3<displacement> previous = points[0];
 	for (std::uint32_t k = 0; k + 1 < points.size(); ++k) {
-		for (std::uint32_t order = 0; order < wrap_count; ++order) {
-			for (std::uint32_t w = 0; w < wrap_count; ++w) {
-				const auto& c = contacts[w];
-				if (c.segment != k || c.order != order) {
-					continue;
-				}
-				total += magnitude(c.t1 - previous) + c.arc;
-				previous = c.t2;
+		for (std::uint32_t rank = 0; rank < wrap_count; ++rank) {
+			const auto& c = contacts[ordered_wrap(contacts, wrap_count, rank)];
+			if (c.segment != k) {
+				continue;
 			}
+			total += magnitude(c.t1 - previous) + c.arc;
+			previous = c.t2;
 		}
 		total += magnitude(points[k + 1] - previous);
 		previous = points[k + 1];
@@ -2802,8 +2995,9 @@ auto gse::vbd::wrapped_length(const std::span<const vec3<displacement>> points, 
 	return total;
 }
 
-auto gse::vbd::wrap_muscle_path(const std::span<const vec3<displacement>> points, const std::span<const wrap_obstacle> obstacles) -> wrap_contacts {
+auto gse::vbd::wrap_muscle_path(const std::span<const vec3<displacement>> points, const std::span<const wrap_obstacle> obstacles) -> wrap_path {
 	wrap_contacts contacts{};
+	length path_length{};
 	const auto count = static_cast<std::uint32_t>(obstacles.size());
 	std::array<std::uint32_t, physics::max_muscle_wraps> order = { 0, 1 };
 	std::array<wrap_result, physics::max_muscle_wraps> results{};
@@ -2856,6 +3050,7 @@ auto gse::vbd::wrap_muscle_path(const std::span<const vec3<displacement>> points
 			}
 		}
 		const length total = wrapped_length(points, contacts, count);
+		path_length = total;
 		if (last && abs(total - *last) < limits.wrap_pass_tolerance) {
 			break;
 		}
@@ -2864,8 +3059,14 @@ auto gse::vbd::wrap_muscle_path(const std::span<const vec3<displacement>> points
 			std::swap(order[0], order[1]);
 			contacts[0] = {};
 		}
+		else if (pass == 0 && count == 2 && (contacts[1].segment < obstacles[0].first_segment || contacts[1].segment >= obstacles[0].segment_end)) {
+			break;
+		}
 	}
-	return contacts;
+	return {
+		.contacts = contacts,
+		.path_length = path_length,
+	};
 }
 
 auto gse::vbd::start_poses_of(const std::span<const muscle_path_point> path, const std::span<const muscle_path_point> wraps, const std::span<const body_state> bodies) -> std::array<record_pose, physics::max_muscle_path_points + physics::max_muscle_wraps> {
@@ -2908,8 +3109,10 @@ auto gse::vbd::wrapped_muscle_of(const std::span<const muscle_path_point> path, 
 		obstacles[w] = wrap_obstacle_of(curves, wraps[w], poses[path.size() + w]);
 	}
 
+	const auto [contacts, path_length] = wrap_muscle_path(std::span(points).first(path.size()), std::span(obstacles).first(wraps.size()));
 	wrapped_muscle result{
-		.contacts = wrap_muscle_path(std::span(points).first(path.size()), std::span(obstacles).first(wraps.size())),
+		.contacts = contacts,
+		.path_length = path_length,
 	};
 	const auto push = [&result](const wrap_node& node) {
 		result.nodes[result.count++] = node;
@@ -2917,33 +3120,18 @@ auto gse::vbd::wrapped_muscle_of(const std::span<const muscle_path_point> path, 
 	const auto wrap_count = static_cast<std::uint32_t>(wraps.size());
 	for (std::uint32_t k = 0; k < path.size(); ++k) {
 		push({ .position = points[k], .lever = levers[k], .body = path[k].body });
-		for (std::uint32_t order = 0; order < wrap_count; ++order) {
-			for (std::uint32_t w = 0; w < wrap_count; ++w) {
-				const auto& c = result.contacts[w];
-				if (c.segment != k || c.order != order) {
-					continue;
-				}
-				const auto& origin = poses[path.size() + w].origin;
-				push({ .position = c.t1, .lever = c.t1 - origin, .body = wraps[w].body, .wrap = w, .arc_follows = true });
-				push({ .position = c.t2, .lever = c.t2 - origin, .body = wraps[w].body, .wrap = w });
+		for (std::uint32_t rank = 0; rank < wrap_count; ++rank) {
+			const std::uint32_t w = ordered_wrap(result.contacts, wrap_count, rank);
+			const auto& c = result.contacts[w];
+			if (c.segment != k) {
+				continue;
 			}
+			const auto& origin = poses[path.size() + w].origin;
+			push({ .position = c.t1, .lever = c.t1 - origin, .body = wraps[w].body, .wrap = w, .arc_follows = true });
+			push({ .position = c.t2, .lever = c.t2 - origin, .body = wraps[w].body, .wrap = w });
 		}
 	}
 	return result;
-}
-
-auto gse::vbd::wrapped_path_length(const wrapped_muscle& w) -> length {
-	length total{};
-	for (std::uint32_t i = 1; i < w.count; ++i) {
-		const auto& previous = w.nodes[i - 1];
-		if (previous.arc_follows) {
-			continue;
-		}
-		const auto& node = w.nodes[i];
-		const length straight = magnitude(node.position - previous.position);
-		total += node.arc_follows ? straight + w.contacts[node.wrap].arc : straight;
-	}
-	return total;
 }
 
 auto gse::vbd::wrapped_length_gradient(const wrapped_muscle& w, const std::uint32_t body_idx) -> muscle_body_gradient {
@@ -2976,14 +3164,14 @@ auto gse::vbd::muscle_start_path_length(const std::span<const muscle_path_point>
 	if (wraps.empty()) {
 		return muscle_start_path_length(path, bodies, curves);
 	}
-	return wrapped_path_length(wrapped_muscle_of(path, wraps, curves, start_poses_of(path, wraps, bodies)));
+	return wrapped_muscle_of(path, wraps, curves, start_poses_of(path, wraps, bodies)).path_length;
 }
 
 auto gse::vbd::solver::accumulate_wrapped_muscle(const muscle_constraint& constraint, const std::uint32_t body_idx, const time_step dt) -> void {
 	const auto path = m_graph.muscle_path(constraint);
 	const auto wraps = m_graph.muscle_wraps(constraint);
 	const auto wrapped = wrapped_muscle_of(path, wraps, m_curve_words, predicted_poses_of(path, wraps, m_bodies));
-	const auto [tension, path_stiffness] = muscle_tension(constraint, wrapped_path_length(wrapped), constraint.path_length_start, dt);
+	const auto [tension, path_stiffness] = muscle_tension(constraint, wrapped.path_length, constraint.path_length_start, dt);
 	if (tension <= force{} && path_stiffness <= stiffness{}) {
 		return;
 	}
@@ -3032,7 +3220,7 @@ auto gse::vbd::solver::accumulate_muscle(const muscle_constraint& constraint, co
 		return;
 	}
 
-	const auto [g_lin, g_ang] = muscle_length_gradient(path, m_bodies, frame, body_idx);
+	const auto [g_lin, g_ang, geometric] = muscle_row_of(path, m_bodies, frame, body_idx, abs(tension));
 	auto& state = m_solve_state[body_idx];
 	state.gradient += g_lin * tension;
 	state.hessian += outer_product(g_lin, g_lin) * path_stiffness;
@@ -3043,24 +3231,7 @@ auto gse::vbd::solver::accumulate_muscle(const muscle_constraint& constraint, co
 	state.angular_gradient += g_ang * tension;
 	state.angular_hessian += outer_product(g_ang, g_ang) * path_stiffness;
 	state.hessian_xtheta += outer_product(g_lin, g_ang) * path_stiffness;
-
-	const auto& body = m_bodies[body_idx];
-	for (std::size_t k = 0; k < path.size(); ++k) {
-		if (path[k].body != body_idx) {
-			continue;
-		}
-		const vec3<lever_arm> r = path[k].frame_words == limits.no_curve_words
-			? rotate_vector(body.predicted_orientation, path[k].local_point)
-			: moving_point_in(*frame, path[k].local_point).offset;
-		for (const auto neighbour : { k - 1, k + 1 }) {
-			if (neighbour >= path.size()) {
-				continue;
-			}
-			const vec3<displacement> d = muscle_point_of(path[k], m_bodies, frame) - muscle_point_of(path[neighbour], m_bodies, frame);
-			if (magnitude(d) <= meters(1e-7f)) {
-				continue;
-			}
-			accumulate_geometric_stiffness(state, r, normalize(d), abs(tension));
-		}
+	for (int j = 0; j < 3; ++j) {
+		state.angular_hessian[j][j] += geometric[j];
 	}
 }

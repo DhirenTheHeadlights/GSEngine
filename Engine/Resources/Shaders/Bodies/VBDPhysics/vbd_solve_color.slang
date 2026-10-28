@@ -269,8 +269,9 @@ mat3 fx_load_mat3(int64_t acc[9]) {
     return m;
 }
 
-void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
+float3 geometric_stiffness_diagonal(float3 r, float3 dir, float abs_force) {
     float rd = dot(r, dir);
+    float3 diagonal;
     for (int j = 0; j < 3; j++) {
         float col_norm = 0.0;
         for (int i = 0; i < 3; i++) {
@@ -278,8 +279,16 @@ void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout
             if (i == j) h -= rd;
             col_norm += abs(h);
         }
-        ang_hess[j][j] += col_norm * abs_force;
+        diagonal[j] = col_norm * abs_force;
     }
+    return diagonal;
+}
+
+void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
+    float3 diagonal = geometric_stiffness_diagonal(r, dir, abs_force);
+    ang_hess[0][0] += diagonal.x;
+    ang_hess[1][1] += diagonal.y;
+    ang_hess[2][2] += diagonal.z;
 }
 
 void accumulate_drive_row(
@@ -337,6 +346,9 @@ struct coupled_newton {
 };
 
 coupled_frame shared_coupled_frame(inout coupled_newton newton, uint joint_words, uint body_a, uint body_b, float4 orientation_a, float4 orientation_b) {
+    if (curve_word(joint_words + coupled_newton_iterations_index) == 0) {
+        return coupled_frame_of(joint_words, orientation_a, orientation_b);
+    }
     if (newton.joint_words != joint_words || newton.body_a != body_a || newton.body_b != body_b) {
         newton.joint_words = joint_words;
         newton.body_a = body_a;
@@ -368,6 +380,21 @@ float3 muscle_point(moving_frame frame, muscle_path_point p) {
     return b.predicted_position.xyz + moving_point_in(frame, p.local_point.xyz).offset;
 }
 
+struct plain_node {
+    float3 position;
+    float3 lever;
+};
+
+plain_node plain_node_of(moving_frame frame, muscle_path_point p) {
+    body_view b = load_body_view(p.body);
+    plain_node node;
+    node.lever = p.frame_words == no_curve_words
+        ? rotate_vector(b.predicted_orientation, p.local_point.xyz)
+        : moving_point_in(frame, p.local_point.xyz).offset;
+    node.position = b.predicted_position.xyz + node.lever;
+    return node;
+}
+
 struct predicted_wrap_poses : IWrapPoses {
     float3 body_position(uint body) {
         return load_body_view(body).predicted_position.xyz;
@@ -378,6 +405,20 @@ struct predicted_wrap_poses : IWrapPoses {
     }
 };
 
+void add_wrap_segment_stiffness(wrap_node from, wrap_node to, uint body, float force, inout float3 diagonal) {
+    float3 d = to.position - from.position;
+    if (from.arc_follows || !(length(d) > 1e-7)) {
+        return;
+    }
+    float3 dir = normalize(d);
+    if (from.body == body) {
+        diagonal += geometric_stiffness_diagonal(from.lever, -dir, force);
+    }
+    if (to.body == body) {
+        diagonal += geometric_stiffness_diagonal(to.lever, dir, force);
+    }
+}
+
 void accumulate_wrapped_muscle_for_body(
     uint bi, muscle_constraint m, bool update_orient,
     inout float3 grad, inout mat3 hess,
@@ -387,30 +428,14 @@ void accumulate_wrapped_muscle_for_body(
     predicted_wrap_poses poses;
     float3 anchor = wrap_anchor(poses, m);
     wrap_contacts contacts = wrap_muscle_path(poses, m, anchor);
-    float2 response = muscle_tension(m, wrapped_length_of(poses, m, anchor, contacts), m.path_length_start, pc.dt);
+    float2 response = muscle_tension(m, contacts.path_length, m.path_length_start, pc.dt);
     float tension = response.x;
     float path_stiffness = response.y;
     if (tension <= 0.0 && path_stiffness <= 0.0) return;
 
-    uint count = wrap_node_count(m, contacts);
-    float3 g_lin = float3(0, 0, 0);
-    float3 g_ang = float3(0, 0, 0);
-    for (uint i = 0; i < count; i++) {
-        wrap_node node = wrap_node_at(poses, m, anchor, contacts, i);
-        if (node.body != bi) continue;
-        float3 g = float3(0, 0, 0);
-        if (i > 0) {
-            wrap_node previous = wrap_node_at(poses, m, anchor, contacts, i - 1);
-            float3 d = node.position - previous.position;
-            if (!previous.arc_follows && length(d) > 1e-7) g += normalize(d);
-        }
-        if (i + 1 < count && !node.arc_follows) {
-            float3 d = wrap_node_at(poses, m, anchor, contacts, i + 1).position - node.position;
-            if (length(d) > 1e-7) g -= normalize(d);
-        }
-        g_lin += g;
-        g_ang += cross(node.lever, g);
-    }
+    wrapped_gradient gradient = wrapped_body_gradient(poses, m, anchor, contacts, bi);
+    float3 g_lin = gradient.linear;
+    float3 g_ang = gradient.angular;
 
     grad += g_lin * tension;
     hess = mat3_add(hess, mat3_scale(outer_product3(g_lin, g_lin), path_stiffness));
@@ -419,19 +444,29 @@ void accumulate_wrapped_muscle_for_body(
     ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(g_ang, g_ang), path_stiffness));
     hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(g_lin, g_ang), path_stiffness));
 
-    for (uint i = 0; i < count; i++) {
-        wrap_node node = wrap_node_at(poses, m, anchor, contacts, i);
-        if (node.body != bi) continue;
-        if (i > 0) {
-            wrap_node previous = wrap_node_at(poses, m, anchor, contacts, i - 1);
-            float3 d = node.position - previous.position;
-            if (!previous.arc_follows && length(d) > 1e-7) accumulate_geometric_stiffness(node.lever, normalize(d), abs(tension), ang_hess);
+    float force = abs(tension);
+    float3 diagonal = float3(ang_hess[0][0], ang_hess[1][1], ang_hess[2][2]);
+    wrap_node current = wrap_point_node(poses, m, anchor, 0);
+    for (uint k = 0; k < m.path_count; k++) {
+        if (k > 0) {
+            wrap_node node = wrap_point_node(poses, m, anchor, k);
+            add_wrap_segment_stiffness(current, node, bi, force, diagonal);
+            current = node;
         }
-        if (i + 1 < count && !node.arc_follows) {
-            float3 d = node.position - wrap_node_at(poses, m, anchor, contacts, i + 1).position;
-            if (length(d) > 1e-7) accumulate_geometric_stiffness(node.lever, normalize(d), abs(tension), ang_hess);
+        for (uint rank = 0; rank < m.wrap_count; rank++) {
+            uint w = ordered_wrap(m, contacts, rank);
+            wrap_contact c = contact_at(contacts, w);
+            if (c.segment != k) {
+                continue;
+            }
+            wrap_node arc_start = wrap_arc_node(poses, m, anchor, c, w, true);
+            add_wrap_segment_stiffness(current, arc_start, bi, force, diagonal);
+            current = wrap_arc_node(poses, m, anchor, c, w, false);
         }
     }
+    ang_hess[0][0] = diagonal.x;
+    ang_hess[1][1] = diagonal.y;
+    ang_hess[2][2] = diagonal.z;
 }
 
 void accumulate_muscle_for_body(
@@ -448,48 +483,67 @@ void accumulate_muscle_for_body(
     }
     moving_frame frame = muscle_frame_of(m, newton);
     float path = 0.0;
+    float3 previous = muscle_point(frame, muscle_path_data[m.path_first]);
     for (uint k = 0; k + 1 < m.path_count; k++) {
-        path += length(muscle_point(frame, muscle_path_data[m.path_first + k + 1]) - muscle_point(frame, muscle_path_data[m.path_first + k]));
+        float3 next = muscle_point(frame, muscle_path_data[m.path_first + k + 1]);
+        path += length(next - previous);
+        previous = next;
     }
     float2 response = muscle_tension(m, path, m.path_length_start, pc.dt);
     float tension = response.x;
     float path_stiffness = response.y;
     if (tension <= 0.0 && path_stiffness <= 0.0) return;
 
-    float4 orientation = load_body_view(bi).predicted_orientation;
+    float force = abs(tension);
     float3 g_lin = float3(0, 0, 0);
     float3 g_ang = float3(0, 0, 0);
+    float3 diagonal = float3(0, 0, 0);
+    muscle_path_point pk = muscle_path_data[m.path_first];
+    plain_node node = plain_node_of(frame, pk);
+    float3 in_dir = float3(0, 0, 0);
+    bool in_valid = false;
     for (uint k = 0; k < m.path_count; k++) {
-        muscle_path_point pk = muscle_path_data[m.path_first + k];
+        muscle_path_point next_point = pk;
+        plain_node next_node = node;
+        float3 out_dir = float3(0, 0, 0);
+        bool out_valid = false;
+        if (k + 1 < m.path_count) {
+            next_point = muscle_path_data[m.path_first + k + 1];
+            next_node = plain_node_of(frame, next_point);
+            float3 d = next_node.position - node.position;
+            if (length(d) > 1e-7) {
+                out_dir = normalize(d);
+                out_valid = true;
+            }
+        }
         bool moving = pk.frame_words != no_curve_words;
         bool on_body = pk.body == bi;
         bool on_frame_body = moving && pk.frame_body == bi;
-        if (!on_body && !on_frame_body) continue;
-        float3 p = muscle_point(frame, pk);
-        float3 g = float3(0, 0, 0);
-        if (k > 0) {
-            float3 d = p - muscle_point(frame, muscle_path_data[m.path_first + k - 1]);
-            if (length(d) > 1e-7) g += normalize(d);
+        if (on_body || on_frame_body) {
+            float3 g = float3(0, 0, 0);
+            g += in_dir;
+            g -= out_dir;
+            if (!moving) {
+                g_lin += g;
+                g_ang += cross(node.lever, g);
+            }
+            else {
+                float3 theta_lever = moving_point_lever(moving_point_in(frame, pk.local_point.xyz), g);
+                if (on_body) {
+                    g_lin += g;
+                    g_ang += cross(node.lever, g) - theta_lever;
+                }
+                if (on_frame_body) {
+                    g_ang += theta_lever;
+                }
+            }
+            if (on_body && in_valid) diagonal += geometric_stiffness_diagonal(node.lever, in_dir, force);
+            if (on_body && out_valid) diagonal += geometric_stiffness_diagonal(node.lever, -out_dir, force);
         }
-        if (k + 1 < m.path_count) {
-            float3 d = muscle_point(frame, muscle_path_data[m.path_first + k + 1]) - p;
-            if (length(d) > 1e-7) g -= normalize(d);
-        }
-        if (!moving) {
-            float3 r = rotate_vector(orientation, pk.local_point.xyz);
-            g_lin += g;
-            g_ang += cross(r, g);
-            continue;
-        }
-        moving_point mp = moving_point_in(frame, pk.local_point.xyz);
-        float3 theta_lever = moving_point_lever(mp, g);
-        if (on_body) {
-            g_lin += g;
-            g_ang += cross(mp.offset, g) - theta_lever;
-        }
-        if (on_frame_body) {
-            g_ang += theta_lever;
-        }
+        pk = next_point;
+        node = next_node;
+        in_dir = out_dir;
+        in_valid = out_valid;
     }
 
     grad += g_lin * tension;
@@ -498,22 +552,9 @@ void accumulate_muscle_for_body(
     ang_grad += g_ang * tension;
     ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(g_ang, g_ang), path_stiffness));
     hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(g_lin, g_ang), path_stiffness));
-
-    for (uint k = 0; k < m.path_count; k++) {
-        muscle_path_point pk = muscle_path_data[m.path_first + k];
-        if (pk.body != bi) continue;
-        float3 p = muscle_point(frame, pk);
-        float3 r = rotate_vector(orientation, pk.local_point.xyz);
-        if (pk.frame_words != no_curve_words) r = moving_point_in(frame, pk.local_point.xyz).offset;
-        if (k > 0) {
-            float3 d = p - muscle_point(frame, muscle_path_data[m.path_first + k - 1]);
-            if (length(d) > 1e-7) accumulate_geometric_stiffness(r, normalize(d), abs(tension), ang_hess);
-        }
-        if (k + 1 < m.path_count) {
-            float3 d = p - muscle_point(frame, muscle_path_data[m.path_first + k + 1]);
-            if (length(d) > 1e-7) accumulate_geometric_stiffness(r, normalize(d), abs(tension), ang_hess);
-        }
-    }
+    ang_hess[0][0] += diagonal.x;
+    ang_hess[1][1] += diagonal.y;
+    ang_hess[2][2] += diagonal.z;
 }
 
 void accumulate_joint_for_body(

@@ -49,6 +49,11 @@ export namespace gse::vbd {
 			Fn&& fn
 		) -> std::size_t;
 
+		template <std::invocable<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, const cached_lambda&> Fn>
+		auto for_each_entry(
+			Fn&& fn
+		) const -> void;
+
 		auto advance() -> void;
 
 		auto reserve(
@@ -337,4 +342,12 @@ auto gse::vbd::contact_cache::for_each_pair(const id body_a, const id body_b, Fn
 	}
 
 	return emitted;
+}
+
+template <std::invocable<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, const gse::vbd::cached_lambda&> Fn>
+auto gse::vbd::contact_cache::for_each_entry(Fn&& fn) const -> void {
+	for (std::size_t handle = 0; handle < m_keys.size(); ++handle) {
+		const slot_key& k = m_keys[handle];
+		fn(k.key_lo, k.key_hi, k.feature, m_stamp - k.last_seen, m_payloads[handle]);
+	}
 }

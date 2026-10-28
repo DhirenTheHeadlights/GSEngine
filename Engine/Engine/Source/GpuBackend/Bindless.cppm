@@ -7,6 +7,8 @@ import std;
 import :core;
 
 export namespace gse::gpu {
+	constexpr std::uint32_t dx12_buffer_read_view_offset = 16384;
+
 	struct descriptor_heap {};
 
 	enum class image_descriptor_kind : std::uint8_t {

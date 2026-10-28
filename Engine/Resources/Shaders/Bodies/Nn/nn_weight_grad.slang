@@ -78,6 +78,7 @@ void nn_weight_grad(uint3 group_id, uint3 group_thread_id) {
     uint n = pc.sample_count;
     uint base = pc.sample_base;
     float sum = 0.0;
+    float lr = pc.lr;
 
     if (p < nn_b1_off(in_dim)) {
         uint o = p / in_dim;
@@ -125,6 +126,7 @@ void nn_weight_grad(uint3 group_id, uint3 group_thread_id) {
         for (uint s = 0; s < n; ++s) {
             sum += nn_scratch[nn_ls_terms_off + s * out_dim + i];
         }
+        lr = pc.lr * nn_log_std_lr_scale;
     }
 
     if (pc.mode == 2) {
@@ -142,7 +144,7 @@ void nn_weight_grad(uint3 group_id, uint3 group_thread_id) {
     float v = nn_adam_beta2 * nn_state[v_index] + (1.0 - nn_adam_beta2) * g * g;
     nn_state[m_index] = m;
     nn_state[v_index] = v;
-    float value = nn_state[p] - pc.lr * (m / bc1) / (sqrt(v / bc2) + nn_adam_eps);
+    float value = nn_state[p] - lr * (m / bc1) / (sqrt(v / bc2) + nn_adam_eps);
     nn_state[p] = value;
     nn_store_transposed(p, value, in_dim, out_dim, pc.param_count);
 }

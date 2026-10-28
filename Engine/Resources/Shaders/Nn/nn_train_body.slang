@@ -146,33 +146,50 @@ void nn_train_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float
             uint act_row = target_offset + sample * out_dim;
             float log_prob = 0.0;
             float entropy = 0.0;
+            bool move_row = nn_move_rows != 0 && nn_inputs[pc.policy_row_offset + sample] == 0.0;
             for (uint i = 0; i < out_dim; ++i) {
-                float ls = state[ls_off + i];
+                float ls = move_row ? nn_move_log_std : state[ls_off + i];
                 float sigma = exp(ls);
-                float diff = (nn_inputs[act_row + i] - gs_out[row + i]) / sigma;
+                float diff = (nn_inputs[act_row + i] - nn_bounded_mean(i, gs_out[row + i])) / sigma;
                 log_prob += -0.5 * diff * diff - ls - 0.5 * nn_log_2pi;
                 entropy += ls + nn_gaussian_entropy_const;
             }
             float adv = nn_inputs[pc.adv_offset + sample];
-            float ratio = exp(log_prob - nn_inputs[pc.aux_offset + sample]);
-            float clipped = clamp(ratio, 1.0 - pc.clip_eps, 1.0 + pc.clip_eps);
-            bool not_clipped = (adv >= 0.0) ? (ratio < 1.0 + pc.clip_eps) : (ratio > 1.0 - pc.clip_eps);
-            float d_logp = not_clipped ? -ratio * adv : 0.0;
-            float sample_loss = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
+            float d_logp;
+            float sample_loss;
+            float ls_scale;
+            if (pc.actor_loss != 0) {
+                float weight = min(exp(adv / pc.awr_temperature), pc.awr_weight_max);
+                d_logp = -weight;
+                sample_loss = -weight * log_prob - pc.entropy_coeff * entropy;
+                ls_scale = pc.actor_loss == 2 ? nn_inputs[pc.policy_row_offset + sample] : 0.0;
+            }
+            else {
+                float ratio = exp(log_prob - nn_inputs[pc.aux_offset + sample]);
+                float clipped = clamp(ratio, 1.0 - pc.clip_eps, 1.0 + pc.clip_eps);
+                bool not_clipped = (adv >= 0.0) ? (ratio < 1.0 + pc.clip_eps) : (ratio > 1.0 - pc.clip_eps);
+                d_logp = not_clipped ? -ratio * adv : 0.0;
+                sample_loss = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
+                ls_scale = move_row ? 0.0 : 1.0;
+            }
             for (uint i = 0; i < out_dim; ++i) {
-                float ls = state[ls_off + i];
+                float ls = move_row ? nn_move_log_std : state[ls_off + i];
                 float sigma = exp(ls);
-                float centered = nn_inputs[act_row + i] - gs_out[row + i];
+                float centered = nn_inputs[act_row + i] - nn_bounded_mean(i, gs_out[row + i]);
                 float diff = centered / sigma;
-                float od = d_logp * centered / (sigma * sigma);
+                float od = d_logp * centered / (sigma * sigma) * nn_bounded_slope(i, gs_out[row + i]);
                 if (symmetric) {
                     float gap = gs_out[row + i] - gs_mirror[row + i];
                     sample_loss += pc.symmetry_coeff * gap * gap;
                     od += 2.0 * pc.symmetry_coeff * gap;
                 }
+                if (pc.mean_l2_coeff != 0.0 && i >= pc.mean_l2_first) {
+                    sample_loss += pc.mean_l2_coeff * gs_out[row + i] * gs_out[row + i];
+                    od += 2.0 * pc.mean_l2_coeff * gs_out[row + i];
+                }
                 gs_od[row + i] = od;
                 scratch[nn_out_delta_off + s * out_dim + i] = od;
-                scratch[nn_ls_terms_off + s * out_dim + i] = d_logp * (diff * diff - 1.0) - pc.entropy_coeff;
+                scratch[nn_ls_terms_off + s * out_dim + i] = ls_scale * (d_logp * (diff * diff - 1.0) - pc.entropy_coeff);
             }
             scratch[nn_sample_loss_off + s] = sample_loss;
         }
@@ -241,7 +258,7 @@ void nn_store_transposed_to(RWStructuredBuffer<float> state, uint p, float value
     }
 }
 
-void nn_adam_apply(RWStructuredBuffer<float> state, uint p, float sum, uint in_dim, uint out_dim, uint param_count, uint adam_step) {
+void nn_adam_apply(RWStructuredBuffer<float> state, uint p, float sum, float lr, uint in_dim, uint out_dim, uint param_count, uint adam_step) {
     float step = float(adam_step);
     float bc1 = 1.0 - pow(nn_adam_beta1, step);
     float bc2 = 1.0 - pow(nn_adam_beta2, step);
@@ -252,7 +269,7 @@ void nn_adam_apply(RWStructuredBuffer<float> state, uint p, float sum, uint in_d
     float v = nn_adam_beta2 * state[v_index] + (1.0 - nn_adam_beta2) * g * g;
     state[m_index] = m;
     state[v_index] = v;
-    float value = state[p] - pc.lr * (m / bc1) / (sqrt(v / bc2) + nn_adam_eps);
+    float value = state[p] - lr * (m / bc1) / (sqrt(v / bc2) + nn_adam_eps);
     state[p] = value;
     nn_store_transposed_to(state, p, value, in_dim, out_dim, param_count);
 }
@@ -328,7 +345,7 @@ void nn_grad_tile_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float>
         GroupMemoryBarrierWithGroupSync();
     }
     if (o < rows && i < cols) {
-        nn_adam_apply(state, p_off + o * cols + i, acc, in_dim, out_dim, param_count, adam_step);
+        nn_adam_apply(state, p_off + o * cols + i, acc, pc.lr, in_dim, out_dim, param_count, adam_step);
     }
 }
 
@@ -336,6 +353,7 @@ void nn_grad_vector_net(RWStructuredBuffer<float> state, RWStructuredBuffer<floa
     uint n = pc.sample_count;
     uint p;
     float sum = 0.0;
+    float lr = pc.lr;
     if (v < nn_hidden) {
         p = nn_b1_off(in_dim) + v;
         for (uint s = 0; s < n; ++s) {
@@ -362,8 +380,9 @@ void nn_grad_vector_net(RWStructuredBuffer<float> state, RWStructuredBuffer<floa
         for (uint s = 0; s < n; ++s) {
             sum += scratch[nn_ls_terms_off + s * out_dim + i];
         }
+        lr = pc.lr * nn_log_std_lr_scale;
     }
-    nn_adam_apply(state, p, sum, in_dim, out_dim, param_count, adam_step);
+    nn_adam_apply(state, p, sum, lr, in_dim, out_dim, param_count, adam_step);
 }
 
 void nn_weight_grad_net(RWStructuredBuffer<float> state, RWStructuredBuffer<float> scratch, uint group, uint j, uint out_dim, uint param_count, uint mode, uint adam_step) {

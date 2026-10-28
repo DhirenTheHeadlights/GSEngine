@@ -255,7 +255,7 @@ auto gse::dx12::device::init_bindless() -> void {
 
 	constexpr std::uint32_t texture_capacity = 1024;
 	constexpr std::uint32_t image_capacity = 65536;
-	constexpr std::uint32_t buffer_capacity = 16384;
+	constexpr std::uint32_t buffer_capacity = gpu::dx12_buffer_read_view_offset;
 	constexpr std::uint32_t sampler_capacity = 512;
 
 	m_cbv_srv_uav_size = directx::cbv_srv_uav_descriptor_size(m_device.get());
@@ -267,7 +267,7 @@ auto gse::dx12::device::init_bindless() -> void {
 	const gpu::device_size texture_image_offset = 0;
 	const gpu::device_size image_range_offset = texture_image_offset + texture_capacity * image_size;
 	const gpu::device_size buffer_range_offset = image_range_offset + image_capacity * image_size;
-	const auto resource_count = texture_capacity + image_capacity + buffer_capacity;
+	const auto resource_count = texture_capacity + image_capacity + buffer_capacity * 2;
 
 	const gpu::device_size texture_sampler_offset = 0;
 	const gpu::device_size sampler_range_offset = texture_sampler_offset + texture_capacity * sampler_size;
@@ -351,6 +351,21 @@ auto gse::dx12::device::find_buffer(const gpu::device_address address) const -> 
 		return { resource, base };
 	}
 	return {};
+}
+
+auto gse::dx12::device::buffer_read_view(const gpu::bindless_slot slot) const -> directx::D3D12_CPU_DESCRIPTOR_HANDLE {
+	return {
+		.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot) + gpu::dx12_buffer_read_view_offset * m_buffer_pool.stride),
+	};
+}
+
+auto gse::dx12::device::write_buffer_srv(const directx::D3D12_CPU_DESCRIPTOR_HANDLE target, directx::ID3D12Resource* resource, const gpu::device_size offset, const gpu::device_size size, const buffer_view_format& format) const -> void {
+	if (format.byte_address) {
+		directx::create_raw_buffer_srv(m_device.get(), resource, static_cast<std::uint32_t>(offset / 4), static_cast<std::uint32_t>((size + 3) / 4), target);
+		return;
+	}
+	assert(format.stride != 0 && offset % format.stride == 0, "write_buffer_srv: offset {} is not a whole number of {}-byte elements", offset, format.stride);
+	directx::create_structured_buffer_srv(m_device.get(), resource, static_cast<std::uint32_t>(offset / format.stride), static_cast<std::uint32_t>(size / format.stride), static_cast<std::uint32_t>(format.stride), target);
 }
 
 auto gse::dx12::device::graphics_state(directx::ID3D12GraphicsCommandList* list) -> graphics_pass_state& {
@@ -1714,37 +1729,39 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 	m_buffer_by_address.emplace(address, std::pair{ raw, desc.size });
 	m_owned_buffers.push_back(std::move(resource));
 
+	const buffer_view_format format = {
+		.stride = desc.stride ? desc.stride : desc.size,
+		.byte_address = desc.usage.test(gpu::buffer_flag::byte_address),
+	};
 	gpu::bindless_slot slot;
 	if (desc.bindless) {
 		slot = m_buffer_pool.allocate();
 		const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {
 			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot)),
 		};
-		const bool is_byte_address = desc.usage.test(gpu::buffer_flag::byte_address);
-		const auto raw_elements = static_cast<std::uint32_t>((desc.size + 3) / 4);
-		const auto stride = desc.stride ? desc.stride : desc.size;
-		const auto element_count = static_cast<std::uint32_t>(stride ? desc.size / stride : 1);
 		if (desc.writable) {
 			assert(directx::supports_unordered_access(raw), "create_buffer '{}': writable bindless buffer landed on a heap without allow_unordered_access (readback={}); creating a uav on it would remove the device", tag, desc.readback);
-			if (is_byte_address) {
-				directx::create_raw_buffer_uav(m_device.get(), raw, 0, raw_elements, handle);
+			if (format.byte_address) {
+				directx::create_raw_buffer_uav(m_device.get(), raw, 0, static_cast<std::uint32_t>((desc.size + 3) / 4), handle);
 			}
 			else {
-				directx::create_structured_buffer_uav(m_device.get(), raw, 0, element_count, static_cast<std::uint32_t>(stride), handle);
+				directx::create_structured_buffer_uav(m_device.get(), raw, 0, static_cast<std::uint32_t>(format.stride ? desc.size / format.stride : 1), static_cast<std::uint32_t>(format.stride), handle);
 			}
 		}
 		else {
-			if (is_byte_address) {
-				directx::create_raw_buffer_srv(m_device.get(), raw, 0, raw_elements, handle);
-			}
-			else {
-				directx::create_structured_buffer_srv(m_device.get(), raw, 0, element_count, static_cast<std::uint32_t>(stride), handle);
-			}
+			write_buffer_srv(handle, raw, 0, desc.size, format);
 		}
+		write_buffer_srv(buffer_read_view(slot), raw, 0, desc.size, format);
 	}
 
 	const auto buffer_handle = std::bit_cast<gpu::handle<gpu::buffer>>(raw);
-	m_live_buffers[buffer_handle.value] = live_buffer{ slot, desc.size, address, mapped };
+	m_live_buffers[buffer_handle.value] = live_buffer{
+		.slot = slot,
+		.size = desc.size,
+		.address = address,
+		.mapped = mapped,
+		.format = format,
+	};
 	return gpu::buffer(
 		buffer_handle,
 		desc.size,
@@ -1872,6 +1889,9 @@ auto gse::dx12::device::write_storage_buffer(const gpu::bindless_slot slot, cons
 		.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot)),
 	};
 	directx::create_raw_buffer_uav(m_device.get(), resource, first_element, num_elements, handle);
+	const auto live = m_live_buffers.find(std::bit_cast<gpu::handle<gpu::buffer>>(resource).value);
+	assert(live != m_live_buffers.end(), "write_storage_buffer: resource at address=0x{:x} was not made by create_buffer, so its read view format is unknown", address);
+	write_buffer_srv(buffer_read_view(slot), resource, address - base, size, live->second.format);
 }
 
 auto gse::dx12::device::write_acceleration_structure(const gpu::bindless_slot slot, const gpu::device_address as_address) -> void {

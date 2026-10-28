@@ -72,6 +72,7 @@ export namespace gse::vbd {
 		std::uint32_t coupled_limit_normalized = 0;
 		velocity joint_correction_speed = meters_per_second(0.f);
 		vbd_capacities caps{};
+		std::uint32_t muscle_reset_activation = 0;
 	};
 
 	class solver {
@@ -362,6 +363,15 @@ export namespace gse::vbd {
 		float force_velocity_slope = 0.f;
 	};
 
+	struct passive_fiber {
+		float force = 0.f;
+		float slope = 0.f;
+	};
+
+	auto passive_fiber_of(
+		float fiber_ratio
+	) -> passive_fiber;
+
 	auto muscle_fiber_of(
 		const muscle_constraint& m,
 		length path,
@@ -375,6 +385,55 @@ export namespace gse::vbd {
 		length previous_path,
 		time_step dt
 	) -> muscle_response;
+
+	auto damped_fiber_tension(
+		const muscle_constraint& m,
+		length path,
+		length previous_path,
+		time_step dt,
+		float damping
+	) -> muscle_response;
+
+	struct tendon_response {
+		force tension;
+		stiffness tendon_stiffness;
+	};
+
+	struct compliant_fiber {
+		length projection;
+		muscle_response response;
+	};
+
+	auto tendon_shape_of(
+		float strain_at_max_force
+	) -> float;
+
+	auto tendon_response_of(
+		const muscle_constraint& m,
+		length tendon
+	) -> tendon_response;
+
+	auto compliant_fiber_of(
+		const muscle_constraint& m,
+		length path,
+		length previous_projection,
+		time_step dt
+	) -> compliant_fiber;
+
+	auto advance_muscle_fiber(
+		muscle_constraint& m,
+		length path,
+		time_step dt
+	) -> void;
+
+	auto muscle_isometric_stiffness(
+		const muscle_constraint& m,
+		time_step dt
+	) -> stiffness;
+
+	auto muscle_fiber_path(
+		const muscle_constraint& m
+	) -> length;
 
 	auto advance_muscle_activation(
 		muscle_constraint& m,
@@ -520,7 +579,7 @@ namespace gse::vbd {
 		std::uint32_t body_b
 	) -> coupled_frame;
 
-	auto coupled_slot(
+	export auto coupled_slot(
 		const coupled_frame& frame,
 		std::uint32_t coordinate
 	) -> int;
@@ -622,6 +681,20 @@ namespace gse::vbd {
 		std::uint32_t body_idx
 	) -> muscle_body_gradient;
 
+	struct muscle_row {
+		vec3f linear;
+		vec3<angular_jacobian> angular;
+		vec3<angular_stiffness> geometric;
+	};
+
+	auto muscle_row_of(
+		std::span<const muscle_path_point> path,
+		std::span<const body_state> bodies,
+		const std::optional<moving_frame>& frame,
+		std::uint32_t body_idx,
+		force abs_force
+	) -> muscle_row;
+
 	enum class wrap_result : std::uint32_t {
 		no_wrap,
 		inside,
@@ -656,6 +729,11 @@ namespace gse::vbd {
 
 	using wrap_contacts = std::array<wrap_contact, physics::max_muscle_wraps>;
 
+	struct wrap_path {
+		wrap_contacts contacts;
+		length path_length;
+	};
+
 	struct record_pose {
 		vec3<displacement> origin;
 		quat orientation;
@@ -673,9 +751,10 @@ namespace gse::vbd {
 		std::array<wrap_node, physics::max_muscle_path_points + 2 * physics::max_muscle_wraps> nodes;
 		std::uint32_t count = 0;
 		wrap_contacts contacts;
+		length path_length;
 	};
 
-	auto wrap_obstacle_of(
+	export auto wrap_obstacle_of(
 		std::span<const std::uint32_t> curves,
 		const muscle_path_point& wrap,
 		const record_pose& pose
@@ -690,7 +769,13 @@ namespace gse::vbd {
 	auto wrap_muscle_path(
 		std::span<const vec3<displacement>> points,
 		std::span<const wrap_obstacle> obstacles
-	) -> wrap_contacts;
+	) -> wrap_path;
+
+	auto ordered_wrap(
+		const wrap_contacts& contacts,
+		std::uint32_t wrap_count,
+		std::uint32_t rank
+	) -> std::uint32_t;
 
 	auto wrapped_length(
 		std::span<const vec3<displacement>> points,
@@ -698,14 +783,14 @@ namespace gse::vbd {
 		std::uint32_t wrap_count
 	) -> length;
 
-	auto wrapped_muscle_of(
+	export auto wrapped_muscle_of(
 		std::span<const muscle_path_point> path,
 		std::span<const muscle_path_point> wraps,
 		std::span<const std::uint32_t> curves,
 		std::span<const record_pose> poses
 	) -> wrapped_muscle;
 
-	auto start_poses_of(
+	export auto start_poses_of(
 		std::span<const muscle_path_point> path,
 		std::span<const muscle_path_point> wraps,
 		std::span<const body_state> bodies
@@ -716,10 +801,6 @@ namespace gse::vbd {
 		std::span<const muscle_path_point> wraps,
 		std::span<const body_state> bodies
 	) -> std::array<record_pose, physics::max_muscle_path_points + physics::max_muscle_wraps>;
-
-	auto wrapped_path_length(
-		const wrapped_muscle& w
-	) -> length;
 
 	auto wrapped_length_gradient(
 		const wrapped_muscle& w,
@@ -734,6 +815,12 @@ namespace gse::vbd {
 		const quat& orientation,
 		const vec3f& local_axis
 	) -> std::array<vec3f, 2>;
+
+	auto geometric_stiffness_diagonal(
+		const vec3<lever_arm>& r,
+		const vec3f& dir,
+		force abs_force
+	) -> vec3<angular_stiffness>;
 
 	auto accumulate_geometric_stiffness(
 		body_solve_state& state,
@@ -771,7 +858,7 @@ namespace gse::vbd {
 		float c0_scale
 	) -> angular_limit_row;
 
-	auto coupled_limit_row(
+	export auto coupled_limit_row(
 		const joint_constraint& j,
 		const coupled_frame& frame,
 		std::uint32_t coordinate,

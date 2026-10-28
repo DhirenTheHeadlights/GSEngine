@@ -285,6 +285,11 @@ auto gse::physics::intern_coupled_joint(data& d, const coupled_joint& joint, con
 		const bool orthonormal = std::abs(dot(r[0].axis, r[1].axis)) < 1e-6f && std::abs(dot(r[1].axis, r[2].axis)) < 1e-6f && std::abs(dot(r[0].axis, r[2].axis)) < 1e-6f && std::abs(magnitude(r[0].axis) - 1.f) < 1e-6f && std::abs(magnitude(r[1].axis) - 1.f) < 1e-6f && std::abs(magnitude(r[2].axis) - 1.f) < 1e-6f;
 		assert(orthonormal, "a three-coordinate coupled joint's rotation axes must be orthonormal for the Euler initial guess");
 	}
+	const bool closed_form = count == 3 || std::ranges::all_of(std::span(joint.transform.rotations).subspan(1), [](const coordinate_curve& rotation) {
+		return !rotation.coordinate && std::ranges::all_of(rotation.segments, [](const curve_segment& s) {
+			return s.coefficients == vec4f(0.f, 0.f, 0.f, 0.f);
+		});
+	});
 
 	std::vector<std::uint32_t> block(vbd::limits.coupled_header_uints + joint.frames.size());
 	const auto push_quat = [&block](const std::uint32_t at, const quat& q) {
@@ -297,6 +302,7 @@ auto gse::physics::intern_coupled_joint(data& d, const coupled_joint& joint, con
 	block[vbd::limits.coupled_spatial_index] = static_cast<std::uint32_t>(block.size());
 	block[vbd::limits.coupled_frame_count_index] = static_cast<std::uint32_t>(joint.frames.size());
 	block[vbd::limits.coupled_coordinate_count_index] = count;
+	block[vbd::limits.coupled_newton_iterations_index] = closed_form ? 0u : vbd::limits.coupled_coordinate_iterations;
 	append_spatial_curve(block, joint.transform, count);
 
 	for (std::size_t f = 0; f < joint.frames.size(); ++f) {
@@ -450,6 +456,15 @@ auto gse::physics::consume_body_resets(data& d, write<motion_component>& motion)
 			jd.ang_penalty = {};
 		}
 	}
+	for (auto& md : d.muscles.items()) {
+		const auto path = std::span(md.path).first(md.path_count);
+		if (std::ranges::any_of(path, [&](const muscle_attachment& a) { return reset.contains(a.entity); })) {
+			md.fiber_projection = {};
+			if (d.muscle_reset_activation) {
+				md.activation = std::clamp(md.excitation, 0.f, 1.f);
+			}
+		}
+	}
 }
 
 auto gse::physics::apply_solver_seeds(data& d, write<motion_component>& motion, const std::span<const solver_seed_request> seeds) -> bool {
@@ -464,6 +479,7 @@ auto gse::physics::apply_solver_seeds(data& d, write<motion_component>& motion, 
 		for (const auto& ms : seed.muscles) {
 			if (auto* md = d.muscles.try_get(ms.owner)) {
 				md->activation = ms.activation;
+				md->fiber_projection = ms.fiber_projection;
 			}
 		}
 	}
@@ -480,22 +496,8 @@ auto gse::physics::apply_solver_seeds(data& d, write<motion_component>& motion, 
 			}
 		}
 	}
-	d.contact_cache.clear();
 	for (const auto& seed : seeds) {
-		for (const auto& cs : seed.contacts) {
-			const auto& c = cs.contact;
-			d.contact_cache.store(cs.entity_a, cs.entity_b, unpack_feature(c.feature_key), {
-				.lambda = c.lambda,
-				.penalty = c.penalty,
-				.normal = c.normal,
-				.tangent_u = c.tangent_u,
-				.tangent_v = c.tangent_v,
-				.local_anchor_a = c.local_anchor_a,
-				.local_anchor_b = c.local_anchor_b,
-				.sticking = c.sticking != 0
-			});
-			d.pending_contact_seeds.push_back(cs);
-		}
+		d.pending_contact_seeds.insert(d.pending_contact_seeds.end(), seed.contacts.begin(), seed.contacts.end());
 		d.pending_body_seeds.insert(d.pending_body_seeds.end(), seed.bodies.begin(), seed.bodies.end());
 	}
 	return true;
@@ -635,6 +637,7 @@ auto gse::physics::solver_config_from_settings(const data& d) -> vbd::solver_con
 		.convergence_probe_interval = static_cast<std::uint32_t>(d.convergence_probe_interval),
 		.coupled_limit_normalized = d.solver_coupled_limit_normalized ? 1u : 0u,
 		.joint_correction_speed = d.joint_correction_speed,
+		.muscle_reset_activation = d.muscle_reset_activation ? 1u : 0u,
 	};
 }
 
@@ -1145,6 +1148,7 @@ auto gse::physics::make_muscle_definition(const muscle_spec& spec) -> muscle_def
 		.tendon_slack_length = p.tendon_slack_length,
 		.pennation_at_optimal = p.pennation_at_optimal,
 		.max_contraction_velocity = p.optimal_fiber_length * p.max_contraction_rate,
+		.tendon_shape = p.tendon_strain_at_max_force ? vbd::tendon_shape_of(*p.tendon_strain_at_max_force) : 0.f,
 	};
 }
 
@@ -1252,6 +1256,8 @@ auto gse::physics::build_muscle_constraints(const std::span<const muscle_definit
 			.pennation_at_optimal = md.pennation_at_optimal,
 			.max_contraction_velocity = md.max_contraction_velocity,
 			.wrap_count = md.wrap_count,
+			.tendon_shape = md.tendon_shape,
+			.fiber_projection_start = md.fiber_projection,
 		});
 		for (std::size_t k = 0; k < path.size(); ++k) {
 			out_points.push_back({
@@ -3035,6 +3041,19 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 					d.vbd_solver.seed_accel_weight(it->second, bs.accel_weight, sub_dt);
 				}
 			}
+			for (const auto& cs : d.pending_contact_seeds) {
+				const auto& c = cs.contact;
+				d.contact_cache.store(cs.entity_a, cs.entity_b, unpack_feature(c.feature_key), {
+					.lambda = c.lambda,
+					.penalty = c.penalty,
+					.normal = c.normal,
+					.tangent_u = c.tangent_u,
+					.tangent_v = c.tangent_v,
+					.local_anchor_a = c.local_anchor_a,
+					.local_anchor_b = c.local_anchor_b,
+					.sticking = c.sticking != 0
+				});
+			}
 			d.pending_body_seeds.clear();
 			d.pending_contact_seeds.clear();
 		}
@@ -3105,6 +3124,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			for (std::size_t i = 0; i < muscle_items.size() && i < muscle_slots.size(); ++i) {
 				if (const auto slot = muscle_slots[i]; slot < solved_muscles.size()) {
 					muscle_items[i].activation = solved_muscles[slot].activation;
+					muscle_items[i].fiber_projection = solved_muscles[slot].fiber_projection_start;
 				}
 			}
 		}

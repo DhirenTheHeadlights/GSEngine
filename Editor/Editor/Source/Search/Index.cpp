@@ -21,7 +21,7 @@ auto gse::ide::search::is_skipped_dir(const std::string_view name, const bool at
 	if (at_root && name == "external") {
 		return true;
 	}
-	return name == ".generated" || name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
+	return name == ".generated" || name == "out" || name == ".git" || name == ".gse" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
 }
 
 auto gse::ide::search::is_binary_ext(const std::string_view ext) -> bool {
@@ -1221,7 +1221,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 			if (owning_root(roots.first(static_cast<std::size_t>(root_index)), path)) {
 				continue;
 			}
-			const std::filesystem::path relative = std::filesystem::relative(path, root.path, type_ec);
+			const std::filesystem::path relative = path.lexically_relative(root.path);
 			std::string rel = relative.empty() ? path.filename().generic_display_string() : (root.name + "/" + relative.generic_display_string());
 			const auto [resolved, file_identity] = canonical_path_id(path);
 			files.add(file_identity, {

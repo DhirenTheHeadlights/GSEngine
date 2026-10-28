@@ -79,7 +79,7 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 	}
 
 	search::request_symbol_build(*d.index);
-	task::post([index = d.index.get()] {
+	task::post_background([index = d.index.get()] {
 		search::build_files_and_content(*index, index->roots);
 	});
 	return {};

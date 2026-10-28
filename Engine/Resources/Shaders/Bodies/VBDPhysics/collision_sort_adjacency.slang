@@ -112,11 +112,6 @@ void collision_sort_adjacency(uint3 dispatch_id) {
 
     if (idx < num_muscles) {
         muscle_constraint m = muscle_data[idx];
-        float target = saturate(muscle_excitation_data[idx]);
-        float recruitment = 0.5 + 1.5 * m.activation;
-        float lag = target > m.activation ? activation_time * recruitment : deactivation_time / recruitment;
-        m.excitation = muscle_excitation_data[idx];
-        m.activation = target + (m.activation - target) * exp(-pc.dt / lag);
         float path = 0.0;
         if (m.wrap_count != 0) {
             path = wrapped_start_length(m);
@@ -126,6 +121,26 @@ void collision_sort_adjacency(uint3 dispatch_id) {
                 path += length(start_muscle_point(muscle_path_data[m.path_first + k + 1]) - start_muscle_point(muscle_path_data[m.path_first + k]));
             }
         }
+        bool reset = false;
+        for (uint k = 0; k < m.path_count; k++) {
+            if (body_data[muscle_path_data[m.path_first + k].body].reset_pending == 1) {
+                reset = true;
+            }
+        }
+        if (m.tendon_shape > 0.0) {
+            if (reset) {
+                m.fiber_projection_start = 0.0;
+            }
+            advance_muscle_fiber(m, path, pc.dt);
+        }
+        float target = saturate(muscle_excitation_data[idx]);
+        if (reset && solver_config_data[0].muscle_reset_activation != 0) {
+            m.activation = target;
+        }
+        float recruitment = 0.5 + 1.5 * m.activation;
+        float lag = target > m.activation ? activation_time * recruitment : deactivation_time / recruitment;
+        m.excitation = muscle_excitation_data[idx];
+        m.activation = target + (m.activation - target) * exp(-pc.dt / lag);
         m.path_length_start = path;
         muscle_data[idx] = m;
     }

@@ -2,6 +2,7 @@ export module gse.ide.problems;
 
 import std;
 import gse;
+import gse.analysis;
 
 import gse.analysis;
 

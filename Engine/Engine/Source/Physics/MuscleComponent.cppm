@@ -37,6 +37,7 @@ export namespace gse::physics {
 		length tendon_slack_length;
 		angle pennation_at_optimal = {};
 		inverse_time max_contraction_rate = per_second(10.f);
+		std::optional<float> tendon_strain_at_max_force;
 	};
 
 	struct muscle_spec {

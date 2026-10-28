@@ -15,6 +15,7 @@ import gse.gpu_record;
 import :joint_drive_component;
 import :motion_component;
 import :motor_component;
+import :muscle_component;
 import :collision_component;
 import :transform_component;
 import :system;
@@ -69,7 +70,8 @@ export namespace gse::physics::shadow_step {
 		read<motion_component> motion,
 		read<collision_component> collision,
 		read<motor_component> motor,
-		read<joint_drive_component> drives
+		read<joint_drive_component> drives,
+		read<muscle_component> muscles
 	) -> async::task<>;
 
 	[[= system_frame{}]]

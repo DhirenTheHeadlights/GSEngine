@@ -91,33 +91,50 @@ void nn_train_sample(uint3 group_id, uint3 group_thread_id) {
             uint act_row = pc.target_offset + sample * out_dim;
             float log_prob = 0.0;
             float entropy = 0.0;
+            bool move_row = nn_move_rows != 0 && nn_inputs[pc.policy_row_offset + sample] == 0.0;
             for (uint i = 0; i < out_dim; ++i) {
-                float ls = nn_state[ls_off + i];
+                float ls = move_row ? nn_move_log_std : nn_state[ls_off + i];
                 float sigma = exp(ls);
-                float diff = (nn_inputs[act_row + i] - gs_out[i]) / sigma;
+                float diff = (nn_inputs[act_row + i] - nn_bounded_mean(i, gs_out[i])) / sigma;
                 log_prob += -0.5 * diff * diff - ls - 0.5 * nn_log_2pi;
                 entropy += ls + nn_gaussian_entropy_const;
             }
             float adv = nn_inputs[pc.adv_offset + sample];
-            float ratio = exp(log_prob - nn_inputs[pc.aux_offset + sample]);
-            float clipped = clamp(ratio, 1.0 - pc.clip_eps, 1.0 + pc.clip_eps);
-            bool not_clipped = (adv >= 0.0) ? (ratio < 1.0 + pc.clip_eps) : (ratio > 1.0 - pc.clip_eps);
-            float d_logp = not_clipped ? -ratio * adv : 0.0;
-            float sample_loss = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
+            float d_logp;
+            float sample_loss;
+            float ls_scale;
+            if (pc.actor_loss != 0) {
+                float weight = min(exp(adv / pc.awr_temperature), pc.awr_weight_max);
+                d_logp = -weight;
+                sample_loss = -weight * log_prob - pc.entropy_coeff * entropy;
+                ls_scale = pc.actor_loss == 2 ? nn_inputs[pc.policy_row_offset + sample] : 0.0;
+            }
+            else {
+                float ratio = exp(log_prob - nn_inputs[pc.aux_offset + sample]);
+                float clipped = clamp(ratio, 1.0 - pc.clip_eps, 1.0 + pc.clip_eps);
+                bool not_clipped = (adv >= 0.0) ? (ratio < 1.0 + pc.clip_eps) : (ratio > 1.0 - pc.clip_eps);
+                d_logp = not_clipped ? -ratio * adv : 0.0;
+                sample_loss = (not_clipped ? -ratio * adv : -clipped * adv) - pc.entropy_coeff * entropy;
+                ls_scale = move_row ? 0.0 : 1.0;
+            }
             for (uint i = 0; i < out_dim; ++i) {
-                float ls = nn_state[ls_off + i];
+                float ls = move_row ? nn_move_log_std : nn_state[ls_off + i];
                 float sigma = exp(ls);
-                float centered = nn_inputs[act_row + i] - gs_out[i];
+                float centered = nn_inputs[act_row + i] - nn_bounded_mean(i, gs_out[i]);
                 float diff = centered / sigma;
-                float od = d_logp * centered / (sigma * sigma);
+                float od = d_logp * centered / (sigma * sigma) * nn_bounded_slope(i, gs_out[i]);
                 if (symmetric) {
                     float gap = gs_out[i] - gs_mirror[i];
                     sample_loss += pc.symmetry_coeff * gap * gap;
                     od += 2.0 * pc.symmetry_coeff * gap;
                 }
+                if (pc.mean_l2_coeff != 0.0 && i >= pc.mean_l2_first) {
+                    sample_loss += pc.mean_l2_coeff * gs_out[i] * gs_out[i];
+                    od += 2.0 * pc.mean_l2_coeff * gs_out[i];
+                }
                 gs_od[i] = od;
                 nn_scratch[nn_out_delta_off + s * out_dim + i] = od;
-                nn_scratch[nn_ls_terms_off + s * out_dim + i] = d_logp * (diff * diff - 1.0) - pc.entropy_coeff;
+                nn_scratch[nn_ls_terms_off + s * out_dim + i] = ls_scale * (d_logp * (diff * diff - 1.0) - pc.entropy_coeff);
             }
             nn_scratch[nn_sample_loss_off + s] = sample_loss;
         }

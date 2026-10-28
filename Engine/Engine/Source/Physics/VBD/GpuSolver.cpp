@@ -1950,10 +1950,9 @@ auto gse::vbd::gpu_solver::measure_scene(const solver_upload& payload) -> void {
 		.bodies = static_cast<std::uint32_t>(payload.bodies.size()),
 		.joints = static_cast<std::uint32_t>(payload.joints.size()),
 		.impulses = static_cast<std::uint32_t>(payload.impulses.size()),
-		.motors = static_cast<std::uint32_t>(payload.motors.size()),
+		.motors = static_cast<std::uint32_t>(std::max(payload.motors.size(), static_cast<std::size_t>(payload.motor_sources))),
 		.muscles = static_cast<std::uint32_t>(payload.muscles.size()),
 		.muscle_points = static_cast<std::uint32_t>(payload.muscle_points.size()),
-		.hull_uints = static_cast<std::uint32_t>(payload.hull_data.size()),
 	});
 	m_capacities = capacities_for(m_scene_counts);
 }

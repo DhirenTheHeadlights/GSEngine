@@ -131,11 +131,12 @@ float3 coupled_coordinates_of(uint joint_words, float4 orientation_a, float4 ori
     float4 relative = quat_mul(quat_conjugate(frame), child);
     uint spatial = joint_words + curve_word(joint_words + coupled_spatial_index);
     uint count = curve_word(joint_words + coupled_coordinate_count_index);
+    uint iterations = curve_word(joint_words + coupled_newton_iterations_index);
 
     float3 coordinates = coupled_initial_coordinates(spatial, relative, count);
     float3 rows[3];
     [loop]
-    for (uint i = 0; i < coupled_coordinate_iterations; i++) {
+    for (uint i = 0; i < iterations; i++) {
         spatial_sample s = sample_spatial(joint_words, spatial, coordinates);
         coupled_pseudo_inverse(s.rotation_rates, rows);
         float3 phi = to_axis_angle(quat_mul(relative, quat_conjugate(s.rotation)));

@@ -509,6 +509,7 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.first_tick = plan.first_tick,
 			.restore_tick = plan.restore_tick,
 			.motors_per_tick = motors_per_tick,
+			.motor_sources = static_cast<std::uint32_t>(frame_inputs.motors.size() * per_tick.size()),
 			.island_pack_min_islands = static_cast<std::uint32_t>(phys.gpu_island_pack_min_islands),
 			.impulse_counts = std::move(impulse_counts),
 			.seed_contacts = std::move(seed_contacts),

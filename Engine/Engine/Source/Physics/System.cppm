@@ -78,8 +78,10 @@ export namespace gse::physics {
 		length tendon_slack_length = {};
 		angle pennation_at_optimal = {};
 		velocity max_contraction_velocity = {};
+		float tendon_shape = 0.f;
 		float excitation = 0.f;
 		float activation = 0.f;
+		length fiber_projection = {};
 	};
 
 	struct reset_physics_request {};
@@ -96,6 +98,7 @@ export namespace gse::physics {
 	struct muscle_seed {
 		id owner;
 		float activation = 0.f;
+		length fiber_projection = {};
 	};
 
 	struct contact_seed {
@@ -621,6 +624,13 @@ export namespace gse::physics {
 		velocity joint_correction_speed = meters_per_second(0.f);
 
 		[[
+			= settings::describe<"Start every muscle crossing a body whose pose is reset at the activation its "
+									  "excitation commands on the reset tick, instead of carrying the activation it "
+									  "had before the reset. Off keeps the carried activation.">{}
+		]]
+		bool muscle_reset_activation = false;
+
+		[[
 			= settings::describe<"Trust region of one body Newton step: the largest translation a single solver "
 									  "iteration may apply to a body. Both solvers clamp to it. Light bodies held by "
 									  "stiff joints overshoot when a wound-up joint dual unwinds, so articulated bodies "
@@ -795,7 +805,7 @@ export namespace gse::physics {
 		std::map<std::vector<std::uint32_t>, std::uint32_t> curve_blocks;
 
 		[[= shared]] vbd::solver vbd_solver;
-		vbd::contact_cache contact_cache;
+		[[= shared]] vbd::contact_cache contact_cache;
 		std::vector<contact_seed> pending_contact_seeds;
 		std::vector<body_seed> pending_body_seeds;
 		[[= shared]] sleep_counter_table sleep_counters;

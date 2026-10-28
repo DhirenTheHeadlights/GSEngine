@@ -66,6 +66,25 @@ uint nn_mirror_source(float code) {
     return uint(abs(code)) - 1;
 }
 
+float nn_bound_tanh(uint i, float z) {
+    float center = i < nn_bound_lead ? 0.0 : nn_bound_center;
+    float half_width = i < nn_bound_lead ? nn_bound_lead_half[i] : nn_bound_half;
+    return tanh((z - center) / half_width);
+}
+
+float nn_bounded_mean(uint i, float z) {
+    if (nn_bound_on == 0) return z;
+    float center = i < nn_bound_lead ? 0.0 : nn_bound_center;
+    float half_width = i < nn_bound_lead ? nn_bound_lead_half[i] : nn_bound_half;
+    return center + half_width * nn_bound_tanh(i, z);
+}
+
+float nn_bounded_slope(uint i, float z) {
+    if (nn_bound_on == 0) return 1.0;
+    float t = nn_bound_tanh(i, z);
+    return 1.0 - t * t;
+}
+
 bool nn_update_applies() {
     return nn_scratch[nn_scalars_off + nn_scalar_apply] != 0.0;
 }

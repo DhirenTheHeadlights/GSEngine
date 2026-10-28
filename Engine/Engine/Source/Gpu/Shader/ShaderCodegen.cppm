@@ -417,6 +417,9 @@ auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_en
 template <gse::shaders::is_shader_binding T>
 auto gse::shaders::emit_slang_binding() -> std::string {
 	constexpr auto name = std::meta::identifier_of(^^T);
+	const auto read_index = gpu::active_backend == gpu::backend_kind::dx12
+		? std::format("({}_idx + {})", name, gpu::dx12_buffer_read_view_offset)
+		: std::format("{}_idx", name);
 	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
 		return std::format("public struct {0}_table {{ public __subscript(uint i) -> Texture2D<float4> {{ get {{ return (Texture2D<float4>.Handle)i; }} }} }}\npublic {0}_table {0};\n", name);
 	}
@@ -451,8 +454,9 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	}
 	else if constexpr (has_annotation<byte_address_buffer_tag>(^^T)) {
 		return std::format(
-			"public uniform uint {0}_idx;\npublic property ByteAddressBuffer {0} {{ get {{ return (ByteAddressBuffer.Handle){0}_idx; }} }}\n",
-			name
+			"public uniform uint {0}_idx;\npublic property ByteAddressBuffer {0} {{ get {{ return (ByteAddressBuffer.Handle){1}; }} }}\n",
+			name,
+			read_index
 		);
 	}
 	else if constexpr (has_annotation<rw_byte_address_buffer_tag>(^^T)) {
@@ -480,9 +484,10 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T)) {
 		using element_t = typename T::element;
 		return std::format(
-			"public uniform uint {0}_idx;\npublic property StructuredBuffer<{1}> {0} {{ get {{ return (StructuredBuffer<{1}>.Handle){0}_idx; }} }}\n",
+			"public uniform uint {0}_idx;\npublic property StructuredBuffer<{1}> {0} {{ get {{ return (StructuredBuffer<{1}>.Handle){2}; }} }}\n",
 			name,
-			slang_type<element_t>::name
+			slang_type<element_t>::name,
+			read_index
 		);
 	}
 	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)) {
@@ -513,7 +518,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			}
 		}
 		out += "};\n";
-		out += std::format("public uniform uint {0}_idx;\npublic property {0}_ubo_data {0} {{ get {{ return ((StructuredBuffer<{0}_ubo_data>.Handle){0}_idx)[0]; }} }}\n", name);
+		out += std::format("public uniform uint {0}_idx;\npublic property {0}_ubo_data {0} {{ get {{ return ((StructuredBuffer<{0}_ubo_data>.Handle){1})[0]; }} }}\n", name, read_index);
 		return out;
 	}
 }

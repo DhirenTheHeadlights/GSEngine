@@ -579,6 +579,11 @@ export namespace gse::dx12 {
 		) const -> bool;
 
 	private:
+		struct buffer_view_format {
+			gpu::device_size stride = 0;
+			bool byte_address = false;
+		};
+
 		auto init_bindless() -> void;
 
 		auto register_sync_point(
@@ -595,6 +600,18 @@ export namespace gse::dx12 {
 		auto find_buffer(
 			gpu::device_address address
 		) const -> std::pair<directx::ID3D12Resource*, gpu::device_address>;
+
+		[[nodiscard]] auto buffer_read_view(
+			gpu::bindless_slot slot
+		) const -> directx::D3D12_CPU_DESCRIPTOR_HANDLE;
+
+		auto write_buffer_srv(
+			directx::D3D12_CPU_DESCRIPTOR_HANDLE target,
+			directx::ID3D12Resource* resource,
+			gpu::device_size offset,
+			gpu::device_size size,
+			const buffer_view_format& format
+		) const -> void;
 
 		auto graphics_state(
 			directx::ID3D12GraphicsCommandList* list
@@ -648,6 +665,7 @@ export namespace gse::dx12 {
 			gpu::device_size size = 0;
 			gpu::device_address address = 0;
 			std::byte* mapped = nullptr;
+			buffer_view_format format;
 		};
 
 		struct live_image {

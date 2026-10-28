@@ -466,7 +466,10 @@ void loco_observe(uint3 dispatch_id) {
     else {
         since_swap += pc.dt;
     }
-    bool stale = env.swap_timeout > 0.0 && since_swap > env.swap_timeout;
+    if (loco_stand_swap_hold != 0 && stand_command) {
+        since_swap = 0.0;
+    }
+    bool stale =env.swap_timeout > 0.0 && since_swap > env.swap_timeout;
 
     float knee_cost = 0.0;
     if (pc.r_stance_knee != 0.0) {

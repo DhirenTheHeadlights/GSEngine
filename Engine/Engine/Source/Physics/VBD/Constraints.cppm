@@ -105,7 +105,8 @@ export namespace gse::vbd {
 		std::uint32_t coupled_spatial_index = 8;
 		std::uint32_t coupled_frame_count_index = 9;
 		std::uint32_t coupled_coordinate_count_index = 10;
-		std::uint32_t coupled_header_uints = 11;
+		std::uint32_t coupled_newton_iterations_index = 11;
+		std::uint32_t coupled_header_uints = 12;
 		std::uint32_t curve_frame_header_uints = 8;
 		std::uint32_t coupled_coordinate_iterations = 3;
 		float coupled_damping = 1e-3f;
@@ -157,7 +158,6 @@ export namespace gse::vbd {
 		std::uint32_t motors = 0;
 		std::uint32_t muscles = 0;
 		std::uint32_t muscle_points = 0;
-		std::uint32_t hull_uints = 0;
 
 		auto merge(
 			const vbd_scene_counts& other
@@ -168,17 +168,49 @@ export namespace gse::vbd {
 		const vbd_scene_counts& counts
 	) -> vbd_capacities;
 
+	struct passive_corner {
+		vec4f x;
+		vec4f y;
+	};
+
+	constexpr auto passive_corner_of(const float x0, const float y0, const float slope0, const float x1, const float y1, const float slope1, const float curviness) -> passive_corner {
+		const float corner_x = (y1 - y0 - x1 * slope1 + x0 * slope0) / (slope0 - slope1);
+		const float corner_y = (corner_x - x1) * slope1 + y1;
+		const float pull = 0.1f + 0.8f * curviness;
+		return {
+			.x = { x0, x0 + pull * (corner_x - x0), x1 + pull * (corner_x - x1), x1 },
+			.y = { y0, y0 + pull * (corner_y - y0), y1 + pull * (corner_y - y1), y1 },
+		};
+	}
+
 	struct [[= shaders::shader_constant_block]] muscle_curves {
 		vec3f active_height = { 0.814483478343008f, 0.433004984392647f, 0.1f };
 		vec3f active_center = { 1.05503342897057f, 0.716775413397760f, 1.f };
 		vec3f active_width = { 0.162384573599574f, -0.0299471169706956f, 0.353553390593274f };
 		vec3f active_width_slope = { 0.0633034484654646f, 0.200356847296188f, 0.f };
-		float passive_shape = 4.f;
-		float passive_strain = 0.6f;
-		float passive_zero_ratio = 0.2f;
+		float passive_start = 1.f;
+		float passive_end = 1.7f;
+		float passive_low_stiffness = 0.2f;
+		float passive_curviness = 0.75f;
+		float passive_stiffness = 2.f / (passive_end - passive_start);
+		float passive_knee = passive_start + std::min(0.1f / passive_stiffness, 0.1f * (passive_end - passive_start));
+		float passive_knee_force = passive_low_stiffness * 0.5f * (passive_knee - passive_start);
+		vec4f passive_toe_x = passive_corner_of(passive_start, 0.f, 0.f, passive_knee, passive_knee_force, passive_low_stiffness, passive_curviness).x;
+		vec4f passive_toe_y = passive_corner_of(passive_start, 0.f, 0.f, passive_knee, passive_knee_force, passive_low_stiffness, passive_curviness).y;
+		vec4f passive_rise_x = passive_corner_of(passive_knee, passive_knee_force, passive_low_stiffness, passive_end, 1.f, passive_stiffness, passive_curviness).x;
+		vec4f passive_rise_y = passive_corner_of(passive_knee, passive_knee_force, passive_low_stiffness, passive_end, 1.f, passive_stiffness, passive_curviness).y;
+		std::uint32_t passive_iterations = 4;
 		vec4f velocity_shape = { -0.318323436899127f, -8.149156043475250f, -0.374121508647863f, 0.885644059915004f };
 		time_t<float, seconds> activation_time = milliseconds(15.f);
 		time_t<float, seconds> deactivation_time = milliseconds(60.f);
+		float tendon_scale = 0.2f;
+		float tendon_offset = 0.995f;
+		float tendon_shift = 0.25f;
+		float fiber_damping = 0.1f;
+		float fiber_min_cos = 0.1f;
+		float fiber_min_ratio = 0.01f;
+		float fiber_tolerance = 1e-5f;
+		std::uint32_t fiber_iterations = 8;
 	};
 
 	constexpr muscle_curves muscle{};
@@ -314,6 +346,8 @@ export namespace gse::vbd {
 		velocity max_contraction_velocity = {};
 		length path_length_start = {};
 		std::uint32_t wrap_count = 0;
+		float tendon_shape = 0.f;
+		length fiber_projection_start = {};
 	};
 
 	struct [[= shaders::shader_struct]] joint_drive_input {
@@ -415,7 +449,7 @@ namespace gse::vbd {
 }
 
 inline auto gse::vbd::with_headroom(const std::uint32_t count, const std::uint32_t smallest) -> std::uint32_t {
-	return std::min(std::bit_ceil(std::max(count + 1, smallest)), capacity_index_ceiling);
+	return std::bit_ceil(std::max(count + 1, smallest));
 }
 
 inline auto gse::vbd::vbd_scene_counts::merge(const vbd_scene_counts& other) -> void {
@@ -425,11 +459,10 @@ inline auto gse::vbd::vbd_scene_counts::merge(const vbd_scene_counts& other) -> 
 	this->motors = std::max(this->motors, other.motors);
 	this->muscles = std::max(this->muscles, other.muscles);
 	this->muscle_points = std::max(this->muscle_points, other.muscle_points);
-	this->hull_uints = std::max(this->hull_uints, other.hull_uints);
 }
 
 inline auto gse::vbd::capacities_for(const vbd_scene_counts& counts) -> vbd_capacities {
-	const auto bodies = with_headroom(counts.bodies, 1024);
+	const auto bodies = std::min(with_headroom(counts.bodies, 1024), capacity_index_ceiling);
 	const auto contacts = std::min(bodies * contacts_per_body, capacity_index_ceiling);
 
 	return vbd_capacities{
@@ -442,7 +475,6 @@ inline auto gse::vbd::capacities_for(const vbd_scene_counts& counts) -> vbd_capa
 		.max_motors = with_headroom(counts.motors, 256),
 		.max_muscles = with_headroom(counts.muscles, 256),
 		.max_muscle_points = with_headroom(counts.muscle_points, 1024),
-		.max_hull_uints = with_headroom(counts.hull_uints, 4096),
 		.grid_table_size = bodies * 2,
 		.ring_max_bodies = bodies,
 		.ring_max_contacts = contacts,

@@ -109,6 +109,7 @@ export namespace gse::vbd {
 		std::uint64_t first_tick = 0;
 		std::optional<std::uint64_t> restore_tick;
 		std::uint32_t motors_per_tick = 0;
+		std::uint32_t motor_sources = 0;
 		std::uint32_t island_pack_min_islands = 0;
 		std::vector<std::uint32_t> impulse_counts;
 		std::vector<contact_constraint> seed_contacts;

@@ -10,14 +10,14 @@ export namespace gse {
 
 	template <typename T>
 	auto layout_hash() -> std::uint64_t;
-}
 
-namespace gse {
 	constexpr auto hash_combine(
 		std::uint64_t seed,
 		std::uint64_t value
 	) -> std::uint64_t;
+}
 
+namespace gse {
 	template <typename C>
 	constexpr auto hash_units(
 		std::basic_string_view<C> units

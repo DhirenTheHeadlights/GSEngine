@@ -24,9 +24,12 @@ void loco_act(uint3 dispatch_id) {
     uint sigma_base = expert * pc.act_dim;
 
     float acting[loco_act_dim];
+    bool dep = loco_act_slot_data[slot_base + loco_act_slot_dep] != 0;
 
     for (uint k = 0; k < pc.act_dim; ++k) {
-        float sampled = loco_act_mean_data[mean_base + k] + loco_act_sigma_data[sigma_base + k] * loco_act_noise_data[out_base + k];
+        float sampled = dep && k >= loco_target_dim
+            ? loco_act_noise_data[out_base + k]
+            : loco_act_mean_data[mean_base + k] + loco_act_sigma_data[sigma_base + k] * loco_act_noise_data[out_base + k];
         loco_act_out_data[out_base + k] = sampled;
         acting[k] = sampled;
     }

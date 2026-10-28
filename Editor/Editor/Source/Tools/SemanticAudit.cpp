@@ -1,4 +1,5 @@
 import gse;
+import gse.analysis;
 import gse.ide.analysis;
 import std;
 

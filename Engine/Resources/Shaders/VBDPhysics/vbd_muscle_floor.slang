@@ -14,13 +14,13 @@ float muscle_body_floor(uint bi) {
         uint ji = safe_load_uint(joint_adjacency, offset + k, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) == 0) continue;
         muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
-        float isometric = muscle_tension(m, m.path_length_start, m.path_length_start, pc.dt).y;
+        float isometric = muscle_isometric_stiffness(m, pc.dt);
         if (isometric <= 0.0) continue;
         float3 g = float3(0, 0, 0);
         if (m.wrap_count != 0) {
             start_wrap_poses poses;
             float3 anchor = wrap_anchor(poses, m);
-            g = wrapped_linear_gradient(poses, m, anchor, wrap_muscle_path(poses, m, anchor), bi);
+            g = wrapped_body_gradient(poses, m, anchor, wrap_muscle_path(poses, m, anchor), bi).linear;
         }
         else {
             for (uint p = 0; p < m.path_count; p++) {
