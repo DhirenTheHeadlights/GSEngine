@@ -49,7 +49,7 @@ dispatch:
 
 Only needed if you are building a toolchain rather than downloading one.
 `python Tools/install_msys2.py` extracts MSYS2's self-extracting base archive into
-`<repo>/msys64` (gitignored) and installs the same package closure CI uses — it reads
+`<repo>/.generated/msys64` (gitignored) and installs the same package closure CI uses — it reads
 the `install:` list straight out of `.github/workflows/build-gcc-trunk.yml`, so the two
 cannot drift. Re-running it just updates packages; `--force` re-extracts.
 
@@ -59,10 +59,10 @@ Same entry point CI uses (needs an MSYS2 install with `base-devel` + the GCC bui
 deps — see the `install:` list in the workflow):
 
 ```
-python Tools/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
+python Tools/build_gcc_trunk.py --snapshot 20260601
 ```
 
-Produces `dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
+Produces `.generated/dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
 Windows patch stack; a plain `configure && make` of GCC trunk does **not** build on
 native Windows. When trunk drifts enough that a vendored patch stops applying, the
 weekly build fails loudly — update `Tools/gcc-toolchain/recipe/` and re-dispatch.
@@ -71,12 +71,25 @@ weekly build fails loudly — update `Tools/gcc-toolchain/recipe/` and re-dispat
 
 Separate from everything above, and not part of the distributed zip.
 `python Tools/build_gcc_wasm.py` builds a `wasm32-unknown-unknown` GCC into
-`<repo>/.gcc-wasm` from a pinned trunk snapshot plus the out-of-tree WebAssembly
-backend patches in `Tools/gcc-toolchain/wasm/` (provenance in the README there). It
-stops at `make all-gcc`: driver, `cc1`, `cc1plus`, and no target runtime — there is no
-libc, no libstdc++ and no linker for wasm32 yet, so it compiles translation units and
-cannot link a program.
+`<repo>/.generated/.gcc-wasm` from a pinned trunk snapshot plus the out-of-tree WebAssembly
+backend patches in `Tools/gcc-toolchain/wasm/` (provenance in the README there): the
+driver, `cc1`, `cc1plus`, libgcc and a hosted libstdc++ against a pinned wasi-libc
+sysroot, assembled by `llvm-mc` and linked by `wasm-ld` from MSYS2. It then runs its probe
+table, and `--probe NAME...` re-runs named probes against the toolchain already built.
 
 It does not go through the vendored `makepkg` recipe and does not touch `/mingw64`, so
 it cannot affect the toolchain the engine builds with. See `docs/wasm_pipeline_plan.md`
 for what it is for and what it has measured.
+
+The engine itself is built for wasm32 through the `wasm32-wasi-gcc-Release` CMake preset,
+whose toolchain file `Engine/cmake/toolchains/wasm32-wasi-gcc.cmake` uses that compiler
+straight from `.generated/.gcc-wasm-build`. Build it like any configuration (`gse_build`
+with that preset); the result is `.generated/out/build/wasm32-wasi-gcc-Release/Sandbox/Sandbox.wasm`,
+which runs the scenario named by the `GSE_WASM_SCENARIO` cache variable (default
+`scene_reset_cpu`). The build writes its runners beside it, so no Python is needed:
+`node Sandbox.mjs [ARGS]` runs it under node, and `node serve.mjs --open` serves the
+browser page (fetching each file the run opens from the repo tree) and opens it in Chrome
+or Edge. Both resolve paths and baked resources from the native build named by the
+`GSE_WASM_NATIVE_BUILD` cache variable (default `x64-mingw-gcc-Release`), so build that
+too. `Tools/run_wasm.py` and `Tools/wasm_parity_gate.py` are convenience wrappers over
+those two files.

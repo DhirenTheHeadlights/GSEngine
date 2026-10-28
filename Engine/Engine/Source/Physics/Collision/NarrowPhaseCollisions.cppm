@@ -1434,7 +1434,7 @@ auto gse::narrow_phase_collision::box_sphere_manifold(const bounding_box& bb, co
 
 		for (int i = 0; i < ring_count; ++i) {
 			const float angle = static_cast<float>(i) * (2.f * std::numbers::pi_v<float> / ring_count);
-			const auto offset = tu * (ring_radius * std::cos(angle)) + tv * (ring_radius * std::sin(angle));
+			const auto offset = tu * (ring_radius * libm::cos(angle)) + tv * (ring_radius * libm::sin(angle));
 
 			const auto box_point = closest + offset;
 			const auto sphere_point = center + normalize(box_point - center) * radius;

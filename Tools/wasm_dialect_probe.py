@@ -34,8 +34,8 @@ not GCC output, so a row there would read as GCC passing something it does not. 
 split also makes this cheap: hand-written .s needs no snapshot, no cc1plus and no
 `make all-gcc`, so this runs in seconds where that script runs in an hour.
 
-What it reuses from build_gcc_wasm.py is the part that would otherwise be restated
-wrong: the node harness text and the three-way instantiate/trap/wrong-result exit
+What it reuses from build_gcc_wasm.py and run_wasm.py is the part that would otherwise
+be restated wrong: the node harness text and the three-way instantiate/trap/wrong-result exit
 taxonomy, so a result here and a result there mean the same thing.
 
     python Tools/wasm_dialect_probe.py
@@ -44,10 +44,11 @@ import argparse
 from pathlib import Path
 from typing import NamedTuple
 
-from build_gcc_wasm import (ASM_FEATURES, ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT,
-                            PAGE_SIZE, RUN_TOOLS, TRAP_EXIT, WASI_TARGET, harness_text,
-                            stage_sysroot)
+from build_gcc_wasm import ASM_FEATURES, RUN_TOOLS, WASI_TARGET, stage_sysroot
+from run_wasm import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
+                      harness_text)
 from msys2 import DEFAULT_MSYS_ROOT, REPO_ROOT, bash, to_msys
+from repo_paths import GENERATED_ROOT
 
 # Exactly build_gcc_wasm's tools, reused rather than restated: a relocation proved
 # here is only useful if the llvm-mc and wasm-ld that consume GCC's output are the
@@ -894,8 +895,8 @@ def threads_sysroot(msys_root: Path) -> Path:
     script's, because the tarball belongs to that script and downloading a second copy
     under .wasm-dialect would be a second thing to keep pinned.
     """
-    staged = stage_sysroot(msys_root, REPO_ROOT / ".gcc-wasm-build",
-                           REPO_ROOT / ".gcc-src-cache")
+    staged = stage_sysroot(msys_root, GENERATED_ROOT / ".gcc-wasm-build",
+                           GENERATED_ROOT / ".gcc-src-cache")
     return staged / "lib" / WASI_TARGET
 
 
@@ -1001,7 +1002,7 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description="Measure LLVM's wasm assembly dialect against what GCC's backend needs")
     p.add_argument("--msys-root", type=Path, default=DEFAULT_MSYS_ROOT)
-    p.add_argument("--workdir", type=Path, default=REPO_ROOT / ".wasm-dialect")
+    p.add_argument("--workdir", type=Path, default=GENERATED_ROOT / ".wasm-dialect")
     p.add_argument("--no-gc-sections", action="store_true",
                    help="Link with --no-gc-sections, to tell a collection failure apart "
                         "from a relocation one")

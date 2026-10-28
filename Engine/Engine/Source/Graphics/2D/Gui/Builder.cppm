@@ -6,6 +6,7 @@ import gse.core;
 import gse.containers;
 import gse.time;
 import gse.concurrency;
+import gse.assert;
 import gse.diag;
 import gse.ecs;
 import gse.math;
@@ -73,19 +74,144 @@ export namespace gse::gui {
 		) -> void;
 	};
 
+	template <typename Arg>
+	constexpr bool is_draw_builder_arg_v = std::is_same_v<std::remove_cvref_t<Arg>, builder>;
+
+	template <typename Arg>
+	constexpr bool is_draw_injected_arg_v =
+		is_draw_builder_arg_v<Arg> ||
+		is_shared_view_v<Arg> ||
+		is_optional_shared_view_v<Arg> ||
+		is_channel_write_v<std::remove_cvref_t<Arg>>;
+
+	template <typename... Args>
+	consteval auto draw_owner_arity() -> std::size_t {
+		return (static_cast<std::size_t>(!is_draw_injected_arg_v<Args>) + ... + 0u);
+	}
+
+	template <typename... Args>
+	struct draw_owner {
+		using type = void;
+	};
+
+	template <typename First, typename... Rest>
+	struct draw_owner<First, Rest...> {
+		using type = std::conditional_t<
+			is_draw_injected_arg_v<First>,
+			typename draw_owner<Rest...>::type,
+			std::remove_cvref_t<First>
+		>;
+	};
+
+	struct draw_no_owner {};
+
+	template <typename Owner>
+	consteval auto draw_owner_id() -> id {
+		if constexpr (std::is_same_v<Owner, void>) {
+			return {};
+		}
+		else {
+			return id_of<Owner>();
+		}
+	}
+
+	template <typename Arg, typename Data>
+	auto resolve_draw_arg(
+		builder& b,
+		context& ctx,
+		Data& state
+	) -> decltype(auto);
+
+	template <typename F, typename Fn>
+	struct draw_thunk;
+
+	template <typename F, typename... Args>
+	struct draw_thunk<F, void (*)(Args...)> {
+		using owner = typename draw_owner<Args...>::type;
+
+		static_assert(
+			draw_owner_arity<Args...>() <= 1,
+			"a draw_fn borrows at most one system's data; every other parameter must be builder&, shared_view<X> or channel_write<...>"
+		);
+
+		static auto invoke(
+			builder& b,
+			context& ctx
+		) -> void;
+	};
+
+	class draw_fn : public identifiable_owned {
+	public:
+		static constexpr bool lends_system_state = true;
+
+		draw_fn() = default;
+
+		template <typename F>
+		requires requires(F f) { +f; }
+		draw_fn(
+			F f
+		);
+
+		auto operator()(
+			builder& b,
+			context& ctx
+		) const -> void;
+
+	private:
+		void (*m_invoke)(builder&, context&) = nullptr;
+	};
+
 	struct menu_content {
 		std::string menu;
 		int priority = 0;
 		render_layer layer = render_layer::content;
 		bool translucent = false;
-		std::function<void(builder&)> build;
+		draw_fn build;
 	};
 
 	struct hud_content {
 		std::string name;
 		render_layer layer = render_layer::overlay;
-		std::function<void(builder&)> build;
+		draw_fn build;
 	};
+}
+
+template <typename Arg, typename Data>
+auto gse::gui::resolve_draw_arg(builder& b, context& ctx, Data& state) -> decltype(auto) {
+	if constexpr (is_draw_builder_arg_v<Arg>) {
+		return (b);
+	}
+	else {
+		static_assert(
+			is_draw_injected_arg_v<Arg> || std::is_same_v<std::remove_cvref_t<Arg>, Data>,
+			"a draw_fn runs inside the gui's own run(), so it can only be handed builder&, its owning system's data, shared_view<X> or channel_write<...>; a channel_read, an access token or a resource pointer would take a permission the scheduler attributed to the gui"
+		);
+		return resolve_run_arg<Arg, Data>(ctx, state);
+	}
+}
+
+template <typename F, typename... Args>
+auto gse::gui::draw_thunk<F, void (*)(Args...)>::invoke(builder& b, context& ctx) -> void {
+	if constexpr (std::is_same_v<owner, void>) {
+		draw_no_owner none;
+		F{}(resolve_draw_arg<Args, draw_no_owner>(b, ctx, none)...);
+	}
+	else {
+		owner* state = live_system_state<owner>(ctx);
+		assert(state != nullptr, "a draw_fn outlived {}, the system that lent it", type_tag<owner>());
+		F{}(resolve_draw_arg<Args, owner>(b, ctx, *state)...);
+	}
+}
+
+template <typename F>
+requires requires(F f) { +f; }
+gse::gui::draw_fn::draw_fn(F f)
+	: identifiable_owned(draw_owner_id<typename draw_thunk<F, decltype(+f)>::owner>()), m_invoke(&draw_thunk<F, decltype(+f)>::invoke) {
+}
+
+auto gse::gui::draw_fn::operator()(builder& b, context& ctx) const -> void {
+	assert(m_invoke != nullptr, "a menu_content was pushed without a build callback");
+	m_invoke(b, ctx);
 }
 
 auto gse::gui::builder::scroll_region(const scroll_region_info& info) -> scroll_handle {

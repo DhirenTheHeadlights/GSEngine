@@ -11,7 +11,7 @@ import :spawn;
 
 export namespace gse::ide {
 	namespace package_sdk {
-		struct request {};
+		struct [[= reveals<"Terminal">{}]] request {};
 
 		struct launch_plan {
 			sdk::pack_kind kind = sdk::pack_kind::sdk;
@@ -80,7 +80,7 @@ auto gse::ide::package_sdk::plan_for(const config::worktree& tree, const sdk::pa
 		.kind = kind,
 		.engine_root = tree.engine_root,
 		.build_dir = build_dir,
-		.stage = tree.engine_root / "dist" / (kind == sdk::pack_kind::sdk ? "engine-sdk" : "game") / build_dir.filename(),
+		.stage = tree.engine_root / ".generated" / "dist" / (kind == sdk::pack_kind::sdk ? "engine-sdk" : "game") / build_dir.filename(),
 		.compiler_bin = build_runner::compiler_bin_dir(tree.project_build),
 		.cmake = build_runner::cache_value(build_dir, "CMAKE_COMMAND"),
 		.scenario = std::string(scenario),

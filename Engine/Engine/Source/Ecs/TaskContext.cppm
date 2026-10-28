@@ -47,6 +47,11 @@ export namespace gse {
 			state_of_t<S>& state
 		) -> decltype(auto);
 
+		template <typename Data>
+		friend auto live_system_state(
+			context& ctx
+		) -> Data*;
+
 		template <typename T>
 		friend auto external_resource_ref(
 			const task_context& ctx

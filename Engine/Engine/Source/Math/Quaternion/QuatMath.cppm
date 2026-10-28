@@ -2,6 +2,7 @@ export module gse.math:quat_math;
 
 import std;
 
+import :libm;
 import :units;
 import :vector;
 import :vector_math;
@@ -176,8 +177,8 @@ export namespace gse {
 
 		const T angle = std::sqrt(angle_sq);
 		const T half_angle = angle * T(0.5);
-		const T s = std::sin(half_angle) / angle;
-		return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
+		const T s = libm::sin(half_angle) / angle;
+		return quat_t<T>{ libm::cos(half_angle), s * ax, s * ay, s * az };
 	}
 
 	template <typename T>

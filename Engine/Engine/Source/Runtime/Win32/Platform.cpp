@@ -12,7 +12,17 @@ auto gse::enable_dpi_awareness() -> void {
 
 auto gse::open_editor_pipe(const std::string_view name) -> std::expected<void*, std::string> {
 	const std::wstring pipe(name.begin(), name.end());
+	constexpr int connect_attempts = 100;
+	constexpr auto connect_retry_delay = std::chrono::milliseconds(50);
 	void* handle = win32::CreateFileW(pipe.c_str(), win32::generic_write | win32::generic_read, 0, nullptr, win32::open_existing, 0, nullptr);
+	for (int attempt = 1; attempt < connect_attempts && !win32::valid_handle(handle); ++attempt) {
+		const win32::DWORD error = win32::GetLastError();
+		if (error != win32::error_pipe_busy && error != win32::error_file_not_found) {
+			break;
+		}
+		std::this_thread::sleep_for(connect_retry_delay);
+		handle = win32::CreateFileW(pipe.c_str(), win32::generic_write | win32::generic_read, 0, nullptr, win32::open_existing, 0, nullptr);
+	}
 	if (!win32::valid_handle(handle)) {
 		return std::unexpected(std::format("error {}", win32::GetLastError()));
 	}

@@ -2080,11 +2080,11 @@ uint warm_start_matches(uint ba, uint bb, uint64_t feature_key, uint adjacency_b
     uint matches = 0;
     for (uint k = 0; k < count; k++) {
         uint slot = offset + k;
-        if (slot >= max_contact_adjacency) {
+        if (slot >= max_contact_adjacency()) {
             break;
         }
         uint ci = contact_adjacency[slot];
-        if (ci >= max_contacts) {
+        if (ci >= max_contacts()) {
             continue;
         }
         contact_constraint ws = warm_starts[ci];
@@ -2106,10 +2106,10 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out c
     }
 
     uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
-    bool complete_a = contact_offsets[ba] <= max_contact_adjacency
-        && contact_counts[ba] <= max_contact_adjacency - contact_offsets[ba];
-    bool complete_b = contact_offsets[bb] <= max_contact_adjacency
-        && contact_counts[bb] <= max_contact_adjacency - contact_offsets[bb];
+    bool complete_a = contact_offsets[ba] <= max_contact_adjacency()
+        && contact_counts[ba] <= max_contact_adjacency() - contact_offsets[ba];
+    bool complete_b = contact_offsets[bb] <= max_contact_adjacency()
+        && contact_counts[bb] <= max_contact_adjacency() - contact_offsets[bb];
     uint adjacency_body = complete_a && complete_b && contact_counts[bb] < contact_counts[ba] ? bb : ba;
     uint matches = warm_start_matches(ba, bb, feature_key, adjacency_body, result);
     if (adjacency_body != ba && matches > 1) {
@@ -2159,7 +2159,7 @@ void swap_contact_sides(inout ContactResult contacts) {
 void collision_narrow_phase(uint3 dispatch_id) {
     uint pair_idx = dispatch_id.x;
 
-    uint pair_count = min(collision_pairs[0], max_collision_pairs);
+    uint pair_count = min(collision_pairs[0], max_collision_pairs());
     if (pair_idx == 0) {
         InterlockedAdd(collision_state[state_pair_count_index], pair_count);
     }
@@ -2283,7 +2283,7 @@ void store_pair_contacts(uint first_slot, uint body_a_idx, uint body_b_idx, body
     uint local_count = uint(contacts.count);
     for (uint p = 0; p < local_count; p++) {
         uint ci = first_slot + p;
-        if (ci >= max_contacts) continue;
+        if (ci >= max_contacts()) continue;
 
         ContactCandidate candidate = contacts.candidates[p];
         float3 world_anchor_a = candidate.position_on_a;

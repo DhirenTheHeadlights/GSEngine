@@ -33,9 +33,13 @@ export namespace gse::ide::spawn {
 
 	auto attach_process(output_stream& stream, void* process, void* job) -> void;
 
+	auto adopt_process(output_stream& stream, void* process) -> void;
+
 	auto close_process(output_stream& stream) -> void;
 
 	auto terminate_process(output_stream& stream) -> void;
+
+	auto job_active(const output_stream& stream) -> bool;
 
 	auto terminate(
 		void* process,
@@ -158,6 +162,11 @@ auto gse::ide::spawn::attach_process(output_stream& stream, void* process, void*
 	stream.job = job;
 }
 
+auto gse::ide::spawn::adopt_process(output_stream& stream, void* process) -> void {
+	std::lock_guard _(stream.mutex);
+	stream.process = process;
+}
+
 auto gse::ide::spawn::close_process(output_stream& stream) -> void {
 	std::lock_guard _(stream.mutex);
 	stream.process = nullptr;
@@ -166,6 +175,15 @@ auto gse::ide::spawn::close_process(output_stream& stream) -> void {
 		stream.job = nullptr;
 	}
 	stream.running.store(false, std::memory_order_release);
+}
+
+auto gse::ide::spawn::job_active(const output_stream& stream) -> bool {
+	if (!win32::valid_handle(stream.job)) {
+		return false;
+	}
+	win32::JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
+	return win32::QueryInformationJobObject(stream.job, win32::job_object_basic_accounting_information, &accounting, sizeof(accounting), nullptr)
+		&& accounting.ActiveProcesses > 0;
 }
 
 auto gse::ide::spawn::terminate_process(output_stream& stream) -> void {

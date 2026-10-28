@@ -240,6 +240,9 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 	vp.rect = usable_screen_rect(d.reserve_top_bar ? frame_sty.title_bar_height : 0.f, vp.frame_rect);
 
 	vp.hot_widget_id = {};
+	if (!input_st.mouse_button_held(mouse_button::button_1) && !input_st.mouse_button_released(mouse_button::button_1)) {
+		vp.active_widget_id = {};
+	}
 
 	vp.input_layer_render = (vp.menu_stack.captures_input() || vp.context_menu.open) ? render_layer::popup : render_layer::content;
 	vp.input_suppressed = window_s.primary.cursor_captured || !vp.owns_cursor;
@@ -293,8 +296,18 @@ auto gse::gui::update_viewport_interaction(data& d, viewport_state& vp, const sh
 		});
 }
 
-auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out) -> void {
+auto gse::gui::update_viewport(context& run_ctx, data& d, viewport_state& vp, const input::state& input_st, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_icon_request> ui_out) -> void {
 	const vec2f viewport_size = vp.frame_rect.size();
+
+	if (d.icon_source) {
+		const std::uint64_t key = style_key(vp.fstate.sty);
+		if (vp.icon_style_key != key) {
+			window_icon_request request = d.icon_source(vp.fstate.sty);
+			request.window = vp.window;
+			ui_out.push<window_icon_request>(std::move(request));
+			vp.icon_style_key = key;
+		}
+	}
 
 	if (vp.active_dock_space) {
 		draw_dock_space(d, vp.fstate.sty, *vp.active_dock_space);
@@ -308,7 +321,7 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 
 	if (vp.adopts_unclaimed_content && !vp.menu_stack.occludes()) {
 		const channel_read_guard<hud_content> hud = requests_in.of<hud_content>();
-		process_hud(d, vp, input_st, std::span(hud.begin(), hud.size()));
+		process_hud(run_ctx, d, vp, input_st, std::span(hud.begin(), hud.size()));
 	}
 
 	ui_out.push<window_chrome_metrics_request>({
@@ -324,7 +337,7 @@ auto gse::gui::update_viewport(data& d, viewport_state& vp, const input::state& 
 		if (occluded) {
 			continue;
 		}
-		process_menu(d, vp, input_st, content.menu, content.layer, content.translucent, content.build);
+		process_menu(run_ctx, d, vp, input_st, content.menu, content.layer, content.translucent, content.build);
 	}
 
 	for (const id& menu_id : vp.pending_popout_close_ids) {

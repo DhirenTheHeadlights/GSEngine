@@ -21,7 +21,7 @@ auto gse::ide::search::is_skipped_dir(const std::string_view name, const bool at
 	if (at_root && name == "external") {
 		return true;
 	}
-	return name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
+	return name == ".generated" || name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
 }
 
 auto gse::ide::search::is_binary_ext(const std::string_view ext) -> bool {

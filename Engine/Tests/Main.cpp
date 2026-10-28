@@ -12,7 +12,7 @@ namespace gse::tests {
 }
 
 auto main(int argc, char** argv) -> int {
-	const auto parsed = gse::parse_args<gse::tests::options>(argc, argv);
+	const auto parsed = gse::parse_args<gse::tests::options>(argc, argv).config;
 	const std::array tables = { gse::test::registry<^^gse::tests>() };
 	return gse::test::run({
 		.tables = tables,

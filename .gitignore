@@ -1,24 +1,13 @@
-# Build output
+# Generated trees: builds, dist stages, msys64, gcc and wasm workspaces (Tools/repo_paths.py)
+/.generated/
 /out
-/dist/
 bin/
 build/
 cmake-build-*/
 Makefile
 /vc140.pdb
 
-# GCC trunk build workspace (Tools/build_gcc_trunk.py)
-/msys64/
-/.gcc-build/
-/.gcc-ci-build/
-/.gcc-src-cache/
 *.sfx.exe
-
-# Experimental wasm32 cross compiler (Tools/build_gcc_wasm.py)
-/.gcc-dl/
-/.gcc-wasm/
-/.gcc-wasm-build/
-/.wasm-dialect/
 
 # IDE / editor
 /.vs

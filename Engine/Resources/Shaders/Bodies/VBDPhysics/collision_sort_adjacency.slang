@@ -41,10 +41,10 @@ float joint_angular_floor(body_state body_a, body_state body_b, float3 axis, flo
 void collision_sort_adjacency(uint3 dispatch_id) {
     uint idx = dispatch_id.x;
     uint body_count = pc.body_count;
-    uint num_joints = min(pc.joint_count, max_joints);
-    uint num_muscles = min(solver_config_data[0].muscle_count, max_muscles);
+    uint num_joints = min(pc.joint_count, max_joints());
+    uint num_muscles = min(solver_config_data[0].muscle_count, max_muscles());
 
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
     uint thread_count = ((max(max(body_count, num_joints), num_muscles) + workgroup_size - 1) / workgroup_size) * workgroup_size;
     for (uint ci = idx; ci < num_contacts; ci += thread_count) {
         uint body_a = contact_data[ci].body_a;
@@ -59,12 +59,12 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         if (a_owner || b_owner) continue;
         uint slot;
         InterlockedAdd(unowned_contacts[0], 1, slot);
-        if (slot < max_contacts) unowned_contacts[1 + slot] = ci;
+        if (slot < max_contacts()) unowned_contacts[1 + slot] = ci;
     }
 
     if (idx < body_count && body_data[idx].locked == 0) {
         uint coff = contact_offsets[idx];
-        uint ccnt = min(contact_counts[idx], max_contact_adjacency - coff);
+        uint ccnt = min(contact_counts[idx], max_contact_adjacency() - coff);
         for (uint sa = 1u; sa < ccnt; sa++) {
             uint ci_a = contact_adjacency[coff + sa];
             contact_constraint ca = contact_data[ci_a];
@@ -85,7 +85,7 @@ void collision_sort_adjacency(uint3 dispatch_id) {
         }
 
         uint joff = joint_offsets[idx];
-        uint jcnt = min(joint_counts[idx], max_joint_adjacency - joff);
+        uint jcnt = min(joint_counts[idx], max_joint_adjacency() - joff);
         for (uint ja = 1u; ja < jcnt; ja++) {
             uint ji_a = joint_adjacency[joff + ja];
             bool muscle_a = (ji_a & muscle_adjacency_tag) != 0;

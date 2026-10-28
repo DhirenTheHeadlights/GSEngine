@@ -71,6 +71,7 @@ export namespace gse::vbd {
 		std::uint32_t convergence_probe_interval = 64;
 		std::uint32_t coupled_limit_normalized = 0;
 		velocity joint_correction_speed = meters_per_second(0.f);
+		vbd_capacities caps{};
 	};
 
 	class solver {

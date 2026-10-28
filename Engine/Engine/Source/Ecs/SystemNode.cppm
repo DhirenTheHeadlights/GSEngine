@@ -91,6 +91,7 @@ export namespace gse {
 		std::vector<id> shared_view_reads;
 		std::vector<id> channel_publishes;
 		std::vector<id> channel_consumes;
+		std::vector<id> lent_channels;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;

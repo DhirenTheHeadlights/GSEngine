@@ -8,6 +8,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from repo_paths import BUILD_ROOT, GENERATED_ROOT, REPO_ROOT
+
 hash_pattern = re.compile(r"world-state hash (0x[0-9a-fA-F]{16})")
 p50_pattern = re.compile(r"p50 ([0-9.]+) ms")
 drift_row_pattern = re.compile(r"^\s*(\d+)\s+([0-9.]+) m\s+(\d+)\s+\d+", re.MULTILINE)
@@ -27,9 +29,13 @@ def fnv1a64(s: str) -> int:
 domino_owners = {fnv1a64(f"Domino {i}"): i for i in range(1, 13)}
 
 
+def dump_payload_offset(data: bytes) -> int | None:
+    return next((c for c in (12, 8, 16, 0) if len(data) > c and (len(data) - c) % state_dump_record.size == 0), None)
+
+
 def read_domino_metrics(path: Path) -> dict[int, tuple[float, int | None]] | None:
     data = path.read_bytes()
-    off = next((c for c in (12, 8, 16, 0) if len(data) > c and (len(data) - c) % state_dump_record.size == 0), None)
+    off = dump_payload_offset(data)
     if off is None:
         return None
     latest: dict[int, tuple[int, float]] = {}
@@ -309,8 +315,7 @@ def print_check(check: check_result) -> None:
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
-    default_exe = repo_root / "out" / "build" / "x64-mingw-gcc-RelWithDebInfo" / "Sandbox" / "Sandbox.exe"
+    default_exe = BUILD_ROOT / "x64-mingw-gcc-RelWithDebInfo" / "Sandbox" / "Sandbox.exe"
 
     parser = argparse.ArgumentParser(description="Standing CPU<->GPU parity regression gate: runs the parity ladder + physics_stress, checks world-state hash determinism per config and CPU<->GPU identity where established. Hash checks are load-immune (fixed-step sim), so the gate does not need a quiet machine; printed p50s are informational only.")
     parser.add_argument("--exe", type=Path, default=default_exe)
@@ -354,21 +359,21 @@ def main() -> int:
     backends = ["vulkan", "dx12"] if args.backend == "both" else [args.backend]
     checks: list[check_result] = []
 
-    scratch = repo_root / "out" / "parity_gate_dumps"
+    scratch = GENERATED_ROOT / "out" / "parity_gate_dumps"
     scratch.mkdir(parents=True, exist_ok=True)
 
     for entry in selected:
         print(f"{entry.name}", flush=True)
         cpu_results = None
         if entry.cpu:
-            cpu_results = run_config(args.exe, repo_root, env, "cpu", entry.cpu, entry.frames, entry.settings, None, args.runs, args.timeout, entry.warmup)
+            cpu_results = run_config(args.exe, REPO_ROOT, env, "cpu", entry.cpu, entry.frames, entry.settings, None, args.runs, args.timeout, entry.warmup)
             check = determinism_check(entry.name, "cpu", require, cpu_results)
             checks.append(check)
             print_check(check)
         if entry.gpu:
             for backend in backends:
                 config = f"gpu[{backend}]"
-                gpu_results = run_config(args.exe, repo_root, env, config, entry.gpu, entry.frames, entry.settings, backend, args.runs, args.timeout, entry.warmup)
+                gpu_results = run_config(args.exe, REPO_ROOT, env, config, entry.gpu, entry.frames, entry.settings, backend, args.runs, args.timeout, entry.warmup)
                 det_level = entry.gpu_determinism.get(backend, report)
                 check = determinism_check(entry.name, config, det_level, gpu_results)
                 checks.append(check)
@@ -380,12 +385,12 @@ def main() -> int:
                     print_check(check)
                 positional_level = entry.positional.get(backend)
                 if positional_level and entry.cpu:
-                    check = positional_check(args.exe, repo_root, env, entry, f"cpu vs {config}", positional_level, backend, scratch, args.timeout)
+                    check = positional_check(args.exe, REPO_ROOT, env, entry, f"cpu vs {config}", positional_level, backend, scratch, args.timeout)
                     checks.append(check)
                     print_check(check)
                 cascade_level = entry.cascade.get(backend)
                 if cascade_level and entry.cpu:
-                    check = cascade_check(args.exe, repo_root, env, entry, f"cpu vs {config}", cascade_level, backend, scratch, args.timeout)
+                    check = cascade_check(args.exe, REPO_ROOT, env, entry, f"cpu vs {config}", cascade_level, backend, scratch, args.timeout)
                     checks.append(check)
                     print_check(check)
 

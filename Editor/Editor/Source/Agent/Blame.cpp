@@ -26,6 +26,7 @@ auto gse::ide::agent::note_source_change(session& s, const std::filesystem::path
 			touch->second.build_key = key;
 			touch->second.mtime = std::max(touch->second.mtime, mtime);
 		}
+		touch->second.file = file;
 	}
 	return touched_id;
 }
@@ -136,7 +137,10 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	}
 
 	if (!s.running) {
-		return s.goal && s.goal->waiting ? agent_state::awaiting_goal : agent_state::exited;
+		if (s.goal && s.goal->waiting) {
+			return agent_state::awaiting_goal;
+		}
+		return s.info.failure.empty() ? agent_state::resting : agent_state::failed;
 	}
 	if (s.think_clock) {
 		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
@@ -151,29 +155,22 @@ auto gse::ide::agent::style_of(const agent_state state) -> state_style {
 	return annotation_from_enum<state_style>(state, {});
 }
 
+auto gse::ide::agent::kind_of(const session& s) -> chat_kind {
+	if (s.sync) {
+		return chat_kind::sync;
+	}
+	return s.goal ? chat_kind::goal : s.kind;
+}
+
+auto gse::ide::agent::style_of(const chat_kind kind) -> kind_style {
+	return annotation_from_enum<kind_style>(kind, {});
+}
+
 auto gse::ide::agent::status_label(const data& d, const session& s) -> std::string {
 	const agent_state state = state_of(d, s);
 	std::string out = style_of(state).label;
 	if (state == agent_state::rate_limited) {
 		out += std::format(" - resuming in {}m", std::max<std::int64_t>((s.limited_until - unix_now()) / 60, 1));
-	}
-	if (state == agent_state::hibernating && !s.unbuilt.empty()) {
-		out += " until " + unbuilt_label(s) + " is built";
-	}
-	if (state == agent_state::hibernating && !s.asleep_blocker.empty()) {
-		out += " \xC2\xB7 " + s.asleep_blocker;
-	}
-	if (state == agent_state::awaiting_goal) {
-		out += " - " + await_label(*s.goal->waiting);
-	}
-	if (state == agent_state::build_queued) {
-		const queued_build* queued = queued_for(d, s);
-		if (queued && queued->reported == build_hold::tree_busy) {
-			out += std::format(" behind '{}'", blocker_name(d, queued->blocker));
-		}
-	}
-	if (const std::size_t held = holding_builds(d, s); held > 0) {
-		out += std::format(" \xC2\xB7 holding {} build{}", held, held == 1 ? "" : "s");
 	}
 	return out;
 }
@@ -323,11 +320,110 @@ auto gse::ide::agent::blame_owner(data& d, const build_runner::build_error& erro
 	if (session* direct = touch_owner(d, std::span(&error.file, 1))) {
 		return { .owner = direct };
 	}
+	for (const std::filesystem::path& related : error.related) {
+		if (session* via_related = touch_owner(d, std::span(&related, 1))) {
+			return { .owner = via_related, .via = related };
+		}
+	}
+	return dependency_owner(d, error.file);
+}
+
+auto gse::ide::agent::trim_blank(const std::string_view text) -> std::string_view {
+	const std::size_t first = text.find_first_not_of(" \t\r");
+	if (first == std::string_view::npos) {
+		return {};
+	}
+	return text.substr(first, text.find_last_not_of(" \t\r") + 1 - first);
+}
+
+auto gse::ide::agent::declared_module(const std::span<const std::string> lines) -> std::string {
+	constexpr std::string_view exported = "export module ";
+	for (const std::string& line : lines) {
+		const std::string_view text = trim_blank(line);
+		if (text.starts_with(exported) && text.ends_with(';')) {
+			return std::string(trim_blank(text.substr(exported.size(), text.size() - exported.size() - 1)));
+		}
+	}
 	return {};
+}
+
+auto gse::ide::agent::imported_modules(const std::span<const std::string> lines) -> std::vector<std::string> {
+	std::string own;
+	std::vector<std::string> out;
+	for (const std::string& line : lines) {
+		std::string_view text = trim_blank(line);
+		if (!text.ends_with(';')) {
+			continue;
+		}
+		text.remove_suffix(1);
+		const bool exported = text.starts_with("export ");
+		if (exported) {
+			text = trim_blank(text.substr(7));
+		}
+
+		if (text.starts_with("module ")) {
+			own = std::string(trim_blank(text.substr(7)));
+			const std::size_t partition = own.find(':');
+			if (!exported && partition == std::string::npos) {
+				out.push_back(own);
+			}
+			own = own.substr(0, partition);
+			continue;
+		}
+		if (!text.starts_with("import ")) {
+			continue;
+		}
+
+		const std::string_view name = trim_blank(text.substr(7));
+		if (name.starts_with(':')) {
+			out.push_back(own + std::string(name));
+		}
+		else if (!name.starts_with('<') && !name.starts_with('"')) {
+			out.emplace_back(name);
+		}
+	}
+	return out;
+}
+
+auto gse::ide::agent::dependency_owner(data& d, const std::filesystem::path& file) -> blame_match {
+	const std::vector<std::string> imports = imported_modules(file_lines(file));
+	if (imports.empty()) {
+		return {};
+	}
+
+	std::vector<std::pair<std::filesystem::path, std::string>> declared;
+	blame_match best;
+	std::int64_t latest = 0;
+	for (session& s : d.sessions) {
+		for (const touched_source& touch : s.touched | std::views::values) {
+			if (touch.file.empty() || touch.file == file) {
+				continue;
+			}
+
+			auto known = std::ranges::find(declared, touch.file, &decltype(declared)::value_type::first);
+			if (known == declared.end()) {
+				declared.emplace_back(touch.file, declared_module(file_lines(touch.file)));
+				known = std::prev(declared.end());
+			}
+			if (known->second.empty() || !std::ranges::contains(imports, known->second)) {
+				continue;
+			}
+
+			if (!best.owner || touch.mtime > latest) {
+				best = { .owner = &s, .via = touch.file };
+				latest = touch.mtime;
+			}
+		}
+	}
+	return best;
 }
 
 auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_finished& finished, const channel_write<blame_offer> offers) -> void {
 	constexpr std::size_t blame_limit = 8;
+
+	const std::vector<blamed_error> asked = d.inquiry && d.inquiry->build == finished.key
+		? d.unclaimed
+		: std::vector<blamed_error>{};
 
 	for (session& s : d.sessions) {
 		if (s.blame_build == finished.key) {
@@ -342,8 +438,15 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 
 	std::vector<blame_offer> grouped;
 
+	if (!finished.succeeded && finished.errors.empty() && !finished.output.empty()) {
+		d.unclaimed = { blamed_error{ .message = "the build failed without a diagnostic the editor could place on a line", .output = finished.output } };
+		d.unclaimed_build = finished.key;
+		grouped.push_back({ .kind = finished.kind });
+	}
+
 	for (const build_runner::build_error& error : finished.errors) {
-		session* owner = blame_owner(d, error).owner;
+		const blame_match match = blame_owner(d, error);
+		session* owner = match.owner;
 		std::vector<blamed_error>& claim = owner ? owner->blame : d.unclaimed;
 		if (claim.size() >= blame_limit) {
 			continue;
@@ -355,12 +458,15 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 			.line = error.line,
 			.message = error.message,
 			.notes = error.notes,
+			.via = match.via,
 		});
 
 		if (owner) {
 			append_row(*owner, {
 				.kind = row_kind::failure,
-				.text = std::format("broke the build in {}", error.file.filename().generic_display_string()),
+				.text = match.via.empty()
+					? std::format("broke the build in {}", error.file.filename().generic_display_string())
+					: std::format("your edit to {} likely broke {}", match.via.filename().generic_display_string(), error.file.filename().generic_display_string()),
 				.detail = std::format("line {}: {}", error.line, error.message),
 				.file = error.file,
 				.start_line = std::max(error.line, 1u),
@@ -383,9 +489,189 @@ auto gse::ide::agent::attribute_build_errors(data& d, const build_runner::build_
 		});
 	}
 
-	for (const blame_offer& offer : grouped) {
+	if (!d.unclaimed.empty()) {
+		d.unclaimed_tree = finished.tree;
+	}
+
+	const auto same_errors = [](const blamed_error& a, const blamed_error& b) {
+		return a.file == b.file && a.line == b.line && a.message == b.message;
+	};
+	const bool still_asking = !d.unclaimed.empty() && std::ranges::equal(asked, d.unclaimed, same_errors);
+	if (d.inquiry && d.inquiry->build == finished.key && !still_asking) {
+		cancel_inquiry(d);
+	}
+	if (still_asking) {
+		d.inquiry->run = finished.run;
+	}
+
+	for (blame_offer& offer : grouped) {
+		offer.run = finished.run;
+		if (offer.session == 0) {
+			offer.asking = still_asking
+				? static_cast<std::uint32_t>(d.inquiry->forks.size())
+				: start_inquiry(d, finished.kind, finished.run);
+		}
 		offers.push<blame_offer>(offer);
 	}
+}
+
+auto gse::ide::agent::inquiry_patience() -> time {
+	return seconds(90.f);
+}
+
+auto gse::ide::agent::inquiry_candidates(data& d) -> std::vector<session*> {
+	std::vector<session*> out;
+	for (session& s : d.sessions) {
+		if (is_chat(s) && !s.info.agent_id.empty() && !s.touched.empty() && config::worktree_for(s.cwd).name == d.unclaimed_tree) {
+			out.push_back(&s);
+		}
+	}
+	return out;
+}
+
+auto gse::ide::agent::inquiry_prompt(const std::span<const blamed_error> errors) -> std::string {
+	std::string prompt =
+		"The editor is asking you a question from a throwaway copy of this conversation. Nothing you do here reaches the real chat, and you can only read files.\n\n"
+		"The latest build failed, and no chat in the editor can be tied to it by the lines it edited:\n";
+	prompt += describe_errors(errors);
+	prompt +=
+		"\nDid the edits you made in this conversation cause any of them - for example by changing a module, signature or declaration these files depend on? "
+		"Read the code if you need to, then explain in a sentence or two. "
+		"End your reply with a final line that is exactly CLAIM if your edits caused them, or exactly NOT_MINE if they did not.";
+	return prompt;
+}
+
+auto gse::ide::agent::start_inquiry(data& d, const build_runner::stream_kind kind, const std::uint32_t run) -> std::uint32_t {
+	cancel_inquiry(d);
+
+	unclaimed_inquiry inquiry{
+		.build = d.unclaimed_build,
+		.run = run,
+		.kind = kind,
+	};
+	const std::string prompt = inquiry_prompt(d.unclaimed);
+	for (const session* candidate : inquiry_candidates(d)) {
+		inquiry_fork fork = launch_inquiry(*candidate, prompt);
+		if (fork.verdict == inquiry_verdict::pending) {
+			inquiry.forks.push_back(std::move(fork));
+		}
+	}
+
+	const auto asking = static_cast<std::uint32_t>(inquiry.forks.size());
+	log::println(log::level::info, log::category::task, "agent: no chat owns {} build error(s), asking {} chat(s) whether they caused them", d.unclaimed.size(), asking);
+	d.inquiry = std::move(inquiry);
+	return asking;
+}
+
+auto gse::ide::agent::cancel_inquiry(data& d) -> void {
+	if (!d.inquiry) {
+		return;
+	}
+	for (inquiry_fork& fork : d.inquiry->forks) {
+		end_inquiry(fork);
+	}
+	d.inquiry.reset();
+}
+
+auto gse::ide::agent::service_inquiry(data& d, const channel_write<blame_offer> offers) -> void {
+	if (!d.inquiry) {
+		return;
+	}
+	if (d.unclaimed.empty() || d.unclaimed_build != d.inquiry->build) {
+		cancel_inquiry(d);
+		return;
+	}
+
+	const bool expired = d.inquiry->asked.elapsed() > inquiry_patience();
+	for (inquiry_fork& fork : d.inquiry->forks) {
+		if (expired) {
+			end_inquiry(fork);
+		}
+		else {
+			pump_inquiry(fork);
+		}
+	}
+	const bool answered = std::ranges::none_of(d.inquiry->forks, [](const inquiry_fork& fork) {
+		return fork.verdict == inquiry_verdict::pending;
+	});
+	if (!answered) {
+		return;
+	}
+
+	unclaimed_inquiry finished = std::move(*d.inquiry);
+	d.inquiry.reset();
+
+	const auto session_of = [&d](const inquiry_fork& fork) -> session* {
+		const auto found = std::ranges::find(d.sessions, fork.session, &session::id);
+		return found == d.sessions.end() ? nullptr : &*found;
+	};
+	const auto latest_write = [](const session& s) {
+		return std::ranges::max(s.touched | std::views::values | std::views::transform(&touched_source::mtime));
+	};
+
+	session* owner = nullptr;
+	const inquiry_fork* confession = nullptr;
+	std::vector<std::string> also;
+	std::vector<std::string> denied;
+	for (const inquiry_fork& fork : finished.forks) {
+		session* s = session_of(fork);
+		if (!s) {
+			continue;
+		}
+		const std::string name = s->name.empty() ? "unnamed" : s->name;
+		if (fork.verdict == inquiry_verdict::denied) {
+			denied.push_back(name);
+			continue;
+		}
+		if (fork.verdict != inquiry_verdict::claimed || s->touched.empty()) {
+			continue;
+		}
+		if (!owner || latest_write(*s) > latest_write(*owner)) {
+			if (owner) {
+				also.push_back(owner->name.empty() ? "unnamed" : owner->name);
+			}
+			owner = s;
+			confession = &fork;
+		}
+		else {
+			also.push_back(name);
+		}
+	}
+
+	if (!owner) {
+		log::println(log::level::info, log::category::task, "agent: no asked chat claimed the unowned build error(s) ({} denied)", denied.size());
+		const bool fixing = std::ranges::any_of(d.sessions, [](const session& s) {
+			return s.kind == chat_kind::build_error && current_phase(s) != task_phase::settled;
+		});
+		if (d.auto_fix_unclaimed && !fixing) {
+			fix_unclaimed(d, denied);
+		}
+		return;
+	}
+
+	const blamed_error& first = d.unclaimed.front();
+	append_row(*owner, {
+		.kind = row_kind::failure,
+		.text = std::format("asked whether your edits broke {}, a copy of this chat said they did", first.file.empty() ? std::string("the build") : first.file.filename().generic_display_string()),
+		.detail = also.empty()
+			? confession->answer
+			: std::format("{}\nalso claimed by: {}", confession->answer, also | std::views::join_with(std::string_view(", ")) | std::ranges::to<std::string>()),
+		.file = first.file,
+		.start_line = std::max(first.line, 1u),
+	});
+	offers.push<blame_offer>({
+		.session = owner->id,
+		.session_name = owner->name,
+		.file = first.file,
+		.line = first.line,
+		.extra = static_cast<std::uint32_t>(d.unclaimed.size() - 1),
+		.run = finished.run,
+		.kind = finished.kind,
+	});
+	owner->blame.insert(owner->blame.end(), d.unclaimed.begin(), d.unclaimed.end());
+	owner->blame_build = d.unclaimed_build;
+	d.unclaimed.clear();
+	d.unclaimed_build = {};
 }
 
 auto gse::ide::agent::build_patience() -> time {
@@ -760,9 +1046,10 @@ auto gse::ide::agent::wake_session(session& s, const std::string_view lead) -> v
 		message += "\n\n" + prompt;
 	}
 	resume_with(s, std::move(message));
+	s.woke_by = "the build it slept on finished";
 }
 
-auto gse::ide::agent::resume_with(session& s, std::string message) -> void {
+auto gse::ide::agent::resume_with(session& s, std::string message, std::optional<transcript_row> shown) -> void {
 	if (!s.running && !launch_session(s)) {
 		append_row(s, {
 			.kind = row_kind::failure,
@@ -778,7 +1065,7 @@ auto gse::ide::agent::resume_with(session& s, std::string message) -> void {
 		);
 	}
 
-	send_to_session(s, message, {}, true);
+	send_to_session(s, message, {}, true, std::move(shown));
 }
 
 auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished& finished) -> void {
@@ -787,15 +1074,40 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 	};
 
 	std::string red_owner;
+	bool orphaned = false;
 	if (!finished.succeeded) {
 		const auto broke_it = std::ranges::find_if(d.sessions, broke_this_build);
+		orphaned = broke_it == d.sessions.end() && d.inbox_queue.empty();
 		red_owner = broke_it != d.sessions.end()
 			? std::format("errors owned by chat '{}'", broke_it->name)
 			: "errors nobody here wrote";
 	}
 
+	std::string orphan_errors;
+	for (const build_runner::build_error& e : finished.errors | std::views::take(10)) {
+		orphan_errors += std::format("\n  {}:{}: {}", e.file.generic_string(), e.line, e.message);
+	}
+	if (orphan_errors.empty()) {
+		orphan_errors = "\n  (no compiler diagnostic was parsed - the tail of the build output follows)";
+		for (const std::string& line : finished.output) {
+			orphan_errors += "\n  " + line;
+		}
+	}
+
 	for (session& s : d.sessions) {
 		if (!s.hibernating || !(s.unbuilt.empty() || s.unbuilt.contains(finished.key))) {
+			continue;
+		}
+
+		if (orphaned && !broke_this_build(s)) {
+			s.asleep_blocker.clear();
+			log::println(log::level::warning, log::category::task, "agent: waking chat '{}' - the build failed on errors no chat owns and nothing else is queued", s.name);
+			append_row(s, {
+				.kind = row_kind::failure,
+				.text = "the build failed on errors no chat owns - nothing else is queued to clear it",
+				.detail = orphan_errors.substr(1),
+			});
+			wake_session(s, "The build you were waiting on failed, and none of its errors are on lines any chat wrote. Every waiting chat was asleep on it, so nothing would ever have rebuilt - you are being woken instead. These are not yours: do not fix them. Report the state of the tree to the owner and stop." + orphan_errors);
 			continue;
 		}
 
@@ -859,7 +1171,26 @@ auto gse::ide::agent::wake_covered(data& d) -> void {
 auto gse::ide::agent::resume_interrupted(data& d) -> void {
 	constexpr std::uint32_t resume_limit = 3;
 
+	const std::vector<build_inbox::request> carried = build_inbox::peek_requests();
+
 	for (session& s : d.sessions) {
+		if (s.hibernating && !s.running && !s.info.agent_id.empty() && std::ranges::none_of(carried, [&s](const build_inbox::request& r) {
+			return r.agent == s.info.agent_id;
+		})) {
+			if (s.resume_attempts >= resume_limit) {
+				log::println(log::level::warning, log::category::task, "agent: chat '{}' has been woken after a restart {} times in a row - leaving it asleep", s.name, s.resume_attempts);
+				continue;
+			}
+			++s.resume_attempts;
+			log::println(log::level::info, log::category::task, "agent: waking chat '{}' - the build it was hibernating on did not survive the editor restart", s.name);
+			wake_session(
+				s,
+				"The editor closed or crashed while you were hibernating, and the build you were waiting on was dropped with it - it never ran. "
+				"Call gse_build again for the same request. You are not blocked: if the tree is busy the build defers and you can hibernate again."
+			);
+			continue;
+		}
+
 		if (!s.turn_open || s.running || s.hibernating || s.pending_transition || s.gate || s.question || s.info.agent_id.empty()) {
 			continue;
 		}
@@ -987,8 +1318,10 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const bool gaps_recorded = accept_gap_reports(d);
 	const bool asked = accept_questions(d);
 	const bool answered = service_questions(d);
+	const bool drew = accept_draws(d);
+	const bool stepped = accept_step_reports(d);
 	nudge_unclosed_phases(d);
-	const bool recorded = hibernated || phases_recorded || awaits_recorded || woken || gaps_recorded || asked || answered;
+	const bool recorded = hibernated || phases_recorded || awaits_recorded || woken || gaps_recorded || asked || answered || drew || stepped;
 	d.presence = build_inbox::take_presence();
 
 	accept_requests(d);
@@ -1057,7 +1390,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 		.bounds = { .scenario = scenario, .exit_after = exit_after },
 		.config = config,
 		.profile = profile,
-		.tree = tree,
+		.tree = tree != nullptr ? tree->name : std::string{},
 		.inbox_id = group.front().id,
 	});
 
@@ -1111,9 +1444,14 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 					? std::format("  related {} - chat '{}' is editing it", related.generic_display_string(), touching->name)
 					: "  related " + related.generic_display_string());
 			}
+			if (is_mine && !match.via.empty()) {
+				mine.push_back(std::format("  ^ nobody edited this file - it depends on {}, which you changed", match.via.generic_display_string()));
+			}
 			if (owner && !is_mine) {
 				const std::string_view owner_name = owner->name.empty() ? "unnamed" : owner->name;
-				theirs.push_back(match.at_line
+				theirs.push_back(!match.via.empty()
+					? std::format("  ^ chat '{}' edited {}, which this file depends on", owner_name, match.via.generic_display_string())
+					: match.at_line
 					? std::format("  ^ chat '{}' wrote this line", owner_name)
 					: std::format("  ^ chat '{}' edited this file, but not this line", owner_name));
 			}
@@ -1170,14 +1508,21 @@ auto gse::ide::agent::dispatch_blame(data& d, const std::uint32_t session_id) ->
 	found->blame_build = {};
 }
 
-auto gse::ide::agent::fix_unclaimed(data& d) -> void {
+auto gse::ide::agent::fix_unclaimed(data& d, const std::span<const std::string> denied) -> void {
 	if (d.unclaimed.empty()) {
 		return;
 	}
 
 	const blamed_error& first = d.unclaimed.front();
-	session& started = create_session(d, config::worktree_for(first.file).project_root, task_phase::apply);
-	started.name = std::format("fix {}", first.file.filename().generic_display_string());
+	const std::span<const config::worktree> trees = config::worktrees();
+	const auto tree = std::ranges::find(trees, d.unclaimed_tree, &config::worktree::name);
+	session& started = create_session(d, (tree != trees.end() ? *tree : config::primary()).project_root, task_phase::apply);
+	started.kind = chat_kind::build_error;
+	started.name = first.file.empty() ? std::string("fix build") : std::format("fix {}", first.file.filename().generic_display_string());
+	started.fix = build_fix{
+		.errors = d.unclaimed,
+		.denied = { denied.begin(), denied.end() },
+	};
 
 	if (!launch_session(started)) {
 		append_row(started, {
@@ -1187,9 +1532,125 @@ auto gse::ide::agent::fix_unclaimed(data& d) -> void {
 		return;
 	}
 
-	send_to_session(started, blame_prompt("The build failed and no chat owns these edits:", d.unclaimed), {}, true);
+	std::string prompt = blame_prompt("The build failed and no chat owns these edits:", d.unclaimed);
+	if (!denied.empty()) {
+		prompt += std::format("\nThese chats were asked and said their edits did not cause it: {}.", denied | std::views::join_with(std::string_view(", ")) | std::ranges::to<std::string>());
+	}
+	send_to_session(started, prompt, {}, true);
 	d.unclaimed.clear();
 	d.unclaimed_build = {};
+}
+
+auto gse::ide::agent::record_field(const std::string_view record, const std::string_view key) -> std::string_view {
+	for (const auto line : record | std::views::split('\n')) {
+		const std::string_view text(line.begin(), line.end());
+		if (text.size() > key.size() + 1 && text.starts_with(key) && text.substr(key.size(), 2) == ": ") {
+			return text.substr(key.size() + 2);
+		}
+	}
+	return {};
+}
+
+auto gse::ide::agent::crash_prompt(const std::span<const pending_crash> reports) -> std::string {
+	const pending_crash& newest = reports.front();
+	std::string prompt = std::format(
+		"The editor died and restarted itself. This is its crash record, written by the crash handler before the process went down:\n\n"
+		"{}\n"
+		"The record is at {}, and the runtime log of the run that crashed is named in it - read that log with gse_log_query using its run stamp.\n\n",
+		newest.record,
+		newest.path.generic_display_string()
+	);
+
+	if (reports.size() > 1) {
+		prompt += std::format("This is the newest of {} crash reports handed to you together, so it has happened more than once. The others are:\n", reports.size());
+		for (const pending_crash& other : reports | std::views::drop(1)) {
+			prompt += std::format("  {} - {}\n", other.path.generic_display_string(), record_field(other.record, "reason"));
+		}
+		prompt += "They may be the same crash or different ones; read them before assuming either.\n\n";
+	}
+
+	prompt +=
+		"Find the cause and fix it. Every report here was recorded against the binary that is on disk right now, so the stack frames can be symbolized - "
+		"but do it before you build anything, because a build replaces the binary and the offsets stop meaning anything:\n"
+		"  addr2line -e <exe from the record> -f -C -s -p <0x140000000 + RVA>\n"
+		"using the addr2line from the toolchain the binary was built with.\n\n"
+		"Nobody is watching this chat, so your scope is approved automatically and you carry the task through to a fix yourself.";
+	return prompt;
+}
+
+auto gse::ide::agent::set_aside(const std::filesystem::path& report, const std::string_view suffix) -> std::filesystem::path {
+	std::filesystem::path moved = report;
+	moved += suffix;
+	std::error_code ec;
+	std::filesystem::rename(report, moved, ec);
+	if (ec) {
+		log::println(log::level::warning, log::category::task, "agent: crash report {} could not be renamed to {} ({})", report, moved, ec.message());
+		return {};
+	}
+	return moved;
+}
+
+auto gse::ide::agent::triage_crashes(data& d) -> void {
+	const auto in_flight = std::ranges::find_if(d.sessions, [](const session& s) {
+		return s.kind == chat_kind::crash && current_phase(s) != task_phase::settled;
+	});
+	if (in_flight != d.sessions.end()) {
+		log::println(log::level::info, log::category::task, "agent: chat '{}' is still working on a crash, so new crash reports wait until it settles", in_flight->name);
+		return;
+	}
+
+	std::error_code ec;
+	const std::string prefix = std::format("{}.", gse::config::executable_stem());
+	std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> found;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(gse::config::crash_dir(), ec)) {
+		const std::string name = entry.path().filename().generic_string();
+		if (!name.starts_with(prefix) || !name.ends_with(crash_report_extension)) {
+			continue;
+		}
+		const std::filesystem::file_time_type written = entry.last_write_time(ec);
+		if (!ec) {
+			found.emplace_back(written, entry.path());
+		}
+	}
+	std::ranges::sort(found, std::ranges::greater{}, &decltype(found)::value_type::first);
+
+	const std::string current = gse::binary_identity();
+	std::vector<pending_crash> fresh;
+	std::size_t stale = 0;
+	for (const std::filesystem::path& report : found | std::views::values) {
+		const std::vector<std::byte> bytes = read_file_bytes(report);
+		std::string record(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+
+		if (current.empty() || record_field(record, binary_field) != current) {
+			stale += set_aside(report, stale_report_suffix).empty() ? 0 : 1;
+			continue;
+		}
+		if (std::filesystem::path triaged = set_aside(report, triaged_report_suffix); !triaged.empty()) {
+			fresh.push_back({ .path = std::move(triaged), .record = std::move(record) });
+		}
+	}
+
+	if (stale > 0) {
+		log::println(log::level::info, log::category::task, "agent: set aside {} crash report(s) recorded against a binary that has since been rebuilt", stale);
+	}
+	if (fresh.empty()) {
+		return;
+	}
+
+	session& started = create_session(d, config::primary().project_root, task_phase::scope);
+	started.kind = chat_kind::crash;
+	started.name = std::format("crash {}", std::filesystem::path(fresh.front().path).replace_extension().stem().generic_display_string());
+
+	if (!launch_session(started)) {
+		append_row(started, {
+			.kind = row_kind::failure,
+			.text = "failed to launch 'claude' - is it on PATH?",
+		});
+		return;
+	}
+
+	log::println(log::level::info, log::category::task, "agent: chat '{}' is triaging {} crash report(s)", started.name, fresh.size());
+	send_to_session(started, crash_prompt(fresh), {}, true);
 }
 
 auto gse::ide::agent::blame_label(const session& s) -> std::string {
@@ -1198,7 +1659,9 @@ auto gse::ide::agent::blame_label(const session& s) -> std::string {
 	}
 
 	const blamed_error& first = s.blame.front();
-	const std::string head = std::format("{}:{}", first.file.filename().generic_display_string(), first.line);
+	const std::string head = first.file.empty()
+		? std::string("build failure")
+		: std::format("{}:{}", first.file.filename().generic_display_string(), first.line);
 	return s.blame.size() > 1
 		? std::format("{} +{}", head, s.blame.size() - 1)
 		: head;
@@ -1207,14 +1670,30 @@ auto gse::ide::agent::blame_label(const session& s) -> std::string {
 auto gse::ide::agent::blame_prompt(const std::string_view lead, const std::span<const blamed_error> errors) -> std::string {
 	std::string prompt(lead);
 	prompt += '\n';
-	for (const blamed_error& error : errors) {
-		prompt += std::format("{}:{}: error: {}\n", error.file.generic_display_string(), error.line, error.message);
-		for (const std::string& note : error.notes) {
-			prompt += "  " + note + "\n";
-		}
-	}
+	prompt += describe_errors(errors);
 	prompt += "Fix them.";
 	return prompt;
+}
+
+auto gse::ide::agent::describe_errors(const std::span<const blamed_error> errors) -> std::string {
+	std::string out;
+	for (const blamed_error& error : errors) {
+		if (error.file.empty()) {
+			out += error.message + ". The tail of the build output:\n";
+			for (const std::string& line : error.output) {
+				out += "  " + line + "\n";
+			}
+			continue;
+		}
+		out += std::format("{}:{}: error: {}\n", error.file.generic_display_string(), error.line, error.message);
+		for (const std::string& note : error.notes) {
+			out += "  " + note + "\n";
+		}
+		if (!error.via.empty()) {
+			out += std::format("  nobody edited this file - it depends on {}, which you changed\n", error.via.generic_display_string());
+		}
+	}
+	return out;
 }
 
 auto gse::ide::agent::arm_retry(session& s) -> void {

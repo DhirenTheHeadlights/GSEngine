@@ -260,7 +260,7 @@ export namespace gse::physics {
 	};
 
 	struct gpu_solver_frame_info {
-		const gpu::buffer* snapshot = nullptr;
+		gpu::handle<gpu::buffer> snapshot;
 		std::uint32_t body_count = 0;
 		std::uint32_t body_stride = 0;
 		std::uint32_t position_offset = 0;

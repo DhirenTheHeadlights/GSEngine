@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from repo_paths import DIST_ROOT, GENERATED_ROOT
+
 # pactree reports gcc-libs under its `cc-libs` provides name; map it back. lto-dump
 # is a sibling package (not in gcc's runtime closure) we ship for -flto diagnostics.
 PROVIDES_ALIAS = {"mingw-w64-x86_64-cc-libs": "mingw-w64-x86_64-gcc-libs"}
@@ -93,14 +95,13 @@ def stage(msys_root: Path, rel_files: set[str], stage_dir: Path) -> int:
 
 
 def main() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
     p = argparse.ArgumentParser(description="Stage a portable GCC toolchain from an MSYS2 mingw64 prefix")
-    p.add_argument("--msys-root", type=Path, default=repo_root / "msys64",
-                   help="MSYS2 install root containing usr/bin/bash.exe and mingw64/ (default: <repo>/msys64)")
-    p.add_argument("--stage", type=Path, default=repo_root / "dist" / "gcc-trunk",
+    p.add_argument("--msys-root", type=Path, default=GENERATED_ROOT / "msys64",
+                   help="MSYS2 install root containing usr/bin/bash.exe and mingw64/ (default: <repo>/.generated/msys64)")
+    p.add_argument("--stage", type=Path, default=DIST_ROOT / "gcc-trunk",
                    help="Directory to stage the toolchain into (its root becomes MINGW_ROOT)")
     p.add_argument("--out", type=Path, default=None,
-                   help="Also produce this .zip of the staged tree (e.g. dist/gcc-trunk-windows-x64.zip)")
+                   help="Also produce this .zip of the staged tree (e.g. .generated/dist/gcc-trunk-windows-x64.zip)")
     args = p.parse_args()
 
     msys_root = args.msys_root.resolve()

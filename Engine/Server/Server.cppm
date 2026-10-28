@@ -229,9 +229,7 @@ template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_system::scene_catalog& catalog) -> void {
 	m_scene_ids = catalog.scene_ids;
 	m_triggers = catalog.triggers;
-	m_active_scene = catalog.active_scene != nullptr
-		? std::optional(catalog.active_scene->id())
-		: std::nullopt;
+	m_active_scene = catalog.active_scene;
 	if (m_active_scene.has_value()) {
 		m_requested_scene.reset();
 	}

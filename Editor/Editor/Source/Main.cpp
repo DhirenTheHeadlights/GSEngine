@@ -38,6 +38,8 @@ auto main() -> int {
 			.custom_chrome = true,
 			.launcher_size = gse::ide::project::opened() ? gse::vec2i{ 0, 0 } : gse::vec2i{ 760, 420 },
 			.scale_ui_with_resolution = false,
+			.restart_on_device_lost = true,
+			.restart_on_crash = true,
 			.gui_layout_path = gse::ide::config::editor_layout(),
 			.project_settings_path = gse::ide::config::project_settings(),
 		}

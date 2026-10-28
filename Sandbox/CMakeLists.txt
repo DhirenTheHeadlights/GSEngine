@@ -48,6 +48,45 @@ target_link_libraries(SandboxLib PRIVATE Engine EngineServer)
 add_executable(Sandbox "${MAIN_CPP}")
 target_link_libraries(Sandbox PRIVATE SandboxLib Engine EngineServer)
 
+# A wasm32 module has no argv: the harness calls its exported `entry`, which hands main the
+# scenario this configuration was set up for plus whatever GSE_RUN_ARGS carries at run time.
+#
+# It calls main rather than assembling the bench configuration itself, because
+# apply_scenario turning a name into a scene, frame counts and pinned settings IS the world
+# the parity hash compares, and a second copy of it would drift. GCC's wasm backend names a
+# main(int, char**) definition __main_argc_argv, the wasi-libc entry name, which is the
+# symbol called. --no-engine-gpu is the engine's own headless flag: a wasm32 build compiles
+# no GPU backend, so without it the run dereferences the null device it was handed.
+# GSE_RUN_ARGS is split on spaces and read at run time, so a diagnostic flag costs no
+# relink.
+if(NOT WIN32)
+    set(GSE_WASM_SCENARIO "scene_reset_cpu" CACHE STRING "Scenario the wasm32 module's entry runs")
+    configure_file("${SANDBOX_SRC}/Web/Entry.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/WebEntry.cpp" @ONLY)
+    target_sources(Sandbox PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/WebEntry.cpp")
+
+    # What runs the module, written beside it: `node Sandbox.mjs ARGS` under node, and
+    # `node serve.mjs --open` in a browser. The run reports the native build's executable
+    # to gse.config so the log name, user state and baked resources are the native run's.
+    set(GSE_WASM_NATIVE_BUILD "x64-mingw-gcc-Release" CACHE STRING "Native build tree whose manifest and baked resources the wasm32 run resolves")
+    set(_gse_wasm_host "${CMAKE_SOURCE_DIR}/Engine/cmake/wasm")
+    get_filename_component(_gse_native_build "${CMAKE_BINARY_DIR}/../${GSE_WASM_NATIVE_BUILD}" ABSOLUTE)
+    file(RELATIVE_PATH _gse_native_exe "${CMAKE_SOURCE_DIR}" "${_gse_native_build}/Sandbox.exe")
+    set(_gse_run_dir ".generated/.gcc-wasm-run")
+    file(RELATIVE_PATH _gse_project "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(GSE_WASM_RUN_MODULE "Sandbox.wasm")
+    set(GSE_WASM_RUN_ROOT "${CMAKE_SOURCE_DIR}")
+    set(GSE_WASM_RUN_EXECUTABLE "/${_gse_native_exe}")
+    set(GSE_WASM_RUN_PROJECT "/${_gse_project}")
+    set(GSE_WASM_RUN_USER "/${_gse_run_dir}/user")
+    set(GSE_WASM_RUN_STATE "/${_gse_run_dir}/state")
+    set(GSE_WASM_RUN_PROJECTS "/${_gse_run_dir}/projects")
+    configure_file("${_gse_wasm_host}/wasm_run.json.in" "${CMAKE_CURRENT_BINARY_DIR}/wasm_run.json" @ONLY)
+    configure_file("${_gse_wasm_host}/launcher.mjs" "${CMAKE_CURRENT_BINARY_DIR}/Sandbox.mjs" COPYONLY)
+    foreach(_gse_file node_host.mjs serve.mjs page/index.html page/page.mjs page/host.mjs page/guest.mjs page/protocol.mjs)
+        configure_file("${_gse_wasm_host}/${_gse_file}" "${CMAKE_CURRENT_BINARY_DIR}/${_gse_file}" COPYONLY)
+    endforeach()
+endif()
+
 # GCC-trunk's C++ modules codegen on MinGW (PE/COFF) emits vague-linkage function-local statics
 # as STRONG symbols in every importing TU instead of COMDAT-folding them, so the final link sees
 # duplicate definitions. The offenders are overwhelmingly in external code we can't touch:

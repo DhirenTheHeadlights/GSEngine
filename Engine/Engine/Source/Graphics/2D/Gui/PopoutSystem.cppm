@@ -20,7 +20,7 @@ export namespace gse::gui::popout_system {
 	struct popout_entry {
 		std::string menu_name;
 		id menu_id;
-		const settings::register_settings_type* entry = nullptr;
+		std::optional<settings::register_settings_type> entry;
 		bool active = true;
 	};
 
@@ -49,7 +49,12 @@ namespace gse::gui {
 	auto find_hot_entry(
 		const save::registry& save_reg,
 		std::string_view category
-	) -> const settings::register_settings_type*;
+	) -> std::optional<settings::register_settings_type>;
+
+	[[nodiscard]] auto popout_for_menu(
+		popout_system::data& d,
+		id menu_id
+	) -> popout_system::popout_entry*;
 
 	auto activate_popout(
 		popout_system::data& d,
@@ -66,14 +71,23 @@ auto gse::gui::make_popout_menu_name(const std::string_view category) -> std::st
 	return out;
 }
 
-auto gse::gui::find_hot_entry(const save::registry& save_reg, const std::string_view category) -> const settings::register_settings_type* {
-	const settings::register_settings_type* found = nullptr;
+auto gse::gui::find_hot_entry(const save::registry& save_reg, const std::string_view category) -> std::optional<settings::register_settings_type> {
+	std::optional<settings::register_settings_type> found;
 	save_reg.for_each_entry([&](const settings::register_settings_type& entry) {
 		if (entry.category == category && entry.settings_ptr && std::ranges::any_of(entry.fields, &settings::settings_field::hot_reloadable)) {
-			found = &entry;
+			found = entry;
 		}
 	});
 	return found;
+}
+
+auto gse::gui::popout_for_menu(popout_system::data& d, const id menu_id) -> popout_system::popout_entry* {
+	for (auto& popout : std::views::values(d.popouts)) {
+		if (popout.menu_id == menu_id) {
+			return &popout;
+		}
+	}
+	return nullptr;
 }
 
 auto gse::gui::activate_popout(popout_system::data& d, const save::registry& save_reg, std::string category) -> popout_system::popout_entry* {
@@ -150,8 +164,12 @@ auto gse::gui::popout_system::run(context& ctx, data& d, const channel_read<popo
 			.menu = popout.menu_name,
 			.layer = render_layer::overlay,
 			.translucent = true,
-			.build = [entry = popout.entry, ps_ptr = &d.panel_state, settings_out = settings::change_request_writer(popout_out)](builder& b) {
-				settings::draw_fields_for_entry(b, *ps_ptr, settings_out, *entry, true);
+			.build = [](builder& b, popout_system::data& panel_d, const settings::change_request_writer settings_out) {
+				popout_entry* shown = popout_for_menu(panel_d, b.ctx.current_menu->id());
+				if (!shown || !shown->entry) {
+					return;
+				}
+				settings::draw_fields_for_entry(b, panel_d.panel_state, settings_out, *shown->entry, true);
 			},
 		});
 	}

@@ -36,3 +36,11 @@ A chat already pursuing a goal cannot draft another one.
 ## Scoping Under A Goal
 
 When the prompt above carries a goal, the task came from a steering run and the owner is not watching each step: your plan goes to apply without an approval click. That only holds inside the charter. If the plan needs anything outside it, or something material is left for the owner to decide, call `gse_phase_done` with `next: "escalate"` and say what you need — that stops for the owner instead.
+
+## Scoping A Crash
+
+A crash chat is opened by the editor itself, not by the owner: the editor died, restarted, and handed you the crash record it wrote on the way down. Your plan goes to apply without an approval click, because nobody is sitting in front of it — so scope it as the whole job, diagnosis through fix, rather than as a question you are waiting to have answered.
+
+The editor only hands you reports recorded against the binary that is on disk when you start; a report from a build that has since been replaced is set aside rather than triaged, because its frame offsets belong to code that no longer exists. That guarantee lasts only until something rebuilds. Symbolize the frames before you build anything — after a build, every name you resolve from those offsets is a plausible lie, and a confident wrong diagnosis is worse than none, because it is what the next crash gets blamed on.
+
+Only one crash chat runs at a time, and you may be handed several reports at once. They may be one crash that happened repeatedly or several different ones; read them before assuming either.

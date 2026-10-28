@@ -98,7 +98,7 @@ auto gse::ide::panel_reports() -> std::span<const panel_report> {
 		},
 		panel_report{
 			.name = "Agent",
-			.summary = "chats, their phase, model and unbuilt or blamed files",
+			.summary = "chats, their phase, model and unbuilt or blamed files, the canvases gse_draw placed in them, apply step progress with the files attributed to each step, answered questions with their picks and hidden question echoes, and live ui motion counts",
 			.writer = { .write = write_agent },
 		},
 		panel_report{
@@ -481,6 +481,11 @@ auto gse::ide::write_terminal(const panel_sources& src, const std::uint32_t rows
 auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, std::vector<std::string>& out) -> void {
 	count(out, "chat_count", src.chats.sessions.size());
 	field(out, "active", std::format("{}", src.chats.active));
+	count(out, "motion_live", src.chats.motion.live);
+	count(out, "motion_moving", src.chats.motion.animating);
+	for (const agent::split_kind kind : enum_values<agent::split_kind>()) {
+		field(out, std::format("split_{}", annotation_from_enum<agent::split_style>(kind, {}).label), std::format("{:.3f}", agent::split_ratio(src.chats.splits, kind)));
+	}
 
 	std::uint32_t emitted = 0;
 	section(out, "chats");
@@ -502,6 +507,10 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 			field(out, "syncing", chat.sync->root.generic_display_string());
 		}
 		field(out, "transcript_mode", enum_to_string(chat.mode));
+		const bool ready = agent::summary_ready(chat);
+		field(out, "summary", ready ? "ready" : "none");
+		field(out, "view", chat.mode == agent::transcript_mode::summary && ready ? "summary" : chat.mode == agent::transcript_mode::everything ? "everything" : "transcript");
+		field(out, "toggle", ready ? "shown" : "hidden");
 		if (!chat.model_id.empty()) {
 			field(out, "model", chat.model_id);
 		}
@@ -528,6 +537,321 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		++emitted;
 	}
 	count(out, "shown", emitted);
+
+	std::uint32_t drawn = 0;
+	section(out, "canvases");
+	for (const agent::session& chat : src.chats.sessions) {
+		for (const agent::canvas_record& canvas : chat.canvases) {
+			if (drawn >= rows) {
+				break;
+			}
+			const auto row = std::ranges::find_if(chat.rows, [&canvas](const agent::transcript_row& r) {
+				return r.kind == agent::row_kind::canvas && r.text == canvas.name;
+			});
+			const agent::transcript_view& view = chat.mode == agent::transcript_mode::everything ? chat.everything : chat.full;
+			const auto placed = row == chat.rows.end()
+				? view.canvases.end()
+				: std::ranges::find(view.canvases, static_cast<std::uint32_t>(std::distance(chat.rows.begin(), row)), &agent::canvas_view::row);
+
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "name", canvas.name);
+			field(out, "commands", std::format("{}", canvas.steps.size()));
+			field(out, "size", std::format("{}", canvas.size));
+			field(out, "row", row == chat.rows.end() ? std::string("unhydrated") : std::format("{}", std::distance(chat.rows.begin(), row)));
+			field(out, "line", placed == view.canvases.end() || placed->first_line == agent::unplaced_line ? std::string("unplaced") : std::format("{}", placed->first_line));
+			const agent::canvas_tally tally = placed == view.canvases.end() ? agent::canvas_tally{} : placed->tally;
+			field(out, "sprites", std::format("{}", tally.sprites));
+			field(out, "texts", std::format("{}", tally.texts));
+			field(out, "dropped", std::format("{}", tally.dropped));
+			field(out, "clipped", std::format("{}", tally.clipped));
+
+			std::vector<std::string_view> sketches;
+			for (const agent::canvas_step& step : canvas.steps) {
+				if (!step.origin.empty() && std::ranges::find(sketches, step.origin) == sketches.end()) {
+					sketches.push_back(step.origin);
+				}
+			}
+			field(out, "sketches", sketches.empty() ? std::string("none") : sketches | std::views::join_with(',') | std::ranges::to<std::string>());
+			field(out, "viewing", row != chat.rows.end() && view.viewing_canvas == static_cast<std::uint32_t>(std::distance(chat.rows.begin(), row)) ? "true" : "false");
+			++drawn;
+		}
+	}
+	count(out, "canvas_shown", drawn);
+
+	std::uint32_t answered = 0;
+	section(out, "answers");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::transcript_view& view = chat.mode == agent::transcript_mode::everything ? chat.everything : chat.full;
+		std::uint32_t suppressed = 0;
+		for (std::size_t at = 0; at < chat.rows.size(); ++at) {
+			const agent::transcript_row& row = chat.rows[at];
+			if (row.kind == agent::row_kind::question && view.filter == agent::row_filter::conversation) {
+				++suppressed;
+			}
+			if (row.kind != agent::row_kind::answer || answered >= rows) {
+				continue;
+			}
+			std::vector<std::string> picked;
+			for (std::size_t option = 0; option < row.options.size(); ++option) {
+				if (row.options[option].chosen) {
+					picked.push_back(std::format("{}", option));
+				}
+			}
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "row", std::format("{}", at));
+			field(out, "question", row.text);
+			field(out, "options", std::format("{}", row.options.size()));
+			field(out, "picked", picked.empty() ? std::string("none") : picked | std::views::join_with(',') | std::ranges::to<std::string>());
+			field(out, "steering", row.detail.empty() ? "false" : "true");
+			++answered;
+		}
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "suppressed_echoes", std::format("{}", suppressed));
+	}
+	count(out, "answers_shown", answered);
+
+	std::uint32_t listed = 0;
+	section(out, "steps");
+	for (const agent::session& chat : src.chats.sessions) {
+		if (!chat.gate) {
+			continue;
+		}
+		for (std::size_t at = 0; at < chat.gate->steps.size() && listed < rows; ++at) {
+			const build_inbox::plan_step& step = chat.gate->steps[at];
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "index", std::format("{}", at));
+			field(out, "text", step.text);
+			field(out, "files", std::format("{}", step.files.size()));
+			field(out, "selected", chat.plan_selected == at ? "true" : "false");
+			++listed;
+		}
+	}
+	count(out, "steps_shown", listed);
+
+	section(out, "plans");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::lifecycle life = agent::lifecycle_of(chat);
+		const agent::plan_paging paging = agent::paging_of(life.pages, chat.lifecycle_page);
+		const auto page_name = [](const agent::summary_page& page) {
+			return std::format("{}:{}", enum_to_string(page.phase), enum_to_string(page.kind));
+		};
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "pages", life.pages | std::views::transform(page_name) | std::views::join_with(',') | std::ranges::to<std::string>());
+		field(out, "page", std::format("{}/{} {}", paging.page, paging.pages, page_name(paging.shown)));
+		field(out, "scope_steps", std::format("{}", life.steps.size()));
+		field(out, "progress", life.progress.reported ? "reported" : "unreported");
+		field(out, "run", life.progress.ended ? "ended" : "live");
+		field(out, "split", agent::followup_of(chat) ? "on" : "off");
+		const agent::summary_anchor opening = agent::opening_page(chat, agent::since_of(chat, chat.arrived, chat.entered));
+		const agent::lifecycle opened = agent::lifecycle_at(chat, agent::shown_goal(chat) ? std::optional(opening.position) : std::nullopt);
+		const agent::plan_paging landed = agent::paging_of(opened.pages, opening.page);
+		field(out, "opening", std::format("cycle {} page {}/{} {}", opening.position, landed.page, landed.pages, page_name(landed.shown)));
+		field(out, "waiting", chat.wait_shown.empty() ? std::string("none") : chat.wait_shown);
+		if (chat.gate && !agent::gate_summary(chat).empty()) {
+			const agent::plan_paging gate = agent::paging_of(agent::scope_pages(agent::gate_summary(chat), chat.gate->steps.size()), chat.plan_page);
+			field(out, "gate_page", std::format("{}/{} {}", gate.page, gate.pages, page_name(gate.shown)));
+		}
+	}
+
+	std::uint32_t tracked = 0;
+	section(out, "progress");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::lifecycle life = agent::lifecycle_of(chat);
+		if (life.edits.empty() && !life.progress.reported) {
+			continue;
+		}
+		const auto files_of = [&](const std::optional<std::size_t> group) {
+			std::vector<std::string> files;
+			for (const agent::step_edit* edit : agent::edits_in_group(life.edits, life.steps.size(), group)) {
+				std::string name = edit->file.filename().generic_display_string();
+				if (!std::ranges::contains(files, name)) {
+					files.push_back(std::move(name));
+				}
+			}
+			return files.empty() ? std::string("none") : files | std::views::join_with(',') | std::ranges::to<std::string>();
+		};
+		for (std::size_t at = 0; at < life.steps.size() && tracked < rows; ++at) {
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "index", std::format("{}", at));
+			field(out, "state", enum_to_string(life.progress.states[at]));
+			field(out, "edits", std::format("{}", life.progress.edits[at]));
+			field(out, "files", files_of(at));
+			++tracked;
+		}
+		if (life.progress.unattributed > 0 && tracked < rows) {
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "index", "unattributed");
+			field(out, "edits", std::format("{}", life.progress.unattributed));
+			field(out, "files", files_of(life.steps.size()));
+			++tracked;
+		}
+	}
+	count(out, "progress_shown", tracked);
+
+	std::uint32_t cycled = 0;
+	section(out, "review_cycles");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::review_loop loop = agent::review_loop_of(chat);
+		for (std::size_t at = 0; at < loop.cycles.size() && cycled < rows; ++at) {
+			const agent::review_cycle& cycle = loop.cycles[at];
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "cycle", std::format("{}", at + 1));
+			field(out, "findings", std::format("{}", cycle.findings));
+			field(out, "reviewed", cycle.reviewed ? "true" : "false");
+			field(out, "revised", cycle.revise_begun ? (cycle.revise_reported ? "reported" : "running") : "no");
+			field(out, "edits", std::format("{}", cycle.edits));
+			field(out, "open", loop.capped && at + 1 == loop.cycles.size() ? "capped" : "false");
+			++cycled;
+		}
+	}
+	count(out, "review_cycles_shown", cycled);
+
+	std::uint32_t reported = 0;
+	section(out, "reports");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::lifecycle life = agent::lifecycle_of(chat);
+		if (life.report.empty() || reported >= rows) {
+			continue;
+		}
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "head", agent::report_head(life.progress, life.review));
+		field(out, "diffs_link", agent::edits_label(agent::task_edits(life)));
+		field(out, "chars", std::format("{}", life.report.size()));
+		++reported;
+	}
+	count(out, "reports_shown", reported);
+
+	std::uint32_t fixing = 0;
+	section(out, "errors");
+	for (const agent::session& chat : src.chats.sessions) {
+		if (chat.kind != agent::chat_kind::build_error || fixing >= rows) {
+			continue;
+		}
+		const agent::build_fix* fix = chat.fix ? &*chat.fix : nullptr;
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "head", agent::errors_head(fix));
+		field(out, "errors", fix ? std::format("{}", fix->errors.size()) : std::string("unrecorded"));
+		field(out, "denied", fix ? std::format("{}", fix->denied.size()) : std::string("0"));
+		field(out, "strip_lines", std::format("{}", agent::error_strip(fix).size()));
+		field(out, "diagnosis", fix && !fix->diagnosis.empty() ? "on" : "off");
+		++fixing;
+	}
+	count(out, "errors_shown", fixing);
+
+	std::uint32_t steered = 0;
+	std::uint32_t judged = 0;
+	section(out, "goals");
+	for (const agent::session& chat : src.chats.sessions) {
+		const std::optional<agent::goal_dashboard> goal = agent::goal_dashboard_of(chat);
+		if (!goal || steered >= rows) {
+			continue;
+		}
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "head", agent::goal_head(*goal));
+		field(out, "standing", enum_to_string(goal->standing));
+		field(out, "steers_left", std::format("{}", goal->steers_left));
+		field(out, "aim", goal->aim.empty() ? std::string_view("none") : goal->aim);
+		field(out, "tally", agent::criteria_tally(goal->criteria));
+		field(out, "route", agent::route_line(goal->route));
+		field(out, "ledger_shown", std::format("{}", goal->ledger.size()));
+		if (!goal->ledger.empty()) {
+			field(out, "ledger_latest", agent::ledger_head(goal->ledger.front()));
+		}
+		++steered;
+	}
+	count(out, "goals_shown", steered);
+
+	section(out, "criteria");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::goal_state* shown = agent::shown_goal(chat);
+		if (!shown) {
+			continue;
+		}
+		for (const agent::criterion_report& criterion : shown->criteria) {
+			if (judged >= rows) {
+				break;
+			}
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "id", criterion.id);
+			field(out, "state", enum_to_string(criterion.state));
+			++judged;
+		}
+	}
+	count(out, "criteria_shown", judged);
+
+	std::uint32_t cycled_goals = 0;
+	section(out, "cycles");
+	for (const agent::session& chat : src.chats.sessions) {
+		if (!agent::shown_goal(chat)) {
+			continue;
+		}
+		const std::vector<agent::goal_cycle> cycles = agent::goal_cycles(chat);
+		for (std::size_t at = 0; at < cycles.size() && cycled_goals < rows; ++at) {
+			const agent::goal_cycle& cycle = cycles[at];
+			const agent::lifecycle life = agent::lifecycle_at(chat, static_cast<std::uint32_t>(at + 1));
+			const auto stage_name = [](const agent::summary_page& page) {
+				return std::format("{}:{}", enum_to_string(page.phase), enum_to_string(page.kind));
+			};
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "index", std::format("{}", at + 1));
+			field(out, "started", std::format("{}", cycle.started));
+			field(out, "runs", std::format("{}", cycle.runs.size()));
+			field(out, "verdict", cycle.verdict ? enum_to_string(*cycle.verdict) : std::string_view("none recorded"));
+			field(out, "findings", std::format("{}", cycle.findings));
+			field(out, "edits", std::format("{}", cycle.edits));
+			field(out, "stages", life.pages | std::views::transform(stage_name) | std::views::join_with(',') | std::ranges::to<std::string>());
+			++cycled_goals;
+		}
+	}
+	count(out, "cycles_shown", cycled_goals);
+
+	section(out, "seen");
+	for (const agent::session& chat : src.chats.sessions) {
+		const agent::lifecycle life = agent::lifecycle_of(chat);
+		const agent::since_digest since = agent::since_of(chat, chat.arrived, chat.entered);
+		item(out);
+		field(out, "chat", std::format("{}", chat.id));
+		field(out, "seen", std::format("{}", chat.seen));
+		field(out, "arrived", std::format("{}", chat.arrived));
+		field(out, "entered", std::format("{}", chat.entered));
+		field(out, "cursor", life.cycle.shown ? agent::cycle_label(life.cycle) : std::string("task"));
+		field(out, "anchor", since.anchor ? std::format("cycle {} page {}", since.anchor->position, since.anchor->page + 1) : std::string("none"));
+		field(out, "digest", agent::digest_line(since).empty() ? std::string("none") : agent::digest_line(since));
+		field(out, "fork", chat.fork.process ? (chat.fork.process->verdict == agent::inquiry_verdict::pending ? std::string("asking") : std::string("answered")) : chat.fork.open ? std::string("open") : std::string("off"));
+		if (chat.fork.process) {
+			field(out, "fork_about", chat.fork.about);
+			field(out, "fork_answer_chars", std::format("{}", chat.fork.process->answer.size()));
+		}
+	}
+
+	std::uint32_t sectioned = 0;
+	section(out, "diff_sections");
+	for (const agent::session& chat : src.chats.sessions) {
+		for (const agent::diff_section& found : agent::diff_sections_of(chat)) {
+			if (sectioned >= rows) {
+				break;
+			}
+			item(out);
+			field(out, "chat", std::format("{}", chat.id));
+			field(out, "section", found.label);
+			field(out, "row", std::format("{}", found.row));
+			++sectioned;
+		}
+	}
+	count(out, "diff_sections_shown", sectioned);
 }
 
 auto gse::ide::write_game(const panel_sources& src, std::uint32_t, std::vector<std::string>& out) -> void {

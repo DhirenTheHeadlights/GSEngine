@@ -250,7 +250,7 @@ auto packer::plan_for(const arguments& args) -> std::expected<image_plan, std::s
 	const std::string project = project_root.filename().generic_native_encoded_string();
 	const std::string compiler = cache_value(build_dir, "CMAKE_CXX_COMPILER");
 	const std::filesystem::path preset = build_dir.filename();
-	const std::filesystem::path stage = args.stage.empty() ? engine_root / "dist" / (args.kind == gse::sdk::pack_kind::sdk ? "engine-sdk" : "game") / preset : args.stage;
+	const std::filesystem::path stage = args.stage.empty() ? engine_root / ".generated" / "dist" / (args.kind == gse::sdk::pack_kind::sdk ? "engine-sdk" : "game") / preset : args.stage;
 	return image_plan{
 		.kind = args.kind,
 		.engine_root = std::filesystem::absolute(engine_root).lexically_normal(),

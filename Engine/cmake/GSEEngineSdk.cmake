@@ -21,7 +21,7 @@ file(TO_NATIVE_PATH "${_gse_sdk_toolchain_bin}" _gse_sdk_toolchain_bin_native)
 set(ENV{PATH} "${_gse_sdk_toolchain_bin_native};$ENV{PATH}")
 
 function(gse_configure_compiler)
-    add_compile_options(-freflection -fcontracts -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
+    add_compile_options(-freflection -fcontracts -fno-exceptions -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
     add_compile_options($<$<CONFIG:Release>:-fcontract-evaluation-semantic=ignore>)
     add_link_options(-fcontracts)
 endfunction()

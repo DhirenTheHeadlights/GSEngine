@@ -8,6 +8,7 @@ import gse.ide.search;
 import gse.ide.workspace;
 import std;
 
+import :brand;
 import :dock;
 import :search_screen;
 
@@ -325,18 +326,24 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 
+	const float logo_extent = std::min(area.height() - sty.padding, sty.font_size * 1.5f);
+	brand::draw(ctx, rectf::from_position_size(
+		{ area.left() + sty.padding, area.center().y() + logo_extent * 0.5f },
+		{ logo_extent, logo_extent }
+	));
+	const float swatch_x = area.left() + sty.padding + logo_extent + sty.padding * 0.5f;
 	const float swatch_width = sty.accent_bar_width;
 	const float swatch_height = sty.font_size;
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size(
-			{ area.left() + sty.padding, area.center().y() + swatch_height * 0.5f },
+			{ swatch_x, area.center().y() + swatch_height * 0.5f },
 			{ swatch_width, swatch_height }
 		),
 		.color = project::accent(),
 		.texture = ctx.blank_texture,
 	});
 
-	const float title_x = area.left() + sty.padding + swatch_width + sty.padding * 0.5f;
+	const float title_x = swatch_x + swatch_width + sty.padding * 0.5f;
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,

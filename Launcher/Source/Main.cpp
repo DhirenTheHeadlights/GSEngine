@@ -7,7 +7,7 @@ import gse.win32.environment;
 import launcher;
 
 auto main(int argc, char** argv) -> int {
-	const auto args = gse::parse_args<launcher::arguments>(argc, argv);
+	const auto args = gse::parse_args<launcher::arguments>(argc, argv).config;
 	auto local = launcher::own_install();
 	if (!local) {
 		gse::win32::show_error_box(L"GSE Launcher", gse::win32::widen(local.error()).c_str());

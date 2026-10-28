@@ -240,7 +240,7 @@ auto launcher::launcher_screen::fraction() const -> float {
 		return files == 0 ? 1.f : static_cast<float>(m_progress->extracted.load(std::memory_order_acquire)) / static_cast<float>(files);
 	}
 	const std::uint64_t total = m_progress->total.load(std::memory_order_acquire);
-	return total == 0 ? 0.f : static_cast<float>(m_progress->received.load(std::memory_order_acquire)) / static_cast<float>(total);
+	return total == 0 ? 0.f : static_cast<float>(m_progress->received->load(std::memory_order_acquire)) / static_cast<float>(total);
 }
 
 auto launcher::launcher_screen::draw_progress(const gse::gui::builder& ui) const -> void {
@@ -321,7 +321,7 @@ auto launcher::launcher_screen::build_body(gse::gui::builder& ui) -> void {
 			return;
 		}
 		ui.draw<gse::gui::text>({
-			.content = std::format("Downloading {} of {}", megabytes(m_progress->received.load(std::memory_order_acquire)), megabytes(m_progress->total.load(std::memory_order_acquire))),
+			.content = std::format("Downloading {} of {}", megabytes(m_progress->received->load(std::memory_order_acquire)), megabytes(m_progress->total.load(std::memory_order_acquire))),
 			.style = { .color = ui.ctx.style.color_text_secondary },
 		});
 		return;

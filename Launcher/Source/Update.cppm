@@ -18,7 +18,7 @@ export namespace launcher {
 	};
 
 	struct progress {
-		std::atomic<std::uint64_t> received{ 0 };
+		std::shared_ptr<std::atomic<std::uint64_t>> received = std::make_shared<std::atomic<std::uint64_t>>(0);
 		std::atomic<std::uint64_t> total{ 0 };
 		std::atomic<std::size_t> extracted{ 0 };
 		std::atomic<std::size_t> files{ 0 };
@@ -146,7 +146,7 @@ auto launcher::apply_update(const install& local, const gse::sdk::feed& entry, p
 		.url = entry.url,
 		.timeout = gse::seconds(60.f),
 		.sink = download,
-		.received = &reported.received,
+		.received = reported.received,
 	});
 	if (!answered) {
 		return std::unexpected(answered.error());

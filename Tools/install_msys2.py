@@ -1,11 +1,11 @@
-"""Install MSYS2 into <repo>/msys64 with the GCC build dependencies.
+"""Install MSYS2 into <repo>/.generated/msys64 with the GCC build dependencies.
 
 Local equivalent of the msys2/setup-msys2 step in .github/workflows/build-gcc-trunk.yml,
 so build_gcc_trunk.py and build_gcc_wasm.py have the same package closure locally as in
 CI. The package list is read out of that workflow rather than duplicated here.
 
 Uses the self-extracting base archive, not the Qt installer .exe: it is a plain extract
-with no registry keys, no shortcuts and no unattended-install incantation, and <repo>/msys64
+with no registry keys, no shortcuts and no unattended-install incantation, and <repo>/.generated/msys64
 is already gitignored.
 
     python Tools/install_msys2.py
@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from msys2 import DEFAULT_MSYS_ROOT, REPO_ROOT, bash
+from repo_paths import GENERATED_ROOT
 
 SFX_URL = ("https://github.com/msys2/msys2-installer/releases/download/"
            "nightly-x86_64/msys2-base-x86_64-latest.sfx.exe")
@@ -54,10 +55,10 @@ def download(url: str, dest: Path) -> Path:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Install MSYS2 + GCC build deps into <repo>/msys64")
+    p = argparse.ArgumentParser(description="Install MSYS2 + GCC build deps into <repo>/.generated/msys64")
     p.add_argument("--msys-root", type=Path, default=DEFAULT_MSYS_ROOT)
     p.add_argument("--url", default=SFX_URL, help="MSYS2 self-extracting base archive")
-    p.add_argument("--cache", type=Path, default=REPO_ROOT / ".gcc-dl", help="Download cache dir")
+    p.add_argument("--cache", type=Path, default=GENERATED_ROOT / ".gcc-dl", help="Download cache dir")
     p.add_argument("--force", action="store_true", help="Re-extract even if the root exists")
     args = p.parse_args()
 

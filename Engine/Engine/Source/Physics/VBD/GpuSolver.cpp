@@ -241,7 +241,7 @@ namespace gse::vbd {
 		gpu::body_path<BodyPath>,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -252,7 +252,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_solve_color">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -262,7 +262,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_solve_sweep">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -279,7 +279,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/collision_narrow_phase_poly">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -303,7 +303,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/collision_scan_adjacency">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -323,7 +323,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_hash_state">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -333,7 +333,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_hash_warm_inputs">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -343,7 +343,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_hash_adjacency">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -353,7 +353,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_hash_colors">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -363,7 +363,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_hash_bodies">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
@@ -373,19 +373,19 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_apply_restitution">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
 	>;
 
-	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
+	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_contact_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
 		gpu::push_constant<vbd_push_constants>
 	>;
@@ -394,7 +394,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_convergence_check">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -404,7 +404,7 @@ namespace gse::vbd {
 		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
 		gpu::types<shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
+		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<16>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -1531,6 +1531,7 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	}
 
 	m_solver_cfg.muscle_count = m_muscle_count;
+	m_solver_cfg.caps = m_capacities;
 
 	const bool pack_islands = m_solver_cfg.island_pack != 0
 		&& m_solver_cfg.trace_island_convergence == 0
@@ -1934,6 +1935,8 @@ auto gse::vbd::gpu_solver::initialize_compute(context& ctx, const shared_view<gp
 	m_solve_marks.joint_lambda = find_or_generate_id("vbd::solve::joint_lambda");
 	m_solve_marks.convergence = find_or_generate_id("vbd::solve::convergence");
 
+	build_compute(gpu_s);
+
 	m_compute.initialized = true;
 	co_return;
 }
@@ -1968,6 +1971,13 @@ auto gse::vbd::gpu_solver::ensure_capacity(const shared_view<gpu::context::data>
 		limits.adjacency_workgroup_size
 	);
 
+	assert(
+		m_capacities.grid_table_size != 0 && m_capacities.max_bodies != 0,
+		"the broad phase reads these from solver_config and divides by grid_table_size, so a zero would reach the gpu as a modulo by zero: grid_table_size {} max_bodies {}",
+		m_capacities.grid_table_size,
+		m_capacities.max_bodies
+	);
+
 	log::println(
 		log::category::physics,
 		"vbd gpu capacities sized from the scene: {} bodies, {} contacts, {} joints, {} islands, {} motors, {} impulses, {} muscles over {} path points, {} hull uints, {} grid cells",
@@ -1983,7 +1993,14 @@ auto gse::vbd::gpu_solver::ensure_capacity(const shared_view<gpu::context::data>
 		m_capacities.grid_table_size
 	);
 
-	build_compute(gpu_s);
+	m_compute.collision_build_coloring_pipeline = gpu::build_compute_program(
+		*gpu_s.device,
+		collision_build_coloring_entry::pod,
+		{},
+		shaders::emit_slang_constants(m_capacities)
+	);
+
+	create_buffers(gpu_s);
 }
 
 auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> gpu_s) -> void {
@@ -1994,9 +2011,8 @@ auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> g
 		"the restitution sort key packs a 10-bit island slot, so an adjacency workgroup cannot exceed 1024 threads"
 	);
 
-	const auto capacity_constants = shaders::emit_slang_constants(m_capacities);
 	const auto build = [&](const auto& pod) {
-		return gpu::build_compute_program(*gpu_s.device, pod, {}, capacity_constants);
+		return gpu::build_compute_program(*gpu_s.device, pod);
 	};
 
 	m_compute.predict_pipeline = build(predict_entry::pod);
@@ -2015,7 +2031,6 @@ auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> g
 	m_compute.collision_scan_adjacency_pipeline = build(collision_scan_adjacency_entry::pod);
 	m_compute.collision_scatter_adjacency_pipeline = build(collision_scatter_adjacency_entry::pod);
 	m_compute.collision_sort_adjacency_pipeline = build(collision_sort_adjacency_entry::pod);
-	m_compute.collision_build_coloring_pipeline = build(collision_build_coloring_entry::pod);
 	m_compute.collision_color_round_pipeline = build(collision_color_round_entry::pod);
 	m_compute.collision_color_commit_pipeline = build(collision_color_commit_entry::pod);
 	m_compute.update_joint_lambda_pipeline = build(update_joint_lambda_entry::pod);
@@ -2037,8 +2052,6 @@ auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> g
 	m_compute.hash_colors_pipeline = build(hash_colors_entry::pod);
 	m_compute.hash_bodies_pipeline = build(hash_bodies_entry::pod);
 	m_compute.gather_snapshot_pipeline = build(gather_snapshot_entry::pod);
-
-	create_buffers(gpu_s);
 }
 
 auto gse::vbd::gpu_solver::capacities() const -> const vbd_capacities& {

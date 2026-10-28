@@ -54,10 +54,10 @@ bool restitution_gate(uint ci) {
     return true;
 }
 
-static const uint restitution_ci_bits = firstbithigh(max_contacts - 1) + 1;
-static const uint restitution_ci_mask = (1u << restitution_ci_bits) - 1;
-static const uint restitution_local_island_bits = 30 - restitution_ci_bits;
-static const uint restitution_local_island_mask = (1u << restitution_local_island_bits) - 1;
+uint restitution_ci_bits() { return firstbithigh(max_contacts() - 1) + 1; }
+uint restitution_ci_mask() { return (1u << restitution_ci_bits()) - 1; }
+uint restitution_local_island_bits() { return 30 - restitution_ci_bits(); }
+uint restitution_local_island_mask() { return (1u << restitution_local_island_bits()) - 1; }
 static const uint restitution_island_limit = 1u << 20;
 static const uint restitution_body_bits = 20;
 
@@ -92,7 +92,7 @@ void restitution_gather(uint ci, uint local_island) {
             (uint64_t)(feature_rank >> 2);
         restitution_keys_lo[slot] =
             ((feature_rank & 0x3u) << 30) |
-            (local_island << restitution_ci_bits) |
+            (local_island << restitution_ci_bits()) |
             ci;
     }
 }
@@ -145,7 +145,7 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
     uint group = dispatch_id.x / adjacency_workgroup_size;
     uint island_begin = group * adjacency_workgroup_size;
     uint island_end = island_begin + adjacency_workgroup_size;
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
 
     if (tid == 0) {
         restitution_count = 0;
@@ -199,7 +199,7 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
         restitution_sort(tid, q);
         if (tid == 0) {
             for (uint e = 0; e < q; e++) {
-                apply_one_restitution(restitution_keys_lo[e] & restitution_ci_mask);
+                apply_one_restitution(restitution_keys_lo[e] & restitution_ci_mask());
             }
         }
         return;
@@ -232,8 +232,8 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
 
     for (uint e = 0; e < q; e++) {
         uint lo = restitution_keys_lo[e];
-        if (((lo >> restitution_ci_bits) & restitution_local_island_mask) == tid) {
-            apply_one_restitution(lo & restitution_ci_mask);
+        if (((lo >> restitution_ci_bits()) & restitution_local_island_mask()) == tid) {
+            apply_one_restitution(lo & restitution_ci_mask());
         }
     }
 }

@@ -19,6 +19,7 @@ import :builder;
 import :ids;
 import :input_layers;
 import :menu_stack;
+import :motion;
 import :render_layer;
 import :save;
 import :styles;
@@ -76,6 +77,7 @@ export namespace gse::gui {
 		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
 		std::optional<caption_action> pending_caption_action;
 		viewport_chrome chrome;
+		std::optional<std::uint64_t> icon_style_key;
 
 		frame_state fstate{};
 		id window;
@@ -95,6 +97,7 @@ export namespace gse::gui {
 		theme current_theme = theme::midnight;
 
 		std::optional<style> style_override;
+		std::function<window_icon_request(const style&)> icon_source;
 
 		[[
 			= settings::
@@ -157,7 +160,7 @@ export namespace gse::gui {
 		std::size_t text_pool_used = 0;
 
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
-		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
+		motion_store motion;
 		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>> widget_tree_open;
 
 		[[= shared]] viewport_state primary{ .adopts_unclaimed_content = true };
@@ -180,7 +183,7 @@ export namespace gse::gui {
 		shared_view<asset::data> assets_s,
 		shared_view<input::data> input_state,
 		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_icon_request> ui_out,
 		data& d
 	) -> async::task<>;
 

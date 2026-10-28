@@ -4,7 +4,7 @@ void collision_reset(uint3 dispatch_id) {
 
     if (bi == 0) {
         collision_pairs[0] = 0;
-        collision_pairs[poly_pair_base] = 0;
+        collision_pairs[poly_pair_base()] = 0;
         for (uint i = 0; i < collision_state_header_uints; i++) {
             bool coloring_field = i == state_max_used_color_index
                 || i == state_coloring_fallback_index
@@ -28,16 +28,16 @@ void collision_reset(uint3 dispatch_id) {
         }
     }
 
-    if (bi < max_contacts) {
+    if (bi < max_contacts()) {
         contact_data[bi].body_a = 0;
         contact_data[bi].body_b = 0;
     }
 
-    if (bi < max_grounded_uints) {
+    if (bi < max_grounded_uints()) {
         grounded_bits[bi] = 0;
     }
 
-    if (bi < max_bodies) {
+    if (bi < max_bodies()) {
         coloring_scratch[bi] = 0xFFFFFFFFu;
     }
 
@@ -45,7 +45,7 @@ void collision_reset(uint3 dispatch_id) {
         grid_data[0] = 0;
     }
     uint grid_idx = bi + 1;
-    if (grid_idx <= grid_table_size) {
+    if (grid_idx <= grid_table_size()) {
         grid_data[grid_idx] = 0;
     }
 }

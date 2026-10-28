@@ -26,9 +26,16 @@ export namespace gse::ide::markdown {
 		kind tone = kind::body;
 	};
 
+	struct rendered_link {
+		std::size_t start = 0;
+		std::size_t end = 0;
+		std::string target;
+	};
+
 	struct rendered_line {
 		std::string text;
 		std::vector<rendered_run> runs;
+		std::vector<rendered_link> links;
 	};
 
 	struct rendered_document {
@@ -153,6 +160,7 @@ auto gse::ide::markdown::bullet_for(const std::string_view marker) -> std::strin
 auto gse::ide::markdown::render_line(const std::string_view line, const line_info& info, std::vector<run>& scratch, rendered_line& out) -> void {
 	out.text.clear();
 	out.runs.clear();
+	out.links.clear();
 
 	if (verbatim(info.shape) || info.shape == block::blank) {
 		out.text.assign(line);
@@ -173,8 +181,19 @@ auto gse::ide::markdown::render_line(const std::string_view line, const line_inf
 
 	inline_runs(line, info, scratch);
 
+	std::size_t label = 0;
 	for (const run& r : scratch) {
 		if (r.part == role::marker) {
+			if (r.tone == kind::link_text && line[r.start] == '[') {
+				label = out.text.size();
+			}
+			else if (r.tone == kind::link_url && line[r.start] == '(' && r.end - r.start > 2) {
+				out.links.push_back({
+					.start = label,
+					.end = out.text.size(),
+					.target = std::string(line.substr(r.start + 1, r.end - r.start - 2)),
+				});
+			}
 			continue;
 		}
 		const std::size_t begin = out.text.size();

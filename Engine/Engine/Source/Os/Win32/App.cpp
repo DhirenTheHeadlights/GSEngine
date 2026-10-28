@@ -16,16 +16,24 @@ namespace gse::app {
 		const wchar_t* application,
 		std::vector<wchar_t>& command,
 		const wchar_t* working,
-		win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list
+		win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list,
+		const std::array<void*, 3>& std_handles
 	) -> void;
 }
 
-auto gse::app::launch_process(const std::filesystem::path& display, const wchar_t* application, std::vector<wchar_t>& command, const wchar_t* working, const win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list) -> void {
+auto gse::app::launch_process(const std::filesystem::path& display, const wchar_t* application, std::vector<wchar_t>& command, const wchar_t* working, const win32::LPPROC_THREAD_ATTRIBUTE_LIST attribute_list, const std::array<void*, 3>& std_handles) -> void {
 	using namespace gse::win32;
 
+	const bool pass_std_handles = attribute_list != nullptr && std::ranges::any_of(std_handles, [](void* handle) {
+		return valid_handle(handle);
+	});
 	STARTUPINFOEXW startup{
 		.StartupInfo = {
 			.cb = static_cast<DWORD>(attribute_list != nullptr ? sizeof(STARTUPINFOEXW) : sizeof(STARTUPINFOW)),
+			.dwFlags = pass_std_handles ? startf_use_std_handles : 0u,
+			.hStdInput = pass_std_handles ? std_handles[0] : nullptr,
+			.hStdOutput = pass_std_handles ? std_handles[1] : nullptr,
+			.hStdError = pass_std_handles ? std_handles[2] : nullptr,
 		},
 		.lpAttributeList = attribute_list,
 	};
@@ -53,10 +61,22 @@ auto gse::app::launch_process(const std::filesystem::path& display, const wchar_
 auto gse::app::start_relaunch(const relaunch_plan& plan) -> void {
 	using namespace gse::win32;
 
+	const std::array<void*, 3> std_handles{
+		GetStdHandle(std_input_handle),
+		GetStdHandle(std_output_handle),
+		GetStdHandle(std_error_handle),
+	};
+	std::vector<void*> handles = plan.handles;
+	for (void* handle : std_handles) {
+		if (valid_handle(handle) && std::ranges::find(handles, handle) == handles.end()) {
+			handles.push_back(handle);
+		}
+	}
+
 	std::vector<std::byte> attribute_memory;
 	LPPROC_THREAD_ATTRIBUTE_LIST attribute_list = nullptr;
-	if (!plan.handles.empty()) {
-		for (void* handle : plan.handles) {
+	if (!handles.empty()) {
+		for (void* handle : handles) {
 			SetHandleInformation(handle, handle_flag_inherit, handle_flag_inherit);
 		}
 
@@ -66,7 +86,7 @@ auto gse::app::start_relaunch(const relaunch_plan& plan) -> void {
 			attribute_memory.resize(attribute_size);
 			attribute_list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_memory.data());
 			const bool prepared = InitializeProcThreadAttributeList(attribute_list, 1, 0, &attribute_size)
-				&& UpdateProcThreadAttribute(attribute_list, 0, proc_thread_attribute_handle_list, const_cast<void**>(plan.handles.data()), plan.handles.size() * sizeof(void*), nullptr, nullptr);
+				&& UpdateProcThreadAttribute(attribute_list, 0, proc_thread_attribute_handle_list, handles.data(), handles.size() * sizeof(void*), nullptr, nullptr);
 			if (!prepared) {
 				attribute_list = nullptr;
 			}
@@ -100,7 +120,7 @@ auto gse::app::start_relaunch(const relaunch_plan& plan) -> void {
 		std::vector<wchar_t> self_command(line.begin(), line.end());
 		self_command.push_back(0);
 
-		launch_process(path, path, self_command, nullptr, attribute_list);
+		launch_process(path, path, self_command, nullptr, attribute_list, std_handles);
 		if (attribute_list != nullptr) {
 			DeleteProcThreadAttributeList(attribute_list);
 		}
@@ -124,7 +144,7 @@ auto gse::app::start_relaunch(const relaunch_plan& plan) -> void {
 
 	const std::wstring working = plan.working_dir.wstring();
 
-	launch_process(plan.executable, nullptr, command_buffer, working.empty() ? nullptr : working.c_str(), attribute_list);
+	launch_process(plan.executable, nullptr, command_buffer, working.empty() ? nullptr : working.c_str(), attribute_list, std_handles);
 	if (attribute_list != nullptr) {
 		DeleteProcThreadAttributeList(attribute_list);
 	}

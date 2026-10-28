@@ -114,31 +114,6 @@ export namespace gse::asset {
 template <gse::asset::has_compile_path T>
 auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> asset_result {
 	typename T::baked b{};
-#if __cpp_exceptions
-	try {
-		if (!bake(src, b)) {
-			return std::unexpected(asset_error{
-				.code = asset_error_code::load_failure,
-				.path = src,
-				.detail = "Asset compiler rejected the source file"
-			});
-		}
-	}
-	catch (const std::exception& error) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = src,
-			.detail = error.what()
-		});
-	}
-	catch (...) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = src,
-			.detail = "Asset compiler failed"
-		});
-	}
-#else
 	if (!bake(src, b)) {
 		return std::unexpected(asset_error{
 			.code = asset_error_code::load_failure,
@@ -146,7 +121,6 @@ auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::files
 			.detail = "Asset compiler rejected the source file"
 		});
 	}
-#endif
 	auto written = write_baked(dst, b);
 	if (!written) {
 		return written;

@@ -9,7 +9,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(Path(__file__).resolve().parent / "Tools"))
+
+from repo_paths import BUILD_ROOT, REPO_ROOT
 
 NINJA_VERSION = "v1.13.2"
 NINJA_URL = f"https://github.com/ninja-build/ninja/releases/download/{NINJA_VERSION}/ninja-win.zip"
@@ -159,7 +161,7 @@ def build_editor(preset: str) -> None:
         raise SystemExit("VULKAN_SDK is not set to an existing directory. Install the Vulkan SDK 1.4 or newer from https://vulkan.lunarg.com/sdk/home, then re-open the shell and re-run this script.")
     print(f"Vulkan SDK: {vulkan_sdk}")
 
-    build_dir = REPO_ROOT / "out" / "build" / preset
+    build_dir = BUILD_ROOT / preset
     reason = stale_cache_reason(build_dir)
     if reason is not None:
         print(f"Removing unusable build directory {build_dir}")

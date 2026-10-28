@@ -6,6 +6,7 @@ import gse.ide.config;
 import std;
 
 import :blame;
+import :canvas;
 import :chats;
 import :layout;
 import :model;
@@ -26,33 +27,75 @@ auto gse::ide::agent::task_runs(const session& s) -> std::span<const phase_run> 
 	return all;
 }
 
-auto gse::ide::agent::phase_timeline(const session& s) -> std::array<phase_step, std::size(phase_order)> {
-	const task_phase now = current_phase(s);
-	const std::span<const phase_run> task = task_runs(s);
+auto gse::ide::agent::approved_steps(const session& s) -> std::span<const build_inbox::plan_step> {
+	const auto scoped = std::ranges::find_last(task_runs(s), task_phase::scope, &phase_run::phase);
+	return scoped.empty() ? std::span<const build_inbox::plan_step>{} : std::span<const build_inbox::plan_step>(scoped.front().steps);
+}
 
-	std::array<phase_step, std::size(phase_order)> steps{};
-	for (std::size_t at = 0; at < steps.size(); ++at) {
-		const task_phase station = phase_order[at];
+auto gse::ide::agent::run_section_of(const session& s, const std::uint32_t row) -> std::optional<std::string> {
+	const std::span<const phase_run> runs = task_runs(s);
+	const auto owner = std::ranges::find_last_if(runs, [&](const phase_run& run) {
+		return run.first_row <= row;
+	});
+	if (owner.empty() || (owner.front().phase != task_phase::apply && owner.front().phase != task_phase::revise)) {
+		return std::nullopt;
+	}
+	const phase_run& run = owner.front();
+	const bool first = std::ranges::none_of(std::span(s.rows).subspan(run.first_row, row - run.first_row), [](const transcript_row& earlier) {
+		return shows(row_filter::changes, earlier);
+	});
+	if (!first) {
+		return std::nullopt;
+	}
+	if (run.phase == task_phase::apply) {
+		return std::string("apply");
+	}
+	const auto upto = std::ranges::subrange(runs.begin(), owner.begin());
+	return std::format("revise {}", std::ranges::count(upto, task_phase::revise, &phase_run::phase) + 1);
+}
+
+auto gse::ide::agent::record_step_edit(session& s, const transcript_row& row) -> void {
+	if (s.runs.empty() || s.runs.back().phase != task_phase::apply) {
+		return;
+	}
+	phase_run& run = s.runs.back();
+	const auto current = std::ranges::find(run.progress, step_state::current);
+	run.edits.push_back({
+		.file = row.file,
+		.removed = row.removed,
+		.added = row.added,
+		.step = current == run.progress.end() ? std::nullopt : std::optional(static_cast<std::uint32_t>(std::distance(run.progress.begin(), current))),
+		.stamped = unix_now(),
+	});
+}
+
+auto gse::ide::agent::phase_timeline(const task_phase now, const bool goal, const std::span<const phase_run> task) -> std::vector<phase_step> {
+	std::vector<phase_step> steps;
+	for (const task_phase station : phase_order) {
+		if (station == task_phase::settled || (station == task_phase::steer && !goal)) {
+			continue;
+		}
 		const auto cycles = static_cast<std::uint32_t>(std::ranges::count(task, station, &phase_run::phase));
-		steps[at] = {
+		steps.push_back({
 			.phase = station,
 			.cycles = cycles,
 			.visited = cycles > 0,
 			.current = station == now,
-		};
+		});
 	}
 	return steps;
+}
+
+auto gse::ide::agent::phase_timeline(const session& s) -> std::vector<phase_step> {
+	return phase_timeline(current_phase(s), s.goal.has_value(), task_runs(s));
 }
 
 auto gse::ide::agent::policy_of(const task_phase phase) -> phase_policy {
 	return annotation_from_enum<phase_policy>(phase, {});
 }
 
-auto gse::ide::agent::thinking_phrase(const session& s) -> std::string {
-	const task_phase phase = current_phase(s);
-	return s.runs.empty() || phase == task_phase::settled
-		? std::string("thinking")
-		: std::string(policy_of(phase).label);
+auto gse::ide::agent::thinking_phrase(const session&) -> std::string {
+	return "thinking";
 }
 
 auto gse::ide::agent::reviews_spent(const session& s) -> std::uint32_t {
@@ -95,7 +138,7 @@ auto gse::ide::agent::needs_owner(const session& s, const phase_gate& reported) 
 		return true;
 	}
 	if (!s.goal) {
-		return policy_of(reported.from).gated;
+		return policy_of(reported.from).gated && !style_of(kind_of(s)).unattended;
 	}
 	return next_phase(s, reported) == task_phase::steer && s.goal->steers_left == 0;
 }
@@ -463,6 +506,15 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 		s.goal->waiting.reset();
 		if (phase == task_phase::steer) {
 			--s.goal->steers_left;
+			s.goal->aim = aim_of(s.goal->record);
+		}
+	}
+
+	std::vector<step_state> carried;
+	if (phase == task_phase::apply) {
+		const auto applied = std::ranges::find_last(task_runs(s), task_phase::apply, &phase_run::phase);
+		if (!applied.empty()) {
+			carried = applied.front().progress;
 		}
 	}
 
@@ -471,6 +523,7 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 		.agent_id = resumed,
 		.first_row = static_cast<std::uint32_t>(s.rows.size()),
 		.started = unix_now(),
+		.progress = std::move(carried),
 	});
 
 	append_row(s, {
@@ -525,6 +578,7 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 }
 
 auto gse::ide::agent::restart_task(session& s) -> void {
+	s.met_goal.reset();
 	begin_phase(s, task_phase::scope, {});
 }
 
@@ -565,6 +619,7 @@ auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget
 				.record = reported.goal,
 				.steers_left = steer_budget,
 			};
+			s.met_goal.reset();
 			log::println(log::level::info, log::category::task, "agent: chat '{}' now pursues the goal recorded in '{}'", s.name, reported.goal);
 			append_row(s, {
 				.kind = row_kind::phase,
@@ -582,6 +637,7 @@ auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget
 				.text = "goal met",
 				.detail = reported.summary,
 			});
+			s.met_goal = std::move(s.goal);
 			s.goal.reset();
 		}
 
@@ -664,7 +720,37 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 			.from = from,
 			.summary = incoming.summary,
 			.findings = incoming.findings,
+			.steps = std::move(incoming.steps),
 		};
+
+		if (!reported.steps.empty() && from != task_phase::scope) {
+			refuse("`steps` lay out a plan for the owner to approve, so they belong to scoping - omit them in this phase and report again");
+			continue;
+		}
+
+		if (incoming.diagnosis && (found->kind != chat_kind::build_error || from != task_phase::apply)) {
+			refuse("`diagnosis` explains a build failure on a build-error chat's summary page, so only a build-error chat sends it, while applying - omit it and report again");
+			continue;
+		}
+
+		if (!incoming.criteria.empty() && (from != task_phase::steer || !found->goal)) {
+			refuse("`criteria` say where a goal's pass criteria stand, so only a steering run sends them - omit them in this phase and report again");
+			continue;
+		}
+
+		std::vector<criterion_report> criteria;
+		const auto unknown = std::ranges::find_if(incoming.criteria, [&criteria](const build_inbox::reported_criterion& line) {
+			criterion_state state{};
+			if (!enum_from_string(line.state, state) || line.id.empty()) {
+				return true;
+			}
+			criteria.push_back({ .id = line.id, .state = state, .note = line.note });
+			return false;
+		});
+		if (unknown != incoming.criteria.end()) {
+			refuse(std::format("criteria[{}]: expected an id and a state of met, owner or open, got '{} {}' - nothing was recorded, report again", unknown - incoming.criteria.begin(), unknown->id, unknown->state));
+			continue;
+		}
 
 		if (!incoming.next.empty()) {
 			goal_verdict verdict{};
@@ -723,12 +809,29 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 		if (!found->runs.empty()) {
 			found->runs.back().summary = incoming.summary;
 			found->runs.back().findings = incoming.findings;
+			found->runs.back().steps = reported.steps;
+			found->runs.back().verdict = reported.verdict;
+		}
+		if (!criteria.empty()) {
+			found->goal->criteria = std::move(criteria);
+		}
+		if (incoming.diagnosis) {
+			if (!found->fix) {
+				found->fix.emplace();
+			}
+			found->fix->diagnosis = std::move(*incoming.diagnosis);
 		}
 
 		recorded = true;
 
 		if (gated) {
+			reported.first_row = found->gate && found->gate->from == from
+				? std::min(found->gate->first_row, static_cast<std::uint32_t>(found->rows.size()))
+				: static_cast<std::uint32_t>(found->rows.size());
 			found->gate = std::move(reported);
+			found->plan_selected.reset();
+			found->plan_page = 0;
+			found->plan_summary = {};
 			build_inbox::publish({
 				.id = incoming.id,
 				.outcome = build_inbox::status::ok,
@@ -772,8 +875,13 @@ auto gse::ide::agent::await_label(const await_condition& waiting) -> std::string
 	if (waiting.file) {
 		out += std::format("'{}' to change, ", waiting.file->path.filename().generic_display_string());
 	}
-	const std::int64_t remaining = std::max<std::int64_t>(waiting.deadline - unix_now(), 0);
-	return out + std::format("at most {}h {}m", remaining / 3600, remaining % 3600 / 60);
+	const time remaining = wake_in(waiting);
+	const float whole_hours = std::floor(remaining.as<hours>());
+	return out + std::format("at most {:.0f}h {:.0f}m", whole_hours, std::floor((remaining - hours(whole_hours)).as<minutes>()));
+}
+
+auto gse::ide::agent::wake_in(const await_condition& waiting) -> time {
+	return seconds(static_cast<float>(std::max<std::int64_t>(waiting.deadline - unix_now(), 0)));
 }
 
 auto gse::ide::agent::fired_condition(await_condition& waiting) -> std::optional<std::string> {
@@ -833,6 +941,7 @@ auto gse::ide::agent::accept_awaits(data& d) -> bool {
 		await_condition waiting{
 			.then = std::move(incoming.then),
 			.deadline = unix_now() + static_cast<std::int64_t>(std::min(incoming.wait, longest_await).as<seconds>()),
+			.capped = incoming.wait > longest_await,
 		};
 
 		if (incoming.pid) {
@@ -935,6 +1044,180 @@ auto gse::ide::agent::accept_questions(data& d) -> bool {
 	return recorded;
 }
 
+auto gse::ide::agent::accept_draws(data& d) -> bool {
+	bool drew = false;
+
+	for (build_inbox::draw_request& incoming : build_inbox::peek_draw_requests()) {
+		session* caller = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!caller) {
+			continue;
+		}
+		build_inbox::consume_draw_request(incoming.id);
+
+		if (incoming.list) {
+			std::vector<std::string> lines;
+			for (const bool sketches : { false, true }) {
+				lines.emplace_back(sketches ? "section sketches" : "section drawables");
+				for (const drawable_entry& entry : drawable_catalogue() | std::views::filter([sketches](const drawable_entry& e) { return e.sketch == sketches; })) {
+					lines.emplace_back("item");
+					lines.push_back(std::format("field name {}", entry.name));
+					lines.push_back(std::format("field fields {}", entry.fields));
+					if (sketches) {
+						lines.push_back(std::format("field summary {}", entry.summary));
+					}
+				}
+			}
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::ok,
+				.lines = std::move(lines),
+			});
+			continue;
+		}
+
+		const auto reject = [&](std::string reason) {
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { std::format("error {} - nothing was drawn, and any canvas already named '{}' is unchanged", reason, incoming.name) },
+			});
+		};
+
+		session* target = caller;
+		if (incoming.chat) {
+			const auto found = std::ranges::find(d.sessions, *incoming.chat, &session::id);
+			if (found == d.sessions.end()) {
+				reject(std::format("chat: no chat with id {} (gse_panel_query Agent lists them)", *incoming.chat));
+				continue;
+			}
+			target = &*found;
+		}
+
+		if (incoming.size[0] <= 0.f || incoming.size[1] <= 0.f || incoming.size[0] > max_canvas_extent || incoming.size[1] > max_canvas_extent) {
+			reject(std::format("size: {} is outside 1..{} logical pixels per side", incoming.size, max_canvas_extent));
+			continue;
+		}
+
+		std::expected<std::vector<canvas_step>, std::string> steps = parse_canvas(incoming.payload);
+		if (!steps) {
+			reject(std::move(steps.error()));
+			continue;
+		}
+
+		hydrate_session(*target);
+		const std::size_t commands = steps->size();
+		const auto row_of = [target, &incoming] {
+			return std::ranges::find_if(target->rows, [&incoming](const transcript_row& row) {
+				return row.kind == row_kind::canvas && row.text == incoming.name;
+			});
+		};
+
+		if (const auto existing = std::ranges::find(target->canvases, incoming.name, &canvas_record::name); existing != target->canvases.end()) {
+			existing->source = std::move(incoming.payload);
+			existing->size = incoming.size;
+			existing->steps = std::move(*steps);
+			if (const auto row = row_of(); row != target->rows.end()) {
+				for (transcript_view* v : views_of(*target)) {
+					relayout_from(*v, static_cast<std::uint32_t>(std::distance(target->rows.begin(), row)));
+				}
+			}
+		}
+		else {
+			const std::int64_t stamped = unix_now();
+			target->canvases.push_back({
+				.name = incoming.name,
+				.source = std::move(incoming.payload),
+				.size = incoming.size,
+				.stamped = stamped,
+				.steps = std::move(*steps),
+			});
+			append_row(*target, {
+				.kind = row_kind::canvas,
+				.text = incoming.name,
+				.stamped = stamped,
+			});
+		}
+
+		drew = true;
+		build_inbox::publish({
+			.id = incoming.id,
+			.outcome = build_inbox::status::ok,
+			.lines = {
+				std::format("field drawn {}", incoming.name),
+				std::format("field chat {}", target->id),
+				std::format("count commands {}", commands),
+				std::format("count row {}", std::distance(target->rows.begin(), row_of())),
+			},
+		});
+	}
+
+	return drew;
+}
+
+auto gse::ide::agent::accept_step_reports(data& d) -> bool {
+	bool recorded = false;
+
+	for (build_inbox::step_request& incoming : build_inbox::peek_step_requests()) {
+		session* found = claimed_session(d, incoming.agent, incoming.cwd);
+		if (!found) {
+			continue;
+		}
+		build_inbox::consume_step_request(incoming.id);
+
+		const auto reject = [&](const std::string_view reason) {
+			build_inbox::publish({
+				.id = incoming.id,
+				.outcome = build_inbox::status::rejected,
+				.lines = { std::format("error {} - no step changed", reason) },
+			});
+		};
+
+		const std::span<const build_inbox::plan_step> steps = approved_steps(*found);
+		if (current_phase(*found) != task_phase::apply) {
+			reject(std::format("steps are reported from apply, and this chat is in {}", std::string_view(policy_of(current_phase(*found)).label)));
+			continue;
+		}
+		if (steps.empty()) {
+			reject("the approved scope has no steps to report against");
+			continue;
+		}
+		if (incoming.index >= steps.size()) {
+			reject(std::format("index: {} is out of range - the approved scope has {} step(s), numbered from 0", incoming.index, steps.size()));
+			continue;
+		}
+		if (incoming.state != "begun" && incoming.state != "done") {
+			reject(std::format("state: '{}' is neither 'begun' nor 'done'", incoming.state));
+			continue;
+		}
+
+		phase_run& run = found->runs.back();
+		run.progress.resize(steps.size(), step_state::remaining);
+		if (incoming.state == "begun") {
+			std::ranges::replace(run.progress, step_state::current, step_state::remaining);
+			run.progress[incoming.index] = step_state::current;
+		}
+		else {
+			run.progress[incoming.index] = step_state::done;
+		}
+
+		const auto done = std::ranges::count(run.progress, step_state::done);
+		log::println(log::level::info, log::category::task, "agent: chat '{}' {} step {} of {}", found->name, incoming.state, incoming.index + 1, steps.size());
+		recorded = true;
+
+		build_inbox::publish({
+			.id = incoming.id,
+			.outcome = build_inbox::status::ok,
+			.lines = {
+				std::format("field step {}. {}", incoming.index + 1, steps[incoming.index].text),
+				std::format("field state {}", std::string_view(annotation_from_enum<step_style>(run.progress[incoming.index], {}).label)),
+				std::format("field done {}/{}", done, steps.size()),
+			},
+		});
+	}
+
+	return recorded;
+}
+
 auto gse::ide::agent::wake_goal(session& s, const std::string_view fired) -> void {
 	const std::string then = std::move(s.goal->waiting->then);
 	s.goal->waiting.reset();
@@ -958,6 +1241,7 @@ auto gse::ide::agent::wake_goal(session& s, const std::string_view fired) -> voi
 	}
 
 	begin_phase(s, task_phase::steer, { .from = task_phase::steer, .summary = summary });
+	s.woke_by.assign(fired);
 }
 
 auto gse::ide::agent::service_awaits(data& d) -> bool {
@@ -981,6 +1265,25 @@ auto gse::ide::agent::service_awaits(data& d) -> bool {
 	}
 
 	return woke;
+}
+
+auto gse::ide::agent::aim_of(const std::filesystem::path& record) -> std::string {
+	std::ifstream in(record, std::ios::binary);
+	std::string line;
+	bool under_aim = false;
+	while (in && std::getline(in, line)) {
+		if (!line.empty() && line.back() == '\r') {
+			line.pop_back();
+		}
+		if (line.starts_with("## ")) {
+			under_aim = line == "## Aim";
+			continue;
+		}
+		if (under_aim && !line.empty()) {
+			return line;
+		}
+	}
+	return {};
 }
 
 auto gse::ide::agent::pause_goal(session& s) -> void {
@@ -1050,7 +1353,12 @@ auto gse::ide::agent::service_questions(data& d) -> bool {
 		}
 
 		log::println(log::level::info, log::category::task, "agent: delivering the owner's answer to chat '{}'", s.name);
-		resume_with(s, std::move(answer));
+		resume_with(s, std::move(answer), transcript_row{
+			.kind = row_kind::answer,
+			.text = asked.question,
+			.detail = asked.note,
+			.options = asked.options,
+		});
 		delivered = true;
 	}
 

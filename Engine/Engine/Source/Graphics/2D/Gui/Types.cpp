@@ -415,22 +415,25 @@ auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const 
 }
 
 auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const inverse_time speed) const -> vec4f {
-	const auto key = widget_id.number();
-	auto it = widget_anim_colors.find(key);
-	if (it == widget_anim_colors.end()) {
-		widget_anim_colors[key] = target;
-		return target;
-	}
+	return motion.sample(widget_id, motion_channel::color, target, target, { .duration = 1.f / speed });
+}
 
-	const float t = std::clamp(speed * system_clock::dt<time>(), 0.f, 1.f);
-	const vec4f remaining = target - it->second;
-	const float settle = 1.f / 512.f;
-	if (std::abs(remaining.x()) < settle && std::abs(remaining.y()) < settle && std::abs(remaining.z()) < settle && std::abs(remaining.w()) < settle) {
-		it->second = target;
-		return target;
-	}
-	it->second = it->second + remaining * t;
-	return it->second;
+auto gse::gui::draw_context::presence(const id& widget_id, const bool present, const motion_spec& spec) const -> float {
+	const vec4f target{ present ? 1.f : 0.f, 0.f, 0.f, 0.f };
+	return motion.sample(widget_id, motion_channel::presence, target, {}, spec).x();
+}
+
+auto gse::gui::draw_context::animated_rect(const id& widget_id, const rectf& target, const motion_spec& spec) const -> rectf {
+	const vec4f packed{ target.min().x(), target.min().y(), target.max().x(), target.max().y() };
+	const vec4f value = motion.sample(widget_id, motion_channel::rect, packed, packed, spec);
+	return rectf({
+		.min = { value.x(), value.y() },
+		.max = { value.z(), value.w() },
+	});
+}
+
+auto gse::gui::draw_context::motion_counts() const -> motion_stats {
+	return motion.stats();
 }
 
 gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept

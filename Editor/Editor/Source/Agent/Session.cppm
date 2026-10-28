@@ -8,8 +8,9 @@ import :model;
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
 	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk")";
-	constexpr std::string_view sync_denied_tools = R"( --disallowed-tools "Write NotebookEdit Agent Task TodoWrite WebSearch WebFetch mcp__gse__gse_build mcp__gse__gse_package_sdk mcp__gse__gse_run mcp__gse__gse_hibernate mcp__gse__gse_delete_file")";
+	constexpr std::string_view sync_denied_tools = R"( --disallowed-tools "Write NotebookEdit Agent Task TodoWrite WebSearch WebFetch mcp__gse__gse_package_sdk mcp__gse__gse_run mcp__gse__gse_delete_file")";
 	constexpr std::wstring_view resume_option = L" --resume ";
+	constexpr std::string_view inquiry_command_head = R"(claude -p --output-format stream-json --input-format stream-json --verbose --tools "Read Grep Glob" --strict-mcp-config --no-session-persistence --fork-session)";
 	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
@@ -21,9 +22,10 @@ namespace gse::ide::agent {
 	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
 	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
-	constexpr std::uint32_t sessions_version = 8;
+	constexpr std::uint32_t sessions_version = 9;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
 	constexpr std::uint32_t chat_names_sessions_version = 5;
+	constexpr std::uint32_t overview_sessions_version = 9;
 
 	struct handoff {
 		std::uint32_t session = 0;
@@ -40,6 +42,9 @@ namespace gse::ide::agent {
 	};
 
 	auto agent_credentials() -> credentials;
+	auto request_token_prompt() -> void;
+	auto take_token_prompt_request() -> bool;
+	auto save_agent_token(std::string_view token) -> bool;
 
 	auto sessions_path() -> std::filesystem::path;
 
@@ -106,6 +111,23 @@ namespace gse::ide::agent {
 		session& s
 	) -> bool;
 
+	auto inquiry_command(
+		const session& s
+	) -> std::wstring;
+
+	auto launch_inquiry(
+		const session& s,
+		std::string_view prompt
+	) -> inquiry_fork;
+
+	auto pump_inquiry(
+		inquiry_fork& fork
+	) -> void;
+
+	auto end_inquiry(
+		inquiry_fork& fork
+	) -> void;
+
 	auto append_row(
 		session& s,
 		transcript_row row
@@ -141,8 +163,9 @@ namespace gse::ide::agent {
 		session& s,
 		std::string_view prompt,
 		std::span<const gui::image_attachment> attachments,
-		bool editor_driven = false
-	) -> void;
+		bool editor_driven = false,
+		std::optional<transcript_row> shown = std::nullopt
+	) -> bool;
 
 	auto interrupt_session(
 		session& s

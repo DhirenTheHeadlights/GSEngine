@@ -127,6 +127,7 @@ const build = async (args, run_only = false) => {
 		`run_only ${run_only ? 1 : 0}`,
 		`tree ${args.tree ?? ''}`,
 		`profile ${args.profile ?? ''}`,
+		`config ${String(args.config ?? '').replace(/[\r\n]+/g, '').trim()}`,
 		`cwd ${windows_path(process.cwd())}`,
 		`project ${project}`,
 		...(scenario ? [`scenario ${scenario}`] : []),
@@ -446,6 +447,56 @@ const phase_done = async (args) => {
 	const next = String(args.next ?? '').trim();
 	const goal = String(args.goal ?? '').trim();
 
+	const flat = (value) => String(value).replace(/\s*[\r\n]+\s*/g, ' ').trim();
+	const step_lines = [];
+	const steps = args.steps ?? [];
+	if (!Array.isArray(steps)) {
+		return text_result(header(project, { error: '`steps` must be an array of {text, files} - nothing was recorded.' }), true);
+	}
+	for (const [at, step] of steps.entries()) {
+		const text = typeof step?.text === 'string' ? flat(step.text) : '';
+		if (!text) {
+			return text_result(header(project, { error: `steps[${at}].text: expected a non-empty string - nothing was recorded.` }), true);
+		}
+		const files = step.files ?? [];
+		if (!Array.isArray(files)) {
+			return text_result(header(project, { error: `steps[${at}].files: expected an array of paths - nothing was recorded.` }), true);
+		}
+		step_lines.push(`step ${text}`);
+		for (const [index, file] of files.entries()) {
+			if (typeof file !== 'string' || !flat(file)) {
+				return text_result(header(project, { error: `steps[${at}].files[${index}]: expected a non-empty path string - nothing was recorded.` }), true);
+			}
+			step_lines.push(`file ${flat(file)}`);
+		}
+	}
+
+	const diagnosis = args.diagnosis === undefined ? '' : args.diagnosis;
+	if (typeof diagnosis !== 'string') {
+		return text_result(header(project, { error: '`diagnosis` must be a markdown string - nothing was recorded.' }), true);
+	}
+	const diagnosis_lines = diagnosis.trim() ? diagnosis.trim().split(/\r?\n/).map((line) => `diagnosis ${line}`) : [];
+
+	const criteria = args.criteria ?? [];
+	if (!Array.isArray(criteria)) {
+		return text_result(header(project, { error: '`criteria` must be an array of {id, state, note} - nothing was recorded.' }), true);
+	}
+	const criterion_lines = [];
+	for (const [at, criterion] of criteria.entries()) {
+		const label = typeof criterion?.id === 'string' || typeof criterion?.id === 'number' ? flat(criterion.id) : '';
+		if (!label || /\s/.test(label)) {
+			return text_result(header(project, { error: `criteria[${at}].id: expected a short label with no spaces, such as "7" - nothing was recorded.` }), true);
+		}
+		if (!['met', 'open', 'owner'].includes(criterion.state)) {
+			return text_result(header(project, { error: `criteria[${at}].state: expected "met", "open" or "owner" - nothing was recorded.` }), true);
+		}
+		const note = criterion.note === undefined ? '' : criterion.note;
+		if (typeof note !== 'string') {
+			return text_result(header(project, { error: `criteria[${at}].note: expected a string - nothing was recorded.` }), true);
+		}
+		criterion_lines.push(`criterion ${criterion.state} ${label}${flat(note) ? ` ${flat(note)}` : ''}`);
+	}
+
 	const id = new_id();
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'phases'), id, [
@@ -455,6 +506,9 @@ const phase_done = async (args) => {
 		`findings ${findings}`,
 		...(next ? [`next ${next}`] : []),
 		...(goal ? [`goal ${goal}`] : []),
+		...step_lines,
+		...diagnosis_lines,
+		...criterion_lines,
 		'summary',
 		summary,
 		'',
@@ -1026,6 +1080,99 @@ const panel_query = async (args) => {
 	}), true);
 };
 
+// A draw is interpreted by the editor, never here: the payload travels as raw JSON so the
+// editor's reflected binder is the only thing that decides what a field means, and the answer
+// it sends back is the only evidence an agent gets of what was actually drawn.
+const draw = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; only chats started from the editor agent panel have a transcript to draw into.' }), true);
+	}
+	const list = Boolean(args.list);
+	const name = String(args.name ?? '').trim().replace(/[\r\n\t]+/g, ' ');
+	if (!list && !name) {
+		return text_result(header(project, { error: '`name` is required unless `list` is true. Nothing was drawn.' }), true);
+	}
+	const payload = typeof args.payload === 'string' ? args.payload : JSON.stringify(args.payload ?? []);
+	const width = Math.max(0, Number(args.width ?? 480) || 0);
+	const height = Math.max(0, Number(args.height ?? 240) || 0);
+
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'draws'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`name ${name}`,
+		`list ${list ? 1 : 0}`,
+		`size ${width},${height}`,
+		...(args.chat === undefined ? [] : [`chat ${Math.trunc(Number(args.chat))}`]),
+		'payload',
+		payload,
+		'',
+	].join('\n'));
+
+	const deadline = Date.now() + 15000;
+	while (Date.now() < deadline) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const answer = parse_panel_answer(result.body);
+			return text_result(header(project, answer), Boolean(answer.error));
+		}
+		await sleep(50);
+	}
+	rmSync(join(inbox, 'draws', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		outcome: 'no_editor',
+		error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so there is no transcript to draw into.',
+	}), true);
+};
+
+// A step report is judged by the editor against the scope it approved, so the answer, not this
+// server, is what tells an agent whether the index it sent named the step it meant.
+const step = async (args) => {
+	const project = project_of(process.cwd());
+	if (!agent) {
+		return text_result(header(project, { error: 'no agent id in this server\'s environment; only chats started from the editor agent panel have steps to report.' }), true);
+	}
+	const index = Number(args.index);
+	if (!Number.isInteger(index) || index < 0) {
+		return text_result(header(project, { error: '`index` must be a whole number from 0: the step\'s position in the approved scope.' }), true);
+	}
+	const state = String(args.state ?? '');
+	if (state !== 'begun' && state !== 'done') {
+		return text_result(header(project, { error: '`state` must be "begun" or "done".' }), true);
+	}
+
+	const id = new_id();
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'steps'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`index ${index}`,
+		`state ${state}`,
+		'',
+	].join('\n'));
+
+	const deadline = Date.now() + 15000;
+	while (Date.now() < deadline) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const answer = parse_panel_answer(result.body);
+			return text_result(header(project, answer), Boolean(answer.error));
+		}
+		await sleep(50);
+	}
+	rmSync(join(inbox, 'steps', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		outcome: 'no_editor',
+		error: 'no editor claimed this within 15s - either no editor is open on this project, or this chat was not started from the editor agent panel, so it has no steps to report against. Carry on with the work.',
+	}), true);
+};
+
 // A gap is the select API admitting it did not cover something. It is recorded rather than
 // worked around silently, so the editor can show what chats are reaching for that no tool
 // serves, instead of that need disappearing into an untyped shell command.
@@ -1223,6 +1370,7 @@ const tools = {
 				scenario: { type: 'string', description: 'With run: the scenario to launch afterwards. See gse_run.' },
 				seconds: { type: 'number', description: 'With run: bound a free run to this long. See gse_run.' },
 				profile: { type: 'string', description: 'Named build profile from the editor build row. Omit to build the editor\'s own configuration.' },
+				config: { type: 'string', description: 'Configure preset name from CMakePresets.json to build the game in, e.g. "x64-mingw-gcc-Release-portable-simd". Each preset has its own build directory, configured on first use (a full engine compile). Omit for the editor\'s own configuration; a profile overrides it.' },
 				tree: { type: 'string', description: 'Build in a named worktree instead of the one you are in.' },
 				project: { type: 'string', description: 'Directory holding the .gseproj to address. Defaults to the nearest one above the current directory.' },
 				timeout: { type: 'number', description: 'Seconds before giving up (default 1800).' },
@@ -1288,6 +1436,7 @@ const tools = {
 					items: { type: 'string' },
 					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped. A scenario pins its own declared settings ahead of these.',
 				},
+				config: { type: 'string', description: 'Configure preset name from CMakePresets.json whose executable to run, e.g. "x64-mingw-gcc-Release-portable-simd". Omit to run the editor\'s own configuration.' },
 				tree: { type: 'string', description: 'Worktree name to run; defaults to the one owning your working directory.' },
 				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
 				wait: { type: 'number', description: 'Seconds to wait for an in-flight build before giving up and returning "deferred" (default 600).' },
@@ -1311,6 +1460,35 @@ const tools = {
 		},
 		run: ask,
 	},
+	gse_draw: {
+		description:
+			'Draw a visual aid inline in your chat\'s transcript: a diagram, a layout sketch, a before/after, a small chart, an animated transition. The payload is a JSON array of commands, each `{"draw": "<drawable>", ...fields}`, interpreted by the editor into its own GUI draw calls - so what you can draw is exactly what the editor GUI draws, and nothing else. A command can instead name a compiled sketch, `{"sketch": "<sketch>", ...parameters}`, which expands into drawables from the parameters you pass (any you omit keep their defaults). Call with `list: true` first to get every drawable and sketch with its fields; that list is derived from the editor\'s code, so it is always current. Coordinates are logical pixels from the canvas\'s top-left, y down. Colours are "r,g,b,a" in 0-1. A field can animate once on first sight: add `"animate": {"<field>": {"from": <value>, "duration": "300 ms", "ease": "cubic_out"}}` and the field eases from `from` to its stated value. Drawing again with the same `name` replaces that canvas in place; a new name adds one. A malformed payload changes nothing and the answer names the offending path. The owner can click a canvas to open it fullscreen. You cannot see the canvas: the answer, and gse_panel_query Agent, are how you learn what the editor actually interpreted.',
+		schema: {
+			type: 'object',
+			properties: {
+				name: { type: 'string', description: 'Canvas name, unique within the chat. Reusing it replaces that canvas. Required unless `list` is true.' },
+				payload: { type: 'array', items: { type: 'object' }, description: 'The draw commands, in paint order.' },
+				width: { type: 'number', description: 'Canvas width in logical pixels (default 480).' },
+				height: { type: 'number', description: 'Canvas height in logical pixels (default 240). The transcript reserves this much space.' },
+				chat: { type: 'number', description: 'Id of the chat to draw into (from gse_panel_query Agent). Defaults to your own.' },
+				list: { type: 'boolean', description: 'Return the drawables and sketches, with their fields, instead of drawing.' },
+			},
+		},
+		run: draw,
+	},
+	gse_step: {
+		description:
+			'Report which step of the approved scope you are on while applying, so the owner sees your progress live in the agents panel and each file edit is filed under the step it belongs to. Call `state: "begun"` before working on a step and `state: "done"` when it is finished; every edit you make while a step is begun is attributed to it, and edits made with no step begun are shown as unattributed. `index` is 0-based into the steps the scope phase reported. Only the apply phase reports steps, and only when the approved scope has them - otherwise the answer says so and nothing changes. The answer names the step, so a wrong index is caught at once.',
+		schema: {
+			type: 'object',
+			properties: {
+				index: { type: 'number', description: '0-based index of the step in the approved scope.' },
+				state: { type: 'string', enum: ['begun', 'done'], description: '"begun" when you start the step, "done" when it is finished.' },
+			},
+			required: ['index', 'state'],
+		},
+		run: step,
+	},
 	gse_phase_done: {
 		description:
 			'Report that the current phase of your task is finished, and let the editor decide what follows. Call it as the last thing you do in a phase, then END YOUR TURN - the editor restarts this chat in the next phase, or holds for the owner\'s approval. Do not call it repeatedly within one turn, but if you are still in the same phase on a later turn you may report again with an updated summary; the owner approves through the editor, not through chat, so asking them to approve is not something you can do on their behalf. Scoping ends when the plan is agreed and nothing is left to decide; applying ends when the change is complete; reviewing ends when you have read the whole diff, and `findings` is how many real defects you found (0 settles the task, anything else sends it back to be fixed); steering ends with a `next` verdict. Only chats started from the editor agent panel have phases.',
@@ -1321,6 +1499,32 @@ const tools = {
 				findings: { type: 'number', description: 'Reviewing only: how many real defects you found. Omit or 0 means the change is sound and the task is settled.' },
 				next: { type: 'string', enum: ['task', 'met', 'escalate'], description: 'Steering: required. "task" scopes the next task from your summary, "met" settles the goal, "escalate" stops for the owner. Scoping under a goal: "escalate" only, when the plan needs the owner.' },
 				goal: { type: 'string', description: 'Scoping only, when the summary drafts a goal record: the repo path the record will be written to. The owner approves the goal before apply writes it.' },
+				steps: {
+					type: 'array',
+					description: 'Scoping: fill this in. The plan as ordered steps, each with the repo-relative files it touches. The owner approves from a two-column view built from it - steps on the left, their files on the right - so keep each step one short sentence; the summary still carries the full reasoning.',
+					items: {
+						type: 'object',
+						properties: {
+							text: { type: 'string', description: 'One short sentence: what this step does.' },
+							files: { type: 'array', items: { type: 'string' }, description: 'Repo-relative paths this step creates or edits.' },
+						},
+						required: ['text'],
+					},
+				},
+				diagnosis: { type: 'string', description: 'Applying in a build-error chat only: your read of the build failure - its cause and the fix - as markdown. The owner reads it under the raw errors on the chat\'s summary page. Refused anywhere else.' },
+				criteria: {
+					type: 'array',
+					description: 'Steering only: where every pass criterion in the goal record stands now, one entry each. The owner reads it on the goal chat\'s summary page, which shows only what the latest steering run reported, so send the full list every time. Refused outside steering.',
+					items: {
+						type: 'object',
+						properties: {
+							id: { type: 'string', description: 'The criterion\'s label in the record, such as "7".' },
+							state: { type: 'string', enum: ['met', 'open', 'owner'], description: '"met" when judged from artifacts or by the owner, "owner" when only the owner can judge it, "open" otherwise.' },
+							note: { type: 'string', description: 'A few words: what it checks, or why it stands where it does.' },
+						},
+						required: ['id', 'state'],
+					},
+				},
 			},
 			required: ['summary'],
 		},

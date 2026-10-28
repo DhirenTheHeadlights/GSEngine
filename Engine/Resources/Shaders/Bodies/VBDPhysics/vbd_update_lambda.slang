@@ -112,7 +112,7 @@ void vbd_update_lambda(uint3 dispatch_id) {
     bool converged = collision_state[state_converged_flag_index] != 0;
 
     if (!converged) {
-        uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts);
+        uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts());
         if (ci < actual_contact_count) {
             update_contact_lambda(ci);
         }

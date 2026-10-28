@@ -124,7 +124,8 @@ namespace gse {
 	template <std::meta::info FnInfo>
 	auto collect_fn_channels(
 		std::vector<id>& reads_out,
-		std::vector<id>& writes_out
+		std::vector<id>& writes_out,
+		std::vector<id>& lends_out
 	) -> void;
 
 	template <typename Arg>
@@ -414,9 +415,9 @@ auto gse::collect_fn_shared_views(std::vector<id>& out) -> void {
 }
 
 template <std::meta::info FnInfo>
-auto gse::collect_fn_channels(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
+auto gse::collect_fn_channels(std::vector<id>& reads_out, std::vector<id>& writes_out, std::vector<id>& lends_out) -> void {
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((append_arg_channel_ids<arg_type_of<FnInfo, Is>>(reads_out, writes_out)), ...);
+		((append_arg_channel_ids<arg_type_of<FnInfo, Is>>(reads_out, writes_out, lends_out)), ...);
 	}(std::make_index_sequence<arity_of<FnInfo>>{});
 }
 
@@ -491,8 +492,7 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.invoke_ensure_storages_fn = &ensure_node_storages<FnInfos...>;
 
 	node.declared_run_state_deps = std::move(run_meta.state_deps);
-	node.optional_run_state_deps = std::move(run_meta.optional_state_deps);
-	node.component_reads = std::move(run_meta.component_reads);
+	node.optional_run_state_deps = std::move(run_meta.optional_state_deps);	node.component_reads = std::move(run_meta.component_reads);
 	node.component_writes = std::move(run_meta.component_writes);
 	node.component_structural = std::move(run_meta.component_structural);
 	node.resource_reads = std::move(run_meta.resource_reads);
@@ -504,9 +504,11 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 
 	std::vector<id> channel_reads;
 	std::vector<id> channel_writes;
-	(collect_fn_channels<FnInfos>(channel_reads, channel_writes), ...);
+	std::vector<id> channel_lends;
+	(collect_fn_channels<FnInfos>(channel_reads, channel_writes, channel_lends), ...);
 	node.channel_consumes = std::move(channel_reads);
 	node.channel_publishes = std::move(channel_writes);
+	node.lent_channels = std::move(channel_lends);
 
 	std::vector<id> shared_views;
 	(collect_fn_shared_views<FnInfos>(shared_views), ...);

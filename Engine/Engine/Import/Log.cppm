@@ -237,6 +237,8 @@ export namespace gse::log {
 	) -> void;
 
 	auto flush() -> void;
+
+	auto active_file() -> const std::filesystem::path&;
 }
 
 namespace gse::log {

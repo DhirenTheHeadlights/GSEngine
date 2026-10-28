@@ -397,6 +397,12 @@ export namespace gse::gpu {
 			device_size size
 		) -> void;
 
+		auto write_storage_buffer(
+			bindless_slot slot,
+			gpu::handle<buffer> buf,
+			device_size size
+		) -> void;
+
 		auto write_acceleration_structure(
 			bindless_slot slot,
 			device_address as_address

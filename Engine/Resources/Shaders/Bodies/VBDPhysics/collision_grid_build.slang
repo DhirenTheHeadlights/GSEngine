@@ -5,7 +5,7 @@ int3 world_to_cell(float3 pos, float cell_size) {
 
 uint hash_cell(int3 cell) {
     uint h = uint(cell.x * 73856093 ^ cell.y * 19349663 ^ cell.z * 83492791);
-    return (h % grid_table_size) + 1;
+    return (h % grid_table_size()) + 1;
 }
 
 void collision_grid_build(uint3 dispatch_id) {
@@ -44,12 +44,12 @@ void collision_grid_build(uint3 dispatch_id) {
 
                 uint slot;
                 InterlockedAdd(grid_data[0], 1u, slot);
-                if (slot >= grid_max_entries) {
+                if (slot >= grid_max_entries()) {
                     InterlockedAdd(grid_data[0], -1);
                     return;
                 }
 
-                uint entry_base = grid_table_size + 1 + slot * 2;
+                uint entry_base = grid_table_size() + 1 + slot * 2;
                 grid_data[entry_base] = bi;
                 uint old_head = grid_data[bucket];
                 uint observed;

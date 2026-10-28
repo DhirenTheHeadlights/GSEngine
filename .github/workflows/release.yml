@@ -74,7 +74,7 @@ jobs:
       contents: write
     env:
       PRESET: x64-mingw-gcc-Release
-      BUILD_DIR: out/build/x64-mingw-gcc-Release
+      BUILD_DIR: .generated/out/build/x64-mingw-gcc-Release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -134,7 +134,7 @@ jobs:
         if: inputs.verify_game == 'true'
         shell: pwsh
         run: |
-          $stage = "dist/game/x64-mingw-gcc-Release"
+          $stage = ".generated/dist/game/x64-mingw-gcc-Release"
           Push-Location $stage
           & "./Bin/Sandbox.exe" --engine-bench-scenario ${{ inputs.scenario || 'render_stress' }} | Tee-Object -Variable output
           $code = $LASTEXITCODE
@@ -150,14 +150,14 @@ jobs:
       - name: Zip the game image
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist/game/x64-mingw-gcc-Release/*" `
-            -DestinationPath "dist/Sandbox-${{ needs.resolve.outputs.tag }}-windows-x64.zip"
+          Compress-Archive -Path ".generated/dist/game/x64-mingw-gcc-Release/*" `
+            -DestinationPath ".generated/dist/Sandbox-${{ needs.resolve.outputs.tag }}-windows-x64.zip"
 
       - name: Compute asset hashes
         id: hashes
         shell: pwsh
         run: |
-          $assets = Get-ChildItem dist/game/*-setup.exe, dist/engine-sdk/*-setup.exe, dist/*.zip
+          $assets = Get-ChildItem .generated/dist/game/*-setup.exe, .generated/dist/engine-sdk/*-setup.exe, .generated/dist/*.zip
           $lines = foreach ($asset in $assets) {
             $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLower()
             "- ``$($asset.Name)`` - ``$hash``"
@@ -168,7 +168,7 @@ jobs:
           "EOF" >> $env:GITHUB_OUTPUT
           Write-Output $body
 
-      # The Packer writes every transcript line to dist/<kind>/packer-<kind>.log on both
+      # The Packer writes every transcript line to .generated/dist/<kind>/packer-<kind>.log on both
       # success and failure, and on a hosted runner that file is the only account of why a
       # pack failed - the step log carries the one-line error, the transcript carries the
       # commands and their output. Uploaded on failure only, and late enough to also catch
@@ -178,7 +178,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: packer-transcripts-${{ needs.resolve.outputs.tag }}
-          path: dist/*/packer-*.log
+          path: .generated/dist/*/packer-*.log
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 
@@ -190,10 +191,10 @@ jobs:
           draft: ${{ needs.resolve.outputs.draft == 'true' }}
           generate_release_notes: true
           files: |
-            dist/game/*-setup.exe
-            dist/game/feed.json
-            dist/engine-sdk/*-setup.exe
-            dist/*.zip
+            .generated/dist/game/*-setup.exe
+            .generated/dist/game/feed.json
+            .generated/dist/engine-sdk/*-setup.exe
+            .generated/dist/*.zip
           body: |
             **Sandbox ${{ needs.resolve.outputs.tag }}** for Windows x64, built with `${{ steps.setup.outputs.toolchain }}`.
 

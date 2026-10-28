@@ -260,7 +260,7 @@ static bool segment_equals(const char *segment, size_t length, const char *name)
 
 static bool skipped_path_segment(const char *segment, size_t length, bool at_root) {
 	static const char *names[] = {
-		"out", ".git", ".vs", ".vscode", ".claude", "vcpkg",
+		".generated", "out", ".git", ".vs", ".vscode", ".claude", "vcpkg",
 		".gcc-ci-build", "build", "node_modules", ".cache"
 	};
 	if (at_root && segment_equals(segment, length, "external")) return true;
@@ -4186,7 +4186,7 @@ static void scan_unit_reexports(const char *path) {
 }
 
 static bool skipped_scan_segment(const char *name) {
-	static const char *names[] = { "out", ".git", ".vs", ".vscode", ".claude", "vcpkg", "build", "node_modules", ".cache" };
+	static const char *names[] = { ".generated", "out", ".git", ".vs", ".vscode", ".claude", "vcpkg", "build", "node_modules", ".cache" };
 	for (const char *skip : names) {
 		if (strcmp(name, skip) == 0) return true;
 	}

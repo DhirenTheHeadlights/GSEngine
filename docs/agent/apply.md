@@ -4,6 +4,10 @@ If the approved scope drafted a goal, write its record first, verbatim, at the p
 
 Implement it. Finish the whole thing rather than the easy part of it, and keep the design you were approved for: if the code resists the plan, that is information the owner needs, so report the deviation instead of absorbing it. A change nobody agreed to is worse than a change that stopped to ask.
 
+When the approved scope has steps, call `gse_step(index, 'begun')` before working on a step and `gse_step(index, 'done')` when it is finished. Edits are attributed to whichever step is begun.
+
+In a chat the editor opened to fix a build error nobody claimed, also pass `diagnosis` to `gse_phase_done`: a short markdown read of the failure — what caused it and what fixed it. The owner reads it under the raw errors on the chat's summary page. Every other chat omits it.
+
 Build with `gse_build` when a claim needs a compile to stand, and launch the executable when a change needs to be seen working. Neither is blocked by a running game or editor. Act only on errors attributed to you.
 
 Audit your own diff against `docs/CODE_REVIEW_GUIDE.md` and `docs/STYLEGUIDE.md` as you go — layout, declaration and definition structure, unit types, module visibility, and the mandatory questions. A fresh reviewer reads this change next, and anything the guide already answers is wasted on both of you.

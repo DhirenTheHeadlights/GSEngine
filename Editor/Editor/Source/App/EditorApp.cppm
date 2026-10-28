@@ -21,6 +21,7 @@ import gse.ide.viewport;
 import gse.ide.workspace;
 import std;
 
+import :brand;
 import :chrome;
 import :code_panel;
 import :dock;
@@ -83,7 +84,7 @@ export namespace gse::ide {
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located, jump_to_request> requests_in,
+			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in,
 			channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, window_popout_request, window_close_request, window_focus_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
@@ -245,6 +246,12 @@ namespace gse::ide {
 		editor_app::data& d,
 		dock_view& v,
 		id panel
+	) -> void;
+
+	auto reveal_panel(
+		editor_app::data& d,
+		const channel_write<window_focus_request>& ui_out,
+		std::string_view panel
 	) -> void;
 
 	auto apply_pending_panel_close(
@@ -1035,6 +1042,42 @@ auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -
 	}
 }
 
+auto gse::ide::reveal_panel(editor_app::data& d, const channel_write<window_focus_request>& ui_out, const std::string_view panel) -> void {
+	const std::span<const panel_desc> registry = editor_panels();
+	assert(
+		std::ranges::contains(registry, panel, &panel_desc::name),
+		"a [[= gse::reveals]] annotation names '{}', which is not a panel in editor_panels(); fix the annotation's spelling",
+		panel
+	);
+
+	const id target = find_or_generate_id(panel);
+	if (shelf_edge_of(d.shelf.entries, target)) {
+		d.shelf.open = target;
+		ui_out.push<window_focus_request>({
+			.window = primary_view(d).window,
+		});
+		return;
+	}
+
+	const auto hosting = std::ranges::find_if(d.views, [target](const dock_view& v) {
+		return contains_panel(v.tree, target);
+	});
+	dock_view& host = hosting == d.views.end() ? primary_view(d) : *hosting;
+	if (hosting == d.views.end()) {
+		reopen_panel(d, host, {
+			.panel = target,
+			.target = any_leaf(host.tree),
+			.location = gui::dock::location::center,
+		});
+	}
+	else {
+		activate_panel(host.tree, target);
+	}
+	ui_out.push<window_focus_request>({
+		.window = host.window,
+	});
+}
+
 auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::data& d, dock_view& v) -> void {
 	if (!vp.pending_tab_close) {
 		return;
@@ -1515,8 +1558,14 @@ auto gse::ide::forward_game_input(const input::state& input, const channel_write
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located, jump_to_request> requests_in, const channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, window_popout_request, window_close_request, window_focus_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in, const channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, window_popout_request, window_close_request, window_focus_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.screen_pushed && search_d.index) {
+		ui_out.push<settings::change_request>({
+			.state_type = id_of<gui::data>(),
+			.apply = [](void* p) {
+				static_cast<gui::data*>(p)->icon_source = brand::window_icon;
+			},
+		});
 		ui_out.push<gui::push_screen_request>({
 			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request>(ui_out), index = search_d.index, shelf = &d.shelf] {
 				return std::make_unique<editor_screen>(channels, index, shelf, editor_panels(), id());
@@ -1757,21 +1806,8 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		}
 	}
 
-	if (!requests_in.of<jump_to_request>().empty()) {
-		const id code = find_or_generate_id(code_panel_name);
-		const auto hosting = std::ranges::find_if(d.views, [code](const dock_view& v) {
-			return contains_panel(v.tree, code);
-		});
-		dock_view& host = hosting == d.views.end() ? primary_view(d) : *hosting;
-		if (hosting == d.views.end()) {
-			toggle_panel(d, host, code);
-		}
-		else {
-			activate_panel(host.tree, code);
-		}
-		ui_out.push<window_focus_request>({
-			.window = host.window,
-		});
+	for (const std::string_view panel : ctx.pending_reveals()) {
+		reveal_panel(d, ui_out, panel);
 	}
 
 	const input::state& input = input::current_state(input_d);
@@ -1906,8 +1942,6 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		d.graph = build_graph(sched);
 	}
 
-	workspace::data* ws = &d.ws;
-	const auto config = config_d;
 	const input::state& input = input::current_state(input_d);
 	const auto session_active = [&build_d](const std::uint32_t instance) {
 		return instance < build_runner::max_attached_instances
@@ -2027,15 +2061,10 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ui_out, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
-			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get(), *git_rootless);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels) {
+			draw_explorer_panel(b, panel_d.ws, panel_d.search, search_s.index, channels, panel_d.git_status.get(), panel_d.git_rootless);
 		},
 	});
-
-
-	const bool building = build_d.building;
-
-
 	if (d.cursor_capture_sent != d.ws.game_captured) {
 		d.cursor_capture_sent = d.ws.game_captured;
 		ui_out.push<cursor_capture_request>({ .capture = d.ws.game_captured });
@@ -2071,11 +2100,11 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(code_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, index = search_d.index, config, channels = ui_out, building](gui::builder& b) {
-			draw_code_panel(b, *ws, channels, {
-				.config = config,
-				.index = index,
-				.building = building,
+		.build = [](gui::builder& b, data& panel_d, const shared_view<config_system::data> config_s, const shared_view<search_system::data> search_s, const shared_view<build_runner::data> build_s, const channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, set_cursor_shape_request, search::index_merge_request> channels) {
+			draw_code_panel(b, panel_d.ws, channels, {
+				.config = config_s,
+				.index = search_s.index,
+				.building = build_s.building,
 			});
 		},
 	});
@@ -2083,62 +2112,62 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(graph_panel_name),
 		.layer = render_layer::content,
-		.build = [graph = &d.graph, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_graph(b, b.ctx.clip_stack.back(), *graph, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request, set_cursor_shape_request> channels) {
+			draw_graph(b, b.ctx.clip_stack.back(), panel_d.graph, search_s.index, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(profile_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.ws.profile, channels = ui_out, profile_d](gui::builder& b) {
-			draw_profile_panel(b, b.ctx.clip_stack.back(), *state, profile_d.frames, profile_d.report, profile_d.report_loaded, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<profile_system::data> profile_s, const channel_write<set_cursor_shape_request> channels) {
+			draw_profile_panel(b, b.ctx.clip_stack.back(), panel_d.ws.profile, profile_s.frames, profile_s.report, profile_s.report_loaded, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(alloc_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.ws.alloc](gui::builder& b) {
-			draw_alloc_panel(b, b.ctx.clip_stack.back(), *state);
+		.build = [](gui::builder& b, data& panel_d) {
+			draw_alloc_panel(b, b.ctx.clip_stack.back(), panel_d.ws.alloc);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(problems_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, state = &d.problems, channels = ui_out](gui::builder& b) {
-			draw_problems_panel(b, b.ctx.clip_stack.back(), *state, *ws, channels);
+		.build = [](gui::builder& b, data& panel_d, const channel_write<jump_to_request> channels) {
+			draw_problems_panel(b, b.ctx.clip_stack.back(), panel_d.problems, panel_d.ws, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(search_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.search_panel, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_search_panel(b, b.ctx.clip_stack.back(), *state, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request> channels) {
+			draw_search_panel(b, b.ctx.clip_stack.back(), panel_d.search_panel, search_s.index, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(lint_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.lint_panel, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_lint_panel(b, b.ctx.clip_stack.back(), *state, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request, apply_lint_request> channels) {
+			draw_lint_panel(b, b.ctx.clip_stack.back(), panel_d.lint_panel, search_s.index, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(source_control_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.source_control, status = d.git_status, busy = d.git_busy, error = &d.git_action_error, pin = &d.engine_pin, channels = ui_out](gui::builder& b) {
-			draw_source_control_panel(b, b.ctx.clip_stack.back(), *state, {
-				.status = status,
-				.busy = busy,
-				.action_error = *error,
+		.build = [](gui::builder& b, data& panel_d, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) {
+			draw_source_control_panel(b, b.ctx.clip_stack.back(), panel_d.source_control, {
+				.status = panel_d.git_status,
+				.busy = panel_d.git_busy,
+				.action_error = panel_d.git_action_error,
 				.project_root = config::project_root(),
 				.engine_root = config::engine_root(),
-				.engine_pin = *pin,
+				.engine_pin = panel_d.engine_pin,
 			}, channels);
 		},
 	});
@@ -2146,8 +2175,8 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(game_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.session_view, building = build_d.building_session, slots = viewport_d.instance_slots, extents = viewport_d.instance_extents, live = viewport_d.instance_live, session = build_d.session, server = build_d.server, error = build_d.session_error](gui::builder& b) {
-			draw_game_panel(b, b.ctx.clip_stack.back(), *state, building, slots, extents, live, session, server, error);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<viewport::data> viewport_s, const shared_view<build_runner::data> build_s) {
+			draw_game_panel(b, b.ctx.clip_stack.back(), panel_d.session_view, build_s.building_session, viewport_s.instance_slots, viewport_s.instance_extents, viewport_s.instance_live, build_s.session, build_s.server, build_s.session_error);
 		},
 	});
 

@@ -42,9 +42,29 @@ namespace gse::ide::agent {
 		const session& s
 	) -> std::span<const phase_run>;
 
+	auto approved_steps(
+		const session& s
+	) -> std::span<const build_inbox::plan_step>;
+
+	auto run_section_of(
+		const session& s,
+		std::uint32_t row
+	) -> std::optional<std::string>;
+
+	auto record_step_edit(
+		session& s,
+		const transcript_row& row
+	) -> void;
+
+	auto phase_timeline(
+		task_phase now,
+		bool goal,
+		std::span<const phase_run> task
+	) -> std::vector<phase_step>;
+
 	auto phase_timeline(
 		const session& s
-	) -> std::array<phase_step, std::size(phase_order)>;
+	) -> std::vector<phase_step>;
 
 	auto policy_of(
 		task_phase phase
@@ -199,8 +219,16 @@ namespace gse::ide::agent {
 		const std::filesystem::path& file
 	) -> file_stamp;
 
+	auto wake_in(
+		const await_condition& waiting
+	) -> time;
+
 	auto await_label(
 		const await_condition& waiting
+	) -> std::string;
+
+	auto aim_of(
+		const std::filesystem::path& record
 	) -> std::string;
 
 	auto fired_condition(
@@ -228,6 +256,14 @@ namespace gse::ide::agent {
 	) -> bool;
 
 	auto accept_questions(
+		data& d
+	) -> bool;
+
+	auto accept_draws(
+		data& d
+	) -> bool;
+
+	auto accept_step_reports(
 		data& d
 	) -> bool;
 

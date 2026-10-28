@@ -18,7 +18,7 @@ uint bi = dispatch_id.x;
 if (bi >= pc.body_count) return;
 
 if (solver_config_data[0].muscle_count != 0) {
-    solve_deltas[2 * max_bodies + bi] = float4(muscle_body_floor(bi), 0, 0, 0);
+    solve_deltas[2 * max_bodies() + bi] = float4(muscle_body_floor(bi), 0, 0, 0);
 }
 
 body_state body = body_data[bi];
@@ -44,8 +44,8 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
         uint co = contact_offsets[bi];
         uint cc = contact_counts[bi];
         for (uint k = 0; k < cc; k++) {
-            uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency);
-            if (ci >= max_contacts) continue;
+            uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency());
+            if (ci >= max_contacts()) continue;
             contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other >= pc.body_count) continue;
@@ -65,7 +65,7 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
             uint j_off = joint_offsets[bi];
             uint jc = joint_counts[bi];
             for (uint k = 0; k < jc; k++) {
-                uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency);
+                uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency());
                 if ((ji & muscle_adjacency_tag) != 0) {
                     muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
                     for (uint p = 0; p < m.path_count + m.wrap_count && sleeping; p++) {
@@ -80,7 +80,7 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
                     if (!sleeping) break;
                     continue;
                 }
-                if (ji >= max_joints) continue;
+                if (ji >= max_joints()) continue;
                 joint_constraint jnt = joint_data[ji];
                 uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
                 if (other >= pc.body_count) continue;

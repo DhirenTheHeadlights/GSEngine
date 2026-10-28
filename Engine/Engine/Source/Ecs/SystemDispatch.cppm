@@ -153,7 +153,8 @@ export namespace gse {
 	template <typename Arg>
 	auto append_arg_channel_ids(
 		std::vector<id>& reads_out,
-		std::vector<id>& writes_out
+		std::vector<id>& writes_out,
+		std::vector<id>& lends_out
 	) -> void;
 
 	template <typename Arg, typename S>
@@ -192,6 +193,11 @@ export namespace gse {
 		state_of_t<S>& state
 	) -> decltype(auto);
 
+	template <typename Data>
+	auto live_system_state(
+		context& ctx
+	) -> Data*;
+
 	auto noop_shutdown(
 		void* data_ptr
 	) -> void;
@@ -223,6 +229,11 @@ auto gse::mutable_external_resource_ref(task_context& ctx) -> T& {
 	return *static_cast<T*>(p);
 }
 
+template <typename Data>
+auto gse::live_system_state(context& ctx) -> Data* {
+	return static_cast<Data*>(ctx.states.state_ptr(id_of<Data>()));
+}
+
 template <typename Arg, typename S>
 auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) {
 	using U = std::remove_cvref_t<Arg>;
@@ -245,7 +256,7 @@ auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) 
 		return U(ctx.channels_store);
 	}
 	else if constexpr (is_channel_write_v<U>) {
-		return U(ctx.channels);
+		return U(ctx.channels, id_of<state_of_t<S>>());
 	}
 	else if constexpr (is_shared_view_v<U>) {
 		using Target = shared_view_target_t<U>;
@@ -347,13 +358,14 @@ auto gse::append_arg_shared_view(std::vector<id>& shared_out) -> void {
 }
 
 template <typename Arg>
-auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
+auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& writes_out, std::vector<id>& lends_out) -> void {
 	using U = std::remove_cvref_t<Arg>;
 	if constexpr (is_channel_read_v<U>) {
 		channel_pack_ids<U>::append(reads_out);
 	}
 	else if constexpr (is_channel_write_v<U>) {
 		channel_pack_ids<U>::append(writes_out);
+		channel_pack_ids<U>::append_lending(lends_out);
 	}
 }
 

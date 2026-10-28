@@ -83,6 +83,8 @@ export namespace gse {
 		requires is_same_frame_channel_v<T>
 		auto drain_channel() -> std::vector<T>;
 
+		[[nodiscard]] auto pending_reveals() const -> std::vector<std::string_view>;
+
 	private:
 		scheduler& m_sched;
 		registry& m_reg;
@@ -173,6 +175,10 @@ template <typename T>
 requires gse::is_same_frame_channel_v<T>
 auto gse::context::drain_channel() -> std::vector<T> {
 	return channels_store.template drain<T>();
+}
+
+auto gse::context::pending_reveals() const -> std::vector<std::string_view> {
+	return channels_store.pending_reveals();
 }
 
 gse::entities::entities(registry* reg) : m_reg(reg) {

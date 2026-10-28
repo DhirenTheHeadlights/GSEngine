@@ -82,6 +82,8 @@ export namespace gse {
 		bool restart_on_device_lost = false;
 		bool restarted_after_device_lost = false;
 		bool simulate_device_lost = false;
+		bool restart_on_crash = false;
+		bool restarted_after_crash = false;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;

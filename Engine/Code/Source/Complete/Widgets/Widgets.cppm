@@ -313,7 +313,7 @@ auto gse::gui::completion_popup::draw(const draw_context& ctx, const params& p, 
 	constexpr float shadow_offset = 4.f;
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size({ list.left() + shadow_offset, list.top() - shadow_offset }, list.size()),
-		.color = ctx.style.color_shadow,
+		.color = ctx.style.modal.shadow.fill,
 		.texture = ctx.blank_texture,
 	});
 	ctx.queue_sprite({
@@ -323,7 +323,7 @@ auto gse::gui::completion_popup::draw(const draw_context& ctx, const params& p, 
 	});
 	ctx.queue_sprite({
 		.rect = list,
-		.color = { vec3f(ctx.style.color_menu_body), 1.f },
+		.color = ctx.style.modal.panel.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -358,7 +358,7 @@ auto gse::gui::completion_popup::draw(const draw_context& ctx, const params& p, 
 		if (i == state.selected || hovered) {
 			ctx.queue_sprite({
 				.rect = row,
-				.color = i == state.selected ? ctx.style.color_accent_dim : ctx.style.color_widget_hovered,
+				.color = i == state.selected ? ctx.style.dropdown.option.surfaces.selected.fill : ctx.style.dropdown.option.surfaces.hot.fill,
 				.texture = ctx.blank_texture,
 				.clip_rect = list,
 			});
@@ -447,7 +447,7 @@ auto gse::gui::signature_strip::draw(const draw_context& ctx, const params& p, i
 	});
 	ctx.queue_sprite({
 		.rect = strip,
-		.color = ctx.style.color_title_bar,
+		.color = ctx.style.menu.title_bar.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -513,7 +513,7 @@ auto gse::gui::hover_card::draw(const draw_context& ctx, const params& p, id&, i
 	});
 	ctx.queue_sprite({
 		.rect = card,
-		.color = ctx.style.color_title_bar,
+		.color = ctx.style.menu.title_bar.fill,
 		.texture = ctx.blank_texture,
 	});
 

@@ -65,6 +65,12 @@ export namespace gse {
 		int resize_exclude_y1 = 0;
 	};
 
+	struct window_icon_request {
+		id window;
+		std::array<std::uint32_t, 32 * 32> small;
+		std::array<std::uint32_t, 64 * 64> large;
+	};
+
 	enum class cursor_shape : std::uint8_t {
 		arrow = 0,
 		hand = 1,
@@ -182,6 +188,8 @@ export namespace gse::window {
 	};
 
 	struct window_surface {
+		void* small_icon = nullptr;
+		void* large_icon = nullptr;
 		[[= shared]] gse::id id;
 		[[= shared]] native_window_handle handle;
 		[[= shared]] bool focused = true;

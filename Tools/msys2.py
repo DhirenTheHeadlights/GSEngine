@@ -10,9 +10,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from repo_paths import GENERATED_ROOT, REPO_ROOT
 
-DEFAULT_MSYS_ROOT = REPO_ROOT / "msys64"
+DEFAULT_MSYS_ROOT = GENERATED_ROOT / "msys64"
 
 
 def to_msys(p: Path) -> str:

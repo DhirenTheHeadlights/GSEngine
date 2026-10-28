@@ -27,3 +27,11 @@ export namespace gse::watchdog {
 		bool m_owned = false;
 	};
 }
+
+namespace gse::watchdog {
+	auto open_stack_capture() -> void;
+
+	auto close_stack_capture() -> void;
+
+	auto capture_all_thread_stacks() -> std::string;
+}

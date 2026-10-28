@@ -33,23 +33,21 @@ MSYS2 gcc needs none of it.
     python Tools/build_gcc_wasm.py --snapshot 20260809
 """
 import argparse
-import collections
 import hashlib
-import json
 import os
 import re
-import shlex
 import shutil
 from pathlib import Path
 from typing import NamedTuple, Optional
 
 import module_graph
 from msys2 import DEFAULT_MSYS_ROOT, REPO_ROOT, bash, to_msys
-# The two patterns a scenario run's console output is read with. Imported rather than
-# written again: `parity_gate.py` is what decides whether two runs of a scenario agree,
-# and a browser run that printed a line this harness recognised and that gate did not
-# would be a pass criterion met against the wrong contract.
-from parity_gate import hash_pattern, p50_pattern
+from repo_paths import GENERATED_ROOT
+# The harness and the exit taxonomy every run probe is read with. Imported from the
+# scenario runner rather than restated, so a probe's `ran` and a scenario's exit 0 are
+# the same verdict.
+from run_wasm import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
+                      write_harness)
 
 # The snapshot the engine's own native toolchain is built from, which is what this has
 # to be for an engine-source probe to mean anything: the series' merge base, 20260524,
@@ -176,398 +174,6 @@ CXXFLAGS = "-std=c++26 -fno-exceptions -fno-rtti"
 # the define was to mapping it onto a target with no TLS; the target has TLS now.
 CXX_RUNTIME_DEFINES = "-D_WASI_EMULATED_SIGNAL -D_Thread_local=__thread"
 
-# Every run probe exports this and returns an int, so the harness needs no per-probe
-# configuration.
-ENTRY = "entry"
-
-# The linear memory the harness instantiates, in wasm pages. Stated here rather than in
-# the harness text because the *link* has to agree with it: a shared memory must declare
-# a maximum and wasm-ld takes --max-memory in bytes, so both sides read these.
-#
-# The maximum is a ceiling and not a reservation -- memory.grow is what allocates -- so
-# there is one number here rather than a probe's and an engine's. 16 pages was 1MB, which
-# was the whole of what a probe ever needed and is less than the engine's own module; a
-# run of `scene_reset_cpu` has to fit the heap a world of rigid bodies allocates, so this
-# is the first value chosen for the engine rather than for a probe. Every probe links and
-# instantiates against the same ceiling and none of them grows into it.
-#
-# The INITIAL is a floor the module sets rather than a choice the harness makes: an
-# imported memory carries the minimum the link derived from the engine's static data, its
-# stack and __heap_base, and instantiation refuses a memory smaller than that. 2 pages
-# served every probe and is 75x too small for the Sandbox link, which declares 152. This
-# is that number with headroom, and both ways of being wrong are loud rather than silent
-# -- too small and WebAssembly.instantiate names the declared initial it wanted, too
-# large and a probe commits a few MB it never touches.
-PAGE_SIZE = 65536
-HARNESS_INITIAL_PAGES = 256
-HARNESS_MAX_PAGES = 8192
-
-# The wasm stack, which is linear memory rather than a host stack and is 64KB by default
-# -- enough for every probe and not for a frame of this engine, whose update tier nests
-# systems, coroutine frames and the solver's own recursion. Passed to wasm-ld only on the
-# arm that links the engine: a probe measuring a construct has nothing to gain from a
-# bigger stack, and changing what every probe links would make this a new input to rows
-# that are already green.
-ENGINE_STACK_SIZE = 8 * 1024 * 1024
-
-# How long a scenario run is given before it is killed. `scene_reset_cpu` is 240 fixed
-# steps of a headless world, which is seconds natively; this is generous against an
-# interpreter's first run and still bounded, because the failure a first run can produce
-# that no earlier stage could is to block forever with nothing on the console.
-SCENARIO_TIMEOUT_SECONDS = 900
-
-# The import object is derived from what the module declares rather than written out.
-# A linked module normally imports nothing at all -- wasm-ld defines the memory, the
-# stack pointer and the table itself -- but a function the backend could not resolve
-# stays an import, and a hardcoded `env` would be a second statement of a fact the
-# module already carries. Imported functions are supplied as the identity so that an
-# unresolved callee shows up as a wrong result rather than as a failure to instantiate.
-HARNESS = """
-import { readFileSync, readdirSync, writeSync } from "node:fs";
-import { WASI } from "node:wasi";
-import { Worker, isMainThread, workerData } from "node:worker_threads";
-
-// The one thing the module does NOT say about itself, so the one thing passed in. A
-// shared memory and a plain one are not interchangeable -- instantiating against the
-// wrong kind fails with a flag mismatch -- and `WebAssembly.Module.imports' reports a
-// memory import's name and kind but never its sharedness. Guessing shared and
-// retrying plain was the alternative, and it was rejected: it would turn a genuine
-// instantiation failure into a second, misleading error from the retry, which is
-// precisely the confusion the three-way exit taxonomy below exists to prevent.
-const SHARED = process.argv[4] === "shared";
-
-// A host directory to preopen, or nothing. WASI has no ambient filesystem: a module can
-// only reach what the embedder hands it, so without this every `open' in the subject
-// fails with a capability error rather than with a missing file. No probe passes it and
-// their invocation is unchanged; the engine run does, because a scenario names a scene
-// and the asset tree is on disk here. Spelled as one preopen at `/' rather than a map of
-// several, so that what the subject could not reach is a path this harness can be
-// matched against rather than a list it has to have guessed right.
-const ROOT = process.argv[5];
-
-// The subject's environment, as JSON, or nothing. WASI has no ambient environment either:
-// `getenv' reads what the embedder passed and nothing else, so a module whose
-// configuration arrives that way sees an empty environment unless this is supplied. No
-// probe passes it and their invocation is unchanged; the engine run does, because
-// `gse.config' resolves the executable's path and the writable roots from it rather than
-// from a path this harness would otherwise have had to be told twice.
-const ENV = JSON.parse (process.argv[6] ?? "{}");
-
-// One constructor for both arms, because a spawned thread does the same syscalls: the
-// engine loads assets on job threads, and a worker whose WASI had no preopen would fail
-// an open the main thread can do -- a difference between the two paths that would read as
-// a fact about the target. The environment travels with it for the same reason: a thread
-// that resolved a different root than the thread that spawned it would be a divergence
-// this harness invented.
-function hosting (root, env) {
-  return new WASI ({ version: "preview1", env,
-                     ...(root ? { preopens: { "/": root } } : {}) });
-}
-
-// A shared memory must carry a maximum, and these are the numbers the link has to
-// agree with, so they are substituted in from the one place that states them rather
-// than written twice.
-const INITIAL_PAGES = %(initial_pages)d, MAX_PAGES = %(max_pages)d;
-
-function memory () {
-  return SHARED
-    ? new WebAssembly.Memory ({ initial: INITIAL_PAGES, maximum: MAX_PAGES, shared: true })
-    : new WebAssembly.Memory ({ initial: INITIAL_PAGES });
-}
-
-function supply (module, mem) {
-  const imports = {};
-  for (const { module: ns, name, kind } of WebAssembly.Module.imports (module)) {
-    imports[ns] ??= {};
-    imports[ns][name] =
-      kind === "memory" ? mem
-      : kind === "table" ? new WebAssembly.Table ({ initial: 0, element: "anyfunc" })
-      : kind === "function" ? ((x) => x)
-      : kind === "global" ? new WebAssembly.Global ({ value: "i32", mutable: true }, 64 * 1024)
-      : undefined;
-  }
-  return imports;
-}
-
-// node's own WASI answers `fd_readdir' with ENOSYS, measured directly: `path_open' with
-// O_DIRECTORY returns a descriptor, `fd_filestat_get' reports a directory and `fcntl'
-// works on it, and then the one call that would enumerate it is not implemented. Nothing
-// in the subject can route around that -- `opendir', `readdir' and every
-// `std::filesystem::directory_iterator' above them are that syscall -- so a directory
-// walk is the host's gap to close, and this is the host.
-//
-// The descriptors have to be tracked because node's WASI does not say which directory an
-// fd denotes: `fd_prestat_dir_name' names the preopens, `path_open' derives every other
-// descriptor from one of those, and both are wrapped here so the mapping is built from
-// the calls the subject actually makes rather than guessed from a convention.
-//
-// Returned entries are the directory's own: `.' and `..' are omitted, which readdir's
-// callers already skip, and `d_ino' is an index because a browser has no inode to report
-// and nothing above this reads it. Truncation is the protocol's own -- a short write is
-// how libc learns to come back with the next cookie -- so a buffer too small for an entry
-// simply stops the fill.
-function filesystem (memory, root, wasi) {
-  const wrapped = { ...wasi.getImportObject ().wasi_snapshot_preview1 };
-  const paths = new Map ();
-  // Resolved per call and through a function, because which memory the module ended up
-  // with is not known when this object is built: a link that imports one uses the
-  // harness's, and a link that does not exports its own. Reading the wrong one is
-  // silent -- it decodes whatever happens to be at the offset -- so it is worth not
-  // deciding early.
-  const text = (ptr, len) =>
-    new TextDecoder ().decode (new Uint8Array (memory ().buffer, ptr, len));
-
-  const join = (base, relative) => {
-    const parts = (relative.startsWith ("/") ? relative : base + "/" + relative).split ("/");
-    const out = [];
-    for (const part of parts) {
-      if (part === "" || part === ".") continue;
-      if (part === "..") out.pop (); else out.push (part);
-    }
-    return "/" + out.join ("/");
-  };
-
-  const prestat = wrapped.fd_prestat_dir_name;
-  wrapped.fd_prestat_dir_name = (fd, ptr, len) => {
-    const code = prestat (fd, ptr, len);
-    if (code === 0) paths.set (fd, join ("/", text (ptr, len)));
-    return code;
-  };
-
-  const open = wrapped.path_open;
-  wrapped.path_open = (fd, dirflags, ptr, len, ...rest) => {
-    const relative = text (ptr, len);
-    const code = open (fd, dirflags, ptr, len, ...rest);
-    if (code === 0 && paths.has (fd)) {
-      const opened = new DataView (memory ().buffer).getUint32 (rest[rest.length - 1], true);
-      paths.set (opened, join (paths.get (fd), relative));
-    }
-    return code;
-  };
-
-  const close = wrapped.fd_close;
-  wrapped.fd_close = (fd) => { paths.delete (fd); return close (fd); };
-
-  // ENOSYS, EBADF and ENOTDIR are 52, 8 and 54 in preview1's own numbering, which is not
-  // errno's: the module compares against what wasi-libc's errno.h says, so these are the
-  // values that reach it as ENOSYS, EBADF and ENOTDIR.
-  wrapped.fd_readdir = (fd, buf, len, cookie, used) => {
-    const guest = paths.get (fd);
-    if (guest === undefined) return 8;
-    let entries;
-    try {
-      entries = readdirSync (join_host (root, guest), { withFileTypes: true });
-    } catch (e) {
-      return e.code === "ENOTDIR" ? 54 : 52;
-    }
-    const view = new DataView (memory ().buffer);
-    const bytes = new Uint8Array (memory ().buffer);
-    let at = 0;
-    for (let i = Number (cookie); i < entries.length; ++i) {
-      const name = new TextEncoder ().encode (entries[i].name);
-      if (at + 24 + name.length > len) break;
-      view.setBigUint64 (buf + at, BigInt (i + 1), true);
-      view.setBigUint64 (buf + at + 8, BigInt (i + 1), true);
-      view.setUint32 (buf + at + 16, name.length, true);
-      view.setUint8 (buf + at + 20, entries[i].isDirectory () ? 3
-                                    : entries[i].isSymbolicLink () ? 7 : 4);
-      bytes.set (name, buf + at + 24);
-      at += 24 + name.length;
-    }
-    view.setUint32 (used, at, true);
-    return 0;
-  };
-  return { wasi_snapshot_preview1: wrapped };
-}
-
-// Node's path join, spelled here rather than imported, because the guest side of the
-// mapping is always POSIX while the host side is whatever this machine uses.
-function join_host (root, guest) {
-  return root.replace (/[\\/]+$/, "") + guest;
-}
-
-// wasi-threads: the host supplies `wasi.thread-spawn', and all it owes the module is a
-// fresh instance over the SAME memory with `wasi_thread_start (tid, arg)' called on it.
-// The thread's stack and its descriptor are wasi-libc's own, allocated in linear memory
-// by pthread_create and reached through `arg', which is why the host does not have to
-// know anything about either.
-//
-// node:wasi is instantiated per thread rather than shared: it binds to one instance's
-// exports. `unref' is what lets the process exit once the main thread is done -- a
-// joined thread has already returned, and an unjoined one must not hold the run alive.
-//
-// `ids' is a shared counter rather than one per spawner, because a thread may spawn in
-// turn and wasi-threads requires thread ids to be distinct: a per-spawner counter would
-// hand a worker's child the same id the main thread had already used. It starts at 1 so
-// the first allocated id is 2, leaving 1 for the initial thread.
-function spawner (module, mem, ids, root, env) {
-  return (arg) => {
-    const tid = Atomics.add (ids, 0, 1) + 1;
-    const worker = new Worker (new URL (import.meta.url),
-                               { workerData: { module, mem, ids, tid, arg, root, env } });
-    worker.unref ();
-    trace_thread (`thread ${tid} spawned`);
-    return tid;
-  };
-}
-
-// `writeSync' on the descriptor and not `console.log', which is the whole reason thread
-// lifetime was unobservable here. A worker's `console.log' is streamed to the parent and
-// delivered by the parent's event loop, and an `error' event on the Worker needs that
-// loop too -- but a subject that spins on its own job queue never returns to it, so both
-// arrive never. The engine's own output was visible throughout only because WASI's
-// `fd_write' is a synchronous write to this same descriptor. Unbuffered and interleaved
-// with the subject's stdout on purpose: what is wanted is the order the two happened in.
-function trace_thread (text) {
-  writeSync (1, text + "\\n");
-}
-
-// A spawned thread is handed the module and the memory rather than only its arguments,
-// so it can spawn in turn: a thread that creates a thread is ordinary in the engine's
-// job system, and a worker that answered -1 here would have measured a restriction this
-// harness invented rather than one the target has.
-if (!isMainThread) {
-  const { module, mem, ids, tid, arg, root, env } = workerData;
-  const wasi = hosting (root, env);
-  // The same import object as the main arm, derived the same way. Spelling it
-  // `env: { memory: mem }' here instead worked only because nothing yet imports
-  // anything else from env, and would have failed as the unresolved import of a
-  // module this harness can otherwise run -- a divergence between two paths that
-  // must agree, which is the shape worth not leaving behind.
-  // Declared before the import object rather than beside its assignment: the
-  // filesystem wrapper closes over it to find the module's memory, and a `let' read
-  // before its declaration is a reference error rather than an undefined.
-  let instance;
-  const imports = {
-    ...supply (module, mem),
-    ...filesystem (() => instance?.exports?.memory ?? mem, root, wasi),
-    wasi: { "thread-spawn": spawner (module, mem, ids, root, env) },
-  };
-  // Reported rather than left to an unhandled rejection in an unref'd worker, which
-  // is where this surfaced as silence: the main thread then blocks in pthread_join
-  // on a thread that never started.
-  try {
-    instance = await WebAssembly.instantiate (module, imports);
-  } catch (e) {
-    trace_thread (`thread ${tid} did not instantiate: ${e.message}`);
-    process.exit (%(no_instance)d);
-  }
-  // node:wasi gates every syscall on having been started, and without this a spawned
-  // thread threw `wasi.start() has not been called' out of its first one -- whichever
-  // it happened to reach, which here was `clock_time_get' under `trace::end_async'
-  // inside the first job the thread ran. It cannot be `start' or a plain `initialize'
-  // over this instance: both call the module's entry, re-running libc setup and every
-  // global constructor over a program already live in this shared memory. The thread's
-  // entry is `wasi_thread_start' and libc does its per-thread setup there, so what is
-  // owed here is the binding and not the start: `initialize' over an object carrying
-  // only the memory marks this WASI live and runs no guest code, because it calls
-  // `_initialize' only if the object it is handed has one.
-  wasi.initialize ({ exports: { memory: instance.exports.memory ?? mem } });
-  // A trap on a spawned thread used to be silence: this is an unref'd worker with no
-  // `error' listener, so the rejection had nowhere to surface, and a thread that died
-  // inside its first job was indistinguishable from one still working on it.
-  try {
-    instance.exports.wasi_thread_start (tid, arg);
-  } catch (e) {
-    trace_thread (`thread ${tid} trapped: ${e.message}\n${e.stack}`);
-    process.exit (%(trap)d);
-  }
-  trace_thread (`thread ${tid} returned`);
-  // Ends the worker, and it is not optional: this is top-level module code, so
-  // without it a spawned thread falls through into the main-thread path below and
-  // instantiates the module a second time as though it were the program.
-  process.exit (0);
-}
-
-// A module linked against wasi-libc imports the WASI preview1 syscalls, which node
-// hosts itself -- the identity functions `supply` hands out would let it instantiate
-// and then misbehave in whatever way a stubbed write or clock produces. Which of the
-// two it is comes from the module's own imports rather than from a flag, for the same
-// reason `supply` is derived rather than written: the module already says.
-let instance, wasi;
-try {
-  const module = new WebAssembly.Module (readFileSync (process.argv[2]));
-  const mem = memory ();
-  // Set, because a SharedArrayBuffer is zero-filled and the comment above `spawner' is
-  // the contract: the initial thread holds tid 1, so the first one handed out has to be
-  // 2. Left at zero it handed the first spawned thread the initial thread's own id, and
-  // wasi-threads requires them distinct.
-  const ids = new Int32Array (new SharedArrayBuffer (4));
-  ids[0] = 1;
-  wasi = WebAssembly.Module.imports (module).some (i => i.module.startsWith ("wasi_"))
-         ? hosting (ROOT, ENV) : null;
-  // `supply' first and the real implementations over it, namespace by namespace: it
-  // derives a stub for every import including the WASI syscalls and `thread-spawn',
-  // and an identity function in either of those places would instantiate and then
-  // misbehave rather than fail. Spreading replaces a whole namespace object, so
-  // `env' and the table survive from `supply' while wasi_snapshot_preview1 and
-  // `wasi' come from node and from the spawner.
-  instance = await WebAssembly.instantiate (module, {
-    ...supply (module, mem),
-    ...(wasi ? filesystem (() => instance?.exports?.memory ?? mem, ROOT, wasi) : {}),
-    wasi: { "thread-spawn": spawner (module, mem, ids, ROOT, ENV) },
-  });
-} catch (e) {
-  console.log(`did not instantiate: ${e.message}`);
-  process.exit(%(no_instance)d);
-}
-
-const want = Number(process.argv[3]);
-let got;
-try {
-  // Static constructors do not run on their own. The linker collects every object's
-  // init-array entries into one function and leaves calling it to whatever embeds the
-  // module, which here is this harness. The two calls are alternatives, not a
-  // sequence: a reactor's _initialize calls __wasm_call_ctors itself after setting the
-  // libc up, so calling both would run every constructor twice.
-  if (wasi)
-    wasi.initialize (instance);
-  else
-    instance.exports.__wasm_call_ctors?.();
-  got = instance.exports.%(entry)s();
-  // What a wasi COMMAND's `_start' would have done after main returned, and this is a
-  // reactor: it runs the atexit handlers, which is where libc's stdio exit flushes the
-  // buffers. Without it a subject that printed its result and returned 0 leaves the
-  // output in linear memory -- and stdout here is a pipe, so it is fully buffered rather
-  // than line buffered. Optional because the linker synthesises it only where some
-  // object registered a destructor, the same reason the exports below are if-defined.
-  instance.exports.__wasm_call_dtors?.();
-} catch (e) {
-  // The stack as well as the message, because a trap's message names the kind of fault
-  // and never the site: `null function or function signature mismatch' is the same
-  // sentence wherever in half a million lines of subject it happened. V8 renders wasm
-  // frames as `wasm-function[N]', which `llvm-nm' over the objects maps back to a
-  // symbol -- so this is what turns a trap from a fact into an address.
-  console.log(`trapped: ${e.message}\n${e.stack}`);
-  process.exit(%(trap)d);
-}
-console.log(got === want ? `ok ${got}` : `got ${got} want ${want}`);
-process.exit(got === want ? 0 : 1);
-"""
-
-# A module can fail to instantiate, trap, or return the wrong number, and the three say
-# different things about the backend — a validation failure is the shape an unresolved
-# global takes, which is exactly what this harness exists to tell apart from bad codegen.
-# Node exits 1 on an unhandled rejection too, so each case needs its own code to be
-# distinguishable at all.
-TRAP_EXIT = 2
-NO_INSTANCE_EXIT = 3
-
-
-def harness_text() -> str:
-    """The node harness, substituted. Both pipelines write this same file.
-
-    A function rather than a formatted constant because the substitution had been
-    spelled out at each of the two call sites, and the page counts threads added would
-    have been a third and fourth chance for the dialect probe's harness to differ from
-    this one's -- which is the single thing the two scripts must not do, since a result
-    here and a result there are reported as though they mean the same.
-    """
-    return (HARNESS % {"entry": ENTRY, "trap": TRAP_EXIT,
-                       "no_instance": NO_INSTANCE_EXIT,
-                       "initial_pages": HARNESS_INITIAL_PAGES,
-                       "max_pages": HARNESS_MAX_PAGES}).lstrip()
-
 
 # COMPILE stops at the compiler, which is all the frontend questions need. LINKED goes
 # all the way to a number out of node.
@@ -642,9 +248,8 @@ class Probe(NamedTuple):
 # The engine's own modules, derived. These used to be four hand-written lists, with a
 # comment arguing that the order "is a fact about the engine rather than about this
 # script, so it is written out here rather than derived" -- true, and the reason they
-# went: `module_graph.py` derives the same fact from the files and from CMake's own
-# dependency scan, and a sweep over all 425 interface units cannot have a hand-written
-# list behind it. The lists were kept as the oracle for exactly one run: all three
+# went: `module_graph.py` derives the same fact from CMake's compile database and
+# dependency scan. The lists were kept as the oracle for exactly one run: all three
 # closures below came out equal as sets to what was recorded, and the derived order
 # topologically valid, before they were deleted.
 #
@@ -653,7 +258,7 @@ class Probe(NamedTuple):
 # 19. That is not asserted here -- it is what the graph says, and a change to the
 # engine's imports is allowed to change it.
 #
-# Lazily, and that matters: the graph is read out of a configured native build
+# Lazily, and that matters: the graph is read out of the configured wasm32 build
 # directory, which a clean checkout does not have. Scanning at import time made that
 # directory a prerequisite of the whole script -- `--help` and all seventeen steps of
 # building the cross compiler, none of which have anything to do with the engine's
@@ -681,8 +286,8 @@ def graph() -> module_graph.Graph:
 # gse.physics, gse.gpu_backend and gse.runtime failed here while compiling natively, which
 # is this script's own include-path hazard wearing different clothes: a red that looks
 # like the target and is really a flag the engine passes and the harness did not. Any flag
-# the engine relies on belongs here or the sweep measures a compiler the engine never
-# uses.
+# the engine relies on belongs here or an engine probe measures a compiler the engine
+# never uses.
 ENGINE_CXXFLAGS = (CXXFLAGS + " -fmodules -freflection -fcontracts"
                    " -Wno-changes-meaning -Wno-error=changes-meaning")
 
@@ -695,127 +300,11 @@ ENGINE_CXXFLAGS = (CXXFLAGS + " -fmodules -freflection -fcontracts"
 # -- this harness's include-path hazard again, wearing the target's clothes.
 #
 # Handed out by `target_cxxflags` and not appended beside ENGINE_CXXFLAGS at a call site,
-# which is the whole point: the probe table and the sweep both read their include flags
-# from that one function, and an engine probe whose closure reaches moodycamel --
-# `closure_of="gse.time"` is the obvious next one -- has to be compiled with what the
-# sweep used or the two measure different compilers.
+# which is the whole point: every probe reads its include flags from that one function,
+# and an engine probe whose closure reaches moodycamel -- `closure_of="gse.time"` is the
+# obvious next one -- has to be compiled with what the engine's own build uses or the two
+# measure different compilers.
 ENGINE_INCLUDE_DIR = REPO_ROOT / "Engine" / "External"
-
-# What `--link-engine` links when its command line names nothing, and the one judgment in
-# this file about the browser port rather than about the compiler.
-#
-# `gse` is the umbrella the Sandbox imports and `gse.scenario` is the runner that names a
-# scenario, so between them they are the whole engine a headless scenario needs. They are
-# NOT that scenario: `scene_reset_cpu` is declared in `sandbox:scenarios`, under Sandbox/,
-# which neither this script nor module_graph.py walks -- reaching it means enumerating a
-# second tree with its own scenes and systems. Every `.cpp`-level gap this port has been
-# unable to see is in the engine, so the engine is what the first link measures, and the
-# Sandbox is a later one rather than a thing quietly folded in here.
-LINK_SUBJECT = ("gse", "gse.scenario")
-
-# And what `--run-scenario` links, which is the paragraph above answered: the Sandbox is
-# a second tree with its own scenes and systems, `module_graph.py`'s roots now reach it,
-# and these are the modules that have to be among the link's roots for its program unit to
-# compile. `Main.cpp` imports eight modules and three of them -- `gse.config`, `gse.test`,
-# `gse.tests` -- are reached by nothing in the engine's own closure, so a subject that
-# named only `gse` and `sandbox` would compile that file against whatever BMI the shared
-# module cache still held. That is the artifact `link_closure`'s docstring records, and on
-# this arm it arrives as a rejection of the one unit the whole run exists to call.
-# `gse.server` is on the list for the reason `link_roots` names PORTED_HOST_ROOTS
-# unconditionally: `.cpp` files contribute no edges to the module graph, and the only
-# importer of that module in the tree is `Sandbox/Source/NetSetup.cpp`. No fixpoint over
-# interface imports can therefore reach it, so without naming it here its BMI is never
-# built and the unit defining `server_setup` -- which `Main.cpp` references whether or not
-# a headless scenario takes the dedicated-server branch -- is rejected.
-SCENARIO_SUBJECT = ("gse", "gse.scenario", "gse.config", "gse.system_manifest",
-                    "gse.test", "gse.tests", "gse.server", "sandbox")
-
-# The program, named here because no module names it. `Main.cpp` carries no module
-# declaration, so it is in `undeclared_impls` -- the list this arm already prints as a
-# fact about every link -- and a walk keyed on that declaration cannot place it. One
-# constant is the honest form: the alternative is a rule for guessing which module a
-# nameless `.cpp` belongs to, which would be a second enumerator disagreeing with CMake
-# about what a build contains.
-PROGRAM_UNIT = "Sandbox/Sandbox/Source/Main.cpp"
-
-# The same program as the native build produces it, which is what the run reports to
-# `gse.config` as its executable. Not the `.wasm` the link writes: that file is beside the
-# compiler, outside the preopen, and its stem would name the engine's log file and its
-# user-state directories something no native run has ever used. See
-# `scenario_environment`.
-NATIVE_PROGRAM = "Sandbox.exe"
-
-# The harness entry, and all it does is reach the program's own `main`.
-#
-# Assembling the bench configuration here instead was the alternative and is the one thing
-# this arm must not do. `Main.cpp`'s `apply_scenario` is what turns a scenario name into a
-# scene, a frame count, a warmup count and the settings the annotation pins -- that
-# configuration IS the world whose hash the parity criteria compare -- so a second copy of
-# it drifting by one setting would produce a hash with nothing to say and no way to tell.
-# Calling `main` is the whole point rather than a shortcut around writing more.
-#
-# `__main_argc_argv` and not `main`, which the first run of this arm measured: GCC's wasm
-# backend renames a `main(int, char**)` definition to the wasi-libc entry name, the same
-# convention clang follows, so `main` is a symbol no object in the link defines. Declaring
-# it is also what makes this call well-formed -- a program may not use `main` itself -- and
-# it is the entry point `crt1.o`'s `__main_void` would have called in the command form.
-#
-# `--no-engine-gpu` is the one flag this arm adds, and it is a configuration the engine
-# already has rather than a wasm special case: `engine_config::gpu` is a first-class field
-# and `Runtime/Engine.cpp` drops `gpu::context::data` through the same `resolve_activation`
-# that already drops the window and the audio root for a headless scenario. A wasm build
-# compiles no GPU backend, so `create_device` has nothing to return; without this the run
-# reaches `gpu::context::init` and dereferences the null it was honestly handed.
-#
-# Spelled by `gse::parse_args`'s reflective derivation -- `config::engine` is the group,
-# `engine_config::gpu` the bool, `_` becomes `-` -- the same derivation that produces the
-# `--engine-bench-scenario` beside it. It is NOT one of the flags `apply_scenario` owns, so
-# a scenario run accepts it; the owned set is window/render/solver/encode/settings/assets.
-# The extra arguments are read from the environment rather than substituted in beside
-# the two above, and that is the difference between a diagnostic flag costing nothing
-# and costing a relink. The entry is a generated translation unit, so every argument
-# baked into it is an input to the *link* -- the ~25 minutes this arm takes -- and the
-# last several measurements in this port each spent that to add one flag to a module
-# that was otherwise identical. `GSE_RUN_ARGS` is read through the same WASI
-# environment `scenario_environment` already fills and the harness already forwards to
-# the main and worker arms, so there is nothing new between the argument and `main`.
-#
-# Split on spaces, which is what a `getenv` string can carry without this file growing
-# a quoting convention the shell would then have to agree with. Every flag the engine
-# derives is one token or two, and a value with a space in it is a run this cannot
-# express -- loudly, since the split produces a flag `parse_args` then rejects by name,
-# rather than quietly.
-#
-# ARG_LIMIT bounds the array because `main`'s argv has to be one, and a fixed small
-# ceiling is honest where a heap allocation before libc's own argv exists would not be.
-SCENARIO_ENTRY = """
-#include <string.h>
-#include <stdlib.h>
-
-extern "C" int __main_argc_argv(int argc, char** argv);
-
-extern "C" int entry() {
-    static const int arg_limit = 64;
-    static char* args[arg_limit] = {
-        const_cast<char*>("sandbox"),
-        const_cast<char*>("--no-engine-gpu"),
-        const_cast<char*>("--engine-bench-scenario"),
-        const_cast<char*>("%(scenario)s"),
-    };
-    int argc = 4;
-
-    static char extra[4096];
-    if (const char* from_env = getenv("GSE_RUN_ARGS"); from_env != nullptr) {
-        strncpy(extra, from_env, sizeof(extra) - 1);
-        for (char* token = strtok(extra, " "); token != nullptr && argc < arg_limit;
-             token = strtok(nullptr, " ")) {
-            args[argc++] = token;
-        }
-    }
-
-    return __main_argc_argv(argc, args);
-}
-"""
 
 PROBES = (
     Probe("baseline", CXXFLAGS, """
@@ -1213,6 +702,89 @@ extern "C" int entry ()
   return produced;
 }
 """, expect=42, hosted=True, cxx_runtime=True, threads=True),
+    # Four threads PARKED on a counting semaphore and woken by ONE release(4), which is
+    # the shape the engine's pool shutdown uses for its lanes (`task::stop_lane') and
+    # the one the browser run stops in: of two long-parked lane threads, one woke and
+    # one did not. The suite could not ask this -- `std_thread' joins a thread that runs
+    # to completion and never blocks, so no row covered a thread resumed by a notify.
+    #
+    # It reports rather than hangs, deliberately: the threads are detached and the main
+    # thread polls a counter to a deadline, because `probe_status' runs node with no
+    # timeout and a join on a thread that is never woken would hang the whole table
+    # instead of printing a row. A lost wake comes back as "wrong result".
+    Probe("semaphore_release_n", CXXFLAGS, """
+#include <atomic>
+#include <chrono>
+#include <semaphore>
+#include <thread>
+
+static constexpr int parked = 4;
+
+static std::counting_semaphore<> gate{ 0 };
+static std::counting_semaphore<> at_gate{ 0 };
+static std::atomic<int> woke{ 0 };
+
+extern "C" int entry ()
+{
+  for (int i = 0; i < parked; ++i) {
+    std::thread ([] {
+      at_gate.release ();
+      gate.acquire ();
+      woke.fetch_add (1);
+    }).detach ();
+  }
+  for (int i = 0; i < parked; ++i) {
+    at_gate.acquire ();
+  }
+  std::this_thread::sleep_for (std::chrono::milliseconds (200));
+  gate.release (parked);
+  const auto deadline = std::chrono::steady_clock::now () + std::chrono::seconds (5);
+  while (woke.load () < parked && std::chrono::steady_clock::now () < deadline) {
+    std::this_thread::sleep_for (std::chrono::milliseconds (10));
+  }
+  return woke.load () == parked ? 42 : woke.load ();
+}
+""", expect=42, hosted=True, cxx_runtime=True, threads=True),
+    # The same four parked threads woken by four SEPARATE release() calls, the shape
+    # `task::pool_shutdown' uses for its workers -- the half of the engine's shutdown
+    # that does wake every thread. Kept beside the row above because the pair is what
+    # discriminates: both green means the lost wake is not in release's notify count and
+    # the engine is where to look.
+    Probe("semaphore_release_one_each", CXXFLAGS, """
+#include <atomic>
+#include <chrono>
+#include <semaphore>
+#include <thread>
+
+static constexpr int parked = 4;
+
+static std::counting_semaphore<> gate{ 0 };
+static std::counting_semaphore<> at_gate{ 0 };
+static std::atomic<int> woke{ 0 };
+
+extern "C" int entry ()
+{
+  for (int i = 0; i < parked; ++i) {
+    std::thread ([] {
+      at_gate.release ();
+      gate.acquire ();
+      woke.fetch_add (1);
+    }).detach ();
+  }
+  for (int i = 0; i < parked; ++i) {
+    at_gate.acquire ();
+  }
+  std::this_thread::sleep_for (std::chrono::milliseconds (200));
+  for (int i = 0; i < parked; ++i) {
+    gate.release ();
+  }
+  const auto deadline = std::chrono::steady_clock::now () + std::chrono::seconds (5);
+  while (woke.load () < parked && std::chrono::steady_clock::now () < deadline) {
+    std::this_thread::sleep_for (std::chrono::milliseconds (10));
+  }
+  return woke.load () == parked ? 42 : woke.load ();
+}
+""", expect=42, hosted=True, cxx_runtime=True, threads=True),
     # A compare-exchange that FAILS: the exchange does not happen, the expected value is
     # updated to what was found, and memory is left alone. Nothing else covered the
     # failing path -- every other atomic row here succeeds.
@@ -1403,6 +975,48 @@ extern "C" int entry ()
   return out;
 }
 """, expect=42, hosted=True, cxx_runtime=True, std_module=True),
+    # A float and a double atomic whose operands live in float registers, which only an
+    # optimised build arranges: at -O0 every value goes through memory and is loaded as
+    # the integer the pattern wants, so this row is -O2 or it measures nothing. Store,
+    # exchange and a compare-exchange in both widths, because the engine's rejected
+    # units between them hit all three. Patch 0020 is what turns this green; before it
+    # llvm-mc rejected `i64.atomic.store' handed an f64.
+    #
+    # Every value is arithmetic on a volatile so none of them can be folded to a
+    # constant, which would reach the pattern as an integer immediate and pass anyway.
+    Probe("float_atomics", CXXFLAGS + " -O2", """
+#include <atomic>
+
+static volatile double dseed = 1.5;
+static volatile float fseed = 2.5f;
+static std::atomic<double> d;
+static std::atomic<float> f;
+
+extern "C" int entry ()
+{
+  const double a = dseed * 4.0;
+  const float b = fseed * 2.0f;
+  d.store (a);
+  f.store (b);
+  const double old_d = d.exchange (a + 1.0);
+  const float old_f = f.exchange (b + 1.0f);
+  double want_d = a + 1.0;
+  float want_f = b + 1.0f;
+  const bool swapped = d.compare_exchange_strong (want_d, old_d * 5.0)
+                       && f.compare_exchange_strong (want_f, old_f * 2.0f);
+  return swapped ? static_cast<int> (d.load () + f.load ()) : 0;
+}
+""", expect=40, hosted=True, cxx_runtime=True, threads=True),
+    # The libm half of the parity question: the float transcendental calls the physics
+    # orientation path makes, over solver-domain inputs, printed as bits so
+    # Tools/libm_probe/run.py can diff them against the same file built for mingw. At
+    # -O3 because that is the arm the gate measures.
+    Probe("libm_parity", CXXFLAGS + " -O3", "", expect=42, hosted=True, cxx_runtime=True,
+          sources=("Tools/libm_probe/probe.cpp",)),
+    # The same probe through the vendored CORE-MATH routines gse::libm forwards to, so
+    # run.py --coremath can show both arms agree once they share one implementation.
+    Probe("libm_parity_coremath", CXXFLAGS + " -O3 -DGSE_LIBM_COREMATH", "", expect=42,
+          hosted=True, cxx_runtime=True, sources=("Tools/libm_probe/probe.cpp",)),
     # The engine's own code, which everything above exists to make possible. Five rows
     # rather than one, each the deepest slice that still answers a single question, so
     # that a red names the module it is in rather than "the engine does not compile".
@@ -1454,7 +1068,7 @@ extern "C" int entry ()
          #
          # `handle_contract_violation` is the fourth and is not an assert symbol at all:
          # `-fcontracts` makes every contract_assert in the engine's math call it, and
-         # `Import/Assert.cpp` is where the engine defines it. It is stubbed here for
+         # `Source/Assert/Assert.cpp` is where the engine defines it. It is stubbed here for
          # the same reason as the other three and discovered the same way -- as an
          # undefined symbol at link, once 0013 let this row reach the linker.
          second="""
@@ -1672,7 +1286,7 @@ def check_asm_features(src: Path) -> None:
 def sysroot_stamp(sysroot: Path) -> tuple:
     """A flattened sysroot's stamp file and the inputs it has to carry.
 
-    Shared with --sweep-only, which refuses a sysroot these do not match rather than
+    Shared with --probe, which refuses a sysroot these do not match rather than
     re-flattening one: a second spelling of the inputs string would let that arm
     measure against a sysroot `fetch_sysroot` would have discarded.
     """
@@ -1779,7 +1393,7 @@ def record(stamp: Path, inputs: str) -> None:
 
 # The vendored series, in application order, and the testsuite patch that is not part
 # of building a compiler. Module-level rather than a local of apply_patches because
-# --sweep-only verifies the same series without applying it, and a second copy of this
+# --probe verifies the same series without applying it, and a second copy of this
 # list is a list that can disagree with the one that did the applying.
 PATCH_NAMES = ("0001-wasm-New-backend.patch", "0002-local-Windows-host-portability.patch",
                "0005-local-emit-llvm-mc-s-assembly-dialect.patch",
@@ -1796,7 +1410,8 @@ PATCH_NAMES = ("0001-wasm-New-backend.patch", "0002-local-Windows-host-portabili
                "0016-local-atomics.patch",
                "0017-local-gthr-no-weak-refs.patch",
                "0018-local-called-function-decls-and-muloti4.patch",
-               "0019-local-noop-coroutine-frame-signature.patch")
+               "0019-local-noop-coroutine-frame-signature.patch",
+               "0020-local-float-atomic-operands.patch")
 TESTS_PATCH = "0003-wasm-Adjust-tests.patch"
 
 
@@ -1809,7 +1424,7 @@ def patch_stamp(src: Path, patches: Path, name: str) -> tuple:
     """A patch, its stamp file, and the digest that stamp has to carry.
 
     One place rather than two: the digest is what `apply_patches` records and what
-    --sweep-only checks, and if those two ever computed it differently the check would
+    --probe checks, and if those two ever computed it differently the check would
     pass on a tree the applier would have rejected.
     """
     patch = patches / name
@@ -1873,8 +1488,8 @@ def target_cxxflags(tools: Toolchain, hosted: bool, cxx_runtime: bool) -> str:
 
     One place rather than two, because a second copy of them is the likeliest way to
     turn a green row red for a reason that is not the target -- a compile that cannot
-    see <vector> fails the same way whatever state libstdc++ is in. Both the probe table
-    and the module sweep call this.
+    see <vector> fails the same way whatever state libstdc++ is in. Every probe compile
+    calls this.
 
     A freestanding compile keeps -nostdinc, which is what makes it a measurement of the
     compiler rather than of the sysroot; a hosted one is asking about the sysroot, so it
@@ -2036,15 +1651,14 @@ def probe_status(tools: Toolchain, probe: Probe, mode: str) -> str:
 
 
 def wasm_ld(tools: Toolchain, objects: list, binary: str, hosted: bool,
-            cxx_runtime: bool, threads: bool, entry: str = ENTRY,
-            stack_size: int = 0) -> str:
-    """The one wasm-ld command line, assembled in one place.
+            cxx_runtime: bool, threads: bool) -> str:
+    """The probes' wasm-ld command line, assembled in one place.
 
     One place for the reason the order itself has: it is load-bearing and invisible, so a
-    second copy of it is how a measurement becomes an unresolved symbol. `probe_status`
-    composed this inline until the engine link needed the same line over a different unit
-    set -- which is exactly the shape that got the archive order wrong in the first place,
-    appending them from separate `if` blocks.
+    second copy of it is how a measurement becomes an unresolved symbol. The engine's own
+    link is the wasm32 CMake configuration's, and its rule in
+    Engine/cmake/toolchains/wasm32-wasi-gcc-rules.cmake is this line's hosted, threaded arm
+    with the engine's stack -- the two have to move together.
     """
     # Section collection is left on, which the rwat pipeline could not do: GCC's
     # `__stack_pointer` was an import with no symbol, so wasm-ld used to drop it and
@@ -2108,446 +1722,23 @@ def wasm_ld(tools: Toolchain, objects: list, binary: str, hosted: bool,
     # entry and _initialize only for a reactor, and demanding either unconditionally
     # would turn every probe that does not have one into a link failure.
     #
-    # `entry` is the same thought one level up, and the engine link is why it is an
-    # argument: a probe's subject defines `entry` because the probe table wrote it, and
-    # the engine's does not define anything of the sort. --export of a name no object
-    # provides is a link failure in itself, which on that arm would report the absence of
-    # a harness entry point as though it were one of the engine's missing symbols -- the
-    # single thing that arm exists to enumerate.
     # --error-limit=0 because a truncated list is not an inventory. wasm-ld stops at 20
-    # errors by default and says so, which the engine link's first run hit: fifteen
-    # undefined symbols reported out of an unknown number, with "too many errors
-    # emitted" as the only hint that the measurement was a sample. No probe is affected
-    # -- it changes how much is printed when a link fails, never whether it does.
+    # errors by default and says so, which the first engine link hit: fifteen undefined
+    # symbols reported out of an unknown number, with "too many errors emitted" as the
+    # only hint that the measurement was a sample. No probe is affected -- it changes how
+    # much is printed when a link fails, never whether it does.
     #
-    # TWO DASHES, and the second run of that arm paid for the one: wasm-ld parses
-    # `-error-limit=0` as `-e rror-limit=0`, because single-dash `-e` is the entry
-    # symbol. The link then failed with `entry symbol not defined: rror-limit=0` and
-    # reported zero undefined symbols, which is what a link that never resolved anything
-    # looks like from the outside.
-    # Default off, like `entry`, and for the same reason: a probe's link is a row that
-    # is already green, so a flag it has nothing to gain from is a new input to an old
-    # measurement. See ENGINE_STACK_SIZE for why the engine's arm needs one at all.
-    if stack_size:
-        link += ["-z", f"stack-size={stack_size}"]
-    exports = ["--error-limit=0",
+    # TWO DASHES: wasm-ld parses `-error-limit=0` as `-e rror-limit=0`, because
+    # single-dash `-e` is the entry symbol. The link then fails with `entry symbol not
+    # defined: rror-limit=0` and reports zero undefined symbols, which is what a link
+    # that never resolved anything looks like from the outside.
+    exports = [f"--export={ENTRY}",
+               "--error-limit=0",
                "--export-if-defined=__wasm_call_ctors",
                "--export-if-defined=_initialize",
                "--export-if-defined=__wasm_call_dtors"]
-    if entry:
-        exports.insert(0, f"--export={entry}")
     return (f"wasm-ld {' '.join(link)} -o {binary} --no-entry "
             f"{' '.join(exports)}")
-
-
-# What one interface unit's compile came to. `cause` names the unit the verdict
-# originates from, which for `ok` is the unit itself: a row that says "blocked" without
-# naming what blocked it sends the reader back to the shell, which is the failure mode
-# the probe table's staged statuses already exist to avoid.
-class UnitStatus(NamedTuple):
-    kind: str
-    cause: str
-
-
-# A unit that was never offered to the compiler because it IS a wrapper over a platform
-# library, and the verdict that propagates from one. Everything else host-bound is
-# host-bound by propagation rather than by being named anywhere -- see module_graph.py's
-# HOST_DIR.
-HOST = "host"
-BLOCKED = "blocked"
-
-
-def sweep(tools: Toolchain) -> None:
-    """Compile every engine interface unit for wasm32, once, in dependency order.
-
-    One pass, not one pass per module. A module's closure is most of its dependencies'
-    closures, so compiling each module separately would compile gse.core sixty times;
-    in one topologically ordered pass over all 425 units each file is offered to the
-    compiler exactly once and every module's row is derived from the results. The
-    module cache makes this not merely cheaper but *necessary*: a .gcm has to exist
-    before a dependent can import it, and the order is what guarantees it does.
-
-    The pass does not stop at the first failure, which is the whole point. Step 14
-    measured one error cascading into fourteen and recorded the rule: a count of what
-    compiles needs a sweep that continues, because a probe that stops reports the first
-    error as though it were the only one.
-    """
-    flags = f"{target_cxxflags(tools, hosted=True, cxx_runtime=True)} {ENGINE_CXXFLAGS}"
-    # Once, ahead of the pass, rather than per module: every engine unit imports std.
-    failure = build_std_module(tools, flags)
-    if failure:
-        raise SystemExit(f"the sweep cannot start: {failure}")
-
-    order = graph().sweep_order()
-    status = {}
-    for index, logical in enumerate(order, start=1):
-        path = graph().path_of[logical]
-        if graph().is_host_root(logical):
-            status[logical] = UnitStatus(HOST, logical)
-            continue
-        # A unit importing a module no file in the engine declares -- the Vulkan SDK's
-        # own `vulkan` is the only one in this tree -- is host-bound for the same reason
-        # a wrapper is, and for the same reason must not be offered to the compiler: it
-        # would fail on the missing module and report the SDK's absence as a wasm32
-        # finding, with FAILED outranking host-bound in the row.
-        external = graph().external_requires(logical)
-        if external:
-            status[logical] = UnitStatus(HOST, external[0])
-            continue
-        # Every dependency that is not `ok`, with host-boundness preferred over a
-        # rejection -- not the first one in `requires` order, which is arbitrary. A unit
-        # importing both a rejected module and a host-bound one is unreachable for the
-        # host reason whatever the rejection does, so calling it `blocked on <unit>`
-        # would promise that fixing that unit frees it, and would inflate the blocked
-        # count with modules nobody can compile anyway.
-        #
-        # Host-boundness is then inherited as itself, however many modules sit between
-        # this unit and the wrapper, while a rejection upstream is inherited as
-        # `blocked` carrying the unit that was actually rejected. That distinction is
-        # the whole value of the bottom list: `failed` has to mean the compiler was
-        # handed this file and said no, because a list mixing those with the files
-        # behind them is a list of 15 target gaps where there are six.
-        upstream = [status[req] for req in graph().requires.get(logical, ())
-                    if req in status and status[req].kind != "ok"]
-        if upstream:
-            blame = next((u for u in upstream if u.kind == HOST), upstream[0])
-            inherited = HOST if blame.kind == HOST else BLOCKED
-            status[logical] = UnitStatus(inherited, blame.cause)
-            continue
-        if compile_unit(tools, flags, f"sweep-{index:04d}", tools.near(REPO_ROOT / path)):
-            status[logical] = UnitStatus("ok", logical)
-        else:
-            status[logical] = UnitStatus("failed", logical)
-        print(f"  [{index:3}/{len(order)}] {status[logical].kind:7} {path}")
-
-    print("\n== modules ==")
-    tally = collections.Counter()
-    for module in graph().modules():
-        units = [status[logical] for logical in graph().units_of(module)]
-        failed = [u for u in units if u.kind == "failed"]
-        # Precedence is deliberate: a unit of this module that the compiler rejected is
-        # the target's problem and outranks every inherited verdict, because it is the
-        # only one that is news. Host-bound outranks blocked for the same reason in the
-        # other direction -- "behind gse.win32" is a conclusion, "behind a module that
-        # is behind gse.win32" is the same conclusion said twice.
-        if failed:
-            # Rejected over total rather than a bare FAILED: gse.graphics is three units
-            # out of 114, and the verdict without the denominator reads as a module that
-            # did not compile at all.
-            verdict = f"FAILED {len(failed)}/{len(units)} units"
-            detail = graph().path_of[failed[0].cause]
-        elif any(u.kind == HOST for u in units):
-            # The derived chain where there is one, and the naming cause where there is
-            # not: a module held up only by an import the engine does not declare has no
-            # chain to a wrapper under Source/External, and `host-bound` with nothing
-            # beside it is the row a reader cannot act on.
-            chain = graph().host_chain(module)
-            host = next(u for u in units if u.kind == HOST)
-            verdict = "host-bound"
-            detail = " -> ".join(chain) if len(chain) > 1 else f"via {host.cause}"
-        elif any(u.kind == BLOCKED for u in units):
-            blocked = next(u for u in units if u.kind == BLOCKED)
-            verdict = f"blocked {sum(1 for u in units if u.kind == BLOCKED)}/{len(units)}"
-            detail = f"on {blocked.cause}"
-        else:
-            verdict = "translates"
-            detail = f"{len(units)} units"
-        tally[verdict.split()[0]] += 1
-        print(f"  {module:28} {verdict:22} {detail}")
-
-    # The number this sweep is actually for. A host-bound module was never offered to
-    # the compiler, because a module it imports has no BMI -- so the host-bound count is
-    # the target's arithmetic rather than a measure of the engine.
-    #
-    # `sole` is the column to read, and in this engine it is zero for every root: no
-    # wrapper is the only thing in front of any module, so "port this one and N become
-    # measurable" answers zero every time and the groups below are the actionable form.
-    print("\n== host frontier ==")
-    print(f"  {'root':28} {'sole':>5}  {'reached':>7}")
-    for root, reached, sole in graph().frontier():
-        print(f"  {root:28} {len(sole):5}  {len(reached):7}")
-
-    print("\n== what has to be ported together ==")
-    for roots, modules in graph().gated_groups():
-        print(f"  {len(modules):3} modules behind {', '.join(sorted(roots))}")
-
-    print("\n== units ==")
-    unit_tally = collections.Counter(u.kind for u in status.values())
-    print("  " + "  ".join(f"{kind}={count}" for kind, count in sorted(unit_tally.items())))
-    print("  modules: " + "  ".join(f"{kind}={count}" for kind, count in sorted(tally.items())))
-    rejected = sorted(graph().path_of[logical] for logical, u in status.items()
-                      if u.kind == "failed")
-    if rejected:
-        print("\n== units the compiler rejected ==")
-        for path in rejected:
-            print(f"  {path}")
-
-
-def link_engine(tools: Toolchain, modules: tuple, scenario: str = "",
-                run_args: str = "") -> None:
-    """Link MODULES and everything they reach for wasm32, and report what is missing.
-
-    The other question the sweep cannot ask. A sweep stops at `-S` over interface units,
-    so every fact about the engine's implementation units -- 110 `.cpp` files, where the
-    host actually lives -- has been invisible to this port: `Os/Win32/Window.cpp` is the
-    only definition of gse.os's window partition and no configuration but a Windows one
-    has it, which a translation measurement cannot see and a link cannot miss.
-
-    THE DELIVERABLE IS THE INVENTORY, not the binary. A module with no undefined symbols
-    is the better outcome and is not the expected one; a complete list of what the
-    compiler rejected and what the linker could not resolve is the artifact, so this
-    continues past every failure the way `sweep` does rather than returning at the first
-    the way `probe_status` does. Those are the two existing drivers and the difference
-    between them is exactly this: a probe answers one question and a measurement answers
-    all of them at once.
-
-    No harness run, and `entry=""` at the link, when SCENARIO is empty: the engine defines
-    no such symbol, there is nothing to call it with, and a module that merely links is all
-    that arm can measure.
-
-    SCENARIO is the second arm, and it is this one plus a caller. The program unit and a
-    generated `entry` that calls its `main` are compiled after everything else, the link
-    gets a stack the engine can run a frame on, and the module is handed to the same node
-    harness every probe uses -- so a run is this inventory with two rows on the end rather
-    than a second driver that could disagree with it about what was offered.
-    """
-    print(f"module graph from {graph().build}")
-    verify_graph("their definitions would be reported as undefined symbols, or their "
-                 "importers as portability gaps, with nothing to tell either from a "
-                 "real one")
-    flags = f"{target_cxxflags(tools, hosted=True, cxx_runtime=True)} {ENGINE_CXXFLAGS}"
-    failure = build_std_module(tools, flags)
-    if failure:
-        raise SystemExit(f"the link cannot start: {failure}")
-
-    # Interfaces first and all of them, then the implementation units: a plain
-    # implementation unit of gse.x needs gse.x's BMI, and nothing guarantees every
-    # module in the closure has one until the closure is done.
-    # link_closure and not closure: an impl unit imports partitions no interface does,
-    # and an interface absent from this list is linked against whatever a previous run
-    # left in the shared module cache. See that function -- the first run of this arm
-    # paid for the distinction in sixteen CRC-mismatch rejections.
-    interfaces, seen = [], set()
-    for path in (p for module in modules for p in graph().link_closure(module)):
-        if path not in seen:
-            seen.add(path)
-            interfaces.append(path)
-    impls, seen = [], set()
-    for path in (p for module in modules for p in graph().impls_of(module)):
-        if path not in seen:
-            seen.add(path)
-            impls.append(path)
-
-    print(f"\n== link {', '.join(modules)}: {len(interfaces)} interface units, "
-          f"{len(impls)} implementation units"
-          + (f", {PROGRAM_UNIT}, the generated entry" if scenario else "")
-          + " ==")
-    # The program unit after every repo file, because it imports modules and nothing
-    # imports it; the generated entry after even that. The entry is written here rather
-    # than kept in the tree because it is a property of this measurement -- which
-    # scenario, called how -- and a file under Sandbox/ would be a second place the
-    # Sandbox's entry point lives.
-    program = [PROGRAM_UNIT] if scenario else []
-    if scenario:
-        with open(tools.gcc_dir / "link-entry.cc", "w",
-                  encoding="utf-8", newline="\n") as f:
-            f.write((SCENARIO_ENTRY % {"scenario": scenario}).lstrip())
-    offered = [(path, tools.near(REPO_ROOT / path))
-               for path in interfaces + impls + program]
-    if scenario:
-        offered.append(("link-entry.cc", "link-entry.cc"))
-
-    objects, rejected = [], []
-    for index, (path, source) in enumerate(offered, start=1):
-        stem = f"link-{index:04d}"
-        if compile_unit(tools, flags, stem, source):
-            objects.append(f"{stem}.o")
-            kind = "ok"
-        else:
-            rejected.append(path)
-            kind = "failed"
-        print(f"  [{index:3}/{len(offered)}] {kind:7} {path}")
-
-    cd = f"cd {to_msys(tools.gcc_dir)} && "
-    assembled, unassembled = [], []
-    for obj in objects:
-        if bash(tools.msys_root, cd + f"llvm-mc -triple={ASM_TRIPLE} "
-                                      f"-mattr={ASM_FEATURES} -filetype=obj "
-                                      f"{obj[:-2]}.s -o {obj}", check=False).returncode == 0:
-            assembled.append(obj)
-        else:
-            unassembled.append(obj)
-
-    # Captured rather than streamed, which every other command here is: the linker's
-    # stderr IS the measurement on this arm, and a list of a thousand undefined symbols
-    # read off a scrolled console is not an inventory. Streamed too, by tee, so a run
-    # that dies before the parse still leaves the evidence in the log.
-    # `set -o pipefail` is load-bearing and not a habit: without it the status of a
-    # pipeline is tee's, which succeeds whatever the linker did, and the verdict below
-    # would read a clean parse of an unexamined failure as a link that worked.
-    log = "link-engine.log"
-    binary = "scenario.wasm" if scenario else "engine.wasm"
-    linked = bash(tools.msys_root,
-                  cd + "set -o pipefail && "
-                  + wasm_ld(tools, assembled, binary, hosted=True,
-                            cxx_runtime=True, threads=True,
-                            entry=ENTRY if scenario else "",
-                            stack_size=ENGINE_STACK_SIZE if scenario else 0)
-                  + f" 2>&1 | tee {log}",
-                  check=False).returncode
-    lines = (tools.gcc_dir / log).read_text(encoding="utf-8", errors="replace").splitlines()
-    undefined = sorted({line.split("undefined symbol:", 1)[1].strip()
-                        for line in lines if "undefined symbol:" in line})
-    # Every other error, counted separately and not folded in. An inventory that
-    # presented a duplicate symbol or a feature mismatch as a missing definition would
-    # send the next task to write a body that already exists.
-    other = [line for line in lines
-             if "error:" in line and "undefined symbol:" not in line]
-
-    print("\n== link inventory ==")
-    print(f"  units offered   {len(offered)}")
-    print(f"  compiled        {len(objects)}")
-    print(f"  rejected        {len(rejected)}")
-    print(f"  assembled       {len(assembled)}")
-    print(f"  not assembled   {len(unassembled)}")
-    print(f"  undefined       {len(undefined)}")
-    print(f"  other errors    {len(other)}")
-    print(f"  wasm-ld exit    {linked}")
-    # In the inventory and not only in `module_graph.py --impls`, because a `.cpp` that
-    # declares no module is one no module's link enumerates, and this list is what a
-    # reader checks a missing definition against. `Diag/AllocTrackGlobal.cpp` replaces
-    # global operator new; its absence is a fact about this link, so it belongs beside
-    # the other facts rather than in a second tool nobody runs next to this one.
-    if graph().undeclared_impls:
-        print(f"\n== {len(graph().undeclared_impls)} .cpp files declare no module, so "
-              f"no module's link enumerates them ==")
-        for path in graph().undeclared_impls:
-            print(f"  {path}")
-    if rejected:
-        print("\n== units the compiler rejected ==")
-        for path in rejected:
-            print(f"  {path}")
-    if undefined:
-        print("\n== undefined symbols ==")
-        for symbol in undefined:
-            print(f"  {symbol}")
-    if other:
-        print("\n== other linker errors ==")
-        for line in other:
-            print(f"  {line}")
-    # The linker's own status and not an empty inventory, for the reason the pipefail
-    # above exists: "nothing matched my two patterns" is a statement about the patterns.
-    if linked == 0:
-        print(f"\n{', '.join(modules)} linked: {tools.gcc_dir / binary}"
-              + (f", with {len(rejected)} units missing from it" if rejected else ""))
-    if scenario:
-        run_scenario(tools, binary, scenario, linked == 0 and not rejected, run_args)
-
-
-def scenario_environment(run_args: str = "") -> dict:
-    """What `gse.config` resolves the engine's paths from on this target.
-
-    Every name here is one `resolve()` already consults -- four of them predate this arm
-    entirely -- so the browser run is configured through the seam the engine has rather
-    than through a second one invented for it. The web `executable_path()` reads the
-    fifth, because a module has no argv[0] and nothing else can tell it where it is.
-
-    The executable reported is the NATIVE binary's path, found by its manifest rather than
-    by a configuration name spelled here. Nothing opens it: `resolve()` walks its parent
-    for `gse.manifest` and takes its stem, so naming the real binary is what keeps the
-    stem, the log name and the build root identical to the native run instead of a second
-    spelling of them. That manifest is `mode = dev`, which puts the baked resources at
-    `<build>/Engine/Resources` -- the same bytes the native run reads, and the only reason
-    a hash comparison between the two means anything.
-
-    GSE_ROOT_DIR is why the manifest's own `root` can be left alone: it is written by the
-    native build as a Windows absolute path, which is not reachable through a preopen, and
-    editing a generated file to say otherwise would be a fact about this run stored where
-    the next native build overwrites it.
-
-    The writable roots are real directories under the preopen, not stubs. `gse.save` and
-    `layout_store` write there, and an unsupported report would stop the run short of the
-    hash it exists to produce.
-
-    GSE_RUN_ARGS is the one name here the engine itself never reads: the generated entry
-    does, and it is carried in the environment for the reason the others are -- it is
-    already forwarded to the main and the worker arms, so a run's argv arrives by the
-    same route as its paths rather than through a second channel.
-    """
-    manifests = sorted((REPO_ROOT / "out" / "build").glob("*/gse.manifest"),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
-    if not manifests:
-        raise SystemExit("no gse.manifest under out/build: the wasm run resolves its "
-                         "engine paths from the native build tree, so build natively "
-                         "first")
-    def guest(path: Path) -> str:
-        return "/" + path.relative_to(REPO_ROOT).as_posix()
-
-    scratch = REPO_ROOT / ".gcc-wasm-run"
-    for name in ("user", "state", "projects"):
-        (scratch / name).mkdir(parents=True, exist_ok=True)
-    return {
-        "GSE_RUN_ARGS": run_args,
-        "GSE_EXECUTABLE_PATH": guest(manifests[0].parent / NATIVE_PROGRAM),
-        "GSE_ROOT_DIR": "/",
-        "GSE_PROJECT_DIR": "/Sandbox",
-        "GSE_USER_DIR": guest(scratch / "user"),
-        "GSE_STATE_DIR": guest(scratch / "state"),
-        "GSE_PROJECTS_DIR": guest(scratch / "projects"),
-    }
-
-
-def run_scenario(tools: Toolchain, binary: str, scenario: str, complete: bool,
-                 run_args: str = "") -> None:
-    """Run the linked module under node, and report what its console carried.
-
-    COMPLETE says whether the link was whole. A module missing a unit still runs, and
-    the run is still worth having -- it is how a trap site gets named -- but its output
-    is not evidence about the scenario, so the distinction is printed rather than
-    inferred from a hash's absence.
-
-    The two patterns are `parity_gate.py`'s own, imported rather than restated: the hash
-    line is the contract that gate greps for, and a run reported as passing against a
-    pattern only this file knows would be a criterion met against nothing.
-
-    A timeout and not a wait, because the one thing a first run of this engine can do
-    that neither the compiler nor the linker can is not finish: a job pool whose threads
-    the harness never spawned blocks in pthread_join with no output and no exit. The log
-    is tee'd for the same reason the link's is -- a run killed at the limit still has to
-    leave its console behind.
-    """
-    log = "run-scenario.log"
-    environment = scenario_environment(run_args)
-    # The repo root is preopened rather than the asset directory alone: the scenario
-    # names a scene and nothing here knows yet which paths the engine resolves on this
-    # target, so the measurement wanted is which path it asks for, not whether a guess
-    # at one directory was right.
-    code = bash(tools.msys_root,
-                f"cd {to_msys(tools.gcc_dir)} && set -o pipefail && "
-                f"timeout -k 5 {SCENARIO_TIMEOUT_SECONDS} "
-                f"node --no-warnings harness.mjs {binary} 0 shared "
-                f"{to_msys(REPO_ROOT)} {shlex.quote(json.dumps(environment))} "
-                f"2>&1 | tee {log}",
-                check=False).returncode
-    console = (tools.gcc_dir / log).read_text(encoding="utf-8", errors="replace")
-    hashes = hash_pattern.findall(console)
-    p50s = p50_pattern.findall(console)
-
-    print("\n== scenario run ==")
-    print(f"  scenario        {scenario}")
-    for name, value in environment.items():
-        print(f"  {name:<20} {value}")
-    print(f"  link complete   {complete}")
-    print(f"  node exit       {code}" + {
-        0: " (ran, entry returned 0)",
-        TRAP_EXIT: " (trapped)",
-        NO_INSTANCE_EXIT: " (did not instantiate)",
-        124: f" (no exit within {SCENARIO_TIMEOUT_SECONDS}s)",
-    }.get(code, " (ran, entry returned non-zero or node failed)"))
-    print(f"  console lines   {len(console.splitlines())}")
-    print(f"  world-state hash {hashes[-1] if hashes else '(none printed)'}")
-    print(f"  p50             {p50s[-1] + ' ms' if p50s else '(none printed)'}")
-    print(f"  console         {tools.gcc_dir / log}")
 
 
 def build_stamp(build: Path, src: Path, prefix: Path, msys_root: Path,
@@ -2562,7 +1753,7 @@ def build_stamp(build: Path, src: Path, prefix: Path, msys_root: Path,
     the new snapshot and measures the old one, the failure `stale' exists to prevent,
     and it cannot be told from a successful bump by anything the build prints.
 
-    Shared with --sweep-only for the same reason the two above are: that arm's whole
+    Shared with --probe for the same reason the two above are: that arm's whole
     claim to be measuring this toolchain is that these inputs still match, so it has to
     compare the string main would have written, not a second rendering of it.
     """
@@ -2575,7 +1766,7 @@ def toolchain_for(msys_root: Path, src: Path, build: Path, sysroot: Path) -> Too
     """Where this build directory's compiler, target libraries and headers ended up.
 
     Every path is derived from the build dir or the source tree and none of them depend
-    on the build having just happened, which is what lets --sweep-only construct the
+    on the build having just happened, which is what lets --probe construct the
     same toolchain the full run does without re-walking it.
     """
     return Toolchain(msys_root=msys_root, gcc_dir=build / "gcc",
@@ -2589,67 +1780,13 @@ def toolchain_for(msys_root: Path, src: Path, build: Path, sysroot: Path) -> Too
                          src / "libstdc++-v3" / "src" / "c++23" / "std-clib.cc.in"))
 
 
-def verify_graph(measurement: str) -> None:
-    """Refuse to measure anything if the module graph does not match the tree.
-
-    Refused rather than reported, because neither of these is a measurement. A unit the
-    dependency scan has never seen has no edges and would sweep as a leaf, passing for
-    the wrong reason; a `.cppm` with no module declaration is not in the graph at all,
-    and every edge into it comes back as an unresolved import or a host-bound verdict --
-    a loud symptom with its cause erased. Both are step 15's stale-build-dir hazard
-    pointing the other way: a run that looks like one input and measures another.
-
-    `unscanned', not `stale': this lived inside main, where a local of that name shadowed
-    the `stale' function for the whole of it and the reconfigure branch calls it. The
-    UnboundLocalError waited for the first run that changed a configure argument. The
-    name stays because the hazard follows the code.
-
-    ONE FUNCTION, TWO ARMS, and the second one is why it is a function. These refusals
-    were `run_sweep`'s, so `--link-engine` did not inherit them, and they bind a link with
-    more force than a sweep rather than less: a `.cppm` the scan has not seen is absent
-    from `link_roots`, so it is never compiled, and every impl unit importing it is
-    compiled against whatever BMI the shared module cache still holds. That is the
-    `import 'std' has CRC mismatch` artifact this task has already paid for once -- and on
-    the arm whose whole output is a list of missing definitions, it is indistinguishable
-    from a real gap, which is the one way this measurement could send a later task to
-    write a body that already exists.
-
-    `measurement` names the arm in the refusal, because what the staleness would do to
-    the numbers is the half of the message a reader acts on and it differs per arm.
-    """
-    unscanned, undeclared = graph().stale_interfaces, graph().undeclared
-    if unscanned:
-        raise SystemExit(f"{len(unscanned)} interface units are absent from that "
-                         f"dependency scan, starting with {unscanned[0]}; "
-                         f"reconfigure the native build so the graph matches "
-                         f"the tree")
-    if undeclared:
-        raise SystemExit(f"{len(undeclared)} .cppm files declare no module and are "
-                         f"not in the graph, starting with {undeclared[0]}; "
-                         f"{measurement}")
-
-
-def run_sweep(tools: Toolchain) -> None:
-    """The sweep, behind the refusals that keep it from measuring the wrong tree."""
-    print("\n== sweep ==")
-    print(f"module graph from {graph().build}")
-    verify_graph("the sweep would report everything importing them as host-bound")
-    sweep(tools)
-
-
-def write_harness(gcc_dir: Path) -> None:
-    """The node harness every `run`-mode probe and the sweep's own links are driven by."""
-    with open(gcc_dir / "harness.mjs", "w", encoding="utf-8", newline="\n") as f:
-        f.write(harness_text())
-
-
 def verify_workdir(args, msys_root: Path, workdir: Path) -> Toolchain:
     """The toolchain already in --workdir, behind every refusal that keeps it honest.
 
-    `--sweep` exists to answer "does this configuration still work", so it walks fetch,
+    The full run exists to answer "does this configuration still work", so it walks fetch,
     patch, configure and three makes before it measures anything. That walk is ~50
     minutes against an already-finished build directory, and six consecutive attempts at
-    one measurement died inside it rather than inside the sweep. Nothing in `Toolchain`
+    one measurement died inside it rather than inside the measurement. Nothing in `Toolchain`
     needs the walk to have happened -- every path in it is a location, not a product of
     this run -- so this derives the same paths and hands them back.
 
@@ -2660,31 +1797,27 @@ def verify_workdir(args, msys_root: Path, workdir: Path) -> Toolchain:
     being wrong about which compiler a measurement came from has already cost this port
     more than the walk has.
 
-    One function and not a paragraph per arm, because these five refusals ARE the claim
-    that the measurement is of the pinned compiler, and the second arm to make that claim
-    -- `--link-engine` -- would otherwise make it by copying them. A copy that drifted
-    would be an arm that reports confidently on a toolchain nothing describes.
+    One function and not a paragraph in `--probe`, because these five refusals ARE the
+    claim that the measurement is of the pinned compiler. A copy that drifted would be an
+    arm that reports confidently on a toolchain nothing describes.
 
-    Neither arm runs the probes. They are the regression rows and belong to `--sweep`; a
-    run of either reports no probe verdicts and must not be read as saying they are green.
+    `--probe` runs the ones it is named and no others, and says how many of the table
+    that was.
     """
     src = workdir / f"gcc-17-{args.snapshot}"
     build = workdir / "build"
     sysroot = workdir / "sysroot"
-    # Names the full run and not the flag this arm was given: both --sweep-only and
-    # --link-engine reach here, and advising "re-run without --sweep-only" to someone who
-    # passed --link-engine is a fix for a command they did not type.
-    full_run = ("build it with `python Tools/build_gcc_wasm.py --sweep`, which walks "
+    full_run = ("build it with `python Tools/build_gcc_wasm.py`, which walks "
                 "fetch, patch, configure and the makes this arm skips")
 
     # The source tree, because Toolchain reads libsupc++'s headers and std.cc.in out of
-    # it -- the sweep's very first act is to build the `std' module from those.
+    # it -- an engine probe's first act is to build the `std' module from those.
     if not (src / "gcc" / "config.gcc").exists():
         raise SystemExit(f"no patched source tree at {src}; {full_run}")
 
     # The compiler and both target libraries. cc1plus beside xg++ because the driver is
-    # a stub without it, and the archives because the sweep links nothing but would
-    # report a half-built libstdc++ as a wasm32 finding about the engine.
+    # a stub without it, and the archives because a compile-mode probe links nothing but
+    # would report a half-built libstdc++ as a wasm32 finding about the engine.
     for needed in (build / "gcc" / "xg++.exe", build / "gcc" / "cc1plus.exe",
                    build / TARGET / "libgcc" / "libgcc.a",
                    build / TARGET / "libstdc++-v3" / "src" / ".libs" / "libstdc++.a"):
@@ -2695,7 +1828,7 @@ def verify_workdir(args, msys_root: Path, workdir: Path) -> Toolchain:
     stamp, inputs = build_stamp(build, src, args.prefix.resolve(), msys_root, sysroot)
     if stale(stamp, inputs):
         raise SystemExit(f"{build} was configured from other inputs than this script "
-                         f"now asks for, so a sweep of it would report on a compiler "
+                         f"now asks for, so a probe of it would report on a compiler "
                          f"nothing here describes; {full_run}")
 
     # A refusal rather than a call to fetch_sysroot: its matching path is a print, but
@@ -2726,13 +1859,71 @@ def verify_workdir(args, msys_root: Path, workdir: Path) -> Toolchain:
     return tools
 
 
-def sweep_only(args, msys_root: Path, workdir: Path) -> None:
-    """Sweep that toolchain, without rebuilding any part of it."""
+def run_probes(tools: Toolchain, probes: tuple) -> list:
+    """Measure these probes and print the verdict table. Returns the failing rows.
+
+    One function and not a loop per caller: the full run measures the whole table and
+    `--probe` measures a named subset, and the part worth getting right is not the
+    measuring but the READING of it -- which status counts as a pass in which mode, and
+    what a `blocked` row that has started passing is called. A second copy of that
+    judgement would be a subset arm that disagreed with the full run about whether the
+    same row is green.
+    """
+    results = [(probe, mode, probe_status(tools, probe, mode))
+               for probe in probes for mode in modes_of(probe)]
+
+    print("\n== result ==")
+    failed = []
+    for probe, mode, status in results:
+        blocked = next((b for b in probe.blocked if b.mode == mode), None)
+        # What a pass is named in this mode, which is the mode's own last stage: COMPILE
+        # stops at the compiler and so passes as `compiled', never as `ran'. Reading
+        # "ran" as the only pass reported a *blocked compile-mode row that had started
+        # passing* as "FAILED: compiled, not the ... it is blocked on" -- which is how
+        # the snapshot bump's two green engine rows first presented, a fixed gap wearing
+        # a regression's clothes. The loudest case the table has was the broken one.
+        passing = "compiled" if mode == COMPILE else "ran"
+        if blocked and status == passing:
+            note = f"NOW PASSES - drop its `blocked` entry ({blocked.reason})"
+        elif blocked and status == blocked.status:
+            note = f"expected red: {status} - {blocked.reason}"
+        elif blocked:
+            note = f"FAILED: {status}, not the {blocked.status} it is blocked on"
+            failed.append(f"{probe.name}/{mode}")
+        elif status == passing:
+            note = status.upper()
+        else:
+            note = f"FAILED: {status}"
+            failed.append(f"{probe.name}/{mode}")
+        print(f"  {probe.name:18} {mode:9} {note}")
+    return failed
+
+
+def probes_only(args, msys_root: Path, workdir: Path, names: list) -> None:
+    """Measure named probes against the toolchain already in --workdir.
+
+    The table is otherwise reachable only through the full run, which walks fetch,
+    patch, configure and three makes first -- so a single new row cost hours, and the
+    whole table has gone unmeasured for stretches because of it. A probe link is
+    seconds; the refusals in `verify_workdir` are what make measuring one against an
+    existing build directory a claim about the pinned compiler rather than about
+    whatever is on disk.
+
+    Unknown names are refused rather than skipped: a typo that measured nothing would
+    print an empty table and read as everything asked for being green.
+    """
+    unknown = [name for name in names if all(p.name != name for p in PROBES)]
+    if unknown:
+        raise SystemExit(f"no such probe: {', '.join(unknown)}; the table is "
+                         f"{', '.join(p.name for p in PROBES)}")
     tools = verify_workdir(args, msys_root, workdir)
-    print(f"Sweeping the toolchain in {tools.gcc_dir.parent} "
-          f"(built elsewhere; probes not run)")
-    run_sweep(tools)
+    chosen = tuple(p for p in PROBES if p.name in names)
+    print(f"\n== probes ({len(chosen)} of {len(PROBES)}, "
+          f"toolchain in {tools.gcc_dir.parent} built elsewhere) ==")
+    failed = run_probes(tools, chosen)
     print(f"\nCompiler: {tools.gcc_dir / 'xg++.exe'}")
+    if failed:
+        raise SystemExit(f"probes failed: {', '.join(failed)}")
 
 
 def main() -> None:
@@ -2742,83 +1933,30 @@ def main() -> None:
                         f"what the engine's own toolchain is built from)")
     p.add_argument("--msys-root", type=Path, default=DEFAULT_MSYS_ROOT)
     p.add_argument("--patches", type=Path, default=REPO_ROOT / "Tools" / "gcc-toolchain" / "wasm")
-    p.add_argument("--src-cache", type=Path, default=REPO_ROOT / ".gcc-src-cache")
-    p.add_argument("--workdir", type=Path, default=REPO_ROOT / ".gcc-wasm-build")
-    p.add_argument("--prefix", type=Path, default=REPO_ROOT / ".gcc-wasm")
+    p.add_argument("--src-cache", type=Path, default=GENERATED_ROOT / ".gcc-src-cache")
+    p.add_argument("--workdir", type=Path, default=GENERATED_ROOT / ".gcc-wasm-build")
+    p.add_argument("--prefix", type=Path, default=GENERATED_ROOT / ".gcc-wasm")
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--with-tests", action="store_true",
                    help="Also apply the testsuite patch (not needed to build a compiler)")
     p.add_argument("--reconfigure", action="store_true", help="Discard the build dir and configure again")
-    p.add_argument("--sweep", action="store_true",
-                   help="After the probes, compile every engine interface unit for "
-                        "wasm32 and report which modules translate")
-    p.add_argument("--link-engine", nargs="*", metavar="MODULE", default=None,
-                   help="Compile and link the given engine modules' closures, impl "
-                        "units included, against the toolchain already in --workdir, and "
-                        "report every unit the compiler rejected and every symbol the "
-                        "linker could not resolve. Defaults to "
-                        f"{' '.join(LINK_SUBJECT)}; does not run the probes or the sweep")
-    p.add_argument("--run-args", metavar="ARGS", default="",
-                   help="Extra command-line arguments for the linked module, passed "
-                        "through the run's WASI environment as GSE_RUN_ARGS and "
-                        "appended to the argv its entry hands the Sandbox's main. "
-                        "Space separated. Costs no relink, which is the point: the "
-                        "entry reads them at run time rather than carrying them as "
-                        "link inputs")
-    p.add_argument("--run-scenario", metavar="NAME", default="",
-                   help="Link the Sandbox's own closure too -- its program unit and a "
-                        "generated entry that calls its main -- and run the named "
-                        "scenario under node, reporting its console. Implies "
-                        f"--link-engine over {' '.join(SCENARIO_SUBJECT)}")
-    p.add_argument("--sweep-only", action="store_true",
-                   help="Sweep the toolchain already built in --workdir, skipping "
-                        "fetch, patch, configure and the makes. Verifies that build "
-                        "directory was produced from the current inputs and refuses if "
-                        "not; does not run the probes")
+    p.add_argument("--probe", nargs="+", metavar="NAME", default=None,
+                   help="Measure these probes against the toolchain already in "
+                        "--workdir, skipping fetch, patch, configure and the makes. "
+                        "Verifies that build directory was produced from the current "
+                        "inputs and refuses if not")
     args = p.parse_args()
 
     msys_root = args.msys_root.resolve()
     workdir = args.workdir.resolve()
-    # One arm and not two: a scenario run IS the link plus a caller, and a second entry
-    # point into `link_engine` is how the two would come to offer different unit lists
-    # while reporting the same inventory headings. So --run-scenario selects the subject
-    # and the modes, and --link-engine's own list still wins if it was given one.
-    if args.run_scenario and args.link_engine is None:
-        args.link_engine = []
-    # Refused rather than ignored, because the arms that do not run a module have no
-    # argv to extend: a command line asking for both would otherwise link, report an
-    # inventory, and silently drop the flag whose whole purpose is to be observed.
-    if args.run_args and not args.run_scenario:
-        raise SystemExit("--run-args extends the argv of a module this run executes, so "
-                         "it needs --run-scenario; a link or a sweep runs nothing")
-    if args.link_engine is not None:
-        if args.reconfigure:
-            raise SystemExit("--link-engine and --reconfigure contradict each other: "
-                             "one links what is in the build directory, the other "
-                             "discards it")
-        # Refused and not silently won, because the two arms report different things and
-        # a run that printed one while its command line asked for both would be read as
-        # the other. The same refusal --sweep-only already makes of --reconfigure.
-        if args.sweep or args.sweep_only:
-            raise SystemExit("--link-engine measures a link and --sweep measures "
-                             "translation; ask for one per run, since each reports "
-                             "numbers the other does not produce")
-        tools = verify_workdir(args, msys_root, workdir)
-        default = SCENARIO_SUBJECT if args.run_scenario else LINK_SUBJECT
-        link_engine(tools, tuple(args.link_engine) or default,
-                    scenario=args.run_scenario, run_args=args.run_args)
-        print(f"\nCompiler: {tools.gcc_dir / 'xg++.exe'}")
-        return
-    if args.sweep_only:
+    if args.probe is not None:
         # Refused rather than ignored: --reconfigure asks for the build directory to be
         # discarded, which is the one thing this arm cannot do and still have anything
-        # to sweep, and silently dropping it would be a run that did the opposite of
-        # what its command line said.
+        # to measure.
         if args.reconfigure:
-            raise SystemExit("--sweep-only and --reconfigure contradict each other: "
-                             "one sweeps an existing build directory, the other "
-                             "discards it")
-        sweep_only(args, msys_root, workdir)
+            raise SystemExit("--probe measures the probe table against an existing "
+                             "build directory; --reconfigure discards it")
+        probes_only(args, msys_root, workdir, args.probe)
         return
 
     src = fetch_source(msys_root, workdir, args.snapshot, args.src_cache.resolve())
@@ -2881,41 +2019,7 @@ def main() -> None:
     write_harness(gcc_dir)
 
     print("\n== probes ==")
-    results = [(probe, mode, probe_status(tools, probe, mode))
-               for probe in PROBES for mode in modes_of(probe)]
-
-    print("\n== result ==")
-    failed = []
-    for probe, mode, status in results:
-        blocked = next((b for b in probe.blocked if b.mode == mode), None)
-        # What a pass is named in this mode, which is the mode's own last stage: COMPILE
-        # stops at the compiler and so passes as `compiled', never as `ran'. Reading
-        # "ran" as the only pass reported a *blocked compile-mode row that had started
-        # passing* as "FAILED: compiled, not the ... it is blocked on" -- which is how
-        # the snapshot bump's two green engine rows first presented, a fixed gap wearing
-        # a regression's clothes. The loudest case the table has was the broken one.
-        passing = "compiled" if mode == COMPILE else "ran"
-        if blocked and status == passing:
-            note = f"NOW PASSES - drop its `blocked` entry ({blocked.reason})"
-        elif blocked and status == blocked.status:
-            note = f"expected red: {status} - {blocked.reason}"
-        elif blocked:
-            note = f"FAILED: {status}, not the {blocked.status} it is blocked on"
-            failed.append(f"{probe.name}/{mode}")
-        elif status == passing:
-            note = status.upper()
-        else:
-            note = f"FAILED: {status}"
-            failed.append(f"{probe.name}/{mode}")
-        print(f"  {probe.name:18} {mode:9} {note}")
-
-    # After the probes rather than instead of them: the probes are the regression rows,
-    # and a sweep is only readable once they are green. They share the directory and so
-    # the module cache, which is incidental and not a saving -- the sweep offers every
-    # unit to the compiler itself, in its own dependency order, and so never consumes a
-    # .gcm a probe built under different flags.
-    if args.sweep:
-        run_sweep(tools)
+    failed = run_probes(tools, PROBES)
 
     print(f"\nCompiler: {gcc_dir / 'xg++.exe'}")
     if f"{PROBES[0].name}/{COMPILE}" in failed:

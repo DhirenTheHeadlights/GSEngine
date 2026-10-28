@@ -112,10 +112,7 @@ auto gse::gpu::context::wait_idle(const data& d) -> void {
 
 auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_resume_request, window_opened, window_closed> resume_in) -> async::task<> {
 	for (const auto& req : resume_in.of<gpu_resume_request>()) {
-		if (req.handle && req.out_state) {
-			*req.out_state = &d;
-			req.handle.resume();
-		}
+		req.resume.resume_with(d);
 	}
 
 	for (const auto& req : resume_in.of<window_opened>()) {

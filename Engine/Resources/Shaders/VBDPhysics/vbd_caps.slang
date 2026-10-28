@@ -1,0 +1,12 @@
+public uint max_bodies() { return solver_config_data[0].caps.max_bodies; }
+public uint max_contacts() { return solver_config_data[0].caps.max_contacts; }
+public uint max_collision_pairs() { return solver_config_data[0].caps.max_collision_pairs; }
+public uint poly_pair_base() { return solver_config_data[0].caps.poly_pair_base; }
+public uint max_joints() { return solver_config_data[0].caps.max_joints; }
+public uint max_islands() { return solver_config_data[0].caps.max_islands; }
+public uint max_muscles() { return solver_config_data[0].caps.max_muscles; }
+public uint grid_table_size() { return solver_config_data[0].caps.grid_table_size; }
+public uint max_contact_adjacency() { return solver_config_data[0].caps.max_contact_adjacency; }
+public uint max_joint_adjacency() { return solver_config_data[0].caps.max_joint_adjacency; }
+public uint max_grounded_uints() { return solver_config_data[0].caps.max_grounded_uints; }
+public uint grid_max_entries() { return solver_config_data[0].caps.grid_max_entries; }

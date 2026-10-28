@@ -17,15 +17,33 @@ import :phase;
 import :session;
 import :stream;
 
-auto gse::ide::agent::agent_credentials() -> credentials {
-	if (const std::wstring inherited = environment_value(oauth_token_name); !inherited.empty()) {
-		return {
-			.token_value = std::string(inherited.begin(), inherited.end()),
-			.token = true,
-		};
-	}
+namespace {
+	std::atomic_bool token_prompt_requested = false;
+}
 
-	const std::wstring value = win32::user_environment_value(oauth_token_name);
+auto gse::ide::agent::request_token_prompt() -> void {
+	token_prompt_requested.store(true);
+}
+
+auto gse::ide::agent::take_token_prompt_request() -> bool {
+	return token_prompt_requested.exchange(false);
+}
+
+auto gse::ide::agent::save_agent_token(const std::string_view token) -> bool {
+	const std::wstring value(token.begin(), token.end());
+	if (!win32::write_user_registry_string(L"Environment", oauth_token_name.data(), value.c_str())) {
+		return false;
+	}
+	return win32::SetEnvironmentVariableW(oauth_token_name.data(), value.c_str()) != 0;
+}
+
+auto gse::ide::agent::agent_credentials() -> credentials {
+	// Prefer the saved user value so an editor launched by an older parent
+	// process still picks up a token changed in the editor.
+	std::wstring value = win32::user_environment_value(oauth_token_name);
+	if (value.empty()) {
+		value = environment_value(oauth_token_name);
+	}
 	if (value.empty()) {
 		return {};
 	}
@@ -44,7 +62,7 @@ auto gse::ide::agent::sessions_path() -> std::filesystem::path {
 auto gse::ide::agent::save_sessions(const data& d) -> void {
 	std::ostringstream out(std::ios::binary);
 	binary_writer writer(out, sessions_magic, sessions_version);
-	writer & d.sessions & d.active & d.chat_names;
+	writer & d.sessions & d.active & d.chat_names & d.overview_active;
 	layout_store::replace(sessions_path(), std::move(out).str());
 }
 
@@ -76,9 +94,13 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 	std::vector<session> restored;
 	std::uint32_t active = 0;
 	std::unordered_map<std::string, std::string> names;
+	bool overview = true;
 	reader & restored & active;
 	if (version >= chat_names_sessions_version) {
 		reader & names;
+	}
+	if (version >= overview_sessions_version) {
+		reader & overview;
 	}
 	if (!reader.valid()) {
 		log::println(log::level::error, log::category::task, "agent: could not read '{}' - previous sessions were dropped", path.generic_display_string());
@@ -92,6 +114,7 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 	d.sessions = std::move(restored);
 	d.active = active;
 	d.chat_names = std::move(names);
+	d.overview_active = overview;
 	for (session& s : d.sessions) {
 		std::erase_if(s.unbuilt, [](const auto& entry) {
 			return entry.second == 0;
@@ -102,9 +125,6 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 		attach_runtime(s);
 		d.next_id = std::max(d.next_id, s.id);
 	}
-	std::erase_if(d.sessions, [](const session& s) {
-		return s.sync.has_value();
-	});
 }
 
 auto gse::ide::agent::adopt_inherited(data& d) -> void {
@@ -119,6 +139,16 @@ auto gse::ide::agent::adopt_inherited(data& d) -> void {
 			continue;
 		}
 		discard_handoff(adopted);
+	}
+
+	std::erase_if(d.sessions, [](const session& s) {
+		return s.sync.has_value() && !s.running;
+	});
+
+	if (!d.overview_active && std::ranges::none_of(d.sessions, [&](const session& s) {
+		return s.id == d.active;
+	})) {
+		d.overview_active = true;
 	}
 }
 
@@ -137,13 +167,15 @@ auto gse::ide::agent::discard_handoff(const handoff& adopted) -> void {
 }
 
 auto gse::ide::agent::attach_runtime(session& s) -> void {
-	s.digest.filter = row_filter::digest;
-	s.full.filter = row_filter::all;
+	s.full.filter = row_filter::conversation;
 	s.changes.filter = row_filter::changes;
+	s.everything.filter = row_filter::all;
+	s.followup.filter = row_filter::conversation;
 
 	for (transcript_view* v : views_of(s)) {
 		v->log_id = generate_temp_id(hash_of("agent_log", s.id, v->filter));
 	}
+	s.followup.log_id = generate_temp_id(hash_of("agent_followup", s.id));
 }
 
 auto gse::ide::agent::inherited_handoffs() -> std::vector<handoff> {
@@ -332,9 +364,15 @@ auto gse::ide::agent::session_command(const session& s, const std::filesystem::p
 
 auto gse::ide::agent::launch_session(session& s) -> bool {
 	const credentials creds = agent_credentials();
+	if (!creds.token) {
+		request_token_prompt();
+		s.info.failure = "Set a Claude token in the agent panel before starting a session.";
+		return false;
+	}
 
 	const spawn::launched child = spawn::launch_streamed(session_command(s, write_phase_prompt(s)), s.cwd.wstring(), creds.environment);
 	if (!win32::valid_handle(child.process)) {
+		s.info.failure = "Could not launch Claude. Check that claude is on PATH.";
 		return false;
 	}
 
@@ -346,6 +384,7 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 	s.running = true;
 	s.launched_model_id = s.model_id;
 	s.launched_effort = s.requested_effort;
+	s.info.failure.clear();
 
 	if (!s.info.agent_id.empty()) {
 		append_row(s, {
@@ -353,17 +392,88 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 			.text = std::format("resuming {}", s.info.agent_id),
 		});
 	}
+	return true;
+}
 
-	if (!creds.token) {
-		s.info.failure = "no CLAUDE_CODE_OAUTH_TOKEN";
-		append_row(s, {
-			.kind = row_kind::failure,
-			.text = "no CLAUDE_CODE_OAUTH_TOKEN in this process or in the user environment",
-			.detail = "run `claude setup-token` and start a new session - headless claude cannot use the interactive login",
-		});
+auto gse::ide::agent::inquiry_command(const session& s) -> std::wstring {
+	std::wstring command(inquiry_command_head.begin(), inquiry_command_head.end());
+	if (!s.model_id.empty()) {
+		command += L" --model ";
+		command.append(s.model_id.begin(), s.model_id.end());
+	}
+	command += resume_option;
+	command.append(s.info.agent_id.begin(), s.info.agent_id.end());
+	return command;
+}
+
+auto gse::ide::agent::launch_inquiry(const session& s, const std::string_view prompt) -> inquiry_fork {
+	const spawn::launched child = spawn::launch_streamed(inquiry_command(s), s.cwd.wstring(), agent_credentials().environment);
+	inquiry_fork fork{
+		.session = s.id,
+		.process = child.process,
+		.job = child.job,
+		.output = child.output,
+	};
+	if (!win32::valid_handle(child.process)) {
+		fork.verdict = inquiry_verdict::silent;
+		return fork;
 	}
 
-	return true;
+	const std::string message = user_message(prompt, {});
+	win32::DWORD written = 0;
+	if (!win32::WriteFile(child.input, message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)) {
+		fork.verdict = inquiry_verdict::silent;
+	}
+	win32::CloseHandle(child.input);
+	if (fork.verdict != inquiry_verdict::pending) {
+		end_inquiry(fork);
+	}
+	return fork;
+}
+
+auto gse::ide::agent::pump_inquiry(inquiry_fork& fork) -> void {
+	if (fork.verdict != inquiry_verdict::pending) {
+		return;
+	}
+
+	std::vector<std::string> lines;
+	const bool open = spawn::read_lines(fork.output, fork.pending, lines);
+	for (const std::string& line : lines) {
+		const std::optional<analysis::json::value> event = analysis::json::parse(line);
+		if (!event || string_at(*event, "type") != "result") {
+			continue;
+		}
+		fork.answer = string_at(*event, "result");
+
+		std::string_view verdict = fork.answer;
+		verdict = verdict.substr(0, verdict.find_last_not_of(" \t\r\n") + 1);
+		if (const std::size_t newline = verdict.rfind('\n'); newline != std::string_view::npos) {
+			verdict.remove_prefix(newline + 1);
+		}
+		fork.verdict = verdict.contains("NOT_MINE")
+			? inquiry_verdict::denied
+			: verdict.contains("CLAIM") ? inquiry_verdict::claimed : inquiry_verdict::silent;
+	}
+
+	if (!open && fork.verdict == inquiry_verdict::pending) {
+		fork.verdict = inquiry_verdict::silent;
+	}
+	if (fork.verdict != inquiry_verdict::pending) {
+		end_inquiry(fork);
+	}
+}
+
+auto gse::ide::agent::end_inquiry(inquiry_fork& fork) -> void {
+	spawn::terminate(fork.process, fork.job);
+	for (void** handle : { &fork.output, &fork.job, &fork.process }) {
+		if (win32::valid_handle(*handle)) {
+			win32::CloseHandle(*handle);
+			*handle = nullptr;
+		}
+	}
+	if (fork.verdict == inquiry_verdict::pending) {
+		fork.verdict = inquiry_verdict::silent;
+	}
 }
 
 auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
@@ -375,6 +485,7 @@ auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
 
 	if (row.kind == row_kind::tool && !row.file.empty() && !(row.added.empty() && row.removed.empty())) {
 		note_written_file(s, row.file, row.added);
+		record_step_edit(s, row);
 	}
 	if (row.stamped == 0) {
 		row.stamped = unix_now();
@@ -407,7 +518,10 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			s.think_clock.reset();
 			s.recent_turn.emplace();
 			s.wrote_this_turn = false;
-			if (usage_limited(*event) && s.limited_until <= unix_now()) {
+			if (!turn_failed(*event)) {
+				s.limited_until = 0;
+			}
+			else if (usage_limited(*event) && s.limited_until <= unix_now()) {
 				s.limited_until = unix_now() + limit_backoff_seconds;
 			}
 		}
@@ -439,6 +553,7 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			continue;
 		}
 		s.turn_open = false;
+		s.woke_by.clear();
 		if (retryable_failure(*event)) {
 			arm_retry(s);
 		}
@@ -489,6 +604,9 @@ auto gse::ide::agent::restart_session(session& s) -> void {
 }
 
 auto gse::ide::agent::close_session(session& s) -> void {
+	if (s.fork.process) {
+		end_inquiry(*s.fork.process);
+	}
 	if (win32::valid_handle(s.input)) {
 		win32::CloseHandle(s.input);
 		s.input = nullptr;
@@ -554,13 +672,25 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 	erase_session(d, session_id);
 }
 
-auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments, const bool editor_driven) -> void {
+auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments, const bool editor_driven, std::optional<transcript_row> shown) -> bool {
 	const bool settings_stale = s.launched_model_id != s.model_id || s.launched_effort != s.requested_effort;
 	if (s.running && !s.think_clock && settings_stale) {
 		restart_session(s);
 	}
 	if (!s.running || !win32::valid_handle(s.input)) {
-		return;
+		s.info.failure = "Message not sent: Claude is not connected. Your draft has been kept.";
+		append_row(s, { .kind = row_kind::failure, .text = s.info.failure });
+		return false;
+	}
+
+	const std::string message = user_message(prompt, attachments);
+	win32::DWORD written = 0;
+	if (!win32::WriteFile(s.input, message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)
+		|| written != message.size()) {
+		stop_session(s);
+		s.info.failure = "Message not sent: the Claude connection failed. Your draft has been kept; try sending again.";
+		append_row(s, { .kind = row_kind::failure, .text = s.info.failure });
+		return false;
 	}
 
 	s.info.failure.clear();
@@ -572,8 +702,9 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 	s.hibernating = false;
 	s.wake_prompt.clear();
 	s.asleep_blocker.clear();
+	s.woke_by.clear();
 
-	append_row(s, {
+	append_row(s, shown ? std::move(*shown) : transcript_row{
 		.kind = row_kind::user,
 		.text = std::string(prompt),
 		.detail = attachments.empty()
@@ -581,18 +712,10 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 			: std::format("{} image(s) attached", attachments.size()),
 	});
 
-	const std::string message = user_message(prompt, attachments);
-	win32::DWORD written = 0;
-	if (!win32::WriteFile(s.input, message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)) {
-		append_row(s, {
-			.kind = row_kind::failure,
-			.text = "failed to send to the agent",
-		});
-		return;
-	}
 
 	s.action = thinking_phrase(s);
 	s.think_clock.emplace();
+	return true;
 }
 
 auto gse::ide::agent::interrupt_session(session& s) -> void {

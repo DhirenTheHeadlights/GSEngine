@@ -21,7 +21,7 @@ jobs:
     permissions:
       contents: read
     env:
-      BUILD_DIR: out/build/x64-mingw-gcc-Release
+      BUILD_DIR: .generated/out/build/x64-mingw-gcc-Release
     steps:
       - uses: actions/checkout@v4
         with:

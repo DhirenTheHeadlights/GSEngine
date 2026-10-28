@@ -96,7 +96,7 @@ export namespace gse::http {
 		time timeout{ seconds(15.f) };
 		std::size_t max_body_bytes = 64ull * 1024ull * 1024ull;
 		std::filesystem::path sink;
-		std::atomic<std::uint64_t>* received = nullptr;
+		std::shared_ptr<std::atomic<std::uint64_t>> received;
 	};
 
 	struct response {

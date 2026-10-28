@@ -396,27 +396,7 @@ auto gse::resource::loader<R>::prepare(const std::filesystem::path& path) const 
 	if (!m_pre_load_fn || path.empty()) {
 		return {};
 	}
-#if __cpp_exceptions
-	try {
-		return m_pre_load_fn(path);
-	}
-	catch (const std::exception& exception) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-	}
-	catch (...) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = "Resource preparation failed"
-		});
-	}
-#else
 	return m_pre_load_fn(path);
-#endif
 }
 
 template <typename R>
@@ -469,36 +449,12 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		.channels = m_data.channels
 	};
 
-	asset_result loaded{};
-#if __cpp_exceptions
-	try {
-		loaded = co_await candidate->load(ctx);
-	}
-	catch (const std::exception& exception) {
-		loaded = std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-	}
-	catch (...) {
-		loaded = std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = "Resource load threw an unknown exception"
-		});
-	}
-#else
-	loaded = co_await candidate->load(ctx);
-#endif
+	asset_result loaded = co_await candidate->load(ctx);
 	if (!loaded) {
 		fail(std::move(loaded.error()));
 		co_return;
 	}
 
-#if __cpp_exceptions
-	try
-#endif
 	{
 		auto immutable = std::shared_ptr<const R>(std::move(candidate));
 		std::lock_guard lock(m_mutex);
@@ -516,16 +472,6 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		slot->current_state.store(state::loaded, std::memory_order_release);
 		slot->load_in_flight = false;
 	}
-#if __cpp_exceptions
-	catch (const std::exception& exception) {
-		fail(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-		co_return;
-	}
-#endif
 }
 
 template <typename R>
@@ -549,33 +495,18 @@ auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& bak
 		return {};
 	}
 
-	std::unique_ptr<R> temp_resource;
-#if __cpp_exceptions
-	try
-#endif
-	{
-		temp_resource = std::make_unique<R>(baked_path);
-		const id resource_id = temp_resource->id();
+	std::unique_ptr<R> temp_resource = std::make_unique<R>(baked_path);
+	const id resource_id = temp_resource->id();
 
-		auto slot = std::make_shared<resource_slot<R>>(std::move(temp_resource), state::unloaded, baked_path);
-		if (!m_resources.add(resource_id, slot)) {
-			return std::unexpected(asset_error{
-				.code = asset_error_code::ambiguous_source,
-				.path = baked_path,
-				.detail = "Resource ID collision while cataloging baked asset"
-			});
-		}
-		m_path_to_id[baked_path] = resource_id;
-	}
-#if __cpp_exceptions
-	catch (const std::exception& exception) {
+	auto slot = std::make_shared<resource_slot<R>>(std::move(temp_resource), state::unloaded, baked_path);
+	if (!m_resources.add(resource_id, slot)) {
 		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
+			.code = asset_error_code::ambiguous_source,
 			.path = baked_path,
-			.detail = exception.what()
+			.detail = "Resource ID collision while cataloging baked asset"
 		});
 	}
-#endif
+	m_path_to_id[baked_path] = resource_id;
 	return {};
 }
 
@@ -639,22 +570,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		co_return;
 	}
 
-	std::unique_ptr<R> new_resource;
-#if __cpp_exceptions
-	try {
-		new_resource = std::make_unique<R>(path);
-	}
-	catch (const std::exception& exception) {
-		fail(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-		co_return;
-	}
-#else
-	new_resource = std::make_unique<R>(path);
-#endif
+	std::unique_ptr<R> new_resource = std::make_unique<R>(path);
 
 	assert(m_data.channels.bound(), "asset::run must run before finalize_reloads()");
 	asset::load_ctx ctx{
@@ -662,36 +578,12 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		.channels = m_data.channels
 	};
 
-	asset_result loaded{};
-#if __cpp_exceptions
-	try {
-		loaded = co_await new_resource->load(ctx);
-	}
-	catch (const std::exception& exception) {
-		loaded = std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-	}
-	catch (...) {
-		loaded = std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = "Resource reload threw an unknown exception"
-		});
-	}
-#else
-	loaded = co_await new_resource->load(ctx);
-#endif
+	asset_result loaded = co_await new_resource->load(ctx);
 	if (!loaded) {
 		fail(std::move(loaded.error()));
 		co_return;
 	}
 
-#if __cpp_exceptions
-	try
-#endif
 	{
 		auto immutable = std::shared_ptr<const R>(std::move(new_resource));
 		std::lock_guard lock(m_mutex);
@@ -710,16 +602,6 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		slot->load_in_flight = false;
 		assert(slot->started_reload == revision, "Resource reload revision changed while in flight");
 	}
-#if __cpp_exceptions
-	catch (const std::exception& exception) {
-		fail(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = path,
-			.detail = exception.what()
-		});
-		co_return;
-	}
-#endif
 
 	log::println(log::category::assets, "Hot reload reloaded resource: {}", path.filename().generic_display_string());
 }

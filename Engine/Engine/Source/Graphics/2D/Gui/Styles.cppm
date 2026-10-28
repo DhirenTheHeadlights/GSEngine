@@ -500,15 +500,12 @@ auto gse::gui::hash_style_members(const T& value, std::uint64_t& out) -> void {
 		if constexpr (has_annotation<style_group_tag>(^^member_type)) {
 			hash_style_members(value.[:m:], out);
 		}
-		else if constexpr (std::is_same_v<member_type, float>) {
-			out = hash_combine(out, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value.[:m:])));
-		}
-		else if constexpr (std::is_enum_v<member_type>) {
-			out = hash_combine(out, static_cast<std::uint64_t>(std::to_underlying(value.[:m:])));
+		else if constexpr (std::is_same_v<member_type, float> || std::is_enum_v<member_type>) {
+			out = gse::hash_of(out, value.[:m:]);
 		}
 		else if constexpr (requires { { *std::begin(value.[:m:]) } -> std::convertible_to<float>; }) {
 			for (const float c : value.[:m:]) {
-				out = hash_combine(out, static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(c)));
+				out = gse::hash_of(out, c);
 			}
 		}
 	}

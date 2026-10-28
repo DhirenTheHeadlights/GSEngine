@@ -257,6 +257,7 @@ auto gse::scheduler::snapshot_all_states() -> void {
 namespace gse {
 	enum class dep_kind : std::uint8_t {
 		declared,
+		lend,
 		pinned,
 		structural,
 		reordered_read,
@@ -305,26 +306,13 @@ namespace gse {
 
 	auto run_hook(
 		const system_node& node,
-		system_hook hook,
 		auto (*invoke)(context&, void*) -> async::task<>,
 		context& ctx
 	) -> async::task<>;
 }
 
-auto gse::run_hook(const system_node& node, const system_hook hook, auto (*invoke)(context&, void*) -> async::task<>, context& ctx) -> async::task<> {
-#if __cpp_exceptions
-	try {
-		co_await invoke(ctx, node.data.get());
-	}
-	catch (const std::exception& e) {
-		assert(false, "system {} threw from {}(): {}", node.system_name, hook, e.what());
-	}
-	catch (...) {
-		assert(false, "system {} threw a non-std::exception from {}()", node.system_name, hook);
-	}
-#else
+auto gse::run_hook(const system_node& node, auto (*invoke)(context&, void*) -> async::task<>, context& ctx) -> async::task<> {
 	co_await invoke(ctx, node.data.get());
-#endif
 }
 
 auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::task<> {
@@ -333,7 +321,7 @@ auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::t
 	for (const id& dep : node.frame_state_deps) {
 		co_await ctx.after_id(dep);
 	}
-	co_await run_hook(node, system_hook::frame, node.invoke_frame_fn, ctx);
+	co_await run_hook(node, node.invoke_frame_fn, ctx);
 	ctx.notify_ready_by_id(node.state_id);
 }
 
@@ -418,6 +406,7 @@ auto gse::scheduler::wire_component_deps() -> void {
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> resource_writers;
+	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> lenders;
 	std::vector<std::pair<std::size_t, id>> entity_structural_nodes;
 	std::unordered_map<id, std::size_t> state_to_index;
 	{
@@ -431,6 +420,9 @@ auto gse::scheduler::wire_component_deps() -> void {
 			}
 			for (const id w : node.resource_writes) {
 				resource_writers[w].emplace_back(idx, node.state_id);
+			}
+			for (const id c : node.lent_channels) {
+				lenders[c].emplace_back(idx, node.state_id);
 			}
 			if (node.entity_structural) {
 				entity_structural_nodes.emplace_back(idx, node.state_id);
@@ -531,6 +523,14 @@ auto gse::scheduler::wire_component_deps() -> void {
 			}
 		}
 
+		for (const id c : node.channel_consumes) {
+			if (const auto it = lenders.find(c); it != lenders.end()) {
+				for (const auto& other_state : std::views::values(it->second)) {
+					add_dep(other_state, c, dep_kind::lend);
+				}
+			}
+		}
+
 		const bool touches_components =
 			!node.component_reads.empty() || !node.component_writes.empty() || !node.component_structural.empty();
 
@@ -586,7 +586,14 @@ auto gse::scheduler::wire_component_deps() -> void {
 				if (edge == list.end() || edge->kind != target) {
 					continue;
 				}
-				if (target == dep_kind::output) {
+				if (target == dep_kind::output && !edge->via.exists()) {
+					warn_once(std::format(
+						"scheduler: {} and {} both create or destroy entities and ordering them closes a cycle. dropping the ordering — if one must see the other's entities this frame, it needs an explicit ordering annotation",
+						m_nodes[from].state_id,
+						m_nodes[to].state_id
+					));
+				}
+				else if (target == dep_kind::output) {
 					warn_once(std::format(
 						"scheduler: {} and {} both write {} and ordering them closes a cycle. dropping the write ordering — if both actually mutate it, one needs an explicit ordering annotation",
 						m_nodes[from].state_id,
@@ -630,6 +637,46 @@ auto gse::scheduler::wire_component_deps() -> void {
 		}
 
 		if (!demoted) {
+			for (std::size_t i = 0; i < cycle.size(); ++i) {
+				const auto from = cycle[i];
+				const auto to = cycle[(i + 1) % cycle.size()];
+				auto& list = deps[from];
+				const auto edge = std::ranges::find(list, m_nodes[to].state_id, &component_dep::state);
+				if (edge == list.end() || edge->kind != dep_kind::lend) {
+					continue;
+				}
+				const id via = edge->via;
+				list.erase(edge);
+				if (dep_path_exists(deps, state_to_index, to, from)) {
+					warn_once(std::format(
+						"scheduler: {} draws a panel out of {}'s own live state over {}, but {} already runs after {}. they stay serialised by that ordering, so the draw sees the state from {}'s previous run",
+						m_nodes[from].state_id,
+						m_nodes[to].state_id,
+						via,
+						m_nodes[to].state_id,
+						m_nodes[from].state_id,
+						m_nodes[to].state_id
+					));
+					demoted = true;
+					break;
+				}
+				list.push_back({ .state = m_nodes[to].state_id, .via = via, .kind = dep_kind::lend });
+			}
+			if (demoted) {
+				continue;
+			}
+			for (std::size_t i = 0; i < cycle.size(); ++i) {
+				const auto from = cycle[i];
+				const auto to = cycle[(i + 1) % cycle.size()];
+				const auto edge = edge_between(from, to);
+				assert(
+					edge == deps[from].end() || edge->kind != dep_kind::lend,
+					"scheduler: {} draws a panel out of {}'s own live state over {}, so it must run after it, but that ordering closes a cycle that cannot be broken. the borrow would be left unordered and the draw could race the system that owns the data — give the panel a copied snapshot instead",
+					m_nodes[from].state_id,
+					m_nodes[to].state_id,
+					edge == deps[from].end() ? id{} : edge->via
+				);
+			}
 			break;
 		}
 	}
@@ -637,6 +684,14 @@ auto gse::scheduler::wire_component_deps() -> void {
 	for (const auto& [accessor, structural_writer, via] : dropped) {
 		if (dep_path_exists(deps, state_to_index, accessor, structural_writer)
 			|| dep_path_exists(deps, state_to_index, structural_writer, accessor)) {
+			if (!via.exists()) {
+				warn_once(std::format(
+					"scheduler: {} accesses components while {} creates or destroys entities, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the entities from before the change",
+					m_nodes[accessor].state_id,
+					m_nodes[structural_writer].state_id
+				));
+				continue;
+			}
 			warn_once(std::format(
 				"scheduler: {} accesses {} while {} adds or removes it, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the state from before the structural change",
 				m_nodes[accessor].state_id,
@@ -1348,7 +1403,7 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 	if (!node.init_launched) {
 		node.init_launched = true;
 		node.init_task = wrap_run_task(
-			run_hook(node, system_hook::init, node.invoke_init_fn, *node.init_ctx),
+			run_hook(node, node.invoke_init_fn, *node.init_ctx),
 			[&node] {
 				node.init_done = true;
 				node.paused_event->set();
@@ -1370,7 +1425,7 @@ auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::
 		co_await m_update_graph.wait_state_ready(dep);
 	}
 
-	co_await run_hook(node, system_hook::run, node.invoke_run_fn, ctx);
+	co_await run_hook(node, node.invoke_run_fn, ctx);
 	node.ran_once = true;
 
 	m_update_graph.notify_state_ready(node.state_id);

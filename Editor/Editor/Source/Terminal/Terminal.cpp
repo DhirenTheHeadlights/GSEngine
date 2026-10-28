@@ -29,19 +29,6 @@ namespace gse::ide::terminal {
 		profile_label_port,
 	};
 
-	struct link_hit {
-		std::filesystem::path path;
-		std::uint32_t line = 0;
-		std::uint32_t column = 0;
-		std::uint32_t start_col = 0;
-		std::uint32_t end_col = 0;
-	};
-
-	auto path_link_at(
-		std::string_view row,
-		std::uint32_t column
-	) -> std::optional<link_hit>;
-
 	auto level_color(
 		const gui::style& sty,
 		log::level lvl
@@ -94,8 +81,12 @@ namespace gse::ide::terminal {
 
 	auto append_lines(
 		instance& inst,
-		std::span<const line> lines,
-		const gui::draw_context& ctx
+		std::span<const line> lines
+	) -> void;
+
+	auto ingest(
+		data& d,
+		instance& inst
 	) -> void;
 
 	auto offer_site(
@@ -112,8 +103,7 @@ namespace gse::ide::terminal {
 
 	auto take_offers(
 		data& d,
-		instance& inst,
-		const gui::draw_context& ctx
+		instance& inst
 	) -> void;
 
 	auto dispatch_at(
@@ -284,7 +274,7 @@ auto gse::ide::terminal::close_kind(data& d, const build_runner::stream_kind kin
 	}
 }
 
-auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines, const gui::draw_context& ctx) -> void {
+auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line> lines) -> void {
 	std::size_t pieces = 0;
 	for (const line& l : lines) {
 		pieces += 1 + static_cast<std::size_t>(std::ranges::count(l.text, '\n'));
@@ -293,7 +283,7 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 	inst.spans.reserve(inst.spans.size() + pieces);
 
 	for (const line& l : lines) {
-		const vec4f color = level_color(ctx.style, l.lvl);
+		const vec4f color = inst.palette[static_cast<std::size_t>(l.lvl)];
 		std::size_t start = 0;
 		while (true) {
 			const std::size_t nl = l.text.find('\n', start);
@@ -329,14 +319,35 @@ auto gse::ide::terminal::append_lines(instance& inst, const std::span<const line
 			marker.line -= static_cast<std::uint32_t>(overflow);
 		}
 
-		const float dropped = static_cast<float>(overflow) * gui::text_area_line_height(ctx);
-		inst.view.scroll.y.offset = std::max(0.f, inst.view.scroll.y.offset - dropped);
-		inst.view.scroll.y.target = std::max(0.f, inst.view.scroll.y.target - dropped);
+		inst.dropped_lines += overflow;
+	}
+}
+
+auto gse::ide::terminal::ingest(data& d, instance& inst) -> void {
+	d.fresh.clear();
+	if (inst.follows_log) {
+		d.sink->drain(inst.cursor, d.fresh);
+	}
+	if (inst.runner) {
+		std::lock_guard _(inst.runner->mutex);
+		for (std::string& l : inst.runner->lines) {
+			d.fresh.push_back({
+				.seq = 0,
+				.lvl = log::level::info,
+				.text = std::move(l),
+			});
+		}
+		inst.runner->lines.clear();
+	}
+	if (!d.fresh.empty()) {
+		append_lines(inst, d.fresh);
 	}
 }
 
 auto gse::ide::terminal::offer_site(const agent::blame_offer& offer) -> std::string {
-	const std::string head = std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
+	const std::string head = offer.file.empty()
+		? std::string("this failure")
+		: std::format("{}:{}", offer.file.filename().generic_display_string(), offer.line);
 	return offer.extra == 0
 		? head
 		: std::format("{} +{}", head, offer.extra);
@@ -344,9 +355,12 @@ auto gse::ide::terminal::offer_site(const agent::blame_offer& offer) -> std::str
 
 auto gse::ide::terminal::offer_pending_line(const agent::blame_offer& offer) -> std::string {
 	const std::string site = offer_site(offer);
-	return offer.session == 0
+	if (offer.session != 0) {
+		return std::format("  -> send {} to \"{}\"", site, offer.session_name);
+	}
+	return offer.asking == 0
 		? std::format("  -> no chat owns {} - start one to fix it", site)
-		: std::format("  -> send {} to \"{}\"", site, offer.session_name);
+		: std::format("  -> no chat owns {} - asking {} chat{} whether they caused it, or start one to fix it now", site, offer.asking, offer.asking == 1 ? "" : "s");
 }
 
 auto gse::ide::terminal::offer_sent_line(const agent::blame_offer& offer) -> std::string {
@@ -356,7 +370,7 @@ auto gse::ide::terminal::offer_sent_line(const agent::blame_offer& offer) -> std
 		: std::format("  -- sent {} to \"{}\"", site, offer.session_name);
 }
 
-auto gse::ide::terminal::take_offers(data& d, instance& inst, const gui::draw_context& ctx) -> void {
+auto gse::ide::terminal::take_offers(data& d, instance& inst) -> void {
 	if (d.offers.empty()) {
 		return;
 	}
@@ -364,7 +378,7 @@ auto gse::ide::terminal::take_offers(data& d, instance& inst, const gui::draw_co
 	std::vector<agent::blame_offer> mine;
 	std::vector<agent::blame_offer> rest;
 	for (agent::blame_offer& offer : d.offers) {
-		(offer.kind == inst.kind ? mine : rest).push_back(std::move(offer));
+		(offer.kind == inst.kind && offer.run == inst.run ? mine : rest).push_back(std::move(offer));
 	}
 	d.offers = std::move(rest);
 	if (mine.empty()) {
@@ -380,7 +394,7 @@ auto gse::ide::terminal::take_offers(data& d, instance& inst, const gui::draw_co
 			.text = offer_pending_line(offer),
 		});
 	}
-	append_lines(inst, rows, ctx);
+	append_lines(inst, rows);
 
 	auto placed = static_cast<std::uint32_t>(inst.buffer.lines.size() - mine.size());
 	for (agent::blame_offer& offer : mine) {
@@ -394,88 +408,6 @@ auto gse::ide::terminal::take_offers(data& d, instance& inst, const gui::draw_co
 auto gse::ide::terminal::dispatch_at(instance& inst, const std::uint32_t buffer_line) -> dispatch_marker* {
 	const auto found = std::ranges::find(inst.dispatches, buffer_line, &dispatch_marker::line);
 	return found == inst.dispatches.end() ? nullptr : &*found;
-}
-
-auto gse::ide::terminal::path_link_at(const std::string_view row, const std::uint32_t column) -> std::optional<link_hit> {
-	auto is_link_char = [](const char c) -> bool {
-		return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '-' || c == '/' || c == '\\' || c == ':' || c == '~' || c == '+';
-	};
-
-	if (row.empty()) {
-		return std::nullopt;
-	}
-	std::size_t a = std::min<std::size_t>(column, row.size());
-	if (a == row.size() || !is_link_char(row[a])) {
-		if (a == 0 || !is_link_char(row[a - 1])) {
-			return std::nullopt;
-		}
-		--a;
-	}
-	std::size_t b = a;
-	while (a > 0 && is_link_char(row[a - 1])) {
-		--a;
-	}
-	while (b < row.size() && is_link_char(row[b])) {
-		++b;
-	}
-
-	const std::string token(row.substr(a, b - a));
-
-	std::uint32_t peeled[2] = { 0, 0 };
-	std::size_t peeled_count = 0;
-	std::size_t end = token.size();
-	while (end > 0 && token[end - 1] == ':') {
-		--end;
-	}
-	while (peeled_count < 2) {
-		std::size_t digits = end;
-		while (digits > 0 && std::isdigit(static_cast<unsigned char>(token[digits - 1]))) {
-			--digits;
-		}
-		if (digits == end || digits == 0 || token[digits - 1] != ':') {
-			break;
-		}
-		std::uint32_t value = 0;
-		std::from_chars(token.data() + digits, token.data() + end, value);
-		peeled[peeled_count++] = value;
-		end = digits - 1;
-	}
-
-	const std::string_view path_str = std::string_view(token).substr(0, end);
-	if (path_str.empty()) {
-		return std::nullopt;
-	}
-
-	const std::uint32_t line = peeled_count == 2 ? peeled[1] : (peeled_count == 1 ? peeled[0] : 0);
-	const std::uint32_t col = peeled_count == 2 ? peeled[0] : 0;
-
-	const std::filesystem::path candidate(path_str);
-	std::error_code ec;
-	std::filesystem::path resolved;
-	if (candidate.is_absolute()) {
-		resolved = candidate;
-	}
-	else {
-		for (const config::worktree& tree : config::worktrees()) {
-			std::filesystem::path attempt = tree.project_root / candidate;
-			if (std::filesystem::is_regular_file(attempt, ec)) {
-				resolved = std::move(attempt);
-				break;
-			}
-		}
-	}
-
-	if (resolved.empty() || !std::filesystem::is_regular_file(resolved, ec)) {
-		return std::nullopt;
-	}
-
-	return link_hit{
-		.path = std::move(resolved),
-		.line = line > 0 ? line - 1 : 0,
-		.column = col > 0 ? col - 1 : 0,
-		.start_col = static_cast<std::uint32_t>(a),
-		.end_col = static_cast<std::uint32_t>(b),
-	};
 }
 
 gse::ide::terminal::ring_sink::~ring_sink() = default;
@@ -532,6 +464,9 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
 		close_kind(d, opened.kind);
+		std::erase_if(d.offers, [&opened](const agent::blame_offer& offer) {
+			return offer.kind == opened.kind && offer.run != opened.run;
+		});
 	}
 
 	for (const build_runner::stream_opened& opened : opened_streams) {
@@ -540,9 +475,14 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 		inst.runner = opened.stream;
 		inst.interactive = false;
 		inst.kind = opened.kind;
+		inst.run = opened.run;
 		inst.attached_instance = opened.attached_instance;
 		d.active = inst.instance_id;
 		d.instances.push_back(std::move(inst));
+	}
+
+	for (instance& inst : d.instances) {
+		ingest(d, inst);
 	}
 
 	for (const build_runner::attached_fatal_reported& fatal : stream_in.of<build_runner::attached_fatal_reported>()) {
@@ -569,12 +509,11 @@ auto gse::ide::terminal::run(context& ctx, data& d, const channel_read<build_run
 		d.active_profile = build_d.active_profile;
 	}
 
-	const bool building = build_d.building;
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, channels = ui_out, building](gui::builder& b) {
-			draw_panel(b, *d, channels, building);
+		.build = [](gui::builder& b, data& panel_d, const channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels, const shared_view<build_runner::data> build_s) {
+			draw_panel(b, panel_d, channels, build_s.building);
 		},
 	});
 	return {};
@@ -621,22 +560,14 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 
 	sync_metadata(inst, ctx);
 
-	d.fresh.clear();
-	if (inst.follows_log) {
-		d.sink->drain(inst.cursor, d.fresh);
-	}
-	if (inst.runner) {
-		std::lock_guard _(inst.runner->mutex);
-		for (std::string& l : inst.runner->lines) {
-			d.fresh.push_back({
-				.seq = 0,
-				.lvl = log::level::info,
-				.text = std::move(l),
-			});
-		}
-		inst.runner->lines.clear();
+	if (inst.dropped_lines > 0) {
+		const float dropped = static_cast<float>(inst.dropped_lines) * gui::text_area_line_height(ctx);
+		inst.view.scroll.y.offset = std::max(0.f, inst.view.scroll.y.offset - dropped);
+		inst.view.scroll.y.target = std::max(0.f, inst.view.scroll.y.target - dropped);
+		inst.dropped_lines = 0;
 	}
 
+	d.fresh.clear();
 	const bool busy = inst.runner && inst.runner->running.load(std::memory_order_acquire);
 	if (inst.interactive && ui.focus_widget_id == inst.input_id && ctx.key_pressed_for(key::enter) && !inst.input.empty() && !busy) {
 		d.fresh.push_back({
@@ -672,13 +603,13 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 	}
 
 	if (!d.fresh.empty()) {
-		append_lines(inst, d.fresh, ctx);
+		append_lines(inst, d.fresh);
 	}
-	take_offers(d, inst, ctx);
+	take_offers(d, inst);
 
 	if (inst.buffer.lines.empty()) {
 		const std::array blank = { line{ .seq = 0, .lvl = log::level::info, .text = {} } };
-		append_lines(inst, blank, ctx);
+		append_lines(inst, blank);
 	}
 
 	const float pad = ctx.style.padding;
@@ -760,7 +691,7 @@ auto gse::ide::terminal::draw_instance(gui::builder& ui, data& d, instance& inst
 			.rect = log_rect,
 			.spans = inst.spans,
 		}, mouse);
-		const std::optional<link_hit> hit = goto_ctrl ? path_link_at(inst.buffer.line(hover.line), hover.column) : std::nullopt;
+		const std::optional<link_hit> hit = goto_ctrl ? path_link_at(inst.buffer.line(hover.line), hover.column, {}) : std::nullopt;
 		if (hit) {
 			link = hit;
 			d.underlines.push_back({

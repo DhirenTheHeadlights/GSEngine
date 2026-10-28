@@ -9,7 +9,7 @@ module;
 #include <span>
 #include <type_traits>
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if !defined(GSE_NO_SIMD_X86) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #define GSE_SIMD_X86 1
 #ifdef _MSC_VER
 #include <intrin.h>

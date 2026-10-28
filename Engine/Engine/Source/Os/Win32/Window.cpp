@@ -1775,6 +1775,25 @@ auto gse::window::apply_requests(scheduler& sched, data& d) -> std::optional<win
 		surface->chrome_resize_exclude_y1 = req.resize_exclude_y1;
 	}
 
+	for (const auto& req : sched.read_channel<window_icon_request>()) {
+		window_surface* surface = find_surface(d, req.window);
+		if (!surface || !surface->handle) {
+			continue;
+		}
+		void* small = win32::create_window_icon(req.small.data(), 32);
+		void* large = win32::create_window_icon(req.large.data(), 64);
+		if (!small || !large) {
+			log::println(log::level::warning, log::category::general, "window icon creation failed");
+			win32::destroy_window_icon(small);
+			win32::destroy_window_icon(large);
+			continue;
+		}
+		win32::set_window_icon(to_hwnd(surface->handle), small, true);
+		win32::set_window_icon(to_hwnd(surface->handle), large, false);
+		win32::destroy_window_icon(std::exchange(surface->small_icon, small));
+		win32::destroy_window_icon(std::exchange(surface->large_icon, large));
+	}
+
 	for (const auto& req : sched.read_channel<window_locate_cursor_request>()) {
 		const window_surface* source = find_surface(d, req.source);
 		if (!source) {
@@ -1925,6 +1944,8 @@ auto gse::window::shutdown(data& d) -> void {
 			win32::DestroyWindow(to_hwnd(surface->handle));
 			surface->handle = {};
 		}
+		win32::destroy_window_icon(std::exchange(surface->small_icon, nullptr));
+		win32::destroy_window_icon(std::exchange(surface->large_icon, nullptr));
 	}
 	d.secondaries.clear();
 
@@ -1932,6 +1953,8 @@ auto gse::window::shutdown(data& d) -> void {
 		win32::DestroyWindow(to_hwnd(d.primary.handle));
 		d.primary.handle = {};
 	}
+	win32::destroy_window_icon(std::exchange(d.primary.small_icon, nullptr));
+	win32::destroy_window_icon(std::exchange(d.primary.large_icon, nullptr));
 
 	leave_exclusive_mode();
 }
@@ -2056,6 +2079,8 @@ auto gse::window::destroy_secondary(data& d, window_surface* surface) -> void {
 		win32::DestroyWindow(to_hwnd((*it)->handle));
 		(*it)->handle = {};
 	}
+	win32::destroy_window_icon(surface->small_icon);
+	win32::destroy_window_icon(surface->large_icon);
 	d.secondaries.erase(it);
 }
 

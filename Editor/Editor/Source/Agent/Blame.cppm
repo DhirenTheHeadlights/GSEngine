@@ -8,6 +8,11 @@ import gse.ide.build;
 import :model;
 
 namespace gse::ide::agent {
+	struct pending_crash {
+		std::filesystem::path path;
+		std::string record;
+	};
+
 	auto note_source_change(
 		session& s,
 		const std::filesystem::path& file,
@@ -59,6 +64,14 @@ namespace gse::ide::agent {
 		agent_state state
 	) -> state_style;
 
+	auto kind_of(
+		const session& s
+	) -> chat_kind;
+
+	auto style_of(
+		chat_kind kind
+	) -> kind_style;
+
 	auto status_label(
 		const data& d,
 		const session& s
@@ -109,7 +122,25 @@ namespace gse::ide::agent {
 	struct blame_match {
 		session* owner = nullptr;
 		bool at_line = false;
+		std::filesystem::path via;
 	};
+
+	auto trim_blank(
+		std::string_view text
+	) -> std::string_view;
+
+	auto declared_module(
+		std::span<const std::string> lines
+	) -> std::string;
+
+	auto imported_modules(
+		std::span<const std::string> lines
+	) -> std::vector<std::string>;
+
+	auto dependency_owner(
+		data& d,
+		const std::filesystem::path& file
+	) -> blame_match;
 
 	auto blame_owner(
 		data& d,
@@ -119,6 +150,31 @@ namespace gse::ide::agent {
 	auto attribute_build_errors(
 		data& d,
 		const build_runner::build_finished& finished,
+		channel_write<blame_offer> offers
+	) -> void;
+
+	auto inquiry_patience() -> time;
+
+	auto inquiry_candidates(
+		data& d
+	) -> std::vector<session*>;
+
+	auto inquiry_prompt(
+		std::span<const blamed_error> errors
+	) -> std::string;
+
+	auto start_inquiry(
+		data& d,
+		build_runner::stream_kind kind,
+		std::uint32_t run
+	) -> std::uint32_t;
+
+	auto cancel_inquiry(
+		data& d
+	) -> void;
+
+	auto service_inquiry(
+		data& d,
 		channel_write<blame_offer> offers
 	) -> void;
 
@@ -213,7 +269,8 @@ namespace gse::ide::agent {
 
 	auto resume_with(
 		session& s,
-		std::string message
+		std::string message,
+		std::optional<transcript_row> shown = std::nullopt
 	) -> void;
 
 	auto wake_session(
@@ -259,8 +316,27 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto fix_unclaimed(
+		data& d,
+		std::span<const std::string> denied = {}
+	) -> void;
+
+	auto triage_crashes(
 		data& d
 	) -> void;
+
+	auto record_field(
+		std::string_view record,
+		std::string_view key
+	) -> std::string_view;
+
+	auto crash_prompt(
+		std::span<const pending_crash> reports
+	) -> std::string;
+
+	auto set_aside(
+		const std::filesystem::path& report,
+		std::string_view suffix
+	) -> std::filesystem::path;
 
 	auto blame_label(
 		const session& s
@@ -268,6 +344,10 @@ namespace gse::ide::agent {
 
 	auto blame_prompt(
 		std::string_view lead,
+		std::span<const blamed_error> errors
+	) -> std::string;
+
+	auto describe_errors(
 		std::span<const blamed_error> errors
 	) -> std::string;
 

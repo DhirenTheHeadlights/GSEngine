@@ -124,7 +124,7 @@ export namespace gse::vbd {
 
 	constexpr vbd_limits limits{};
 
-	struct vbd_capacities {
+	struct [[= shaders::shader_struct]] vbd_capacities {
 		std::uint32_t max_bodies = 1024;
 		std::uint32_t max_contacts = 16384;
 		std::uint32_t max_collision_pairs = 16384;

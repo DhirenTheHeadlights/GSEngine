@@ -1,9 +1,9 @@
 void collision_count_adjacency(uint3 dispatch_id) {
     uint idx = dispatch_id.x;
     uint body_count = pc.body_count;
-    uint num_joints = min(pc.joint_count, max_joints);
-    uint num_muscles = min(solver_config_data[0].muscle_count, max_muscles);
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint num_joints = min(pc.joint_count, max_joints());
+    uint num_muscles = min(solver_config_data[0].muscle_count, max_muscles());
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
     uint thread_count = ((max(max(body_count, num_joints), num_muscles) + workgroup_size - 1) / workgroup_size) * workgroup_size;
 
     for (uint ci = idx; ci < num_contacts; ci += thread_count) {

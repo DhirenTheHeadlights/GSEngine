@@ -11,7 +11,7 @@ float muscle_body_floor(uint bi) {
     uint offset = joint_offsets[bi];
     uint count = joint_counts[bi];
     for (uint k = 0; k < count; k++) {
-        uint ji = safe_load_uint(joint_adjacency, offset + k, max_joint_adjacency);
+        uint ji = safe_load_uint(joint_adjacency, offset + k, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) == 0) continue;
         muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
         float isometric = muscle_tension(m, m.path_length_start, m.path_length_start, pc.dt).y;
@@ -43,7 +43,7 @@ float muscle_body_floor(uint bi) {
 }
 
 float muscle_floor(uint bi) {
-    return solve_deltas[2 * max_bodies + bi].x;
+    return solve_deltas[2 * max_bodies() + bi].x;
 }
 
 float muscle_floored_penalty(float stored, uint body_a, uint body_b) {

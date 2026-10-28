@@ -111,7 +111,7 @@ auto gse::server_app::run(context& ctx, data& d, const channel_write<gui::menu_c
 
 	ui_out.push<gui::menu_content>({
 		.menu = "Server Control",
-		.build = [&d, srv](gui::builder& ui) {
+		.build = [](gui::builder& ui, data& panel_d, const shared_view<ServerData> srv) {
 			ui.draw<gui::text>({
 				.content = "This is a simple server application.",
 			});
@@ -145,7 +145,7 @@ auto gse::server_app::run(context& ctx, data& d, const channel_write<gui::menu_c
 			}
 			ui.draw<gui::value<std::uint32_t>>({
 				.name = "Ticks",
-				.val = d.tick_count,
+				.val = panel_d.tick_count,
 			});
 		},
 	});

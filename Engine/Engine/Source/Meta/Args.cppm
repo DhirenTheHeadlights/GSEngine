@@ -9,23 +9,21 @@ import :settings_anno;
 
 export namespace gse {
 	template <typename Config>
-	auto parse_args(
-		int argc,
-		char** argv,
-		std::vector<std::string>& passed
-	) -> Config;
+	struct parsed_args {
+		Config config;
+		std::vector<std::string> passed;
+	};
 
 	template <typename Config>
 	auto parse_args(
 		int argc,
 		char** argv
-	) -> Config;
+	) -> parsed_args<Config>;
 
 	template <typename Config>
 	auto parse_args(
-		std::span<const std::string> words,
-		std::vector<std::string>& passed
-	) -> Config;
+		std::span<const std::string> words
+	) -> parsed_args<Config>;
 }
 
 namespace gse {
@@ -347,13 +345,13 @@ auto gse::expand_arg_files(const std::span<const std::string> words) -> std::vec
 }
 
 template <typename Config>
-auto gse::parse_args(const int argc, char** argv, std::vector<std::string>& passed) -> Config {
+auto gse::parse_args(const int argc, char** argv) -> parsed_args<Config> {
 	const std::vector<std::string> words(argv + std::min(argc, 1), argv + argc);
-	return parse_args<Config>(words, passed);
+	return parse_args<Config>(words);
 }
 
 template <typename Config>
-auto gse::parse_args(const std::span<const std::string> words, std::vector<std::string>& passed) -> Config {
+auto gse::parse_args(const std::span<const std::string> words) -> parsed_args<Config> {
 	std::vector<std::string> expanded = expand_arg_files(words);
 	std::vector<char*> pointers{ nullptr };
 	for (std::string& word : expanded) {
@@ -365,7 +363,7 @@ auto gse::parse_args(const std::span<const std::string> words, std::vector<std::
 	std::vector<arg_flag_info> flags;
 	collect_arg_flags<Config>({}, flags);
 
-	Config result{};
+	parsed_args<Config> result{};
 	int i = 1;
 	while (i < argc) {
 		const std::string_view arg(argv[i]);
@@ -373,9 +371,9 @@ auto gse::parse_args(const std::span<const std::string> words, std::vector<std::
 			print_arg_usage(flags);
 			std::exit(0);
 		}
-		switch (try_match_arg(result, {}, argc, argv, i)) {
+		switch (try_match_arg(result.config, {}, argc, argv, i)) {
 			case arg_match::consumed:
-				passed.emplace_back(arg);
+				result.passed.emplace_back(arg);
 				break;
 			case arg_match::bad_value:
 				std::exit(2);
@@ -384,10 +382,4 @@ auto gse::parse_args(const std::span<const std::string> words, std::vector<std::
 		}
 	}
 	return result;
-}
-
-template <typename Config>
-auto gse::parse_args(const int argc, char** argv) -> Config {
-	std::vector<std::string> passed;
-	return parse_args<Config>(argc, argv, passed);
 }

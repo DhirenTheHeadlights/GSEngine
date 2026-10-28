@@ -136,7 +136,7 @@ jobs:
           # semantic index depends on. The failure is invisible at build time and surfaces later
           # as every analyzed translation unit failing identically, so refuse to publish instead.
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path dist/gcc-trunk-windows-x64.zip))
+          $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path .generated/dist/gcc-trunk-windows-x64.zip))
           $implib = $archive.Entries | Where-Object { $_.FullName -like '*/plugin/cc1plus.exe.a' }
           $archive.Dispose()
           if (-not $implib) {
@@ -149,7 +149,7 @@ jobs:
         id: hash
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 dist/gcc-trunk-windows-x64.zip).Hash.ToLower()
+          $hash = (Get-FileHash -Algorithm SHA256 .generated/dist/gcc-trunk-windows-x64.zip).Hash.ToLower()
           "sha256=$hash" >> $env:GITHUB_OUTPUT
           Write-Output "SHA256: $hash"
 
@@ -157,7 +157,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gcc-trunk-windows-x64
-          path: dist/gcc-trunk-windows-x64.zip
+          path: .generated/dist/gcc-trunk-windows-x64.zip
+          include-hidden-files: true
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -165,7 +166,7 @@ jobs:
           tag_name: ${{ needs.resolve.outputs.tag }}
           name: ${{ needs.resolve.outputs.tag }}
           draft: ${{ needs.resolve.outputs.draft == 'true' }}
-          files: dist/gcc-trunk-windows-x64.zip
+          files: .generated/dist/gcc-trunk-windows-x64.zip
           body: |
             Prebuilt native-Windows **GCC trunk** toolchain (x64), with `-freflection`
             and `import std` support. Self-contained: compiler + binutils + mingw-w64

@@ -7,6 +7,7 @@ import gse.ide.analysis;
 import gse.ide.build;
 import gse.ide.config;
 
+import :canvas;
 import :chats;
 import :layout;
 import :model;
@@ -196,6 +197,34 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 	return true;
 }
 
+namespace gse::ide::agent {
+	auto recover_met_goal(
+		session& s
+	) -> void;
+}
+
+auto gse::ide::agent::recover_met_goal(session& s) -> void {
+	if (s.goal || s.met_goal) {
+		return;
+	}
+	const auto met = std::ranges::find_if(s.runs | std::views::reverse, [](const phase_run& run) {
+		return run.phase == task_phase::steer && run.verdict == goal_verdict::met;
+	});
+	if (met == std::ranges::rend(s.runs) || std::ranges::any_of(std::ranges::subrange(s.runs.rbegin(), met), [](const phase_run& run) { return run.phase == task_phase::scope; })) {
+		return;
+	}
+	constexpr std::string_view pursuing = "pursuing goal ";
+	goal_state recovered;
+	const auto named = std::ranges::find_if(s.rows | std::views::reverse, [&](const transcript_row& row) {
+		return row.kind == row_kind::phase && row.text.starts_with(pursuing);
+	});
+	if (named != std::ranges::rend(s.rows)) {
+		recovered.record = std::filesystem::path(named->text.substr(pursuing.size()));
+		recovered.aim = aim_of(recovered.record);
+	}
+	s.met_goal = std::move(recovered);
+}
+
 auto gse::ide::agent::hydrate_session(session& s) -> void {
 	if (s.hydrated) {
 		return;
@@ -203,6 +232,7 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 
 	s.hydrated = true;
 	if (s.info.agent_id.empty() || !s.rows.empty()) {
+		recover_met_goal(s);
 		return;
 	}
 
@@ -222,6 +252,19 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 		});
 	}
 
+	for (canvas_record& canvas : s.canvases) {
+		std::expected<std::vector<canvas_step>, std::string> steps = parse_canvas(canvas.source);
+		if (!steps) {
+			log::println(log::level::warning, log::category::task, "agent: canvas '{}' in chat '{}' no longer parses and shows empty - {}", canvas.name, s.name, steps.error());
+		}
+		canvas.steps = std::move(steps).value_or(std::vector<canvas_step>{});
+		s.rows.push_back({
+			.kind = row_kind::canvas,
+			.text = canvas.name,
+			.stamped = canvas.stamped,
+		});
+	}
+
 	for (transcript_row& edit : read_changes(s)) {
 		if (edit.agent != s.info.agent_id) {
 			s.rows.push_back(std::move(edit));
@@ -236,6 +279,7 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 	}
 
 	std::ranges::stable_sort(s.rows, {}, &transcript_row::stamped);
+	recover_met_goal(s);
 }
 
 auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {
@@ -455,10 +499,22 @@ auto gse::ide::agent::rewind_session(session& s, const std::uint32_t row) -> boo
 		return group > cut;
 	});
 
+	std::erase_if(s.canvases, [&s](const canvas_record& canvas) {
+		return std::ranges::none_of(s.rows, [&canvas](const transcript_row& row) {
+			return row.kind == row_kind::canvas && row.text == canvas.name;
+		});
+	});
+
 	for (transcript_view* v : views_of(s)) {
 		std::erase_if(v->diffs, [cut = *anchor](const diff_view& view) {
 			return view.row > cut;
 		});
+		std::erase_if(v->canvases, [cut = *anchor](const canvas_view& view) {
+			return view.row > cut;
+		});
+		if (v->viewing_canvas > *anchor) {
+			v->viewing_canvas.reset();
+		}
 		reset_view(*v);
 		v->wrap_width = 0.f;
 	}

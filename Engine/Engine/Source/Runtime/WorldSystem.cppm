@@ -47,7 +47,7 @@ export namespace gse::world_system {
 	struct scene_catalog {
 		std::vector<id> scene_ids;
 		std::vector<trigger> triggers;
-		scene* active_scene = nullptr;
+		std::optional<id> active_scene;
 		std::uint32_t generation = 0;
 	};
 
@@ -70,7 +70,7 @@ export namespace gse::world_system {
 		bool catalog_published = false;
 		std::size_t published_scene_count = 0;
 		std::size_t published_trigger_count = 0;
-		scene* published_active_scene = nullptr;
+		std::optional<id> published_active_scene;
 		std::uint32_t published_generation = 0;
 	};
 
@@ -356,20 +356,24 @@ auto gse::world_system::run(context& ctx, data& d, const channel_read<set_networ
 		.visible = d.active_scene_ptr != nullptr,
 	});
 
+	const std::optional<id> active_scene_id = d.active_scene_ptr != nullptr
+		? std::optional(d.active_scene_ptr->id())
+		: std::nullopt;
+
 	if (!d.catalog_published
 		|| d.published_scene_count != d.scene_ids.size()
 		|| d.published_trigger_count != d.triggers.size()
-		|| d.published_active_scene != d.active_scene_ptr
+		|| d.published_active_scene != active_scene_id
 		|| d.published_generation != d.scene_generation) {
 		d.catalog_published = true;
 		d.published_scene_count = d.scene_ids.size();
 		d.published_trigger_count = d.triggers.size();
-		d.published_active_scene = d.active_scene_ptr;
+		d.published_active_scene = active_scene_id;
 		d.published_generation = d.scene_generation;
 		player_out.push<scene_catalog>({
 			.scene_ids = d.scene_ids,
 			.triggers = d.triggers,
-			.active_scene = d.active_scene_ptr,
+			.active_scene = active_scene_id,
 			.generation = d.scene_generation,
 		});
 	}

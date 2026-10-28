@@ -189,6 +189,8 @@ auto gse::ide::agent::push_markup_line(transcript_view& v, const markup_line& pa
 	const bool proportional = family_of(parsed.base.face) == markdown::family::proportional;
 	const font& face = proportional && !mixed ? metrics.body : metrics.face;
 
+	const auto opened = static_cast<std::uint32_t>(v.buffer.lines.size());
+	const std::size_t lead = cursor.first ? cursor.prefix.size() : cursor.indent.size();
 	const std::size_t rows = gui::append_wrapped(v.buffer, v.spans, {
 		.text = parsed.text,
 		.runs = parsed.runs,
@@ -207,6 +209,26 @@ auto gse::ide::agent::push_markup_line(transcript_view& v, const markup_line& pa
 
 	v.line_rows.insert(v.line_rows.end(), rows, cursor.row);
 	cursor.first = cursor.first && rows == 0;
+
+	std::size_t offset = 0;
+	for (std::uint32_t line = opened; line < opened + rows && !parsed.links.empty(); ++line) {
+		const std::size_t column = line == opened ? lead : cursor.indent.size();
+		const std::string_view segment = std::string_view(v.buffer.lines[line]).substr(std::min(column, v.buffer.lines[line].size()));
+		offset = std::min(parsed.text.find(segment, offset), parsed.text.size());
+		for (const markdown::rendered_link& link : parsed.links) {
+			const std::size_t from = std::max(link.start, offset);
+			const std::size_t to = std::min(link.end, offset + segment.size());
+			if (from < to) {
+				v.targets.push_back({
+					.line = line,
+					.start_col = static_cast<std::uint32_t>(column + from - offset),
+					.end_col = static_cast<std::uint32_t>(column + to - offset),
+					.target = link.target,
+				});
+			}
+		}
+		offset += segment.size();
+	}
 }
 
 auto gse::ide::agent::push_transcript_line(transcript_view& v, const gui::style& sty, const transcript_line& line, const transcript_metrics& metrics) -> void {
@@ -289,6 +311,7 @@ auto gse::ide::agent::push_transcript_line(transcript_view& v, const gui::style&
 		push_markup_line(v, {
 			.text = rendered.text,
 			.runs = tinted,
+			.links = rendered.links,
 			.base = base,
 		}, metrics, cursor);
 	}
@@ -347,7 +370,7 @@ auto gse::ide::agent::group_detail(const session& s, const group_marker& group) 
 }
 
 auto gse::ide::agent::chat_row(const transcript_row& row) -> bool {
-	return row.kind == row_kind::user || row.kind == row_kind::text;
+	return row.kind == row_kind::user || row.kind == row_kind::answer || row.kind == row_kind::text;
 }
 
 auto gse::ide::agent::after_bubble(const transcript_view& v) -> bool {
@@ -355,7 +378,7 @@ auto gse::ide::agent::after_bubble(const transcript_view& v) -> bool {
 }
 
 auto gse::ide::agent::chat_bubble(const gui::style& sty, const transcript_row& row, const std::uint32_t first_line, const std::uint32_t last_line) -> gui::text_block {
-	const bool mine = row.kind == row_kind::user;
+	const bool mine = row.kind != row_kind::text;
 	return {
 		.first_line = first_line,
 		.last_line = last_line,
@@ -373,6 +396,14 @@ auto gse::ide::agent::link_at(const transcript_view& v, const std::uint32_t line
 
 	const auto found = std::prev(above);
 	return line <= found->last_line ? &*found : nullptr;
+}
+
+auto gse::ide::agent::target_at(const transcript_view& v, const std::uint32_t line, const std::uint32_t column) -> const target_marker* {
+	const auto on_line = std::ranges::equal_range(v.targets, line, {}, &target_marker::line);
+	const auto found = std::ranges::find_if(on_line, [column](const target_marker& t) {
+		return column >= t.start_col && column < t.end_col;
+	});
+	return found == on_line.end() ? nullptr : &*found;
 }
 
 auto gse::ide::agent::group_expanded(const session& s, const std::uint32_t row) -> bool {
@@ -434,6 +465,29 @@ auto gse::ide::agent::relayout_from(transcript_view& v, const std::uint32_t row)
 		v.groups.pop_back();
 	}
 	v.flushed_rows = row;
+}
+
+auto gse::ide::agent::canvas_named(const session& s, const std::string_view name) -> const canvas_record* {
+	const auto found = std::ranges::find(s.canvases, name, &canvas_record::name);
+	return found == s.canvases.end() ? nullptr : &*found;
+}
+
+auto gse::ide::agent::push_canvas(const session& s, transcript_view& v, const transcript_row& row, const std::uint32_t index, const transcript_metrics& metrics) -> void {
+	const canvas_record* record = canvas_named(s, row.text);
+	const float line = metrics.face.line_height(metrics.scale);
+	if (!record || line <= 0.f) {
+		return;
+	}
+
+	const auto found = std::ranges::find(v.canvases, index, &canvas_view::row);
+	canvas_view& view = found != v.canvases.end() ? *found : v.canvases.emplace_back(canvas_view{ .row = index });
+	view.first_line = static_cast<std::uint32_t>(v.buffer.lines.size());
+
+	const auto reserved = static_cast<std::uint32_t>(std::ceil(record->size[1] / line));
+	for (std::uint32_t i = 0; i < reserved; ++i) {
+		v.buffer.lines.emplace_back();
+		v.line_rows.push_back(index);
+	}
 }
 
 auto gse::ide::agent::update_diff_scroll(const gui::draw_context& ctx, transcript_view& v, const rectf& area, const float advance) -> std::optional<std::uint32_t> {
@@ -715,6 +769,9 @@ auto gse::ide::agent::truncate_transcript(transcript_view& v, const std::uint32_
 	while (!v.links.empty() && v.links.back().last_line >= line) {
 		v.links.pop_back();
 	}
+	while (!v.targets.empty() && v.targets.back().line >= line) {
+		v.targets.pop_back();
+	}
 	std::erase_if(v.previews, [line](const group_marker& held) {
 		return held.line >= line;
 	});
@@ -723,6 +780,35 @@ auto gse::ide::agent::truncate_transcript(transcript_view& v, const std::uint32_
 			view.line = unplaced_line;
 			view.first_line = unplaced_line;
 		}
+	}
+	for (canvas_view& view : v.canvases) {
+		if (view.first_line != unplaced_line && view.first_line >= line) {
+			view.first_line = unplaced_line;
+		}
+	}
+}
+
+auto gse::ide::agent::push_answer(transcript_view& v, const gui::style& sty, const transcript_row& row, const std::uint32_t index, const transcript_metrics& metrics) -> void {
+	for (const question_option& option : row.options) {
+		push_transcript_line(v, sty, {
+			.prefix = option.chosen ? "[x] " : "[ ] ",
+			.text = option.label,
+			.color = option.chosen ? sty.color_accent : sty.color_text_secondary,
+			.face = gui::text_face::text,
+			.row = index,
+			.wrap_width = metrics.width * chat_wrap_fraction,
+		}, metrics);
+	}
+
+	if (!row.detail.empty()) {
+		push_transcript_line(v, sty, {
+			.prefix = "",
+			.text = row.detail,
+			.color = sty.color_text,
+			.face = gui::text_face::text,
+			.row = index,
+			.wrap_width = metrics.width * chat_wrap_fraction,
+		}, metrics);
 	}
 }
 
@@ -736,26 +822,24 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 
 	const auto opened = static_cast<std::uint32_t>(v.buffer.lines.size());
 	const row_style look = style_of(row.kind);
-	const bool record = v.filter == row_filter::digest && row.kind == row_kind::phase;
-	const phase_policy reported = record ? policy_of(row.phase) : phase_policy{};
-	const std::string_view title = *reported.record != '\0'
-		? std::string_view(reported.record)
-		: std::string_view(row.text);
 
 	push_transcript_line(v, sty, {
 		.prefix = look.prefix,
-		.text = title,
+		.text = row.text,
 		.color = sty.*look.color,
 		.face = gui::text_face::text,
 		.row = index,
-		.wrap_width = row.kind == row_kind::user ? metrics.width * chat_wrap_fraction : 0.f,
+		.wrap_width = chat && row.kind != row_kind::text ? metrics.width * chat_wrap_fraction : 0.f,
 		.markdown = row.kind == row_kind::text,
 	}, metrics);
 
 	const bool edit = !row.added.empty() || !row.removed.empty();
 	const bool compact = edit && v.filter != row_filter::changes;
 
-	if (compact) {
+	if (row.kind == row_kind::answer) {
+		push_answer(v, sty, row, index, metrics);
+	}
+	else if (compact) {
 		push_change_summary(v, sty, row, index);
 	}
 	else if (!row.detail.empty()) {
@@ -781,9 +865,12 @@ auto gse::ide::agent::push_row(session& s, transcript_view& v, const gui::style&
 		push_diff(v, sty, row, index, metrics);
 	}
 
+	if (row.kind == row_kind::canvas) {
+		push_canvas(s, v, row, index, metrics);
+	}
+
 	const bool previewable = row.kind == row_kind::user
-		|| (row.kind == row_kind::tool && !edit)
-		|| reported.record_brief;
+		|| (row.kind == row_kind::tool && !edit);
 	if (previewable && v.buffer.lines.size() - opened > row_preview_lines) {
 		const bool expanded = group_expanded(s, index);
 		if (!expanded) {
@@ -816,12 +903,8 @@ auto gse::ide::agent::shows(const row_filter filter, const transcript_row& row) 
 	switch (filter) {
 		case row_filter::all:
 			return true;
-		case row_filter::digest:
-			return row.kind == row_kind::user
-				|| row.kind == row_kind::failure
-				|| row.kind == row_kind::gap
-				|| row.kind == row_kind::question
-				|| (row.kind == row_kind::phase && !row.detail.empty());
+		case row_filter::conversation:
+			return row.kind != row_kind::tool && row.kind != row_kind::question;
 		case row_filter::changes:
 			return !row.file.empty() && !(row.added.empty() && row.removed.empty());
 	}
@@ -835,6 +918,7 @@ auto gse::ide::agent::reset_view(transcript_view& v) -> void {
 	v.rules.clear();
 	v.blocks.clear();
 	v.links.clear();
+	v.targets.clear();
 	v.line_rows.clear();
 	v.groups.clear();
 	v.previews.clear();
@@ -843,10 +927,13 @@ auto gse::ide::agent::reset_view(transcript_view& v) -> void {
 		view.line = unplaced_line;
 		view.first_line = unplaced_line;
 	}
+	for (canvas_view& view : v.canvases) {
+		view.first_line = unplaced_line;
+	}
 }
 
-auto gse::ide::agent::views_of(session& s) -> std::array<transcript_view*, 3> {
-	return { &s.digest, &s.full, &s.changes };
+auto gse::ide::agent::views_of(session& s) -> std::array<transcript_view*, 4> {
+	return { &s.full, &s.changes, &s.everything, &s.followup };
 }
 
 auto gse::ide::agent::sync_transcript(session& s, transcript_view& v, const gui::style& sty, const transcript_metrics& metrics) -> void {
@@ -857,12 +944,23 @@ auto gse::ide::agent::sync_transcript(session& s, transcript_view& v, const gui:
 		reset_view(v);
 	}
 
-	for (; v.flushed_rows < s.rows.size(); ++v.flushed_rows) {
+	for (v.flushed_rows = std::max(v.flushed_rows, v.first_row); v.flushed_rows < s.rows.size(); ++v.flushed_rows) {
 		transcript_row& row = s.rows[v.flushed_rows];
 		const auto row_index = static_cast<std::uint32_t>(v.flushed_rows);
 
 		if (!shows(v.filter, row)) {
 			continue;
+		}
+
+		if (v.filter == row_filter::changes) {
+			if (const std::optional<std::string> section = run_section_of(s, row_index)) {
+				push_transcript_line(v, sty, {
+					.text = *section,
+					.color = sty.color_text_secondary,
+					.face = gui::text_face::text,
+					.row = row_index,
+				}, metrics);
+			}
 		}
 
 		if (!grouped_row(row)) {

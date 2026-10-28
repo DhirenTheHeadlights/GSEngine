@@ -143,7 +143,7 @@ auto gse::gui::update_menu_zoom(viewport_state& vp, menu& m, const input::state&
 	vp.input_layers_data.consume_scroll(scroll_axis_kind::vertical);
 }
 
-auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const bool translucent, const std::function<void(builder&)>& build) -> void {
+auto gse::gui::process_menu(context& run_ctx, data& d, viewport_state& vp, const input::state& input_state, const std::string& name, const render_layer layer, const bool translucent, const draw_fn& build) -> void {
 	if (!vp.fstate.active) {
 		return;
 	}
@@ -253,7 +253,7 @@ auto gse::gui::process_menu(data& d, viewport_state& vp, const input::state& inp
 		.focus_widget_id = vp.focus_widget_id
 	};
 
-	build(b);
+	build(b, run_ctx);
 	d.context = nullptr;
 
 	stamp_z();

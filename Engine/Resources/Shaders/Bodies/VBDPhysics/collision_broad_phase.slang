@@ -5,7 +5,7 @@ int3 world_to_cell(float3 pos, float cell_size) {
 
 uint hash_cell(int3 cell) {
     uint h = uint(cell.x * 73856093 ^ cell.y * 19349663 ^ cell.z * 83492791);
-    return (h % grid_table_size) + 1;
+    return (h % grid_table_size()) + 1;
 }
 
 bool is_jointed(uint a, uint b) {
@@ -56,10 +56,10 @@ bool is_poly_pair(body_state a, body_state b) {
 }
 
 void emit_pair(uint a, uint b, bool poly) {
-    uint base = poly ? poly_pair_base : 0u;
+    uint base = poly ? poly_pair_base() : 0u;
     uint slot;
     InterlockedAdd(collision_pairs[base], 1, slot);
-    if (slot >= max_collision_pairs) {
+    if (slot >= max_collision_pairs()) {
         InterlockedAdd(collision_pairs[base], -1, slot);
         return;
     }
@@ -119,7 +119,7 @@ void collision_broad_phase(uint3 dispatch_id) {
                 uint bucket = hash_cell(cell);
                 uint entry_ptr = grid_data[bucket];
 
-                while (entry_ptr != 0 && entry_ptr >= grid_table_size + 1) {
+                while (entry_ptr != 0 && entry_ptr >= grid_table_size() + 1) {
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
                     nodes_walked += 1;

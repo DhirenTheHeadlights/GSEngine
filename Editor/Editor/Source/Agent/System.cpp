@@ -22,6 +22,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		load_sessions(d);
 		adopt_inherited(d);
 		resume_interrupted(d);
+		triage_crashes(d);
 		d.default_model.options.emplace_back();
 		for (const model_option& option : available_models()) {
 			d.default_model.options.push_back(option.value);
@@ -43,7 +44,27 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		hydrate_session(*shown);
 	}
 
+	if (std::exchange(d.token_requests_cancelled, false)) {
+		for (const sync_request& request : d.token_pending_syncs) {
+			events_out.push<sync_finished>({ .root = request.root, .failure = "Claude token setup was cancelled" });
+		}
+		d.token_pending_starts.clear();
+		d.token_pending_syncs.clear();
+	}
+
 	for (const start_request& request : requests_in.of<start_request>()) {
+		d.token_pending_starts.push_back(request);
+	}
+	for (const sync_request& request : requests_in.of<sync_request>()) {
+		d.token_pending_syncs.push_back(request);
+	}
+	const bool authenticated = agent_credentials().token;
+	if (!authenticated && (!requests_in.of<start_request>().empty() || !requests_in.of<sync_request>().empty())) {
+		d.token_prompt_open = true;
+	}
+	const auto starts = authenticated ? std::exchange(d.token_pending_starts, {}) : std::vector<start_request>{};
+	const auto syncs = authenticated ? std::exchange(d.token_pending_syncs, {}) : std::vector<sync_request>{};
+	for (const start_request& request : starts) {
 		session& started = create_session(d, request.cwd, task_phase::apply);
 		if (!launch_session(started)) {
 			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' - is it on PATH?");
@@ -53,7 +74,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		send_to_session(started, request.prompt, {}, true);
 	}
 
-	for (const sync_request& request : requests_in.of<sync_request>()) {
+	for (const sync_request& request : syncs) {
 		if (session* running = sync_session(d)) {
 			log::println(log::level::warning, log::category::task, "agent: a sync chat for {} is already open, so the one asked for {} was refused", running->sync->root, request.root);
 			events_out.push<sync_finished>({
@@ -106,6 +127,9 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	for (session& s : d.sessions) {
+		if (s.fork.process) {
+			pump_inquiry(*s.fork.process);
+		}
 		if (s.running) {
 			pump_session(s);
 		}
@@ -126,6 +150,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		}
 		wake_observers(d, finished);
 	}
+	service_inquiry(d, events_out);
 
 	bool state_changed = poll_build_inbox(d, events_out, build_d.building);
 	for (session& s : d.sessions) {
@@ -155,8 +180,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	events_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, jump_out = events_out](gui::builder& b) {
-			draw_panel(b, *d, jump_out);
+		.build = [](gui::builder& b, data& panel_d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) {
+			draw_panel(b, panel_d, jump_out);
 		},
 	});
 
@@ -164,8 +189,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		events_out.push<gui::menu_content>({
 			.menu = std::string(source_control_panel_name),
 			.layer = render_layer::content,
-			.build = [d = &d, jump_out = events_out](gui::builder& b) {
-				draw_sync_chat(b, *d, b.ctx.clip_stack.back(), jump_out);
+			.build = [](gui::builder& b, data& panel_d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) {
+				draw_sync_chat(b, panel_d, b.ctx.clip_stack.back(), jump_out);
 			},
 		});
 	}
@@ -189,10 +214,11 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 	}
 
 	retire_presence(d);
+	cancel_inquiry(d);
 	hand_off_builds(d, relaunching);
 
 	for (session& s : d.sessions) {
-		if (relaunching && is_chat(s) && hand_off_session(s)) {
+		if (relaunching && hand_off_session(s)) {
 			continue;
 		}
 		close_session(s);

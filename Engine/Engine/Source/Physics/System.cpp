@@ -720,7 +720,7 @@ auto gse::physics::gpu_solver_driving(const shared_view<data> d) -> bool {
 
 auto gse::physics::gpu_solver_frame_info_of(const data& d) -> gpu_solver_frame_info {
 	return {
-		.snapshot = &d.gpu_solver.render_body_buffer(),
+		.snapshot = d.gpu_solver.render_body_buffer().handle(),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
 		.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes),

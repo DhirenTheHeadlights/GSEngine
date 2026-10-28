@@ -1,0 +1,24 @@
+import std;
+
+extern "C" auto __main_argc_argv(int argc, char** argv) -> int;
+
+extern "C" auto entry() -> int {
+	constexpr int arg_limit = 64;
+	static std::array<char*, arg_limit> args = {
+		const_cast<char*>("sandbox"),
+		const_cast<char*>("--no-engine-gpu"),
+		const_cast<char*>("--engine-bench-scenario"),
+		const_cast<char*>("@GSE_WASM_SCENARIO@"),
+	};
+	int argc = 4;
+
+	static std::array<char, 4096> extra{};
+	if (const char* from_env = std::getenv("GSE_RUN_ARGS"); from_env != nullptr) {
+		std::strncpy(extra.data(), from_env, extra.size() - 1);
+		for (char* token = std::strtok(extra.data(), " "); token != nullptr && argc < arg_limit; token = std::strtok(nullptr, " ")) {
+			args[argc++] = token;
+		}
+	}
+
+	return __main_argc_argv(argc, args.data());
+}

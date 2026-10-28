@@ -884,11 +884,7 @@ struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
 		if (unit_start != end && *unit_start == '{') {
 			unit_end = unit_start + 1;
 			if (unit_end == end || *unit_end != '}') {
-#if __cpp_exceptions
-				throw format_error("gse quantity: dynamic unit must be spelled {}");
-#else
 				__builtin_abort();
-#endif
 			}
 			unit_arg = ctx.next_arg_id();
 			ctx.check_dynamic_spec_string(*unit_arg);

@@ -2890,3 +2890,791 @@ verified-green code rather than a cleanup nobody has run:
 check, since whether a portable-SIMD native build is reachable without editing the engine is what decides
 if criterion (3) is `require` or `report`; then the parity gate with `--no-engine-gpu` on **both** sides,
 three consecutive runs, reload stability, and the report artifact under `Tools/` output.
+
+### 2026-10-24 — steering: the cleanup and the commit judged (hold); and **criterion (3) is settled by reading — `GSE_SIMD_X86` cannot be turned off today, but making it configurable is a three-line in-charter change**
+
+**Judged against the pass criteria: (1)-(6) still unmet, and still for the one reason — nothing has run in a
+browser page.** The wasm result itself was re-measured by this task and is unmoved:
+`0x2aeb133bbb68d214`, `bench: PASSED`, harness `ok 0`, p50 162.110 ms.
+
+**Confirmed from the artifacts, not the report.** A grep for `job_diagnostics|log_job_census|jobs_pushed|
+jobs_entered` over `Engine/Engine/Source` returns **nothing**, so the census removal is total. The keeper is
+whole and was read at source: `Scheduler.cpp:1397` still computes `unwatched` from `m_init_stall_dump`,
+`:1427` is the elapsed-time trigger, `:1438-1443` prints the `STALL [phase=init …]` header with
+`task_count`/`done_flag`/`w.done()`, and `set_init_stall_dump` survives at `:1459`. `15bd61a0` exists on
+`dev` with 137 files changed (+10254/−3394), `git status -sb` reads `## dev...origin/dev [ahead 1]`, and a
+case-insensitive grep over the commit message for `claude`/`co-authored` returns **0** — the owner's
+standing no-attribution rule held. `touched.txt` is the three concurrency/scheduler files. Verdict: correct,
+keep. Staging by explicit path rather than `git add -A` was right and the open item it creates (the commit is
+a verified-green *subset* of a dirty tree) is inherent, honestly stated, and not worth stashing the owner's
+work to close.
+
+**Two record corrections from the task, both accepted.** `baseline-0017/` lives at
+`.gcc-wasm-build/baseline-0017`, inside the gitignored build directory — the ledger listed it as a commit
+item on a path that cannot be committed. Treat earlier entries' "baseline-0017" commit line as wrong. And
+`docs/system_failure_plan.md` still describes `when_all_helper` with its old signature; prose only, the
+owner's to update if it matters.
+
+**The open assumption this record has carried since it was written is now settled, by reading rather than by
+a build.** `Math/Vector/SIMD.cppm:12-19` derives the macro purely from the target architecture:
+`#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)` then
+`#define GSE_SIMD_X86 1`. There is no CMake option, no cache variable and no command-line route — a `-U` on
+the compiler line cannot unset a macro the translation unit defines for itself. **So on an x86-64 host the
+portable `:simd` arm is unreachable today, and criterion (3) as written is not runnable.**
+
+**But the fix is three lines and is in charter, so (3) does not drop to `report`.** The charter's words are
+exact: "A portable-SIMD *configuration* is in charter; changing the default is not." An opt-out guard —
+`#if !defined(GSE_NO_SIMD_X86) && (defined(__x86_64__) || …)` — leaves every existing build textually
+identical (nothing defines the new macro), so the native default and `0xe836d31697879e27` cannot move, and
+it makes the portable arm selectable for the parity build with one `-D`. That is a configuration, not a
+default change, and it is the cheapest thing standing between this goal and a `require`-level (3).
+
+**Next task: the browser page, and the SIMD guard beside it.** Both in charter —
+`Tools/`'s "a new browser/node harness beside them" is authorized by name, and `Math/` is a spine module
+the port crosses:
+1. **A page harness.** Serve `scenario.wasm` plus a page that instantiates it with the same WASI shim the
+   node harness uses, Worker-backed `wasi.thread-spawn`, `--import-memory`/`--export-memory` and the
+   `INITIAL_PAGES = 256 / MAX_PAGES = 8192` memory the node arm already proves. Reuse `harness_text()` and
+   the node harness's structure rather than writing a second shim; reuse `parity_gate.py:11`'s regex
+   contract for the hash line rather than inventing an output format. **Carry the lesson that cost four
+   handoffs: a worker's `console.log` needs the parent's event loop, which a synchronously spinning main
+   thread never returns to.** In a page the equivalent is `postMessage` back to a main thread that is itself
+   blocked inside the module — so plan the console channel so a worker trap is *visible*, and make worker
+   spawn/return/trap unconditional as the node harness does. Note too that the page needs
+   cross-origin-isolation headers (COOP/COEP) for `SharedArrayBuffer`, so the server is part of the
+   deliverable, not an afterthought.
+2. **The `GSE_NO_SIMD_X86` guard** (spelling the task's call), with native built green and
+   `0xe836d31697879e27` reprinted at the default to prove the configuration is dormant. Do **not** run the
+   portable-SIMD native build's parity comparison in this task — that is the gate's job, below.
+
+Judged on: the page loads the module and `scene_reset_cpu` runs to its own exit with no manual input, the
+console carrying `world-state hash 0x<16 hex>` and the p50 row, exit status 0 — i.e. criteria (1) and (2)
+met. Record the hash; it should equal the node arm's `0x2aeb133bbb68d214`, and a *difference* between node
+and a page on the same module is itself a finding worth reporting rather than smoothing over. If the page
+stops short, the deliverable is the stop site and the enumerated cause, as every tier of this ledger's
+graded line has been. Run the measurement **in the task, in the foreground, as the last action**.
+
+**Then, last:** the parity gate and the report artifact — criteria (3)-(6). Written down nowhere else and
+still true: **`--no-engine-gpu` must be passed on the native side too**, or the gate attributes the dropped
+`gpu::context::data` to the SIMD arm.
+
+**Carried forward unchanged:** `.gcc-wasm-run/` is untracked build output and is not in `.gitignore`; the
+update-phase `gse::physics::data` stall under wasm (~162 ms/frame) is slowness, not a hang, and no pass
+criterion mentions wall-clock time; `Os/Web/ImageLoader.cpp` asserts and `GpuRecord/Web/ShaderCompile.cpp`
+returns empty, neither reached; `Time/Web/SystemClock.cpp`'s `from_query_performance_counter` returns
+`now()`; `--engine-test-all` under wasm aborts at `process::temporary_path`; the `strtold` link warning and
+the `libcall`/`__powidf2` probe regression are pre-existing; `fd_readdir` omits the dot entries;
+`Os/Process.cppm:122,125` still call `path::wstring()`; `Diag/AllocTrackGlobal.cpp`, `Dx12/AgilitySdk.cpp`
+and `Sandbox/Main.cpp` declare no module so no link enumerates them; seven patch boundaries have no baseline
+snapshot; `"web"` is hardcoded as the process-id answer in three modules; the CMake drop path has no
+coverage beyond its keep-both Windows arm; `gse.vulkan -> gse.aftermath` is reserved by path;
+`Nvidia/Backend.cpp` still has had no compiler over it; **push remains the owner's call** — `dev` is one
+ahead of `origin/dev`.
+
+### 2026-10-24 — steering: **criterion (1) is met — the scenario runs in a browser page and the hash matches node**; (2) is short by its exit status alone, and the stuck thread is in the shutdown join
+
+**Judged against the pass criteria, and one of them is now met.** `.gcc-wasm-build/build/gcc/run-page.log`
+(16:33-16:34 today) is a *page* run, not node: it opens `page: module compiled, memory imported, 256
+initial pages of 8192` and `page: filesystem ready, 60 files (9 with bytes), 28 directories`, then
+`bench: fixed-step clock engaged, 0 warmup frames then 240 measured frames`, seven `thread N spawned` /
+`live` / `entering` reports, the engine's own `gpu disabled by config` and scene lines, and
+`bench: 240 frames measured, p50 201.645 ms p95 342.280 ms p99 379.530 ms, world-state hash
+0x2aeb133bbb68d214` followed by `bench: PASSED`. **Criterion (1) is met**: a browser page loads the
+module and `scene_reset_cpu` ticks to the bench's own exit with nobody at the keyboard. **Criterion (2)
+is met except for the exit status** — the hash line in `parity_gate.py:11`'s form and the p50 row are
+both there; the process never exits. And the hash is the node arm's, which is the result that matters:
+`0x2aeb133bbb68d214` in the page, and the same value in `/tmp/apply_fix1.log`, `/tmp/apply_fix2.log` and
+`/tmp/trace_run.log`. Node and a browser agree bit for bit on the same module.
+
+**The SIMD guard is what it claims.** `Math/Vector/SIMD.cppm:12` reads
+`#if !defined(GSE_NO_SIMD_X86) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))`,
+and nothing in the tree defines the new macro, so every existing build is textually unchanged — native
+green, `0xe836d31697879e27` reprinted. **That settles the record's oldest open assumption in the
+direction the charter allows:** criterion (3) stays at `require` rather than dropping to `report`,
+because the portable arm is now reachable with `-DGSE_NO_SIMD_X86` and that is a configuration, not a
+default change. Verdict on the task: correct, keep. Review found one real defect — `host.mjs`'s `load()`
+registering a directory with a parent that does not exist yet, which would have burned the full 1800 s
+timeout having executed nothing — and it was fixed at the cause and reproduced both ways.
+
+**The one unmet thing, narrowed from the artifact rather than from the report.** The log's thread
+reports are unambiguous: threads 2-6 spawn, go `live`, then `entering`; 7 and 8 spawn later and do the
+same; after `bench: PASSED` **six of the seven return — 2, 5, 3, 4, 6, 8 — and thread 7 never does.**
+The host's idle report then repeats for the rest of the run with `0 waiting on the channel, lock 0` and
+`7:page_report 166575ms ago` — thread 7's last contact with the host was its own `entering` report, 36 s
+*before* the others' final reports, and it has made no syscall since. So it is parked inside the module,
+not in the harness, exactly as reported, and thread 1's last syscall being `fd_close` is consistent with
+it sitting in a join.
+
+**Read at source, so the next task starts with a region rather than a thread number.** Shutdown is
+`drain_and_shutdown_pool` → `pool_shutdown` (`Concurrency/Task.cppm:1093`), which (a) `request_stop()`s
+every worker, (b) releases exactly `worker_count_value - 1` permits on `work_available`, (c) calls
+`workers.clear()` — destroying `std::jthread`s, so **each destructor joins, serially, and the first
+stuck join blocks forever** — then (d) `stop_lane(io_lane)` and `stop_lane(background_lane)`, each of
+which `request_stop`s, releases `threads.size()` permits on that lane's semaphore and clears (joins).
+Both candidate parked states are a `counting_semaphore::acquire`: `worker_loop`'s `work_available.acquire()`
+(`Task.cppm:923`) and `lane_loop`'s `lane.available.acquire()` (`:937`). **So the hang is one thread that
+never got a permit, or got one and did not re-check its stop token** — and the permit arithmetic is the
+thing to audit, because in both places the wake-up count is computed from a size rather than from the
+number of threads actually parked.
+
+**Thread 7's role is the missing fact and it is cheaply obtainable.** The log's thread tags are `main`,
+`worker-0`, `io-0`, `io-1` and one unnamed `T00000000c175bdcd`; `log::name_thread` is called inside each
+loop, so only threads that logged are named, and thread 7 logged nothing. Two routes, cheapest first:
+1. **No relink.** Every engine log line reaches stdout as an `fd_write` *from the guest thread that wrote
+   it*, and the host already keeps a last-syscall-per-tid table. Have the page record the tid for each
+   `fd_write` and emit the tid-to-role map by matching the role tag already inside the text; the six
+   identified roles then name thread 7 by elimination. `Tools/` is charter-authorized and this costs one
+   page run (~1 min) against ~25 minutes for a relink.
+2. **One relink if route 1 is not conclusive.** A gated one-line log at `worker_loop`/`lane_loop` entry
+   and exit carrying role and index, and one per stage in `pool_shutdown` naming which worker or lane is
+   being joined — that names the join that never returns outright. Keep it behind the existing
+   `--engine-init-stall-dump`-style gate so the native default stays dormant, and report the wording.
+
+**Next task: make the browser run exit 0.** Name thread 7's role from an artifact, establish whether it is
+parked on `work_available` or a lane semaphore, and fix the wake-up at the layer the measurement names —
+the permit count, the stop-token re-check, or the join order. `gse.concurrency` is charter-named and
+`Tools/` is authorized, so this is an ordinary task; escalate rather than guess if the only fix would
+change native shutdown behaviour beyond making a missed wake-up impossible. **Judged on:** the page run
+reaching exit 0 with `world-state hash 0x2aeb133bbb68d214` and the p50 row still printed — i.e.
+**criterion (2) met** — on three consecutive runs, which also closes the run-stability half of (5);
+native build green and `0xe836d31697879e27` unmoved, which for a change in the shutdown path is a real
+check and not a formality. Run the page **in the task, in the foreground, as the last action**. If the
+fault turns out to be toolchain rather than engine (a patch 0020), that is in charter too and the
+hours-long rebuild is expected.
+
+**Then the gate, and it is the last structural piece:** criteria (3)-(6) — a `-DGSE_NO_SIMD_X86` native
+build, `--no-engine-gpu` on **both** sides (written down nowhere else, and still the one way the gate
+could attribute a dropped `gpu::context::data` to the SIMD arm), `--engine-bench-state-dump-out` through
+`parity_gate.py` at `0.002`, three consecutive runs, reload stability, and the report artifact under
+`Tools/` output.
+
+**New open items from this task:** `GSE_NO_SIMD_X86` has no CMake option, so the parity build passes it
+as a raw flag; the page's no-verdict timeout is 1800 s, which a failing gate run waits out once
+(`--timeout` is the knob); the node harness's WASI path map was never seeded on spawned threads, so every
+file a job thread opened was invisible to the asset trace — fixed, and node still prints the same hash;
+`Tools/wasm_page/*.mjs` are not pinned in `.gitattributes`, harmless since nothing digests them;
+`host.mjs`'s `grow()` on a listed-but-unpacked file leaves reads past the write reporting zeros, and
+`serve()`'s outer loop busy-spins between two channel states — both declined deliberately, neither
+reachable in the measured set, and the second is only worth revisiting with a frame-time measurement in
+hand.
+
+**Carried forward unchanged:** the update-phase `gse::physics::data` stall (~160-200 ms/frame under wasm)
+is slowness, not a hang, and no pass criterion mentions wall-clock time; `.gcc-wasm-run/` is untracked
+build output and is not in `.gitignore`; `Os/Web/ImageLoader.cpp` asserts and
+`GpuRecord/Web/ShaderCompile.cpp` returns empty, neither reached; `Time/Web/SystemClock.cpp`'s
+`from_query_performance_counter` returns `now()`; `--engine-test-all` under wasm aborts at
+`process::temporary_path`; the `strtold` link warning and the `libcall`/`__powidf2` probe regression are
+pre-existing; `fd_readdir` omits the dot entries; `Os/Process.cppm:122,125` still call `path::wstring()`;
+`Diag/AllocTrackGlobal.cpp`, `Dx12/AgilitySdk.cpp` and `Sandbox/Main.cpp` declare no module so no link
+enumerates them; seven patch boundaries have no baseline snapshot; `"web"` is hardcoded as the process-id
+answer in three modules; the CMake drop path has no coverage beyond its keep-both Windows arm;
+`gse.vulkan -> gse.aftermath` is reserved by path; `Nvidia/Backend.cpp` still has had no compiler over it;
+**push remains the owner's call** — `dev` is one ahead of `origin/dev`, and the page harness, the SIMD
+guard and the node fix are all uncommitted.
+
+### 2026-10-24 — steering: **criterion (2) is met — the page run exits 0** and the hash is unmoved; the gate is the last piece, and its two hard parts are a *writable* state dump and a second native configuration
+
+**Judged against the pass criteria, and the aim is now two criteria short rather than five.** (1) and
+(2) are **met**; (5)'s reload-stability half is met; (3), (4), (6) and (5)'s three-consecutive-runs
+half remain.
+
+**Confirmed from the artifacts, not the report.** `.gcc-wasm-build/build/gcc/run-page.log` carries
+`bench: 240 frames measured, p50 190.630 ms p95 294.630 ms p99 316.540 ms, world-state hash
+0x2aeb133bbb68d214`, then `bench: PASSED`, then **all seven** `thread 2..8 returned` and
+`entry returned 0`. The hash is the same value the node arm and every prior page run printed, so node
+and a browser still agree bit for bit on the same module. `touched.txt` is three `Tools/` files and no
+engine C++, so the native hash cannot have moved and is correctly not a check here.
+
+**The fix is what it claims and the cause is worth keeping.** `Tools/wasm_page/guest.mjs:119` now reads
+`poll_oneoff: (subscriptions, events, count, produced)` with the loop bound by `count`, which is
+preview1's `(in, out, nsubscriptions, nevents)`. With the middle two swapped, subscription 0 still
+decoded at the same address — so a one-subscription sleep slept correctly and the run continued — and
+the loop then ran for the *events pointer*, reading zeroed memory as further clock subscriptions. The
+watchdog monitor, the only thread in the process that sleeps, waited out whatever those bytes said.
+Reporting the absurd timeout rather than clamping it was the right call: a `Math.min(ms, 1000)` would
+have produced exit 0 with the argument order still wrong. Verdict: correct, keep.
+
+**And the method is the one this ledger has been asking for.** The scope's route was a breadcrumb
+relink of `Task.cppm` plus a native build, ~25 minutes, to measure the right thread for the wrong
+reason; the task instead re-ran the already-linked module under node first and eliminated the engine in
+90 seconds. That is the cheap-measurement rule paying out for the third time. The `--probe NAME...` arm
+is a real dividend beyond this task — the probe table has gone unmeasured for stretches of this goal
+purely because reading it cost a full fetch/patch/configure/three-makes walk — and keeping
+`semaphore_release_n`/`semaphore_release_one_each` despite their hypothesis being wrong is right:
+`std_thread` joins a thread that never blocks, so nothing covered a thread resumed by a notify.
+
+**What is left, read at source this run so the next task is not scoped blind, because the gate has two
+parts that are not mere plumbing.**
+1. **`parity_gate.py` is a native-only driver.** It takes `--exe`, `--backend {vulkan,dx12,both}`,
+   `--runs`, `--only`, `--extra-setting`, launches scenarios itself and compares runs of *that* exe. It
+   has no concept of a wasm log. Its `0.002` is `positional_tolerance` on one table entry (`:97`), and
+   the comparator worth reusing is `read_domino_metrics` plus the positional check (`:36`, `:268`) over
+   an `--engine-bench-state-dump-out` record — **not** `main()`. So criterion (4) is a new driver under
+   `Tools/` that imports those two pieces, which is also criterion (6)'s report artifact. Reuse the
+   comparator and the hash regex (`:11`); do not reinvent either, and do not bend `parity_gate.py`'s own
+   CLI into a cross-target shape it was not built for.
+2. **The wasm side has to produce a state dump, and nothing has ever asked the page harness to create a
+   file.** `--engine-bench-state-dump-out` writes one; `host.mjs` serves a packed tree, and this ledger
+   already records that `grow()` on a listed-but-unpacked file leaves reads past the write reporting
+   zeros. Whether a *new* path can be opened for writing, and how its bytes reach the host filesystem,
+   is unmeasured and is the first thing the task should establish — before building a comparator for
+   records that may not exist.
+3. **Criterion (3) needs a second native configuration, and this is the one real unknown.** The SIMD
+   guard works (`Math/Vector/SIMD.cppm:12`, nothing defines `GSE_NO_SIMD_X86`, every existing build
+   textually unchanged — which is why (3) stayed at `require`), but **the editor owns the build directory
+   and `gse_build` is the only sanctioned route to a native binary.** A `-DGSE_NO_SIMD_X86` build is a
+   different configuration of that one directory, and no agent may run `cmake` to make it. The task must
+   find out whether a portable-SIMD native binary is producible at all from inside this editor and
+   **report the answer rather than working around it** — if it is not, that is the owner's call (they can
+   build it, or authorize a dormant CMake option), and (3) is then `report` as the record already
+   provides for, with (4) carrying the `require`.
+
+**Next task: the gate harness and criterion (4), in that order, measuring before building.**
+1. Establish whether the page harness can create and write `--engine-bench-state-dump-out`'s file and
+   surface the bytes host-side. Fix `host.mjs` if the gap is a missing write path — `Tools/` is
+   charter-authorized — and report if it is something larger.
+2. Produce the **native AVX2** reference dump for the same scenario and frame count. Use **`gse_run` on
+   the existing on-disk binary, not a build**: the tree currently carries two other chats' in-flight
+   edits (crash handling, agent panel), so a native build now would measure their work, and the on-disk
+   exe is the one that has reprinted `0xe836d31697879e27` throughout. **Pass `--no-engine-gpu` on the
+   native side too** — written down nowhere but this ledger, and still the one way the gate could
+   attribute the dropped `gpu::context::data` to the SIMD arm.
+3. Compare at `0.002` through the imported positional check; run it three times for (5); write the report
+   artifact under `Tools/` output carrying hashes, p50s, the comparison and the invocation, so a fresh
+   session can re-check it without reconstructing anything — that is (6) and it is cheap once (4) exists.
+4. **Report, do not decide, on criterion (3)**: whether a `-DGSE_NO_SIMD_X86` native binary is reachable
+   without invoking a compiler directly.
+
+Judged on: the positional comparison performed and its number reported against `0.002` on three
+consecutive runs, with the report artifact written and its path named; the wasm hash still
+`0x2aeb133bbb68d214`; and an explicit verdict on whether (3) is runnable from here. No engine source
+should change, which is also the check — the native hash cannot move. Run the page **in the task, in the
+foreground, as the last action**.
+
+**New open items from this task:** the page's `clock_time_get` returns one epoch-based timeline for every
+clock id and `clock_res_get` reports 1 microsecond for all of them, a difference from node worth knowing
+when (3)/(4) compare timing; `poll_oneoff` answers a non-clock subscription as immediately ready without
+writing the `fd_readwrite` half of the event — pre-existing and unreachable, since the engine's only use
+of the call is `nanosleep`; `run_wasm_page.py` prints a `ConnectionResetError` traceback from its own
+server when Chrome is terminated after the verdict, cosmetic but it is noise in a gate artifact.
+
+**Carried forward unchanged:** no native build has been run against the current tree, and two other chats
+are editing it; the update-phase `gse::physics::data` stall (~160-200 ms/frame under wasm) is slowness,
+not a hang, and no pass criterion mentions wall-clock time; `.gcc-wasm-run/` is untracked build output and
+is not in `.gitignore`; `Os/Web/ImageLoader.cpp` asserts and `GpuRecord/Web/ShaderCompile.cpp` returns
+empty, neither reached; `Time/Web/SystemClock.cpp`'s `from_query_performance_counter` returns `now()`;
+`--engine-test-all` under wasm aborts at `process::temporary_path`; the `strtold` link warning and the
+`libcall`/`__powidf2` probe regression are pre-existing; `fd_readdir` omits the dot entries;
+`Os/Process.cppm:122,125` still call `path::wstring()`; `Diag/AllocTrackGlobal.cpp`,
+`Dx12/AgilitySdk.cpp` and `Sandbox/Main.cpp` declare no module so no link enumerates them; seven patch
+boundaries have no baseline snapshot; `"web"` is hardcoded as the process-id answer in three modules; the
+CMake drop path has no coverage beyond its keep-both Windows arm; `gse.vulkan -> gse.aftermath` is
+reserved by path; `Nvidia/Backend.cpp` still has had no compiler over it; **push remains the owner's
+call** — `dev` is one ahead of `origin/dev`, and `Tools/wasm_page/`, `Tools/run_wasm_page.py` and the
+`build_gcc_wasm.py` changes are uncommitted.
+
+### 2026-10-24 — steering: the gate judged (holds) — **(4), (5) and (6) are met**; (3) is the only criterion left and it cannot be judged from inside this editor, so it goes to the owner
+
+**Judged against the pass criteria, and five of six are now met.** (1) and (2) were met on 2026-10-24
+and the hash is unmoved. **(4) MET, (5) MET both halves, (6) MET.** (3) is not met and, as written, is
+not judgeable here — see below.
+
+**Confirmed from the artifact, not the report.** `out/wasm_parity_gate/report.md` (12:52 today) carries
+six runs: wasm `0x2aeb133bbb68d214` at p50 184.930 / 189.115 / 189.035 ms, native
+`0xe836d31697879e27` at p50 4.424 / 4.447 / 4.830 ms, every one `exit 0`. Positional table reads
+`18960 / 18960 records, 240 frames, final drift 1.796 mm, peak 394.110 mm, PASS` identically in all
+three runs. `run1/` holds `native.dump` and `parity.dump` at **1,213,452 bytes each** and a 22 KB
+`run-page.log`, so the comparison is over two real same-sized records and not an empty intersection.
+`touched.txt` is four `Tools/` files — `run_wasm_page.py`, `wasm_page/{host,page}.mjs`,
+`wasm_parity_gate.py` — **no engine source**, so the native hash cannot have moved and is correctly
+not a check. Verdict: correct, keep.
+
+**The 1.796 mm against a 2.000 mm budget is a pass by the criterion as written and is thin, so say so
+plainly.** Criterion (4) names `parity_gate.py`'s positional check, which compares the final frame;
+the task reported the peak loudly in the artifact rather than burying it, and declined to gate on peak
+because that would invent a criterion the goal does not name. Both calls are right. But 1.796/2.000 is
+90% of budget with no margin, and **peak drift is 394.110 mm at frame 50 with 14 bodies over 10 mm** —
+the arms start bit-identical, diverge through the strike and reconverge as the pile settles. So what
+is established is **agreement at rest, not agreement throughout**, and the number that passed could
+fail on a scenario that ends mid-motion. Recorded as the headline caveat of this goal's result.
+
+**(3) is the whole of what remains and it is a permissions wall, not an engineering one.**
+`Math/Vector/SIMD.cppm:12`'s `GSE_NO_SIMD_X86` opt-out exists and works — that was the 2026-10-24
+entry's fix, and it is why (3) was kept at `require` rather than dropped to `report`. What blocks it
+is that a `-DGSE_NO_SIMD_X86` binary is a **second native configuration**, and the editor owns the
+build directory: no agent may run `cmake`, so no agent can create one. The record's assumption clause
+provides for (3) dropping to `report` if the macro could not be turned off *without editing the
+engine* — that condition is not what happened, so reinterpreting (3) is not mine to do.
+The artifact also records a finding worth keeping either way: **`-mavx2` stays on in any native
+build**, so the portable arm's scalar loops still autovectorize at 256 bits against wasm's 128 —
+hash identity under (3) is an *assumption* about that arm, not a consequence of it, and it may not
+hold even once the binary exists.
+
+**One pre-existing breakage found and left alone, correctly.** `Tools/parity_gate.py:189` passes
+`--no-engine-persist-settings`, which the engine now rejects for any scenario run — so the **native**
+gate is broken today for every entry. One flag to delete. It is native gate behaviour, outside this
+goal's subject, and is the owner's to fold in.
+
+**The review's findings were the load-bearing part of the task** and all four were real false-pass or
+cross-run-contamination paths: a gate re-run whose page arm died would have compared the *previous*
+invocation's dumps and printed `PASS` with `(4) MET`; a hung page run leaked a headless browser that
+kept running the scenario into runs 2 and 3; a hung comparator on run 3 discarded runs 1 and 2; a
+native crash returning -1 was reported as a timeout. Fixing the first by deleting dumps before each
+arm and accepting them only from an exit-0 run is the right shape, and it was demonstrated failing
+loudly rather than argued.
+
+**Escalating, because the only criterion left cannot be judged or reached from here.** Options and
+recommendation carried to the owner: build a `-DGSE_NO_SIMD_X86` Sandbox and let a task run the gate's
+hash-identity arm against it; or add a dormant CMake option so a second configuration is producible;
+or accept (3) as `report` with (4) carrying the `require`, which is the state the artifact already
+documents and under which the aim is met today.
+
+**New open items:** why the arms diverge 394 mm mid-strike and reconverge is unexamined, and it is the
+next real question about wasm fidelity — bigger than this goal, and a candidate goal of its own; a trap
+or hang still loses the collected state dump, because the host worker sits in `Atomics.wait` for the
+whole run and the exit call is the only moment anything can push the bytes out; the report artifact
+lives under the gitignored `out/`, so the result is re-checkable but not committable; ~30 leaked temp
+Chrome profiles (~61 MB) under `%TEMP%\gse-wasm-page-*` predate the fix and are safe to delete.
+
+**Carried forward unchanged:** the update-phase `gse::physics::data` stall (~160-200 ms/frame under
+wasm) is slowness, not a hang, and no criterion mentions wall-clock time; `.gcc-wasm-run/` is untracked
+build output and not in `.gitignore`; `Os/Web/ImageLoader.cpp` asserts and
+`GpuRecord/Web/ShaderCompile.cpp` returns empty, neither reached; `Time/Web/SystemClock.cpp`'s
+`from_query_performance_counter` returns `now()`; `--engine-test-all` under wasm aborts at
+`process::temporary_path`; the `strtold` link warning and the `libcall`/`__powidf2` probe regression are
+pre-existing; `fd_readdir` omits the dot entries; `Os/Process.cppm:122,125` still call
+`path::wstring()`; `Diag/AllocTrackGlobal.cpp`, `Dx12/AgilitySdk.cpp` and `Sandbox/Main.cpp` declare no
+module so no link enumerates them; seven patch boundaries have no baseline snapshot; `"web"` is
+hardcoded as the process-id answer in three modules; the CMake drop path has no coverage beyond its
+keep-both Windows arm; `gse.vulkan -> gse.aftermath` is reserved by path; `Nvidia/Backend.cpp` still
+has had no compiler over it; **push remains the owner's call** — `dev` is one ahead of `origin/dev`,
+and `Tools/wasm_page/`, `Tools/run_wasm_page.py`, `Tools/wasm_parity_gate.py` and the
+`build_gcc_wasm.py` changes are uncommitted.
+
+### 2026-10-24 — the owner rejected "agreement at rest": **agreement throughout is required**, and the divergence is now the subject rather than a footnote
+
+**Decision, not to be relitigated.** My escalation offered accepting the gate's final-frame pass with
+the 394.110 mm mid-strike peak reported beside it. The owner declined: the aim needs the arms to agree
+**throughout the run**, not only once the pile has settled. So criterion (4)'s final-frame pass stands
+as a measured fact but is no longer sufficient, and the 394 mm peak is promoted from an open item to
+the thing this goal now has to explain or eliminate.
+
+**The coupling the owner should know about before spending anything on it, and it points back at the
+criterion they have not yet decided.** The two arms are not the same computation. The native exe is
+built with `GSE_SIMD_X86` on and an unconditional `-mavx2` (`Engine/cmake/GSEEngine.cmake:36`); wasm
+takes `SIMD.cppm`'s portable arm with 128-bit vectors. Different instruction widths, different
+reduction orders, different fused-multiply behaviour — that is a different arithmetic, not rounding
+noise, and in a contact solver any difference at all is amplified at impact and then damped as the
+pile settles. Which is *exactly* the shape the artifact measures: bit-identical start, 394 mm at frame
+50, 1.796 mm at rest. **So agreement throughout may simply not be achievable against native AVX2, and
+the only honest route to it is criterion (3)'s portable-SIMD native build** — the one that needs a
+`-DGSE_NO_SIMD_X86` configuration no agent can create. The escalation's options (b) build it yourself,
+(c) authorize a dormant CMake option, are therefore no longer optional conveniences; one of them is
+likely the prerequisite for what the owner has just asked for.
+
+**Measuring before asking again, because the measurement is free and decides the question.** The gate
+already writes both arms' `--engine-bench-state-dump-out` records for all three runs
+(`out/wasm_parity_gate/run{1,2,3}/{native,parity}.dump`, 18960 records, 240 frames, 1,213,452 bytes
+each). Nothing needs building to answer: find the **first** frame at which any body differs at all,
+which body, which quantity, and by how much. The two outcomes are different problems:
+- a first difference in the last bits of a single body's position, growing smoothly frame over frame,
+  is the SIMD-arm difference above — and then "agreement throughout" is a question about the portable
+  build, not a bug to fix;
+- a first difference that is discrete, or that appears in several bodies at once, or in a count or an
+  ordering, is a **real fidelity defect** in the port (solver iteration order, a contact-pair sort, a
+  reduction over an unordered container) and is in charter to chase.
+
+Telling those apart costs one analysis pass over files that already exist, and every later decision
+here depends on which it is.
+
+**Next task: characterise the first divergence.** A `Tools/` analysis over the existing dump pairs —
+no engine change, no build, no browser run — reporting: the first divergent frame; the body and field;
+the magnitude of that first difference, stated in ulps as well as metres; whether it is one body or
+many; and the per-frame drift curve (max and mean) from that frame to 240, so the shape is in an
+artifact rather than in a sentence. Reuse the engine's own comparator where it can be pointed at a
+frame range, as the gate does, rather than reimplementing `gse::distance`. Judged on: the first
+divergent frame named from the artifact, the one-body-smooth versus many-bodies-discrete question
+answered, and the drift curve written beside the existing report. Do **not** attempt a fix in the same
+task — if it is the SIMD arm, the fix is a decision the owner has to make first.
+
+**Deliberately not in it:** the portable-SIMD native build (still blocked on the owner); any change to
+the gate's verdict or to criterion (4)'s wording, which stays as measured until there is evidence to
+amend it with; and the per-frame tolerance a "throughout" criterion would need — that is the owner's
+number to set, and setting it before knowing whether the arms *can* agree per-frame would be guessing.
+
+### 2026-10-24 — steering: the divergence characterised (holds) — **one ulp, one body, frame 32, identical in all three runs**; so "agreement throughout" is unreachable against AVX2 and criterion (3) is now the only route, which escalates
+
+**Judged against the pass criteria: unchanged — (1), (2), (5) and (6) met, (4) met as written but no longer
+sufficient by the owner's 2026-10-24 decision, (3) unmet.** No criterion moved this task, by its own design:
+`touched.txt` is `Tools/parity_gate.py` and `Tools/wasm_divergence.py`, two Python files, so no engine source
+changed and the native hash cannot have moved.
+
+**Confirmed from the artifact, not the report.** `out/wasm_parity_gate/divergence.md` (14:42) states the arms
+bit-identical in every field of every body **through frame 31**, first parting at **frame 32**, in **1 of 79
+bodies**, by **1 ulp** of `orientation.y` on body `9344769378202258853`
+(`-2.8134104468335863e-07` against `-2.8134107310506806e-07`) — and the per-run table gives that same frame,
+body, field and ulp count for run1, run2 and run3 identically. Fan-out `1 → 3 → 78 → 78 → 78 → 78` of 79.
+Position moves two frames later at 1.000 µm. `divergence_curve.csv` carries every frame of all three runs and
+its tail reads `0.001796` max / `0.000657` mean from frame 140 to 239 — frozen, as reported. Verdict: correct,
+keep.
+
+**The inference is sound and the fan-out shape is what carries it.** A contact-pair sort, a solver iteration
+order or a reduction over an unordered container reorders whole contributions: it would move a subset of
+bodies by far more than a rounding step, in the first frame it applied, i.e. it would *start* at a high body
+count. This climbs 1 → 3 → 78, and the seed is the smallest difference the format can represent. So this is
+two different arithmetics, not a fidelity defect in the port — and determinism across three runs rules out
+anything racing.
+
+**Two corrections to this record, both from the measurement and both accepted.**
+- **Criterion (4)'s 1.796 mm is a post-reset tail, not 240 frames of accumulation.**
+  `expect_reset_restores_spawn_poses` rebuilds all 79 bodies from spawn poses at **frame 99**, re-seeding both
+  arms identically; the final frame is 140 frames downstream and the drift is frozen from frame 140 on. Read
+  (4) as agreement over the last 141 frames.
+- **The true mid-strike peak is 1646.313 mm at frame 97, not the 394.110 mm the gate reports** — 4x worse than
+  recorded and 823x the 2 mm budget. Not a disagreement: `wasm_parity_gate.py` parses the comparator's printed
+  rows and the comparator prints every fiftieth frame, so its peak is the largest drift on a *sampled* frame.
+  Earlier entries' "394 mm peak" should be read as the sampled figure.
+
+**What this settles, and it is the reason this run escalates rather than scoping.** The owner's 2026-10-24
+decision requires agreement **throughout**. The measurement says that is not reachable against a native AVX2
+build at any price — the seed exists because the two arms do not compute the same function, and no work on the
+port removes it. The only route the goal provides is criterion (3)'s portable-SIMD native arm, which runs the
+same sequential reduction wasm runs and where the seed should be **absent** rather than small. That also
+answers the remaining open question (whether the seed is a dot-product reduction specifically) more cheaply
+than tracing the expression would.
+
+**And (3) is a permissions wall, re-verified this run rather than recalled.** `GSE_NO_SIMD_X86` appears in
+exactly one engine file — `Math/Vector/SIMD.cppm:12`'s opt-out guard — and in **no** `CMakeLists.txt`,
+`.cmake` or build script anywhere in the tree. So there is no configuration route to it: the editor owns the
+build directory, `gse_build` builds the one configuration, and no agent may invoke `cmake` to create a second.
+The record's assumption clause provides for (3) dropping to `report` only if the macro could not be turned off
+*without editing the engine* — that is not what happened, so reinterpreting (3) is not mine to do either.
+
+**Escalating with a recommendation:** add a dormant CMake option that defines `GSE_NO_SIMD_X86` only when
+explicitly requested (textually inert at the default, so `0xe836d31697879e27` cannot move), have the owner
+produce that binary, and let a task run the gate's hash-identity arm plus a full-run drift curve against it.
+Two outcomes, both decisive: the curve collapses to zero and "throughout" is met under (3); or a seed remains,
+and the next question is `-mavx2`'s autovectorization of the portable arm's scalar loops —
+`Engine/cmake/GSEEngine.cmake:36` keeps it on unconditionally, so the portable arm is not necessarily the same
+computation wasm runs.
+
+**Deliberately not done:** any change to criterion (4)'s wording or the gate's verdict — both stay as measured
+until there is a portable-arm number to amend them with; and the per-frame tolerance a "throughout" criterion
+needs, which is the owner's number and would be a guess before the portable arm is measured.
+
+**Carried forward from this task:** the eight `Registries.cppm:346` channel-payload `static_assert` failures
+attributed to this chat are almost certainly not ours — this task's whole diff is two Python files, and the
+assert is instantiation-time inside `channel_writer::push<T>`; the relayed output carried no "required from
+here" notes naming the real push sites, so it needs a build output with the instantiation backtrace;
+`out/` is gitignored, so `divergence.md`, the curve CSV and the gate's `report.md` are re-checkable but not
+committable.
+
+**Carried forward unchanged:** the update-phase `gse::physics::data` stall (~160-200 ms/frame under wasm) is
+slowness, not a hang, and no criterion mentions wall-clock time; `.gcc-wasm-run/` is untracked build output and
+not in `.gitignore`; `Os/Web/ImageLoader.cpp` asserts and `GpuRecord/Web/ShaderCompile.cpp` returns empty,
+neither reached; `Time/Web/SystemClock.cpp`'s `from_query_performance_counter` returns `now()`;
+`--engine-test-all` under wasm aborts at `process::temporary_path`; `Tools/parity_gate.py:189` passes
+`--no-engine-persist-settings`, which the engine now rejects, so the **native** gate is broken for every entry
+— one flag to delete, outside this goal's subject; the `strtold` link warning and the `libcall`/`__powidf2`
+probe regression are pre-existing; `fd_readdir` omits the dot entries; `Os/Process.cppm:122,125` still call
+`path::wstring()`; `Diag/AllocTrackGlobal.cpp`, `Dx12/AgilitySdk.cpp` and `Sandbox/Main.cpp` declare no module
+so no link enumerates them; seven patch boundaries have no baseline snapshot; `"web"` is hardcoded as the
+process-id answer in three modules; the CMake drop path has no coverage beyond its keep-both Windows arm;
+`gse.vulkan -> gse.aftermath` is reserved by path; `Nvidia/Backend.cpp` still has had no compiler over it;
+**push remains the owner's call** — `dev` is one ahead of `origin/dev`, and the page harness, the gate, the
+SIMD guard and both Python tools are uncommitted.
+
+### 2026-10-24 — the owner approved the portable-SIMD route ("i agree lets do it"); and the build failure is already fixed by the chat that owns the rule, so no escape hatch is needed
+
+**Decision, recorded so no later run re-asks.** The owner approved the recommendation: a **dormant CMake
+option** that defines `GSE_NO_SIMD_X86` only when explicitly requested, textually inert at the default
+(so every existing build is unchanged and `0xe836d31697879e27` cannot move), and then a hash-identity
+plus full-run drift measurement of the wasm arm against a portable-SIMD native binary. That is the only
+route this goal provides to the owner's earlier "agreement **throughout**, not at rest" requirement, and
+the previous entry's measurement is why: a **one-ulp seed in one body's `orientation.y` at frame 32**,
+identical in all three runs, fanning out `1 → 3 → 78`, is two different arithmetics (AVX2 256-bit against
+wasm 128-bit), not a fidelity defect the port can remove.
+
+**Correction to my own escalation, read at source this run: the `legacy_unchecked_borrow` edit is moot
+and must not be made.** `Gpu/Context.cppm:211-213` no longer carries a raw pointer —
+`gpu_resume_request` is now `{ async::resume_slot<context::data> resume; }`, and
+`on_gpu_awaitable::state` is a plain member beside it. That is fix (2) exactly, applied by the chat that
+introduced the rule, and the rule's own `static_assert` message
+(`Ecs/Registries.cppm:346`) names `async::resume_slot<T>` as the sanctioned spelling for *this* case.
+So the four `Registries.cppm:346` failures are resolved at the cause rather than suppressed, the
+permission I asked for is not needed, and adding the flag now would be strictly worse than the tree
+already is. The escape hatch remains in use only where it was already —
+`Http/Request.cppm:92`, `Physics/System.cppm:263`, `Runtime/WorldSystem.cppm:48`.
+
+**The permissions wall is unchanged by the approval, and the next task must not pretend otherwise.** A
+`-DGSE_NO_SIMD_X86` binary is a *second* native configuration of a build directory the editor owns; no
+agent may invoke `cmake`, and `gse_build` builds the one configuration. So a task can add the option and
+prove it dormant, and it can make the gate able to measure *any* native exe handed to it by path — but
+**producing** the portable binary is the owner's action. Scoping a task that assumes otherwise would burn
+a round trip.
+
+**Next task, three pieces, none of them requiring a second configure:**
+1. **The dormant option.** In `Engine/cmake/` (charter-authorized), an `option(GSE_NO_SIMD_X86 ...)`
+   defaulting OFF that adds the compile definition only when ON. Nothing else may change, and the proof
+   is `gse_build` green plus `scene_reset_cpu` reprinting `0xe836d31697879e27` at the default — for a
+   change to the engine's compile definitions that is a real check, not a formality.
+2. **Make the gate take a native exe by path.** `Tools/wasm_parity_gate.py` currently finds the native
+   Sandbox itself; add an explicit override (`--native-exe`) so the hash-identity and drift arms can be
+   pointed at a portable-SIMD binary the owner builds, with **`--no-engine-gpu` still passed on the
+   native side** — written down nowhere but this ledger, and still the one way the gate could attribute
+   the dropped `gpu::context::data` to the SIMD arm.
+3. **Make the drift artifact answer the owner's question directly.** `Tools/wasm_divergence.py` already
+   finds the first divergent frame, body, field and ulp count and writes the per-frame curve; have the
+   gate run it on every comparison and fold its headline into `report.md`, so a "throughout" verdict is
+   read off the artifact rather than re-derived. Keep the existing final-frame `0.002` check as
+   criterion (4) words it — do **not** redefine (4) or invent a per-frame tolerance; that number is the
+   owner's to set once a portable-arm curve exists.
+
+**Judged on:** native build green and `0xe836d31697879e27` unmoved with the option at its default; the
+gate accepting a native exe by path and still reproducing today's three-run result
+(wasm `0x2aeb133bbb68d214`, final drift 1.796 mm, PASS) against the ordinary AVX2 exe; and the
+divergence headline (first divergent frame, body, field, ulps, peak) present in `report.md`. Run the
+gate **in the task, in the foreground, as the last action**. No engine C++ should change.
+
+**Then, and it is the owner's move:** build a `-DGSE_NO_SIMD_X86` Sandbox and hand its path over. A task
+then runs the gate against it and the result is decisive either way — the curve collapses to zero and
+"throughout" is met under criterion (3), or a seed survives and the next question is `-mavx2`
+autovectorizing the portable arm's scalar loops, which `Engine/cmake/GSEEngine.cmake:36` keeps on
+unconditionally.
+
+### 2026-10-24 — steering: the dormant option and the gate's (3) reporting judged (hold); everything this goal can do without the owner is now done, so the portable binary is the escalation
+
+**Judged against the pass criteria: unchanged — (1), (2), (4), (5), (6) met; (4) met as written but not
+sufficient under the owner's "agreement throughout" decision; (3) unmet and still the only criterion left.**
+No criterion could move this task: `touched.txt` is `Engine/cmake/GSEEngine.cmake` and
+`Tools/wasm_parity_gate.py`, so no engine C++ changed.
+
+**Confirmed from the artifacts, not the report.** `GSEEngine.cmake:199-206` declares
+`option(GSE_NO_SIMD_X86 ... OFF)` inside `gse_configure_compiler()` and adds
+`add_compile_definitions(GSE_NO_SIMD_X86=1)` only when ON. Dormancy is measured both ways:
+`CMakeCache.txt:298` carries `GSE_NO_SIMD_X86:BOOL=OFF`, and `grep -c` for the macro over the
+regenerated `compile_commands.json` is **0** — so every existing compile line is textually unchanged and
+`0xe836d31697879e27` cannot move. `out/wasm_parity_gate/report.md` (16:41) carries three fresh runs
+(wasm `0x2aeb133bbb68d214`, native `0xe836d31697879e27`, final drift 1.796 mm, PASS x3), the new
+"Where the arms first part" section reproducing frame 32 / 1 of 79 / 1 ulp of `orientation.y` /
+`1 -> 3 -> 78` identically per run, and `(3) hash identity … REPORT ONLY`. `--native-portable` exists and
+flips (3) to a required check. Verdict: correct, keep.
+
+**Two judgement calls endorsed.** Keeping hash identity out of the exit status unless `--native-portable`
+is passed is right — an unconditional check would turn every AVX2 run red for a reason that says nothing
+about the port. And taking `--native-portable` as the owner's word, stated as such in the artifact, is
+better than reading a macro back out of a binary that carries no marker for it. Declining to add a
+`--native-exe` flag because `--exe` already names the native reference is also right; the previous entry
+asked for a capability that already existed.
+
+**So this goal has run out of in-charter work, and that is the escalation rather than a shortfall.** Every
+remaining question routes through one artifact nobody here can produce: a `-DGSE_NO_SIMD_X86=ON` native
+Sandbox. The editor owns the build directory, `gse_build` builds the one configuration, and no agent may
+invoke `cmake`, so a second configuration is the owner's action by construction and not by reservation.
+Both open questions wait on it: whether hash identity holds (criterion (3) at `require`), and whether the
+one-ulp seed at frame 32 disappears when both arms run the same sequential reductions — which is the only
+route this goal provides to the owner's "agreement throughout" requirement, since the 2026-10-24
+divergence measurement established the seed is two arithmetics rather than a port defect.
+
+**Stated plainly so the expectation is calibrated before the build is spent:** `-mavx2` stays on in any
+native build (`GSEEngine.cmake:202`), so the portable arm's scalar loops still autovectorize at 256 bits
+against wasm's 128. Hash identity under (3) is therefore an *assumption* about that arm, not a consequence
+of it. If a seed survives, the next question is `-mavx2`, and narrowing it further is a different and
+larger piece of work than this aim.
+
+**The invocation the owner's binary needs, recorded so no run re-derives it:**
+`python Tools/wasm_parity_gate.py --exe <portable Sandbox.exe> --native-portable` — `--no-engine-gpu` is
+already applied to both arms by the gate, which is the one way it could otherwise attribute the dropped
+`gpu::context::data` to the SIMD arm.
+
+**New open items from this task:** the native build is red on another chat's `Ecs/Registries.cppm:346`
+asserts, so "the engine links with the option in the tree" is unproven — configure-time and
+compile-line dormancy are proven and the hash came from the on-disk exe; `--native-portable` has never
+run; `Engine/cmake/GSEEngineSdk.cmake` declares a second `gse_configure_compiler()` without the option,
+so `-DGSE_NO_SIMD_X86=ON` is silently inert in an SDK-consumer build — harmless here, since this goal
+needs the in-tree build, but a trap for whoever next consumes the SDK.
+
+**Carried forward unchanged:** `run_wasm_page.py`'s server prints a `ConnectionResetError` traceback when
+the browser is killed after the verdict, noise in the gate artifact; the gate's reported 394.110 mm peak
+is a *sampled*-frame figure and the true peak is 1646.313 mm at frame 97; criterion (4)'s 1.796 mm is a
+post-reset tail (reset at frame 99), i.e. agreement over the last 141 frames; the update-phase
+`gse::physics::data` stall (~160-200 ms/frame under wasm) is slowness, not a hang, and no criterion
+mentions wall-clock time; `out/` is gitignored, so the gate artifacts are re-checkable but not
+committable; `.gcc-wasm-run/` is untracked build output and not in `.gitignore`;
+`Tools/parity_gate.py:189` passes `--no-engine-persist-settings`, which the engine now rejects, so the
+**native** gate is broken for every entry — one flag to delete, outside this goal's subject;
+`Os/Web/ImageLoader.cpp` asserts and `GpuRecord/Web/ShaderCompile.cpp` returns empty, neither reached;
+`Time/Web/SystemClock.cpp`'s `from_query_performance_counter` returns `now()`; `--engine-test-all` under
+wasm aborts at `process::temporary_path`; the `strtold` link warning and the `libcall`/`__powidf2` probe
+regression are pre-existing; `fd_readdir` omits the dot entries; `Os/Process.cppm:122,125` still call
+`path::wstring()`; `Diag/AllocTrackGlobal.cpp`, `Dx12/AgilitySdk.cpp` and `Sandbox/Main.cpp` declare no
+module so no link enumerates them; seven patch boundaries have no baseline snapshot; `"web"` is hardcoded
+as the process-id answer in three modules; the CMake drop path has no coverage beyond its keep-both
+Windows arm; `gse.vulkan -> gse.aftermath` is reserved by path; `Nvidia/Backend.cpp` still has had no
+compiler over it; **push remains the owner's call** — `dev` is one ahead of `origin/dev`, and the page
+harness, both gate tools, the SIMD guard and this option are uncommitted.
+
+### 2026-10-24 — steering: re-woken on the same escalation with nothing new; still waiting on the owner's portable binary
+
+**Judged: nothing changed since the previous entry.** No new artifact, no owner answer and no portable
+binary. Criteria stay as they were: (1), (2), (4), (5) and (6) met; (4) not sufficient under "agreement
+throughout"; (3) unmet. There is no in-charter work left. Re-escalating with the same request: a
+`-DGSE_NO_SIMD_X86=ON` Sandbox, and its path, so a task can run
+`python Tools/wasm_parity_gate.py --exe <exe> --native-portable`.
+
+### 2026-10-24 — the owner: "you CAN change the build config"; a portable-SIMD preset added
+
+**Decision, recorded so no later run re-asks.** Agents may add build configurations. The editor reads
+configurations from the configure presets in `CMakePresets.json` (`BuildRunner/Configs.cppm:44`), so I
+added `x64-mingw-gcc-Release-portable-simd`. It inherits Release, uses its own `binaryDir`
+(`out/build/x64-mingw-gcc-Release-portable-simd`) and sets `GSE_NO_SIMD_X86=ON`. Existing presets are
+untouched and the JSON parses. Not yet built. Caveat for the task: `build_configs()` is a function-local
+static, so a running editor may not list the new preset until it restarts, and `gse_build` selects by
+*profile*, whose `config` field names the preset.
+**Next task:** build that config, then run
+`Tools/wasm_parity_gate.py --exe <portable Sandbox.exe> --native-portable` and judge (3) plus the full-run
+drift curve.
+
+### 2026-10-25 — steering: the portable-build task landed nothing, blocked on a stale tool schema; the schema is now live
+
+**Judged:** no change to any criterion. `touched.txt` is empty and the diff is empty. The task's
+`gse_build` was missing the `config` parameter because its MCP server started before
+`Tools/gse-mcp/server.mjs` gained it. The task declined to hand-write the build inbox, which was the
+right call. This steering session loaded `gse_build` and **`config` is present**, so the blocker is
+gone for any chat started from now on. `out/build/x64-mingw-gcc-Release-portable-simd` has still
+never been configured.
+
+**Next task, unchanged from the owner's 2026-10-24 decision:** `gse_build` with
+`config=x64-mingw-gcc-Release-portable-simd` (a first-use configure, so a full engine compile), then
+`python Tools/wasm_parity_gate.py --exe <that build's Sandbox.exe> --native-portable` in the
+foreground as the last action. Judge on two things: (3) hash identity, and whether the full-run drift
+curve is zero throughout. If a seed survives, the expected suspect is `-mavx2` autovectorizing the
+portable arm. Report it; do not chase it.
+
+### 2026-10-25 — steering: portable build configured and compiled the engine, then blocked on a red shared tree; nothing landed
+
+**Judged:** no criterion moved. `GSE_NO_SIMD_X86=ON` configured and the engine compiled under the new
+preset, so the preset works. Four Sandbox units then failed without a diagnostic, and the default config
+fails the same way. That points at other chats' in-flight edits, not the preset. The task correctly left
+those files alone. (3) and the throughout-drift curve are still unmeasured. The missing diagnostic is
+recorded in that task's `gaps.md`.
+
+**Next task, unchanged:** wait until the default build is green (hibernate on a red tree attributed to
+others; do not fix it), then `gse_build config=x64-mingw-gcc-Release-portable-simd` and
+`python Tools/wasm_parity_gate.py --exe <portable Sandbox.exe> --native-portable` in the foreground as
+the last action. Judge on (3) hash identity and on whether the drift curve is zero throughout.
+
+### 2026-10-25 — steering: second blocked attempt, still on the red shared tree; nothing landed
+
+**Judged:** no criterion moved, and the diff is empty. The default build was red throughout, none of
+its errors were this chat's, and the task correctly left them alone. (3) and the throughout-drift curve
+are still unmeasured. **Next, unchanged:** the task waits until the default build is green, using
+`gse_hibernate`/await rather than polling or fixing other chats' files, then builds
+`x64-mingw-gcc-Release-portable-simd` and runs
+`python Tools/wasm_parity_gate.py --exe <portable Sandbox.exe> --native-portable` in the foreground as
+its last action. If the tree is still red after a long wait, report that instead of re-scoping again.
+
+### 2026-10-25 — steering: third blocked attempt; escalated rather than re-scoped
+
+**Judged:** no criterion moved and the diff is empty. The task hibernated, rebuilt, and hit the same
+diagnostic-less Sandbox failures in files other chats own. This is the third consecutive task with that
+result, which meets the rule above, so it goes to the owner instead of being re-scoped. **Needed from the
+owner:** read the real build output (it may be in-flight work by other chats, or a tooling fault that
+hides the diagnostic), get the default tree green, or build `x64-mingw-gcc-Release-portable-simd`
+yourself and pass on the exe path. After that a task runs
+`python Tools/wasm_parity_gate.py --exe <exe> --native-portable` to judge (3) and the throughout-drift curve.
+
+### 2026-10-25 — the owner said "try again"; a fourth attempt, scoped to read the diagnostic
+
+**Decision:** the owner answered the escalation with "try again". **Next task:** build
+`x64-mingw-gcc-Release-portable-simd`. If it fails, capture the actual compiler output first, using
+`gse_build_status`, `gse_log_query` or the editor terminal through `gse_panel_query`, and report it
+verbatim; don't stop at "no diagnostic". On a green build, run
+`python Tools/wasm_parity_gate.py --exe <portable Sandbox.exe> --native-portable` in the foreground as
+the last action. Judge (3) on hash identity, and judge the drift curve on whether it is zero
+throughout. Don't touch other chats' files.
+
+### 2026-10-25 — steering: the fourth attempt found the hidden diagnostic — a gcc-trunk-v7 ICE, not a code error
+
+**Judged:** no criterion moved and no code changed. The three "no diagnostic" failures were a compiler
+segfault at `Scenario/Scenario.cppm:213` (`std::meta::members_of(Ns, access_context::unchecked())`),
+instantiated from `Sandbox/Source/Startup/RunModes.cpp:69` (`registry<^^sandbox::scenarios>()`). The
+editor does not parse ICE output, so it reported nothing. That gap is reported separately. (3) and the
+throughout-drift curve are still unmeasured.
+**Next task:** first find out whether the *default* config ICEs at the same site. If it does, the
+cause is the in-flight `sandbox::scenarios` restructure (the "fix build" chat), so wait for that chat
+to get the tree green and don't work around it. If only the portable preset ICEs, that is ours to
+narrow down. Once green, build the portable preset and run
+`python Tools/wasm_parity_gate.py --exe <exe> --native-portable` as the last action.
+
+### 2026-10-25 — steering: the ICE is in the default build too, so the preset is cleared and the block belongs to the "fix build" chat
+
+**Judged:** no criterion moved and `touched.txt` is empty. The compiler crash at
+`Scenario/Scenario.cppm:213` (`members_of(..., access_context::unchecked())`), reached from
+`RunModes.cpp:69`, happens in the default `x64-mingw-gcc-Release` too, and `GSE_NO_SIMD_X86` is not on
+the failing command line. So the portable preset is not the cause. The block is the in-flight
+`sandbox::scenarios` restructure, which the "fix build" chat owns. (3) and the throughout-drift curve
+are still unmeasured.
+**Next:** a task that waits (with `gse_hibernate`, no polling, and no edits to that chat's files) until
+the default build is green, then builds `x64-mingw-gcc-Release-portable-simd` and runs
+`python Tools/wasm_parity_gate.py --exe <exe> --native-portable` as its last action. If the restructure
+lands and the ICE is still there, that is a GCC-trunk bug and the registry workaround is the owner's
+call: escalate, don't patch.
+
+### 2026-10-25 — steering: the portable-SIMD build measured; the seed survives, so (3) fails and `-mavx2` goes to the owner
+
+**Judged:** (3) **not met**. The portable native build (`GSE_NO_SIMD_X86=ON`) hashes `0x7f70bb7d195a6d58`
+on all three runs, against wasm's `0x2aeb133bbb68d214`. The arms still first differ at frame 32, in one
+body, by 1 ulp of `orientation.y`: the same seed seen against AVX2. (4) still passes at 1.834 mm of
+2 mm. (1), (2), (5) and (6) are unchanged. So the engine's own SIMD arm is cleared as the cause. The
+remaining suspect is `-mavx2` (`GSEEngine.cmake`), which autovectorizes the portable code at 256 bits.
+One Tools fix landed: `run_wasm_page.py` now pins the build tree to the trace log's manifest. Open
+items: the node harness still picks the newest manifest, and the trace-log fallback is silent.
+**Next:** escalate. Native compile flags are reserved to the owner. Recommended: a dormant preset
+without `-mavx2` (portable-simd plus no AVX2), off by default, then rerun the gate. Otherwise (3)
+drops to `report`.
+
+### 2026-10-25 — the owner approved a no-AVX2 portable preset
+
+**Decision:** the owner approved the recommendation: a new opt-in configuration that is portable-SIMD
+(`GSE_NO_SIMD_X86=ON`) **and** drops `-mavx2`. The default build and every existing preset must stay
+textually unchanged, so `0xe836d31697879e27` cannot move. **Next task:** add a dormant `GSE_NO_AVX2`-style
+option in `Engine/cmake/` (OFF by default) plus a preset `x64-mingw-gcc-Release-portable-scalar` with
+its own `binaryDir`. Build it, then run `python Tools/wasm_parity_gate.py --exe <exe> --native-portable`
+as the last action. Judge (3) on hash identity against `0x2aeb133bbb68d214`, and the full-run drift
+curve on being zero throughout. If a seed still survives at frame 32, report the remaining flag
+differences (`-ffp-contract`, `-march`) without chasing them.
+
+### 2026-10-25 — steering: no-AVX2 preset judged (holds); `-mavx2` is ruled out, and the next two suspects are both the owner's
+
+**Judged:** (3) is still **not met**. The `x64-mingw-gcc-Release-portable-scalar` build (`GSE_NO_SIMD_X86=ON`, `GSE_NO_AVX2=ON`) hashes `0x7f70bb7d195a6d58`, the same as portable-simd. Wasm is `0x2aeb133bbb68d214`, and the 1-ulp seed at frame 32 is still there. `GSE_NO_AVX2` defaults OFF, and the default compile line and `0xe836d31697879e27` are unchanged. (1), (2), (4), (5) and (6) stand; (4) passes only at the final frame. Verdict: correct, keep. **Autovectorization is refuted as the cause; don't retry it.** Two suspects are left: the optimisation-level difference (the wasm arm is `-O0`, native is `-O3`, which also changes contraction and inlining), and libm (wasi-libc against mingw). A wasm `-O3` build is a toolchain-side change and is the cheaper test; matching libm is larger. Escalated: testing either one changes compile flags or toolchains beyond what was approved, or the owner accepts (3) at `report`. Also noted: `GSEEngineSdk.cmake:24` still hardcodes `-mavx2`, and nothing is committed.
+
+### 2026-10-25 — the owner approved suspect (a): a wasm `-O3` rebuild
+
+**Decision:** the owner answered "lets do rebuild", which approves the recommended test: rebuild the wasm arm at `-O3` instead of `-O0`. Only the toolchain side changes, and the native default stays untouched. libm unification (b) and report-only (3) are not chosen. **Next task:** relink `scenario.wasm` at `-O3` through `Tools/build_gcc_wasm.py`. Use an opt-level knob, and keep `-O0` available. Rerun `Tools/wasm_parity_gate.py --exe <portable-scalar Sandbox.exe> --native-portable` as the last action. Judge (3) on hash identity with `0x7f70bb7d195a6d58`, and judge the drift curve on being zero throughout. Also report the wasm hash at `-O3` against the old `0x2aeb133bbb68d214`. If a seed survives, report the first-divergence frame and field. Don't chase it.
+
+### 2026-10-25 — steering: `--opt-level` landed (holds, defaults to `-O0`); `-O3` does not link, so the suspect is still untested
+
+**Judged:** no criterion moved. `touched.txt` is `Tools/build_gcc_wasm.py` alone, so the native hash cannot move. At `-O3`, `llvm-mc` rejects 8 units. Each has an atomic RMW or store with mismatched operand types, which is a GCC wasm backend bug (a patch 0020 candidate). (3) is still unmeasured at `-O3`. Not running the gate on the stale `-O0` module was correct. Verdict: keep. **Found:** `--run-scenario` runs node on a stale `scenario.wasm` after a failed link, which is a false-pass path the gate inherits. **Next:** close that path, then try `-O1` and `-O2` (one flag each). Patch 0020 is only needed if both fail too.
+
+### 2026-10-25 — steering: stale-module guard judged (holds); `-O1`/`-O2` fail like `-O3`, so patch 0020 is now the gate, after an `-O0` relink
+
+**Judged:** no criterion moved. The change touched only Tools files. The link now deletes the old module before wasm-ld runs and stamps a successful link. `--run-scenario` refuses to start after an incomplete link, and the gate refuses an unstamped or mismatched module. Both refusals were seen working. Verdict: keep. Counting assembly failures as an incomplete link was correct. **Measured:** `-O1` fails with 3 units that don't assemble (`FrameDemand`, `ProfileAggregator`, `Watchdog`) and `-O2` fails with 6. Every failure is the float/double atomic operand-type bug. **Lower opt levels are ruled out as a way around it; don't retry them.** **Consequence:** there is no usable module on disk. The `-O0` relink is reported likely to fail on 8 Sandbox units that read stale module files because their imported partitions are compiled after them. **Next task:** (1) fix the link's unit ordering or refresh the module graph so `-O0` relinks clean and reprints `0x2aeb133bbb68d214` under a stamp; (2) cut patch 0020, which bitcasts float atomics to the same-width integer type; (3) link at `-O3` and run the gate with `--native-portable` against portable-scalar as the last action.
+
+### 2026-10-25 — steering: patch 0020 and the scan-file fix judged (hold); wasm links clean at `-O0` and `-O3`, and the hash is the same at both, so optimisation level is ruled out
+
+**Judged:** (3) is still **not met**. Wasm prints `0x2aeb133bbb68d214` at both `-O0` and `-O3`, and the portable-scalar native build prints `0x7f70bb7d195a6d58`. The 1-ulp `orientation.y` seed at frame 32 is unchanged. (4) passes at 1.834 mm against 2 mm, and (1), (2), (5) and (6) stand. The link reads `574 compiled · 0 rejected · 0 not assembled · 0 undefined`. At `-O3` the p50 is about 4.8 ms, down from about 185 ms. No engine source changed. Verdict: keep. **Ruled out so far:** the engine's SIMD arm, `-mavx2` autovectorisation, and the wasm optimisation level. Don't retry any of them. **Reasoning about `-ffp-contract`:** neither wasm32 nor x86-64 without AVX2 has an FMA instruction, so contraction is very unlikely to be the cause. That leaves libm (wasi-libc against mingw) as the leading suspect. **Open:** the gate exits 0 even when `--native-portable` reports `(3) NOT MET`, which is a false-pass path; and 0020 and the Tools edits are uncommitted. **Next:** fix the gate's exit status, then run a probe with no flag or toolchain change. It compares the libm functions the physics path actually calls, bit for bit, between the wasm and mingw arms.
+
+### 2026-10-25 — steering: libm probe judged (holds); the two libms differ by 1 ulp, so (3) needs the owner's call
+
+**Judged:** (3) is still **not met** (wasm `0x2aeb133bbb68d214`, portable-scalar `0x7f70bb7d195a6d58`). (4) passes at 1.834 mm, and (1), (2), (5) and (6) stand. `out/libm_probe/report.md` shows mingw and wasi-libc disagreeing by exactly 1 ulp in atan2 (1022 of 8000 inputs), acos (671), tan (620), asin (113), and sin and cos (one each). sqrt agrees on all 8007 inputs. The wasm arm is sometimes the wrong one: `acosf(~1e-9)` gives `0x3fc90fda` where the correctly rounded value is `...db`. However, all 27 frame-31 seed inputs match, so libm is a confirmed source of 1-ulp differences but is not proven to be the frame-32 seed. No engine source changed. Verdict: keep. **Correction:** the gate's exit status was never broken. `out/libm_probe/gate.log` exits 1 with `NOT MET`, so the previous entry's "false-pass" item is withdrawn. **Ruled out so far:** the SIMD arm, `-mavx2`, and the opt level. **Open:** the native half of the probe calls `g++` directly on one standalone file, outside the editor's build directory. That needs the owner's sign-off. Also, the `libm_parity` row in `build_gcc_wasm.py` is unreviewed, and nothing is committed. **Next:** escalate. Unifying libm (one implementation in both arms, which is an engine or toolchain change) and accepting (3) at `report` are both the owner's call.
+
+### 2026-10-26 — the owner approved unifying libm ("lets go ahead and use one libm")
+
+**Decision:** both arms will use one float libm implementation, even though this changes native results and moves the native hash `0xe836d31697879e27`. The new hash must be recorded and stated as the new native baseline; it is not a regression. Accepting (3) at `report` level was not chosen. **Next task:** first log the libm arguments inside the engine, behind a gate, to find which call at frame 32 diverges. Then vendor one correctly-rounded float libm (CORE-MATH style, portable C, no x87) for exactly the functions the engine calls (`sin`, `cos`, `tan`, `asin`, `acos`, `atan2`, plus any others found), routed through one engine wrapper so both arms call the same code. Rerun `Tools/libm_probe` and expect 0 differences, then rerun the gate against portable-scalar. Judge on (3) hash identity and on whether the drift curve is zero throughout.
+
+### 2026-10-26 — steering: the vendored libm judged (holds); **every pass criterion is met**
+
+**Judged from the artifacts.** `out/wasm_parity_gate_portable_scalar/report.md` (copied from the task's 20:25 run): wasm `-O3` page and native portable-scalar both print `0x7f70bb7d195a6d58` on 3 of 3 runs, all exit 0, final and peak drift 0.000 mm. That meets (3) at `require` and the owner's "agreement throughout". To check (4) as written, against the ordinary AVX2 exe, this run re-ran `python Tools/wasm_parity_gate.py` with the new module: 3 of 3 PASS, final drift 1.793 mm against the 2 mm budget, gate exit 0, native `0xe836d31697879e27`. AVX2 hash identity and the 210.929 mm peak are report-only, as the record provides. (1), (2), (5) and (6) hold: the page runs to exit 0, the hash is stable across reloads, and `out/wasm_parity_gate/report.md` is the report. The native hashes did not move, because wasi-libc was the arm that rounded wrongly. Verdict: **met**.
+
+**Open items for the owner (none blocks the aim):** another chat's `Quantity.cppm` hunk removes the `__cpp_exceptions` arm, which would break wasm, so check it before committing. `Physics/VBD/Solver.cpp` mixes another chat's edits with this task's five `exp` lines. `Solver.cpp` and `NarrowPhaseCollisions.cppm` were edited but are missing from `touched.txt`. `GSEEngineSdk.cmake:24` still has `-mavx2`. The AVX2 peak drift is still large mid-strike. The libm, the partition, patch 0020 and the gate tooling are uncommitted, and push is the owner's call.

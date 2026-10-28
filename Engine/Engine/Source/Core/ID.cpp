@@ -233,11 +233,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 
 auto gse::generate_temp_id(const std::filesystem::path& path) -> id {
 	std::string key = path.lexically_normal().generic_native_encoded_string();
-#ifdef _WIN32
-	std::ranges::transform(key, key.begin(), [](const unsigned char c) {
-		return static_cast<char>(std::tolower(c));
-	});
-#endif
+	fold_path_case(key);
 	return generate_temp_id(stable_id(key));
 }
 

@@ -4,7 +4,7 @@ import gse;
 import packer;
 
 auto main(int argc, char** argv) -> int {
-	const auto args = gse::parse_args<packer::arguments>(argc, argv);
+	const auto args = gse::parse_args<packer::arguments>(argc, argv).config;
 	packer::transcript out;
 
 	const auto plan = packer::plan_for(args);

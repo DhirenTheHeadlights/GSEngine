@@ -23,6 +23,10 @@ part a fresh machine or a fresh hang cannot recover from code alone.
 - **DRED**: breadcrumb nodes carry real queue/list names
   (`gse.graphics_queue`, `gse.worker compute f1 #3`,
   `gse.frame_primary graphics f0`, `gse.transient graphics p2 #0`).
+  Off by default — it costs a driver breadcrumb per draw, dispatch, copy
+  and barrier, plus a command-list name per debug event. Turn on the
+  `dred` device setting and reproduce to get a breadcrumb trail; a dump
+  taken without it says so and still prints the queue-op ring.
 - Fence shape per frame: compute graph timeline waited/signaled by
   compute each frame and waited by graphics; three per-image
   render_finished fences signaled by graphics then CPU-waited by present;

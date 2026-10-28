@@ -112,11 +112,11 @@ export namespace gse::ide {
 		profile_source source = profile_source::editor;
 	};
 
-	struct profile_report_request {
+	struct [[= reveals<"Profile">{}]] profile_report_request {
 		std::filesystem::path path;
 	};
 
-	struct profile_export_request {
+	struct [[= reveals<"Profile">{}]] profile_export_request {
 		std::filesystem::path path;
 		std::uint64_t pinned_generation = 0;
 	};

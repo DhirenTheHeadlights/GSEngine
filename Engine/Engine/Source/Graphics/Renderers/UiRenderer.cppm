@@ -41,6 +41,7 @@ export namespace gse::renderer {
 		bool sample_scene_snapshot = false;
 		gpu::bindless_slot image_slot = {};
 		id window;
+		std::optional<std::array<vec2f, 4>> corners;
 
 		auto operator==(
 			const sprite_command&
@@ -135,6 +136,7 @@ namespace gse::renderer::ui {
 		std::string_view text;
 		vec2f position;
 		float scale;
+		std::optional<std::array<vec2f, 4>> corners;
 	};
 
 	auto add_sprite_quad(

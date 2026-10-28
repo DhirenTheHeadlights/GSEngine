@@ -210,8 +210,7 @@ export namespace gse::gpu::context {
 
 export namespace gse::gpu {
 	struct gpu_resume_request {
-		std::coroutine_handle<> handle;
-		context::data** out_state = nullptr;
+		async::resume_slot<context::data> resume;
 	};
 
 	struct on_gpu_awaitable {
@@ -238,8 +237,7 @@ auto gse::gpu::on_gpu_awaitable::await_ready() const noexcept -> bool {
 
 auto gse::gpu::on_gpu_awaitable::await_suspend(std::coroutine_handle<> h) -> void {
 	channels.push<gpu_resume_request>({
-		.handle = h,
-		.out_state = &state
+		.resume = { h, state }
 	});
 }
 

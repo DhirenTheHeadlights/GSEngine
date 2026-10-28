@@ -31,7 +31,7 @@ export namespace gse::gui {
 }
 
 export namespace gse::gui::draw {
-	[[nodiscard]] auto fill_surface(
+	auto fill_surface(
 		const draw_context& ctx,
 		const rectf& rect,
 		const surface& skin,

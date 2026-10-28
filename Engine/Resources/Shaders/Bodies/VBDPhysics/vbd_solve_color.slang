@@ -85,8 +85,8 @@ void island_neighbour_masks(uint bi, uint self, uint count, uint lo, uint hi, ou
     uint contact_offset = contact_offsets[bi];
     uint contact_count = contact_counts[bi];
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
-        if (ci >= max_contacts) continue;
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency());
+        if (ci >= max_contacts()) continue;
         contact_constraint c = contact_data[ci];
         uint other = (c.body_a == bi) ? c.body_b : c.body_a;
         uint p = island_position(other, count);
@@ -98,7 +98,7 @@ void island_neighbour_masks(uint bi, uint self, uint count, uint lo, uint hi, ou
     uint joint_offset = joint_offsets[bi];
     uint joint_count_for_body = joint_counts[bi];
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
-        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) != 0) {
             muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
             for (uint k = 0; k < m.path_count + m.wrap_count; k++) {
@@ -111,7 +111,7 @@ void island_neighbour_masks(uint bi, uint self, uint count, uint lo, uint hi, ou
             }
             continue;
         }
-        if (ji >= max_joints) continue;
+        if (ji >= max_joints()) continue;
         joint_constraint j = joint_data[ji];
         uint other = (j.body_a == bi) ? j.body_b : j.body_a;
         uint p = island_position(other, count);
@@ -777,8 +777,8 @@ void solve_body(uint bi, bool live_jac) {
     }
 
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
-        if (ci >= max_contacts) continue;
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency());
+        if (ci >= max_contacts()) continue;
         contact_constraint c = contact_data[ci];
 
         if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
@@ -900,13 +900,13 @@ void solve_body(uint bi, bool live_jac) {
     coupled_newton newton = { no_curve_words, 0, 0, float3(0, 0, 0) };
 
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
-        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) != 0) {
             accumulate_muscle_for_body(bi, ji & ~muscle_adjacency_tag, update_orient, grad, hess, ang_grad, ang_hess, hess_xt, newton);
             if (update_orient) has_cross_terms = true;
             continue;
         }
-        if (ji >= max_joints) continue;
+        if (ji >= max_joints()) continue;
         joint_constraint j = joint_data[ji];
         if (j.body_a >= pc.body_count || j.body_b >= pc.body_count) continue;
         accumulate_joint_for_body(bi, j, update_orient, grad, hess, ang_grad, ang_hess, hess_xt, newton);
@@ -1280,8 +1280,8 @@ void fold_collect(uint bi, uint island) {
     uint joint_offset = joint_offsets[bi];
     uint joint_count_for_body = joint_counts[bi];
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
-        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency);
-        if (ji >= max_joints) continue;
+        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
+        if (ji >= max_joints()) continue;
         if (joint_data[ji].body_a != bi) continue;
         fold_push(ji);
     }
@@ -1291,8 +1291,8 @@ void fold_collect(uint bi, uint island) {
     uint contact_offset = contact_offsets[bi];
     uint contact_count = contact_counts[bi];
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency);
-        if (ci >= max_contacts) continue;
+        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency());
+        if (ci >= max_contacts()) continue;
         if (!island_owns_contact(ci, bi, island)) continue;
         fold_push(ci | 0x80000000u);
     }
@@ -1322,11 +1322,11 @@ void solve_islands(uint3 dispatch_id) {
     uint pack = max(solver_config_data[0].islands_per_workgroup, 1u);
     uint first = env * pack;
     if (first < island_count) {
-        uint base = 1 + 2 * max_islands;
+        uint base = 1 + 2 * max_islands();
         uint islands = min(pack, island_count - first);
         uint offset = island_data[1 + first];
         uint last = first + islands - 1;
-        uint count = island_data[1 + last] + island_data[1 + max_islands + last] - offset;
+        uint count = island_data[1 + last] + island_data[1 + max_islands() + last] - offset;
         uint fold_base = env * fold_cache_float4s;
         bool cacheable = fold_base + fold_cache_float4s <= pc.body_count * solve_state_float4s_per_body;
 
@@ -1462,7 +1462,7 @@ void solve_islands(uint3 dispatch_id) {
         }
         AllMemoryBarrierWithGroupSync();
         if (gs_lambda_last != 0) {
-            uint unowned = min(unowned_contacts[0], max_contacts);
+            uint unowned = min(unowned_contacts[0], max_contacts());
             for (uint k = lane; k < unowned; k += workgroup_size) {
                 update_contact_lambda(unowned_contacts[1 + k]);
             }

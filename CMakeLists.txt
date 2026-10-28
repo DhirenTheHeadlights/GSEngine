@@ -14,7 +14,11 @@ gse_write_manifest("${CMAKE_CURRENT_SOURCE_DIR}/Sandbox")
 
 add_subdirectory(Engine)
 add_subdirectory(Sandbox)
-add_subdirectory(Editor)
-add_subdirectory(Installer)
-add_subdirectory(Launcher)
-add_subdirectory(Packer)
+
+# Desktop tools, which a wasm32 configuration has no host libraries for.
+if(WIN32)
+    add_subdirectory(Editor)
+    add_subdirectory(Installer)
+    add_subdirectory(Launcher)
+    add_subdirectory(Packer)
+endif()

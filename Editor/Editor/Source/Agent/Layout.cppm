@@ -34,6 +34,7 @@ namespace gse::ide::agent {
 	struct markup_line {
 		std::string text;
 		std::span<const gui::text_run> runs{};
+		std::span<const markdown::rendered_link> links{};
 		markdown::display_style base;
 	};
 
@@ -175,6 +176,19 @@ namespace gse::ide::agent {
 		std::uint32_t row
 	) -> void;
 
+	auto canvas_named(
+		const session& s,
+		std::string_view name
+	) -> const canvas_record*;
+
+	auto push_canvas(
+		const session& s,
+		transcript_view& v,
+		const transcript_row& row,
+		std::uint32_t index,
+		const transcript_metrics& metrics
+	) -> void;
+
 	auto update_diff_scroll(
 		const gui::draw_context& ctx,
 		transcript_view& v,
@@ -258,6 +272,12 @@ namespace gse::ide::agent {
 		std::uint32_t line
 	) -> const link_marker*;
 
+	auto target_at(
+		const transcript_view& v,
+		std::uint32_t line,
+		std::uint32_t column
+	) -> const target_marker*;
+
 	auto group_expanded(
 		const session& s,
 		std::uint32_t row
@@ -277,6 +297,14 @@ namespace gse::ide::agent {
 	auto truncate_transcript(
 		transcript_view& v,
 		std::uint32_t line
+	) -> void;
+
+	auto push_answer(
+		transcript_view& v,
+		const gui::style& sty,
+		const transcript_row& row,
+		std::uint32_t index,
+		const transcript_metrics& metrics
 	) -> void;
 
 	auto push_row(
@@ -306,5 +334,5 @@ namespace gse::ide::agent {
 
 	auto views_of(
 		session& s
-	) -> std::array<transcript_view*, 3>;
+	) -> std::array<transcript_view*, 4>;
 }

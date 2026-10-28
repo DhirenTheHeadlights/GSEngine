@@ -35,6 +35,7 @@ export namespace gse::gui {
 		int select_granularity = 0;
 		int select_origin = 0;
 		bool selecting = false;
+		bool password = false;
 	};
 }
 
@@ -178,7 +179,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	auto pick_index_from_x = [&](const float x_local) -> int {
 		const int n = static_cast<int>(buffer.size());
-		const std::vector<float> offsets = fnt_view->caret_offsets(buffer, ctx.style.font_size);
+		const std::vector<float> offsets = fnt_view->caret_offsets(state.password ? std::string(buffer.size(), '*') : buffer, ctx.style.font_size);
 		float best_dx = std::numeric_limits<float>::max();
 		int best_k = 0;
 
@@ -296,12 +297,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				{
 					.label = "Copy",
 					.action_id = static_cast<std::uint32_t>(text_edit_action::copy),
-					.enabled = selection_now,
+					.enabled = selection_now && !state.password,
 				},
 				{
 					.label = "Cut",
 					.action_id = static_cast<std::uint32_t>(text_edit_action::cut),
-					.enabled = selection_now,
+					.enabled = selection_now && !state.password,
 				},
 				{
 					.label = "Paste",
@@ -316,13 +317,13 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	switch (ctx.take_text_edit(widget_id)) {
 		case text_edit_action::copy:
-			if (has_sel(state)) {
+			if (!state.password && has_sel(state)) {
 				auto [a, b] = sel_range(state);
 				ctx.set_clipboard(buffer.substr(a, b - a));
 			}
 			break;
 		case text_edit_action::cut:
-			if (has_sel(state)) {
+			if (!state.password && has_sel(state)) {
 				auto [a, b] = sel_range(state);
 				ctx.set_clipboard(buffer.substr(a, b - a));
 				buffer.erase(a, b - a);
@@ -397,7 +398,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			return i;
 		};
 
-		if (ctrl && ctx.key_pressed_for(key::c) && has_sel(state)) {
+		if (!state.password && ctrl && ctx.key_pressed_for(key::c) && has_sel(state)) {
 			auto [a, b] = sel_range(state);
 			ctx.set_clipboard(buffer.substr(a, b - a));
 		}
@@ -410,7 +411,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = true;
 		}
 
-		if (ctrl && ctx.key_pressed_for(key::x) && has_sel(state)) {
+		if (!state.password && ctrl && ctx.key_pressed_for(key::x) && has_sel(state)) {
 			auto [a, b] = sel_range(state);
 			ctx.set_clipboard(buffer.substr(a, b - a));
 			buffer.erase(a, b - a);
@@ -513,7 +514,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.repeat.disarm();
 		}
 
-		const float caret_x = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size);
+		const float caret_x = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, state.caret), ctx.style.font_size);
 
 		if (const float inner_r = std::max(0.f, box_rect.width() - text_padding * 2.f - caret_extent); caret_x - state.scroll_x > inner_r) {
 			state.scroll_x = caret_x - inner_r;
@@ -548,8 +549,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
-		const float ax = fnt_view->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
-		const float bx = fnt_view->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
+		const float ax = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, a), ctx.style.font_size) - state.scroll_x;
+		const float bx = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, b), ctx.style.font_size) - state.scroll_x;
 
 		const rectf sel_rect = rectf::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
@@ -564,7 +565,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = buffer,
+		.text = state.password ? std::string(buffer.size(), '*') : buffer,
 		.position = { text_pos.x() - state.scroll_x, text_pos.y() },
 		.scale = ctx.style.font_size,
 		.color = skin.text_color,
@@ -572,7 +573,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 	});
 
 	if (focused && state.blink_on) {
-		const float cx = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
+		const float cx = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
 		const rectf cursor_rect = rectf::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ caret_extent, ctx.style.font_size }

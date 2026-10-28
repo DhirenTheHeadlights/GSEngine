@@ -5,6 +5,8 @@ import gse.ide.git;
 import gse.ide.project;
 import std;
 
+import :brand;
+
 export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
@@ -19,6 +21,11 @@ export namespace gse::ide {
 		) -> void override;
 
 		auto title() const -> std::string_view override;
+
+		auto draw_caption(
+			gui::builder& ui,
+			const rectf& area
+		) -> float override;
 
 		auto captures_input() const -> bool override;
 
@@ -165,6 +172,28 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 
 auto gse::ide::project_screen::title() const -> std::string_view {
 	return m_hub ? "GSEditor" : "Projects";
+}
+
+auto gse::ide::project_screen::draw_caption(gui::builder& ui, const rectf& area) -> float {
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const rectf symbol_rect = gui::layout::align_in(
+		area.inset({ sty.padding, 0.f }),
+		{ sty.icon_extent, sty.icon_extent },
+		gui::layout::halign::start,
+		gui::layout::valign::center
+	);
+	brand::draw(ctx, symbol_rect);
+	const float title_x = symbol_rect.right() + sty.padding * 0.5f;
+	const rectf title_rect = rectf::from_position_size(
+		{ title_x, area.top() },
+		{ std::max(0.f, area.right() - sty.padding - title_x), area.height() }
+	);
+	gui::draw::label(ctx, title_rect, title(), sty.screen.caption, {
+		.color = sty.screen.caption_color,
+		.clip_rect = area,
+	});
+	return 0.f;
 }
 
 auto gse::ide::project_screen::captures_input() const -> bool {

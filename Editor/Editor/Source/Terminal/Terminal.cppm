@@ -68,6 +68,7 @@ export namespace gse::ide::terminal {
 		std::vector<log::level> line_levels;
 		std::vector<gui::text_span> spans;
 		level_palette palette{};
+		std::size_t dropped_lines = 0;
 		gui::text_area_state view;
 		std::string input;
 		gui::text_input_state input_state;
@@ -76,6 +77,7 @@ export namespace gse::ide::terminal {
 		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;
+		std::uint32_t run = 0;
 		std::optional<std::uint32_t> attached_instance;
 		std::optional<build_runner::attached_fatal_reported> fatal;
 	};

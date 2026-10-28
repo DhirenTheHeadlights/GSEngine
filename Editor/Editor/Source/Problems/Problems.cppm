@@ -3,6 +3,8 @@ export module gse.ide.problems;
 import std;
 import gse;
 
+import gse.analysis;
+
 import gse.ide.diagnostic;
 import gse.ide.workspace;
 import gse.ide.navigation;

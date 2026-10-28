@@ -48,11 +48,16 @@ export namespace gse::async {
 		const checked_handle& tracked
 	) -> bool;
 
+	auto resume_checked_with(
+		const checked_handle& tracked,
+		void (*before_resume)(void*),
+		void* context
+	) -> bool;
+
 	auto completed_marker() noexcept -> void*;
 
 	struct promise_base {
 		std::atomic<void*> m_continuation{ nullptr };
-		std::exception_ptr m_exception;
 		std::atomic<bool> m_started{ false };
 		std::atomic<bool> m_detached{ false };
 
@@ -255,9 +260,6 @@ auto gse::async::value_promise<T>::return_value(T value) -> void {
 
 template <typename T>
 auto gse::async::value_promise<T>::result() -> T {
-	if (m_exception) {
-		std::rethrow_exception(m_exception);
-	}
 	return std::move(*m_result);
 }
 
@@ -273,9 +275,6 @@ auto gse::async::value_promise<T&>::return_value(T& value) -> void {
 
 template <typename T>
 auto gse::async::value_promise<T&>::result() -> T& {
-	if (m_exception) {
-		std::rethrow_exception(m_exception);
-	}
 	return *m_result;
 }
 
@@ -374,15 +373,9 @@ template <typename T>
 auto gse::async::sync_wait(task<T>&& t) -> T {
 	std::atomic<bool> done_flag{ false };
 	std::optional<T> result;
-	std::exception_ptr ep;
 
 	auto wrapper = [&]() -> task<> {
-		try {
-			result.emplace(co_await std::move(t));
-		}
-		catch (...) {
-			ep = std::current_exception();
-		}
+		result.emplace(co_await std::move(t));
 		done_flag.store(true, std::memory_order_release);
 	};
 
@@ -399,8 +392,5 @@ auto gse::async::sync_wait(task<T>&& t) -> T {
 		std::this_thread::yield();
 	}
 
-	if (ep) {
-		std::rethrow_exception(ep);
-	}
 	return std::move(*result);
 }

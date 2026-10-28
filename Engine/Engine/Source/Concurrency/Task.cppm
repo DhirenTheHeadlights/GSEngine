@@ -852,36 +852,8 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		return;
 	}
 
-#if __cpp_exceptions
-	try {
-#endif
-		{
-			trace::scope_guard _{ entry.trace_id, entry.parent_eid };
-			entry.fn();
-		}
-#if __cpp_exceptions
-	}
-	catch (const std::exception& e) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"Exception in task (trace_id={}, type={}): {}\nStack:\n{}",
-			entry.trace_id,
-			typeid(e).name(),
-			e.what(),
-			capture_stacktrace(1)
-		);
-	}
-	catch (...) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"Unknown exception in task (trace_id={})\nStack:\n{}",
-			entry.trace_id,
-			capture_stacktrace(1)
-		);
-	}
-#endif
+	trace::scope_guard _{ entry.trace_id, entry.parent_eid };
+	entry.fn();
 }
 
 auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> void {

@@ -13,8 +13,6 @@ namespace gse::async {
 	struct when_all_state {
 		std::atomic<int> remaining;
 		std::coroutine_handle<> continuation;
-		std::atomic<bool> has_exception{ false };
-		std::exception_ptr first_exception;
 	};
 
 	struct suspend_and_capture {
@@ -92,7 +90,7 @@ auto gse::async::promise_base::final_suspend() noexcept -> final_awaiter {
 }
 
 auto gse::async::promise_base::unhandled_exception() -> void {
-	m_exception = std::current_exception();
+	assert(false, "coroutine propagated an exception in a build compiled without them");
 }
 
 auto gse::async::promise_base::operator new(const std::size_t size) -> void* {
@@ -142,6 +140,10 @@ auto gse::async::untrack_frame(void* frame) -> void {
 }
 
 auto gse::async::resume_checked(const checked_handle& tracked) -> bool {
+	return resume_checked_with(tracked, nullptr, nullptr);
+}
+
+auto gse::async::resume_checked_with(const checked_handle& tracked, void (*before_resume)(void*), void* context) -> bool {
 	if (!tracked.handle || tracked.generation == 0) {
 		return false;
 	}
@@ -154,6 +156,9 @@ auto gse::async::resume_checked(const checked_handle& tracked) -> bool {
 		}
 		tracked_frames.erase(it);
 		tracked_frame_count.store(tracked_frames.size(), std::memory_order_release);
+		if (before_resume) {
+			before_resume(context);
+		}
 	}
 
 	tracked.handle.resume();
@@ -168,9 +173,6 @@ auto gse::async::void_promise::return_void() noexcept -> void {
 }
 
 auto gse::async::void_promise::result() const -> void {
-	if (m_exception) {
-		std::rethrow_exception(m_exception);
-	}
 }
 
 auto gse::async::suspend_and_capture::await_ready() noexcept -> bool {
@@ -314,19 +316,7 @@ auto gse::async::yield_to_worker() noexcept -> yield_to_worker_t {
 }
 
 auto gse::async::when_all_helper(task<> child, when_all_state* state) -> task<> {
-#if __cpp_exceptions
-	try {
-		co_await child;
-	}
-	catch (...) {
-		bool expected = false;
-		if (state->has_exception.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-			state->first_exception = std::current_exception();
-		}
-	}
-#else
 	co_await child;
-#endif
 	if (state->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		co_await symmetric_resume{ state->continuation };
 	}
@@ -352,10 +342,6 @@ auto gse::async::when_all_impl(std::vector<task<>> tasks) -> task<> {
 	}
 
 	co_await suspend_and_capture{ state.continuation, helpers };
-
-	if (state.has_exception.load(std::memory_order_acquire)) {
-		std::rethrow_exception(state.first_exception);
-	}
 }
 
 auto gse::async::when_all_inline_impl(std::vector<task<>> tasks) -> task<> {
@@ -373,10 +359,6 @@ auto gse::async::when_all_inline_impl(std::vector<task<>> tasks) -> task<> {
 	}
 
 	co_await suspend_and_start_inline{ state.continuation, helpers, state.remaining };
-
-	if (state.has_exception.load(std::memory_order_acquire)) {
-		std::rethrow_exception(state.first_exception);
-	}
 }
 
 auto gse::async::when_all_inline(std::vector<task<>> tasks) -> task<> {
@@ -416,21 +398,9 @@ auto gse::async::when_all(std::vector<task<>> tasks) -> task<> {
 
 auto gse::async::sync_wait(task<>&& t) -> void {
 	std::atomic<bool> done_flag{ false };
-	bool has_exception = false;
-	std::exception_ptr ep;
 
 	auto wrapper = [&]() -> task<> {
-#if __cpp_exceptions
-		try {
-			co_await std::move(t);
-		}
-		catch (...) {
-			has_exception = true;
-			ep = std::current_exception();
-		}
-#else
 		co_await std::move(t);
-#endif
 		done_flag.store(true, std::memory_order_release);
 	};
 
@@ -446,9 +416,5 @@ auto gse::async::sync_wait(task<>&& t) -> void {
 	}
 	while (!w.done()) {
 		std::this_thread::yield();
-	}
-
-	if (has_exception) {
-		std::rethrow_exception(ep);
 	}
 }

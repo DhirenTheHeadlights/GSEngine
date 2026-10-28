@@ -50,8 +50,8 @@ void collision_scan_adjacency(uint3 dispatch_id, uint3 group_thread_id) {
         GroupMemoryBarrierWithGroupSync();
 
         if (active) {
-            contact_offsets[bi] = min(carry_c + gs_wave_c[wave_index] + rank_c, max_contact_adjacency);
-            joint_offsets[bi] = min(carry_j + gs_wave_j[wave_index] + rank_j, max_joint_adjacency);
+            contact_offsets[bi] = min(carry_c + gs_wave_c[wave_index] + rank_c, max_contact_adjacency());
+            joint_offsets[bi] = min(carry_j + gs_wave_j[wave_index] + rank_j, max_joint_adjacency());
             contact_counts[bi] = 0;
             joint_counts[bi] = 0;
         }

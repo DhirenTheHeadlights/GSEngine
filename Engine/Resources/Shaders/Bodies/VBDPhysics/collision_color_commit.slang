@@ -2,7 +2,7 @@ void collision_color_commit(uint3 dispatch_id) {
     uint bi = dispatch_id.x;
     if (bi >= pc.body_count) return;
 
-    coloring_scratch[bi] = coloring_scratch[max_bodies + bi];
+    coloring_scratch[bi] = coloring_scratch[max_bodies() + bi];
 
     if (bi == 0) {
         uint pending;

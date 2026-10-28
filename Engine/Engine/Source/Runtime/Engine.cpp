@@ -20,11 +20,13 @@ import gse.network;
 import gse.os;
 import gse.physics;
 import gse.save;
+import gse.stacktrace;
 import gse.system_manifest;
 import gse.time;
 import std;
 
 import :bootstrap;
+import :crash_report;
 import :engine;
 import :log_settings;
 import :profile_settings;
@@ -33,10 +35,23 @@ import :world_system;
 namespace gse {
 	constexpr std::wstring_view simulate_device_lost_option = L"--engine-simulate-device-lost";
 	constexpr std::wstring_view restarted_after_device_lost_option = L"--engine-restarted-after-device-lost";
+	constexpr std::wstring_view restarted_after_crash_option = L"--engine-restarted-after-crash";
+
+	struct crash_restart_policy {
+		bool enabled = false;
+		bool after_restart = false;
+		clock since_launch;
+	};
+
+	crash_restart_policy crash_policy;
 
 	auto command_line_has(
 		std::wstring_view option
 	) -> bool;
+
+	auto respond_to_crash(
+		const crash_record& record
+	) -> void;
 }
 
 auto gse::command_line_has(const std::wstring_view option) -> bool {
@@ -44,10 +59,50 @@ auto gse::command_line_has(const std::wstring_view option) -> bool {
 	return std::ranges::contains(arguments | std::views::drop(1), option);
 }
 
+auto gse::respond_to_crash(const crash_record& record) -> void {
+	const std::filesystem::path report = write_crash_report(record);
+	if (!report.empty()) {
+		log::println(log::level::error, log::category::general, "crash: {} - report written to {}", record.reason, report);
+		log::flush();
+	}
+
+	const time restart_reset_age = seconds(120.f);
+	if (!crash_policy.enabled) {
+		return;
+	}
+	if (crash_policy.after_restart && crash_policy.since_launch.elapsed() < restart_reset_age) {
+		log::println(
+			log::level::error,
+			log::category::general,
+			"crash: {::s} after a restart that was itself caused by a crash - not restarting again",
+			crash_policy.since_launch.elapsed()
+		);
+		log::flush();
+		return;
+	}
+
+	log::println(log::level::error, log::category::general, "crash: restarting after {::s} of uptime", crash_policy.since_launch.elapsed());
+	log::flush();
+
+	app::relaunch_self_on_exit();
+	app::drop_relaunch_arguments(std::wstring(simulate_device_lost_option));
+	app::drop_relaunch_arguments(std::wstring(restarted_after_device_lost_option));
+	app::drop_relaunch_arguments(std::wstring(restarted_after_crash_option));
+	app::add_relaunch_handoff({}, std::wstring(restarted_after_crash_option));
+	app::run_pending_relaunch();
+}
+
 gse::engine::engine(const engine_config& config)
 	: identifiable(config.title), m_config(config) {
 	m_config.simulate_device_lost = m_config.simulate_device_lost || command_line_has(simulate_device_lost_option);
 	m_config.restarted_after_device_lost = m_config.restarted_after_device_lost || command_line_has(restarted_after_device_lost_option);
+	m_config.restarted_after_crash = m_config.restarted_after_crash || command_line_has(restarted_after_crash_option);
+
+	crash_policy = {
+		.enabled = m_config.restart_on_crash,
+		.after_restart = m_config.restarted_after_crash,
+	};
+	install_crash_responder(&respond_to_crash);
 }
 
 auto gse::engine::handle_device_lost(const std::string_view cause) -> void {

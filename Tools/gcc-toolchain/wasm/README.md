@@ -146,9 +146,15 @@ reviewable and offerable back:
   signature at run time, so there the extra argument is not ignored and every coroutine
   that reaches final suspend with no continuation traps. The slots are pointers either
   way, so the frame's layout is unchanged and nothing moves on any other target.
-- **`0004-local-emit-rwat-s-annotation-dialect.patch`** (2 files, ours) — **superseded by
-  `0005` and no longer applied.** Kept as the record of the path not taken. The two are
-  mutually exclusive: both rewrite the same templates.
+- **`0020-local-float-atomic-operands.patch`** (1 file, ours) — see below. Applied always.
+  The atomic insns in `wasm.md` took the generic `register_operand`, which accepts
+  `(subreg:DI (reg:DF))`; an optimised build hands a `std::atomic<double>` over that way,
+  the backend prints the local under the subreg, and `i64.atomic.store` /
+  `i64.atomic.rmw.cmpxchg` / `i32.atomic.store` were given an f64 or f32 and refused by
+  `llvm-mc`. Switching them to `wasm_register_operand` makes the optab copy the operand
+  into a pseudo of the pattern's mode, which is the existing `*cast` reinterpret. -O0
+  never met it. The `float_atomics` probe row is its test.
+- **`0004`** — deleted: the rwat annotation dialect was dropped for llvm-mc (`0005`).
 
 ## External tools: what assembles and runs the output
 
@@ -179,7 +185,7 @@ collection is back on by default.
 To read back what a probe produced:
 
 ```sh
-cd .gcc-wasm-build/build/gcc
+cd .generated/.gcc-wasm-build/build/gcc
 wasm-objdump -x probe-static.o | grep -E 'MEMORY_ADDR|D <'  # data symbols and their relocs
 wasm-objdump -x probe-two_tu.o | grep binding=              # local binding, a withheld .globl
 wasm-objdump -x probe-init_array.o | grep -A2 'init func'   # a constructor the linker will call
@@ -318,7 +324,7 @@ of these have no command below: a patch may only be cut to the current tree if n
 patch touches the same file, and most of this series' files have since acquired one.
 
 ```sh
-cd .gcc-wasm-build
+cd .generated/.gcc-wasm-build
 # 0005 has no command here either. Its a-side is baseline/wasm throughout, and of its four
 # files only wasm-cg.cc may end at the tree: wasm.md is edited after it by 0016, wasm.cc by
 # 0015, and wasm-asm.cc by 0007, 0008, 0010, 0012, 0015 and 0018. See below.
@@ -356,6 +362,19 @@ baseline directory exists only for a file two of our patches edit. (There is no
 `baseline-0012/`, and unlike when this was written there now *should* be: `0015` and
 `0018` both edit `wasm-asm.cc` after `0012`, so `0012`'s b-side is a boundary nothing has
 snapshotted. See the gap described below.)
+
+`0020` edits only `gcc/config/wasm/wasm.md`, which `0001` creates and others after it may
+edit, so it is cut against `baseline-0019/wasm/wasm.md` — the file as the tree stood with
+`0001`–`0019` applied, snapshotted before the edit:
+
+```
+cd .generated/.gcc-wasm-build
+diff -u --label a/gcc/config/wasm/wasm.md --label b/gcc/config/wasm/wasm.md \
+  baseline-0019/wasm/wasm.md gcc-17-20260809/gcc/config/wasm/wasm.md \
+  > ../Tools/gcc-toolchain/wasm/0020-local-float-atomic-operands.patch
+```
+
+The patch's prose header has to be put back in front of the diff by hand after a re-cut.
 
 `0014` extends `0009`'s `unwind-wasm.c`, so that file is now in two of our patches and has
 a snapshot like any other: `baseline-0013/libgcc-wasm/unwind-wasm.c` is the file as `0009`

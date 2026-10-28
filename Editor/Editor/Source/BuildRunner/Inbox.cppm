@@ -148,6 +148,17 @@ export namespace gse::ide::build_inbox {
 		std::string_view id
 	) -> void;
 
+	struct plan_step {
+		std::string text;
+		std::vector<std::filesystem::path> files;
+	};
+
+	struct reported_criterion {
+		std::string id;
+		std::string state;
+		std::string note;
+	};
+
 	struct phase_report {
 		std::string id;
 		std::string agent;
@@ -156,6 +167,9 @@ export namespace gse::ide::build_inbox {
 		std::string next;
 		std::filesystem::path goal;
 		std::filesystem::path cwd;
+		std::vector<plan_step> steps;
+		std::optional<std::string> diagnosis;
+		std::vector<reported_criterion> criteria;
 	};
 
 	auto phases_dir() -> std::filesystem::path;
@@ -218,6 +232,41 @@ export namespace gse::ide::build_inbox {
 	auto peek_gap_reports() -> std::vector<gap_report>;
 
 	auto consume_gap_report(
+		std::string_view id
+	) -> void;
+
+	struct draw_request {
+		std::string id;
+		std::string agent;
+		std::string name;
+		std::string payload;
+		std::optional<std::uint32_t> chat;
+		vec2f size;
+		std::filesystem::path cwd;
+		bool list = false;
+	};
+
+	struct step_request {
+		std::string id;
+		std::string agent;
+		std::uint32_t index = 0;
+		std::string state;
+		std::filesystem::path cwd;
+	};
+
+	auto steps_dir() -> std::filesystem::path;
+
+	auto peek_step_requests() -> std::vector<step_request>;
+
+	auto consume_step_request(
+		std::string_view id
+	) -> void;
+
+	auto draws_dir() -> std::filesystem::path;
+
+	auto peek_draw_requests() -> std::vector<draw_request>;
+
+	auto consume_draw_request(
 		std::string_view id
 	) -> void;
 }

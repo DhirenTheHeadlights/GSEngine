@@ -8,6 +8,7 @@ import gse.core;
 import gse.time;
 
 import :font;
+import :motion;
 import :text_buffer;
 import :texture;
 import :ui_renderer;
@@ -334,7 +335,7 @@ export namespace gse::gui {
 		std::vector<renderer::text_command>& texts;
 		std::deque<std::string>& text_pool;
 		std::size_t& text_pool_used;
-		std::unordered_map<std::uint64_t, vec4f>& widget_anim_colors;
+		motion_store& motion;
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
 		mutable render_layer current_layer = render_layer::content;
@@ -502,6 +503,20 @@ export namespace gse::gui {
 			vec4f target,
 			inverse_time speed = per_second(10.f)
 		) const -> vec4f;
+
+		auto presence(
+			const id& widget_id,
+			bool present,
+			const motion_spec& spec = {}
+		) const -> float;
+
+		auto animated_rect(
+			const id& widget_id,
+			const rectf& target,
+			const motion_spec& spec = {}
+		) const -> rectf;
+
+		[[nodiscard]] auto motion_counts() const -> motion_stats;
 
 		[[nodiscard]] auto current_clip() const -> std::optional<rectf>;
 

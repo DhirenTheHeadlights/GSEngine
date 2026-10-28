@@ -1,0 +1,16 @@
+{
+  "scenario": "@GSE_WASM_SCENARIO@",
+  "module": "@GSE_WASM_RUN_MODULE@",
+  "root": "@GSE_WASM_RUN_ROOT@",
+  "initial_pages": @GSE_WASM_INITIAL_PAGES@,
+  "max_pages": @GSE_WASM_MAX_PAGES@,
+  "writable": ["@GSE_WASM_RUN_USER@", "@GSE_WASM_RUN_STATE@", "@GSE_WASM_RUN_PROJECTS@"],
+  "environment": {
+    "GSE_EXECUTABLE_PATH": "@GSE_WASM_RUN_EXECUTABLE@",
+    "GSE_ROOT_DIR": "/",
+    "GSE_PROJECT_DIR": "@GSE_WASM_RUN_PROJECT@",
+    "GSE_USER_DIR": "@GSE_WASM_RUN_USER@",
+    "GSE_STATE_DIR": "@GSE_WASM_RUN_STATE@",
+    "GSE_PROJECTS_DIR": "@GSE_WASM_RUN_PROJECTS@"
+  }
+}

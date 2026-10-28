@@ -40,8 +40,8 @@ void vbd_derive_velocities(uint3 dispatch_id) {
         uint contact_offset = contact_offsets[bi];
         uint contact_count = contact_counts[bi];
         for (uint k = 0; k < contact_count && calm; k++) {
-            uint ci = safe_load_uint(contact_adjacency, contact_offset + k, max_contact_adjacency);
-            if (ci >= max_contacts) continue;
+            uint ci = safe_load_uint(contact_adjacency, contact_offset + k, max_contact_adjacency());
+            if (ci >= max_contacts()) continue;
             contact_constraint c = contact_data[ci];
             if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
             uint other_idx = c.body_a == bi ? c.body_b : c.body_a;

@@ -1,6 +1,9 @@
 export module gse.ide.app:code_panel;
 
 import gse;
+import gse.analysis;
+import gse.complete;
+import gse.complete.view;
 import gse.format;
 import gse.gpu;
 import gse.ide.analysis;

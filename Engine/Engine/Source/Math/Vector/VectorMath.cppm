@@ -2,6 +2,7 @@ export module gse.math:vector_math;
 
 import std;
 
+import :libm;
 import :vector;
 import :units;
 
@@ -413,7 +414,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::sin(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::sin(v[i]);
+		out[i] = libm::sin(v[i]);
 	}
 	return out;
 }
@@ -423,7 +424,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::cos(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::cos(v[i]);
+		out[i] = libm::cos(v[i]);
 	}
 	return out;
 }
@@ -433,7 +434,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::exp(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::exp(v[i]);
+		out[i] = libm::exp(v[i]);
 	}
 	return out;
 }
@@ -443,7 +444,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::logarithm(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::log(v[i]);
+		out[i] = libm::log(v[i]);
 	}
 	return out;
 }
@@ -453,7 +454,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::pow(const vec<T, N>& v, T exponent) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::pow(v[i], exponent);
+		out[i] = libm::pow(v[i], exponent);
 	}
 	return out;
 }

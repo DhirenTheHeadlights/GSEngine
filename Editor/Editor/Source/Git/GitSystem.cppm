@@ -47,7 +47,7 @@ export namespace gse::ide::git_system {
 		}]],
 	};
 
-	struct action_request {
+	struct [[= reveals<"Source Control">{}]] action_request {
 		std::filesystem::path root;
 		action kind = action::initialize;
 		std::string message;

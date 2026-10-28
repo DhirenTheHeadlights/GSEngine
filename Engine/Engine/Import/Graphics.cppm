@@ -46,6 +46,7 @@ export import :gui_screen;
 export import :ids;
 export import :image_attachments;
 export import :input_layers;
+export import :motion;
 export import :modal_surface;
 export import :text_input_widget;
 export import :interaction;

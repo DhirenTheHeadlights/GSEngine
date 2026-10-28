@@ -944,7 +944,8 @@ consteval auto gse::archive_schema_fingerprint_impl<T>::accumulate(std::uint64_t
 		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 			if constexpr (!is_archive_skipped(m)) {
 				hash = archive_schema_hash_mix(hash, std::meta::identifier_of(m));
-				hash = archive_schema_hash_mix(hash, meta::qualified_name<typename [:std::meta::type_of(m):]>());
+				hash = archive_schema_hash_mix(hash, archive_type_key(meta::qualified_name<typename [:std::meta::type_of(m):]>()));
+				hash = archive_schema_hash_mix(hash, std::to_string(archive_field_size<typename [:std::meta::type_of(m):]>()));
 				hash = archive_schema_fingerprint_impl<typename [:std::meta::type_of(m):]>::accumulate(hash);
 			}
 		}
@@ -987,7 +988,7 @@ consteval auto gse::archive_schema_fingerprint_impl<std::unordered_map<K, V>>::a
 
 template <typename T>
 consteval auto gse::schema_fingerprint() -> std::uint64_t {
-	return archive_schema_fingerprint_impl<T>::accumulate(archive_schema_hash_mix(14695981039346656037ull, meta::qualified_name<T>()));
+	return archive_schema_fingerprint_impl<T>::accumulate(archive_schema_hash_mix(14695981039346656037ull, archive_type_key(meta::qualified_name<T>())));
 }
 
 auto gse::binary_reader::skipped_fields() const -> std::span<const std::string> {

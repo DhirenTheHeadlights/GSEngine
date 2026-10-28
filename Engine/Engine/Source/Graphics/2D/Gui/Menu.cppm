@@ -47,12 +47,13 @@ namespace gse::gui {
 	) -> void;
 
 	auto process_menu(
+		context& run_ctx,
 		data& d,
 		viewport_state& vp,
 		const input::state& input_state,
 		const std::string& name,
 		render_layer layer,
 		bool translucent,
-		const std::function<void(builder&)>& build
+		const draw_fn& build
 	) -> void;
 }

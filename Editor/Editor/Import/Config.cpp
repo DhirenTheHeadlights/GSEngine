@@ -4,6 +4,8 @@ import std;
 
 import gse.config;
 import gse.core;
+import gse.fs;
+import gse.ide.analysis;
 import gse.ide.project;
 import gse.log;
 
@@ -64,6 +66,16 @@ namespace gse::ide::config {
 		bool counts_loc,
 		std::vector<browse_root>& out
 	) -> void;
+
+	auto request_codemodel() -> void;
+
+	auto read_json(
+		const std::filesystem::path& file
+	) -> std::optional<analysis::json::value>;
+
+	auto executable_dirs_from_reply() -> std::vector<std::string>;
+
+	auto subdirectories_from_cmakelists() -> std::vector<std::string>;
 
 	auto append_fixed_roots(
 		const worktree& tree,
@@ -294,14 +306,138 @@ auto gse::ide::config::append_worktree_roots(const worktree& tree, const bool co
 	});
 }
 
+auto gse::ide::config::request_codemodel() -> void {
+	const std::filesystem::path query = gse::config::build_root() / ".cmake" / "api" / "v1" / "query" / "codemodel-v2";
+	std::error_code ec;
+	if (std::filesystem::exists(query, ec)) {
+		return;
+	}
+	if (const auto written = gse::fs::write_text(query, ""); !written) {
+		log::println(log::level::warning, log::category::general, "[config] could not request the CMake codemodel: {}", written.error());
+	}
+}
+
+auto gse::ide::config::read_json(const std::filesystem::path& file) -> std::optional<analysis::json::value> {
+	return analysis::json::parse(gse::fs::read_text(file));
+}
+
+auto gse::ide::config::executable_dirs_from_reply() -> std::vector<std::string> {
+	const std::filesystem::path reply = gse::config::build_root() / ".cmake" / "api" / "v1" / "reply";
+	std::error_code ec;
+	std::filesystem::path index_file;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(reply, ec)) {
+		const std::string name = entry.path().filename().generic_display_string();
+		if (name.starts_with("index-") && name.ends_with(".json") && (index_file.empty() || name > index_file.filename().generic_display_string())) {
+			index_file = entry.path();
+		}
+	}
+	if (index_file.empty()) {
+		return {};
+	}
+
+	const std::optional<analysis::json::value> index = read_json(index_file);
+	const analysis::json::value* objects = index ? index->find("objects") : nullptr;
+	if (!objects) {
+		return {};
+	}
+	const auto codemodel_entry = std::ranges::find_if(objects->children, [](const analysis::json::value& object) {
+		const analysis::json::value* kind = object.find("kind");
+		return kind && kind->as_string() == "codemodel";
+	});
+	if (codemodel_entry == objects->children.end() || !codemodel_entry->find("jsonFile")) {
+		return {};
+	}
+
+	const std::optional<analysis::json::value> codemodel = read_json(reply / codemodel_entry->find("jsonFile")->as_string());
+	const analysis::json::value* configurations = codemodel ? codemodel->find("configurations") : nullptr;
+	if (!configurations || configurations->children.empty()) {
+		return {};
+	}
+	const analysis::json::value* directories = configurations->children.front().find("directories");
+	const analysis::json::value* targets = configurations->children.front().find("targets");
+	if (!directories || !targets) {
+		return {};
+	}
+
+	std::vector<std::string> out;
+	for (const analysis::json::value& target : targets->children) {
+		const analysis::json::value* json_file = target.find("jsonFile");
+		const analysis::json::value* directory_index = target.find("directoryIndex");
+		if (!json_file || !directory_index) {
+			continue;
+		}
+		const std::optional<analysis::json::value> detail = read_json(reply / json_file->as_string());
+		const analysis::json::value* type = detail ? detail->find("type") : nullptr;
+		if (!type || type->as_string() != "EXECUTABLE") {
+			continue;
+		}
+		const std::size_t slot = static_cast<std::size_t>(directory_index->as_int());
+		if (slot >= directories->children.size()) {
+			continue;
+		}
+		const analysis::json::value* source = directories->children[slot].find("source");
+		if (!source) {
+			continue;
+		}
+		const std::filesystem::path relative(source->as_string());
+		if (relative.empty() || relative == ".") {
+			continue;
+		}
+		std::string top = relative.begin()->generic_display_string();
+		if (std::ranges::find(out, top) == out.end()) {
+			out.push_back(std::move(top));
+		}
+	}
+	return out;
+}
+
+auto gse::ide::config::subdirectories_from_cmakelists() -> std::vector<std::string> {
+	const std::string text = gse::fs::read_text(gse::config::root_dir() / "CMakeLists.txt");
+	constexpr std::string_view command = "add_subdirectory(";
+	std::vector<std::string> out;
+	for (std::size_t at = text.find(command); at != std::string::npos; at = text.find(command, at + command.size())) {
+		const std::size_t close = text.find(')', at);
+		if (close == std::string::npos) {
+			break;
+		}
+		const std::string_view argument = std::string_view(text).substr(at + command.size(), close - at - command.size());
+		const std::size_t first = argument.find_first_not_of(" \t");
+		const std::size_t last = argument.find_last_not_of(" \t");
+		if (first == std::string_view::npos || argument.find_first_of("${} \t\"", first) <= last) {
+			continue;
+		}
+		out.emplace_back(argument.substr(first, last - first + 1));
+	}
+	return out;
+}
+
 auto gse::ide::config::append_fixed_roots(const worktree& tree, std::vector<browse_root>& out) -> void {
 	if (tree.has_manifest) {
-		out.push_back({
-			.path = gse::config::generic(gse::config::root_dir() / "Editor"),
-			.name = "Editor",
-			.compile_commands = editor_compile_commands(),
-			.is_project = false
-		});
+		request_codemodel();
+		std::vector<std::string> dirs = executable_dirs_from_reply();
+		if (dirs.empty()) {
+			dirs = subdirectories_from_cmakelists();
+		}
+		for (const std::string& dir : dirs) {
+			const std::filesystem::path path = gse::config::generic(gse::config::root_dir() / dir);
+			std::error_code ec;
+			if (!std::filesystem::is_directory(path, ec)) {
+				continue;
+			}
+			const bool listed = std::ranges::any_of(out, [&path](const browse_root& root) {
+				std::error_code same_ec;
+				return std::filesystem::equivalent(root.path, path, same_ec);
+			});
+			if (listed) {
+				continue;
+			}
+			out.push_back({
+				.path = path,
+				.name = dir,
+				.compile_commands = editor_compile_commands(),
+				.is_project = false
+			});
+		}
 	}
 
 	out.push_back({

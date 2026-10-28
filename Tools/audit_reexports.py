@@ -1,6 +1,6 @@
 import json, glob, os, collections, sys
 
-BUILD = sys.argv[1] if len(sys.argv) > 1 else r"out/build"
+BUILD = sys.argv[1] if len(sys.argv) > 1 else r".generated/out/build"
 
 module_of = {}
 sources = {}

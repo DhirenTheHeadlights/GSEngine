@@ -23,20 +23,19 @@ import :styles;
 import :types;
 import :widget_context;
 
-auto gse::gui::process_hud(data& d, viewport_state& vp, const input::state& input_state, const std::span<const hud_content> contents) -> void {
+auto gse::gui::process_hud(context& run_ctx, data& d, viewport_state& vp, const input::state& input_state, const std::span<const hud_content> contents) -> void {
 	if (!vp.fstate.active) {
+		return;
+	}
+
+	if (contents.empty()) {
 		return;
 	}
 
 	std::vector<const hud_content*> ordered;
 	ordered.reserve(contents.size());
 	for (const hud_content& content : contents) {
-		if (content.build) {
-			ordered.push_back(&content);
-		}
-	}
-	if (ordered.empty()) {
-		return;
+		ordered.push_back(&content);
 	}
 	std::ranges::sort(ordered, {}, [](const hud_content* content) -> std::string_view {
 		return content->name;
@@ -78,7 +77,7 @@ auto gse::gui::process_hud(data& d, viewport_state& vp, const input::state& inpu
 			.focus_widget_id = vp.focus_widget_id,
 		};
 
-		content->build(b);
+		content->build(b, run_ctx);
 
 		d.context = nullptr;
 	}

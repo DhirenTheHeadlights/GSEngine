@@ -10,24 +10,24 @@ void collision_color_round(uint3 dispatch_id) {
 
     uint current = coloring_scratch[bi] & 0xFFu;
     if (current != 0xFFu) {
-        coloring_scratch[max_bodies + bi] = current;
+        coloring_scratch[max_bodies() + bi] = current;
         return;
     }
 
     if (body_data[bi].locked != 0) {
-        coloring_scratch[max_bodies + bi] = 0xFFu;
+        coloring_scratch[max_bodies() + bi] = 0xFFu;
         return;
     }
 
     uint cc = contact_counts[bi];
     uint jc = joint_counts[bi];
     if (cc == 0 && jc == 0) {
-        coloring_scratch[max_bodies + bi] = 0xFFu;
+        coloring_scratch[max_bodies() + bi] = 0xFFu;
         return;
     }
 
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
-    uint num_joints = min(pc.joint_count, max_joints);
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
+    uint num_joints = min(pc.joint_count, max_joints());
     uint my_priority = round_body_priority(bi);
     bool blocked = false;
     uint neighbor_colors = 0;
@@ -35,7 +35,7 @@ void collision_color_round(uint3 dispatch_id) {
     uint off = contact_offsets[bi];
     for (uint k = 0; k < cc; k++) {
         uint idx = off + k;
-        if (idx >= max_contact_adjacency) break;
+        if (idx >= max_contact_adjacency()) break;
         uint ci = contact_adjacency[idx];
         if (ci >= num_contacts) continue;
         contact_constraint c = contact_data[ci];
@@ -58,7 +58,7 @@ void collision_color_round(uint3 dispatch_id) {
     uint j_off = joint_offsets[bi];
     for (uint k = 0; k < jc; k++) {
         uint idx = j_off + k;
-        if (idx >= max_joint_adjacency) break;
+        if (idx >= max_joint_adjacency()) break;
         uint ji = joint_adjacency[idx];
         if ((ji & muscle_adjacency_tag) != 0) {
             muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
@@ -99,7 +99,7 @@ void collision_color_round(uint3 dispatch_id) {
 
     if (blocked) {
         InterlockedAdd(collision_state[state_color_pending_index], 1);
-        coloring_scratch[max_bodies + bi] = 0xFFu;
+        coloring_scratch[max_bodies() + bi] = 0xFFu;
         return;
     }
 
@@ -119,5 +119,5 @@ void collision_color_round(uint3 dispatch_id) {
     else {
         next = 0xFFu;
     }
-    coloring_scratch[max_bodies + bi] = next;
+    coloring_scratch[max_bodies() + bi] = next;
 }

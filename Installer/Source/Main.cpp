@@ -5,7 +5,7 @@ import gse.system_manifest;
 import installer;
 
 auto main(int argc, char** argv) -> int {
-	const auto args = gse::parse_args<installer::arguments>(argc, argv);
+	const auto args = gse::parse_args<installer::arguments>(argc, argv).config;
 	if (args.uninstall) {
 		return installer::report(installer::uninstall(installer::own_executable().parent_path().parent_path()));
 	}

@@ -38,47 +38,14 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 
 	std::set_terminate([] {
 		const auto stack = capture_stacktrace(1);
-		if (const auto ex = std::current_exception()) {
-#if __cpp_exceptions
-			try {
-				std::rethrow_exception(ex);
-			}
-			catch (const std::exception& e) {
-				log::println(
-					log::level::error,
-					log::category::general,
-					"std::terminate called via uncaught exception (type={}): {}\nStack:\n{}",
-					typeid(e).name(),
-					e.what(),
-					stack
-				);
-			}
-			catch (...) {
-				log::println(
-					log::level::error,
-					log::category::general,
-					"std::terminate called via uncaught unknown exception\nStack:\n{}",
-					stack
-				);
-			}
-#else
-			log::println(
-				log::level::error,
-				log::category::general,
-				"std::terminate called via uncaught exception\nStack:\n{}",
-				stack
-			);
-#endif
-		}
-		else {
-			log::println(
-				log::level::error,
-				log::category::general,
-				"std::terminate called with no current exception\nStack:\n{}",
-				stack
-			);
-		}
+		log::println(
+			log::level::error,
+			log::category::general,
+			"std::terminate called\nStack:\n{}",
+			stack
+		);
 		log::flush();
+		report_crash("std::terminate", stack);
 		fatal_exit(3);
 	});
 

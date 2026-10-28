@@ -12,12 +12,3 @@ Tools/gcc-toolchain/recipe/PKGBUILD text eol=lf
 # series that is in fact already applied -- and a CRLF patch against GCC's LF sources is
 # a rejected hunk waiting to happen on a clean clone.
 Tools/gcc-toolchain/wasm/** text eol=lf
-
-# CMake's file(STRINGS) keeps a trailing carriage return, so a CRLF checkout of this list
-# yields paths that fail EXISTS. Both readers strip their lines, which makes this a pin
-# rather than the fix -- but a data file two build systems parse has no reason to carry
-# platform line endings.
-Engine/cmake/native_gpu_backend_units.txt text eol=lf
-Engine/cmake/platform_impl_arms.txt text eol=lf
-Engine/cmake/gpu_profile_backend_arms.txt text eol=lf
-Engine/cmake/excluded_impl_units.txt text eol=lf

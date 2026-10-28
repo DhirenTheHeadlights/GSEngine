@@ -81,6 +81,15 @@ target_link_libraries(EditorLib PRIVATE Engine EngineCode)
 add_executable(Editor "${MAIN_CPP}")
 target_link_libraries(Editor PRIVATE EditorLib Engine EngineCode)
 
+if(WIN32)
+    enable_language(RC)
+    target_sources(Editor PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Editor.rc")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Resources/Editor.rc" PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Resources"
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icons/GSEditor.ico"
+    )
+endif()
+
 add_executable(SemanticAudit "${EDITOR_SEMANTIC_AUDIT}")
 target_link_libraries(SemanticAudit PRIVATE EditorLib Engine EngineCode)
 

@@ -54,6 +54,9 @@ export namespace gse::gui::symbol {
 	auto square() -> std::span<const stroke>;
 	auto terminal() -> std::span<const stroke>;
 	auto check() -> std::span<const stroke>;
+	auto chat() -> std::span<const stroke>;
+	auto target() -> std::span<const stroke>;
+	auto burst() -> std::span<const stroke>;
 
 	auto draw(
 		const draw_context& ctx,
@@ -350,6 +353,38 @@ auto gse::gui::symbol::check() -> std::span<const stroke> {
 	static constexpr std::array<stroke, 2> data{
 		segment({ 0.30f, 0.52f }, { 0.45f, 0.34f }),
 		segment({ 0.45f, 0.34f }, { 0.72f, 0.68f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::chat() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 5> data{
+		segment({ 0.18f, 0.38f }, { 0.18f, 0.80f }),
+		segment({ 0.18f, 0.80f }, { 0.82f, 0.80f }),
+		segment({ 0.82f, 0.80f }, { 0.82f, 0.38f }),
+		segment({ 0.82f, 0.38f }, { 0.38f, 0.38f }),
+		segment({ 0.38f, 0.38f }, { 0.26f, 0.22f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::target() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 3> data{
+		arc({ 0.5f, 0.5f }, 0.34f, degrees(0.f), degrees(360.f)),
+		arc({ 0.5f, 0.5f }, 0.18f, degrees(0.f), degrees(360.f)),
+		arc({ 0.5f, 0.5f }, 0.03f, degrees(0.f), degrees(360.f)),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::burst() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 6> data{
+		segment({ 0.50f, 0.16f }, { 0.50f, 0.38f }),
+		segment({ 0.50f, 0.62f }, { 0.50f, 0.84f }),
+		segment({ 0.19f, 0.33f }, { 0.38f, 0.44f }),
+		segment({ 0.62f, 0.56f }, { 0.81f, 0.67f }),
+		segment({ 0.19f, 0.67f }, { 0.38f, 0.56f }),
+		segment({ 0.62f, 0.44f }, { 0.81f, 0.33f }),
 	};
 	return data;
 }

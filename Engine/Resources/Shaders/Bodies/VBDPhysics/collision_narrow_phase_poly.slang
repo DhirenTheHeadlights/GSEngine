@@ -3,14 +3,14 @@ void collision_narrow_phase_poly(uint3 dispatch_id) {
     uint pair_idx = dispatch_id.y * max_dispatch_row + dispatch_id.x / workgroup_size;
     uint lane = dispatch_id.x % workgroup_size;
 
-    uint pair_count = min(collision_pairs[poly_pair_base], max_collision_pairs);
+    uint pair_count = min(collision_pairs[poly_pair_base()], max_collision_pairs());
     if (dispatch_id.x == 0 && dispatch_id.y == 0) {
         InterlockedAdd(collision_state[state_pair_count_index], pair_count);
     }
     if (pair_idx >= pair_count) return;
 
-    uint body_a_idx = collision_pairs[poly_pair_base + 1 + pair_idx * 2];
-    uint body_b_idx = collision_pairs[poly_pair_base + 1 + pair_idx * 2 + 1];
+    uint body_a_idx = collision_pairs[poly_pair_base() + 1 + pair_idx * 2];
+    uint body_b_idx = collision_pairs[poly_pair_base() + 1 + pair_idx * 2 + 1];
 
     body_state ba = body_data[body_a_idx];
     body_state bb = body_data[body_b_idx];

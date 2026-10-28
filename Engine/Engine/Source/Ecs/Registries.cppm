@@ -3,6 +3,7 @@ export module gse.ecs:registries;
 import gse.assert;
 import gse.concurrency;
 import gse.core;
+import gse.meta;
 import std;
 
 export namespace gse {
@@ -92,6 +93,8 @@ export namespace gse {
 
 		auto flip_all() -> void;
 
+		[[nodiscard]] auto pending_reveals() const -> std::vector<std::string_view>;
+
 		auto make_writer() -> channel_writer;
 
 		auto clear() -> void;
@@ -138,8 +141,9 @@ export namespace gse {
 	public:
 		channel_write() = default;
 
-		explicit channel_write(
-			channel_writer& writer
+		channel_write(
+			channel_writer& writer,
+			id publisher
 		);
 
 		template <typename... Us>
@@ -162,6 +166,7 @@ export namespace gse {
 
 	private:
 		channel_writer* m_writer = nullptr;
+		id m_publisher;
 
 		template <typename... Us>
 		friend class channel_write;
@@ -194,7 +199,79 @@ export namespace gse {
 		static auto append(
 			std::vector<id>& out
 		) -> void;
+
+		static auto append_lending(
+			std::vector<id>& out
+		) -> void;
 	};
+}
+
+export namespace gse {
+	template <typename T>
+	concept lends_system_state = requires { requires T::lends_system_state; };
+
+	template <typename T>
+	consteval auto payload_borrows_by_address() -> bool;
+
+	template <typename T>
+	consteval auto payload_borrow_message() -> std::string_view;
+
+	template <typename T>
+	consteval auto payload_lends_system_state() -> bool;
+
+	template <typename T>
+	auto assert_lent_by(
+		const T& item,
+		id publisher
+	) -> void;
+}
+
+template <typename T>
+consteval auto gse::payload_borrow_message() -> std::string_view {
+	auto name = meta::qualified_name<T>();
+	name = name.substr(0, name.find('#'));
+	while (name.starts_with(':')) {
+		name.remove_prefix(1);
+	}
+	return std::define_static_string(
+		std::string(name)
+		+ " borrows by address: a channel payload is read unordered against its producer, and a frame later, so it must name engine-owned things by id rather than by address - identifiable_owned for a single owner, resource::handle<T> for an asset, gui::draw_fn for a deferred draw over a system's own data, async::resume_slot<T> for a continuation into a coroutine frame suspended on the request. A [[= same_frame_channel]] payload is exempt, because it is drained in the frame it is pushed, and a function pointer is exempt, because a code address outlives every frame and no id names it"
+	);
+}
+
+template <typename T>
+consteval auto gse::payload_borrows_by_address() -> bool {
+	if constexpr (std::is_class_v<T>) {
+		bool borrows = false;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+			using pointee_t = std::remove_pointer_t<std::remove_reference_t<field_t>>;
+			if constexpr ((std::is_pointer_v<field_t> || std::is_reference_v<field_t>) && !std::is_function_v<pointee_t>) {
+				borrows = true;
+			}
+		}
+		return borrows;
+	}
+	else {
+		return false;
+	}
+}
+
+template <typename T>
+consteval auto gse::payload_lends_system_state() -> bool {
+	if constexpr (std::is_class_v<T>) {
+		bool lends = false;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+			if constexpr (lends_system_state<field_t>) {
+				lends = true;
+			}
+		}
+		return lends;
+	}
+	else {
+		return false;
+	}
 }
 
 auto gse::state_registry::register_state(const id type, void* live_ptr, const void* snapshot_ptr) -> void {
@@ -250,11 +327,32 @@ auto gse::resource_registry::clear() -> void {
 	m_slots.clear();
 }
 
+template <typename T>
+auto gse::assert_lent_by(const T& item, const id publisher) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+		if constexpr (lends_system_state<field_t>) {
+			const id owner = item.[:m:].owner_id();
+			assert(
+				!owner.exists() || owner == publisher,
+				"{} lends {}'s data over {}, but only the system that owns the data may push it: the scheduler orders the consumer after the publisher, so a borrow of anyone else's data would run unordered against its owner",
+				publisher,
+				owner,
+				meta::qualified_name<T>()
+			);
+		}
+	}
+}
+
 gse::channel_writer::channel_writer(channel_registry* registry) : m_registry(registry) {
 }
 
 template <typename T>
 auto gse::channel_writer::push(T item) -> void {
+	static_assert(
+		is_same_frame_channel_v<T> || !payload_borrows_by_address<T>(),
+		payload_borrow_message<T>()
+	);
 	if constexpr (is_same_frame_channel_v<T>) {
 		m_registry->ensure_same_frame<T>().push(std::move(item));
 	}
@@ -265,6 +363,10 @@ auto gse::channel_writer::push(T item) -> void {
 
 template <gse::promiseable T>
 auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type> {
+	static_assert(
+		is_same_frame_channel_v<T> || !payload_borrows_by_address<T>(),
+		payload_borrow_message<T>()
+	);
 	auto [future, promise] = make_promise<typename T::result_type>();
 	item.promise = std::move(promise);
 	if constexpr (is_same_frame_channel_v<T>) {
@@ -311,6 +413,17 @@ auto gse::channel_registry::flip_all() -> void {
 	}
 }
 
+auto gse::channel_registry::pending_reveals() const -> std::vector<std::string_view> {
+	std::lock_guard _(m_mutex);
+	std::vector<std::string_view> panels;
+	for (const auto& ch : std::views::values(m_channels)) {
+		if (const std::string_view panel = ch->pending_reveal(); !panel.empty()) {
+			panels.push_back(panel);
+		}
+	}
+	return panels;
+}
+
 auto gse::channel_registry::make_writer() -> channel_writer {
 	return channel_writer{ this };
 }
@@ -350,7 +463,7 @@ auto gse::channel_read<Ts...>::of() const -> channel_read_guard<T> {
 }
 
 template <typename... Ts>
-gse::channel_write<Ts...>::channel_write(channel_writer& writer) : m_writer(&writer) {
+gse::channel_write<Ts...>::channel_write(channel_writer& writer, const id publisher) : m_writer(&writer), m_publisher(publisher) {
 }
 
 template <typename... Ts>
@@ -361,7 +474,7 @@ auto gse::channel_write<Ts...>::bound() const -> bool {
 template <typename... Ts>
 template <typename... Us>
 requires (gse::channel_pack_contains_v<Ts, Us...> && ...)
-gse::channel_write<Ts...>::channel_write(const channel_write<Us...>& wider) : m_writer(wider.m_writer) {
+gse::channel_write<Ts...>::channel_write(const channel_write<Us...>& wider) : m_writer(wider.m_writer), m_publisher(wider.m_publisher) {
 }
 
 template <typename... Ts>
@@ -372,6 +485,9 @@ auto gse::channel_write<Ts...>::push(T item) const -> void {
 		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
 	);
 	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
+	if constexpr (payload_lends_system_state<T>()) {
+		assert_lent_by(item, m_publisher);
+	}
 	m_writer->push<T>(std::move(item));
 }
 
@@ -383,6 +499,9 @@ auto gse::channel_write<Ts...>::push(T item) const -> channel_future<typename T:
 		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
 	);
 	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
+	if constexpr (payload_lends_system_state<T>()) {
+		assert_lent_by(item, m_publisher);
+	}
 	return m_writer->push<T>(std::move(item));
 }
 
@@ -394,4 +513,13 @@ auto gse::channel_pack_ids<gse::channel_read<Ts...>>::append(std::vector<id>& ou
 template <typename... Ts>
 auto gse::channel_pack_ids<gse::channel_write<Ts...>>::append(std::vector<id>& out) -> void {
 	(out.push_back(trace_id<Ts>()), ...);
+}
+
+template <typename... Ts>
+auto gse::channel_pack_ids<gse::channel_write<Ts...>>::append_lending(std::vector<id>& out) -> void {
+	(([&] {
+		if constexpr (payload_lends_system_state<Ts>()) {
+			out.push_back(trace_id<Ts>());
+		}
+	}()), ...);
 }

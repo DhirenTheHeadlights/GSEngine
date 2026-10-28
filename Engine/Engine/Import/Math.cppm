@@ -3,6 +3,7 @@ export module gse.math;
 import std;
 
 export import :dimension;
+export import :libm;
 export import :matrix;
 export import :matrix_math;
 export import :primitive_math_shared;
@@ -20,6 +21,7 @@ export import :vector_math;
 export import :mixed_vec;
 export import :mixed_mat;
 export import :matrix_types;
+export import :easing;
 
 export namespace gse {
 	using rectf = rect_t<vec2f>;

@@ -1,0 +1,111 @@
+Atomic patterns take only registers of their own type.
+
+std::atomic<double> and std::atomic<float> are lowered through the SI/DI atomic
+optabs. Once optimisation keeps the value in a float register the operand arrives
+as (subreg:DI (reg:DF)), which the generic register_operand accepts, and the
+backend prints a subreg as the local beneath it: `i64.atomic.store' and
+`i64.atomic.rmw.cmpxchg' were handed an f64 (and `i32.atomic.store' an f32), and
+llvm-mc rejected the unit. -O0 never met it because every value goes through
+memory there.
+
+The atomic insns now use wasm_register_operand, which rejects a subreg of a
+register of another type. The optab then copies the operand into a pseudo of the
+pattern's mode, and that move is the existing *cast reinterpret pattern.
+
+--- a/gcc/config/wasm/wasm.md	2026-10-25 15:16:34.922120500 -0500
++++ b/gcc/config/wasm/wasm.md	2026-10-25 15:16:34.492940400 -0500
+@@ -434,6 +434,17 @@
+ ;; `%i1' is the address and `%f1' its offset immediate, exactly as the non-atomic
+ ;; *load and *store patterns above spell them: an atomic instruction's memory
+ ;; argument has the same two parts as an ordinary one's.
++;;
++;; Every register operand is `wasm_register_operand' and not the generic
++;; `register_operand'.  The generic predicate accepts `(subreg:DI (reg:DF))', which
++;; is how the middle end hands over the bits of a `std::atomic<double>' once
++;; optimisation has kept the value in its float register, and this backend prints a
++;; subreg as the local under it -- so `i64.atomic.store' was given an f64 and the
++;; assembler refused the unit.  The stricter predicate rejects a subreg whose
++;; register is of another type, the optab then copies the operand into a fresh
++;; pseudo of the pattern's own mode, and that copy is the `*cast' reinterpret
++;; above.  At -O0 every value goes through memory, which is why only optimised
++;; builds ever met this.
+ 
+ (define_insn "mem_thread_fence"
+   [(unspec_volatile [(match_operand:SI 0 "const_int_operand")]
+@@ -442,7 +453,7 @@
+   "atomic.fence")
+ 
+ (define_insn "atomic_load<mode>"
+-  [(set (match_operand:QHSDI 0 "register_operand")
++  [(set (match_operand:QHSDI 0 "wasm_register_operand")
+ 	(unspec_volatile:QHSDI
+ 	  [(match_operand:QHSDI 1 "memory_operand")
+ 	   (match_operand:SI 2 "const_int_operand")]
+@@ -453,7 +464,7 @@
+ (define_insn "atomic_store<mode>"
+   [(set (match_operand:QHSDI 0 "memory_operand")
+ 	(unspec_volatile:QHSDI
+-	  [(match_operand:QHSDI 1 "register_operand")
++	  [(match_operand:QHSDI 1 "wasm_register_operand")
+ 	   (match_operand:SI 2 "const_int_operand")]
+ 	  UNSPECV_ATOMIC_STORE))]
+   ""
+@@ -464,23 +475,23 @@
+ ;; unspec_volatile would emit the same instruction but would not say that the
+ ;; memory changed.
+ (define_insn "atomic_exchange<mode>"
+-  [(set (match_operand:QHSDI 0 "register_operand")
++  [(set (match_operand:QHSDI 0 "wasm_register_operand")
+ 	(unspec_volatile:QHSDI
+ 	  [(match_operand:QHSDI 1 "memory_operand")
+ 	   (match_operand:SI 3 "const_int_operand")]
+ 	  UNSPECV_ATOMIC_EXCHANGE))
+    (set (match_dup 1)
+-	(match_operand:QHSDI 2 "register_operand"))]
++	(match_operand:QHSDI 2 "wasm_register_operand"))]
+   ""
+   "%i1\n\t%i2\n\t<atomic_type>.atomic.rmw<atomic_width>.xchg<atomic_u>\t%f1\n\t%o0")
+ 
+ (define_insn "atomic_fetch_<opname><mode>"
+-  [(set (match_operand:QHSDI 0 "register_operand")
++  [(set (match_operand:QHSDI 0 "wasm_register_operand")
+ 	(match_operand:QHSDI 1 "memory_operand"))
+    (set (match_dup 1)
+ 	(unspec_volatile:QHSDI
+ 	  [(atomicop:QHSDI (match_dup 1)
+-			   (match_operand:QHSDI 2 "register_operand"))
++			   (match_operand:QHSDI 2 "wasm_register_operand"))
+ 	   (match_operand:SI 3 "const_int_operand")]
+ 	  UNSPECV_ATOMIC_FETCH_OP))]
+   ""
+@@ -500,11 +511,11 @@
+ ;; `is_weak' (operand 5) is ignored.  A weak compare-exchange may fail spuriously
+ ;; and this one never does, which is the stronger guarantee again.
+ (define_expand "atomic_compare_and_swap<mode>"
+-  [(match_operand:SI 0 "register_operand")
+-   (match_operand:QHSDI 1 "register_operand")
++  [(match_operand:SI 0 "wasm_register_operand")
++   (match_operand:QHSDI 1 "wasm_register_operand")
+    (match_operand:QHSDI 2 "memory_operand")
+-   (match_operand:QHSDI 3 "register_operand")
+-   (match_operand:QHSDI 4 "register_operand")
++   (match_operand:QHSDI 3 "wasm_register_operand")
++   (match_operand:QHSDI 4 "wasm_register_operand")
+    (match_operand:SI 5 "const_int_operand")
+    (match_operand:SI 6 "const_int_operand")
+    (match_operand:SI 7 "const_int_operand")]
+@@ -529,11 +540,11 @@
+ })
+ 
+ (define_insn "atomic_cmpxchg<mode>"
+-  [(set (match_operand:QHSDI 0 "register_operand")
++  [(set (match_operand:QHSDI 0 "wasm_register_operand")
+ 	(unspec_volatile:QHSDI
+ 	  [(match_operand:QHSDI 1 "memory_operand")
+-	   (match_operand:QHSDI 2 "register_operand")
+-	   (match_operand:QHSDI 3 "register_operand")
++	   (match_operand:QHSDI 2 "wasm_register_operand")
++	   (match_operand:QHSDI 3 "wasm_register_operand")
+ 	   (match_operand:SI 4 "const_int_operand")]
+ 	  UNSPECV_ATOMIC_CMPXCHG))
+    ;; Memory becomes an opaque function of all three, NOT unconditionally the

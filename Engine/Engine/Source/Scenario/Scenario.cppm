@@ -2,6 +2,7 @@ export module gse.scenario;
 
 import std;
 
+import gse.assert;
 import gse.core;
 import gse.math;
 import gse.time;
@@ -16,6 +17,7 @@ export namespace gse::scenario {
 		char scene[64] = "";
 		bool headless = false;
 		bool gpu_solver = false;
+		bool backend_variants = false;
 		bool video_encode = false;
 		bool real_time = false;
 		int warmup_frames = 120;
@@ -113,6 +115,27 @@ export namespace gse::scenario {
 namespace gse::scenario {
 	template <std::meta::info Ns>
 	consteval auto scenario_members() -> std::vector<std::meta::info>;
+
+	[[nodiscard]] auto backend_variant_of(
+		const info& declared,
+		std::string_view suffix,
+		bool gpu_solver
+	) -> info;
+}
+
+auto gse::scenario::backend_variant_of(const info& declared, const std::string_view suffix, const bool gpu_solver) -> info {
+	const std::string_view stem(declared.name);
+	assert(stem.size() + suffix.size() < std::size(declared.name), "scenario '{}' with suffix '{}' exceeds the {} character name limit", stem, suffix, std::size(declared.name) - 1);
+
+	info out = declared;
+	out.gpu_solver = gpu_solver;
+	out.backend_variants = false;
+
+	auto* cursor = std::ranges::copy(stem, std::begin(out.name)).out;
+	cursor = std::ranges::copy(suffix, cursor).out;
+	*cursor = '\0';
+
+	return out;
 }
 
 gse::scenario::context::context(channel_writer writer, wait_gate* gate, gse::registry* reg, const test::report_fn report)
@@ -202,11 +225,27 @@ auto gse::scenario::registry() -> std::span<const entry> {
 		template for (constexpr auto m : std::define_static_array(scenario_members<Ns>())) {
 			constexpr auto ann = first_annotation_of_type(m, ^^info);
 			static constexpr info declared = [:std::meta::constant_of(ann):];
-			built.push_back({
-				.id = find_or_generate_id(std::string_view(declared.name)),
-				.info = declared,
-				.body = &[:m:],
-			});
+			if constexpr (declared.backend_variants) {
+				constexpr std::array<std::pair<std::string_view, bool>, 2> variants = {
+					std::pair{ std::string_view("_cpu"), false },
+					std::pair{ std::string_view("_gpu"), true },
+				};
+				for (const auto& [suffix, gpu_solver] : variants) {
+					const info resolved = backend_variant_of(declared, suffix, gpu_solver);
+					built.push_back({
+						.id = find_or_generate_id(std::string_view(resolved.name)),
+						.info = resolved,
+						.body = &[:m:],
+					});
+				}
+			}
+			else {
+				built.push_back({
+					.id = find_or_generate_id(std::string_view(declared.name)),
+					.info = declared,
+					.body = &[:m:],
+				});
+			}
 		}
 		return built;
 	}();

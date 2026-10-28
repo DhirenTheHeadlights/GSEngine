@@ -781,11 +781,15 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> bindless_handle
 }
 
 auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buffer& buf, const device_size size) -> void {
+	write_storage_buffer(slot, buf.handle(), size);
+}
+
+auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const gpu::handle<buffer> buf, const device_size size) -> void {
 	set_slot_resource(slot.index, resource_ref{
-		.id = std::bit_cast<std::uint64_t>(buf.handle()),
+		.id = std::bit_cast<std::uint64_t>(buf),
 		.type = resource_type::buffer,
 	});
-	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
+	m_vt->write_storage_buffer(m_backend.get(), slot, buffer_address(buf), size);
 }
 
 auto gse::gpu::device::write_acceleration_structure(const bindless_slot slot, const device_address as_address) -> void {

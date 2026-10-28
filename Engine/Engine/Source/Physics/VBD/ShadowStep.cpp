@@ -441,7 +441,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
 	if (!d.enabled || !d.solver.compute_initialized() || motion.empty()) {
 		co_return;
 	}

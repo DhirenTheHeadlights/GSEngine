@@ -3,6 +3,7 @@ export module gse.math:units;
 import std;
 
 import :dimension;
+import :libm;
 import :quant;
 
 export namespace gse::inline quantities {
@@ -402,59 +403,59 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto sin(const Q& a) -> typename Q::value_type {
-		return std::sin(internal::value_in<angle::default_unit>(a));
+		return libm::sin(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto cos(const Q& a) -> typename Q::value_type {
-		return std::cos(internal::value_in<angle::default_unit>(a));
+		return libm::cos(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto tan(const Q& a) -> typename Q::value_type {
-		return std::tan(internal::value_in<angle::default_unit>(a));
+		return libm::tan(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <std::floating_point T>
 	constexpr auto asin(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
-		return radians(std::asin(v));
+		return radians(libm::asin(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
 	constexpr auto asin(const Q& q) -> angle_t<typename Q::value_type>
 		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
-		return radians(std::asin(internal::value_in<typename Q::default_unit>(q)));
+		return radians(libm::asin(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
 	constexpr auto acos(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
-		return radians(std::acos(v));
+		return radians(libm::acos(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
 	constexpr auto acos(const Q& q) -> angle_t<typename Q::value_type>
 		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
-		return radians(std::acos(internal::value_in<typename Q::default_unit>(q)));
+		return radians(libm::acos(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
 	constexpr auto atan(const T v) -> angle_t<T> {
-		return radians(std::atan(v));
+		return radians(libm::atan(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
 	constexpr auto atan(const Q& q) -> angle_t<typename Q::value_type> {
-		return radians(std::atan(internal::value_in<typename Q::default_unit>(q)));
+		return radians(libm::atan(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
 	constexpr auto atan2(const T y, const T x) -> angle_t<T> {
-		return radians(std::atan2(y, x));
+		return radians(libm::atan2(y, x));
 	}
 
 	template <internal::is_quantity Q1, internal::is_quantity Q2>
@@ -463,7 +464,7 @@ export namespace gse {
 		using common_type = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 		using reference_unit = internal::quantity_base_unit_t<Q1>;
 		return radians(
-			std::atan2(
+			libm::atan2(
 				static_cast<common_type>(internal::value_in<reference_unit>(y)),
 				static_cast<common_type>(internal::value_in<reference_unit>(x))
 			)

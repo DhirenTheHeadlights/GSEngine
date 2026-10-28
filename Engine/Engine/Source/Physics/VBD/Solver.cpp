@@ -2451,16 +2451,16 @@ auto gse::vbd::muscle_fiber_of(const muscle_constraint& m, const length path, co
 	for (std::size_t i = 0; i < 3; ++i) {
 		const float width = muscle.active_width[i] + muscle.active_width_slope[i] * f.fiber_ratio;
 		const float offset = (f.fiber_ratio - muscle.active_center[i]) / width;
-		const float term = muscle.active_height[i] * std::exp(-0.5f * offset * offset);
+		const float term = muscle.active_height[i] * libm::exp(-0.5f * offset * offset);
 		f.active += term;
 		f.active_slope -= term * offset * (1.f - offset * muscle.active_width_slope[i]) / width;
 	}
 
 	if (f.fiber_ratio > muscle.passive_zero_ratio) {
 		const float rate = muscle.passive_shape / muscle.passive_strain;
-		const float scale = 1.f / (std::exp(muscle.passive_shape) - 1.f);
-		const float growth = std::exp(rate * (f.fiber_ratio - 1.f));
-		f.passive = (growth - std::exp(rate * (muscle.passive_zero_ratio - 1.f))) * scale;
+		const float scale = 1.f / (libm::exp(muscle.passive_shape) - 1.f);
+		const float growth = libm::exp(rate * (f.fiber_ratio - 1.f));
+		f.passive = (growth - libm::exp(rate * (muscle.passive_zero_ratio - 1.f))) * scale;
 		f.passive_slope = rate * growth * scale;
 	}
 
@@ -2500,7 +2500,7 @@ auto gse::vbd::advance_muscle_activation(muscle_constraint& m, const time_step d
 	const float level = m.activation;
 	const float recruitment = 0.5f + 1.5f * level;
 	const time_step lag = target > level ? muscle.activation_time * recruitment : muscle.deactivation_time / recruitment;
-	m.activation = target + (level - target) * std::exp(-(dt / lag));
+	m.activation = target + (level - target) * libm::exp(-(dt / lag));
 }
 
 auto gse::vbd::first_moving_point(const std::span<const muscle_path_point> path) -> const muscle_path_point* {

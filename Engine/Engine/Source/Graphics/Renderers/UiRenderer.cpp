@@ -146,10 +146,10 @@ auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_
 	const vec2f l2 = { half.x(), -half.y() };
 	const vec2f l3 = { -half.x(), -half.y() };
 
-	const vec2f p0 = center + rotate(l0, cmd.rotation);
-	const vec2f p1 = center + rotate(l1, cmd.rotation);
-	const vec2f p2 = center + rotate(l2, cmd.rotation);
-	const vec2f p3 = center + rotate(l3, cmd.rotation);
+	const vec2f p0 = cmd.corners ? (*cmd.corners)[0] : center + rotate(l0, cmd.rotation);
+	const vec2f p1 = cmd.corners ? (*cmd.corners)[1] : center + rotate(l1, cmd.rotation);
+	const vec2f p2 = cmd.corners ? (*cmd.corners)[2] : center + rotate(l2, cmd.rotation);
+	const vec2f p3 = cmd.corners ? (*cmd.corners)[3] : center + rotate(l3, cmd.rotation);
 
 	const float u0 = cmd.uv_rect.x();
 	const float v0 = cmd.uv_rect.y();
@@ -303,6 +303,7 @@ auto gse::renderer::ui::run(context& ctx, const shared_view<gpu::context::data> 
 			.text = {},
 			.position = {},
 			.scale = 1.0f,
+			.corners = cmd.corners,
 		});
 	}
 
