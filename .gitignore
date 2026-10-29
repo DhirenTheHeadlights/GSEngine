@@ -27,6 +27,7 @@ __pycache__/
 !/Engine/External/moodycamel/
 !/Engine/External/moodycamel/concurrentqueue.h
 !/Engine/External/pinned-ports/
+!/Engine/External/coremath/
 
 # Generated resources / configs
 # Runtime writes (settings, layouts, logs, crash dumps, profiles, captures) live
