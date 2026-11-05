@@ -1,14 +1,15 @@
 
 void vbd_derive_velocities(uint3 dispatch_id) {
-    uint bi = dispatch_id.x;
+    uint slot = dispatch_id.x;
 
-    if (bi == 0) {
+    if (slot == 0) {
         collision_state[state_converged_flag_index] = 0;
         collision_state[state_convergence_max_delta_index] = 0;
         collision_state[state_convergence_max_angular_delta_index] = 0;
     }
 
-    if (bi >= pc.body_count) return;
+    if (slot >= active_data[active_count_word]) return;
+    uint bi = active_list[active_data[active_half_word] * max_bodies() + slot];
 
     body_state body = body_data[bi];
     bool locked = body.locked != 0;

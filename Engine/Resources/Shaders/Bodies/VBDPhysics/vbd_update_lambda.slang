@@ -4,7 +4,7 @@ void update_contact_lambda(uint ci) {
     body_state body_a = body_data[c.body_a];
     body_state body_b = body_data[c.body_b];
 
-    if (pc.fold_lambda != 0) {
+    if ((pc.lambda_bits & 1u) != 0) {
         uint island_a = body_env_data[c.body_a];
         uint island_b = body_env_data[c.body_b];
         bool a_owner = island_a != 0xFFFFFFFFu && body_a.locked == 0 && (island_a == island_b || body_b.locked != 0);
@@ -118,7 +118,7 @@ void vbd_update_lambda(uint3 dispatch_id) {
         }
     }
 
-    if (pc.fold_lambda == 0 || converged) return;
+    if ((pc.lambda_bits & 1u) == 0 || converged) return;
 
     AllMemoryBarrierWithGroupSync();
     if (ci % workgroup_size != 0) return;

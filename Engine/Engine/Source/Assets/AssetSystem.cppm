@@ -61,6 +61,9 @@ export namespace gse::asset {
 		data& d
 	) -> asset_result;
 
+	template <typename T>
+	auto bake_catalog() -> asset_result;
+
 	struct missing_built_in {
 		std::string tag;
 		std::filesystem::path resolved;
@@ -102,6 +105,8 @@ export namespace gse::asset {
 		auto install_hot_reload_fns() -> void;
 
 		auto verify_built_ins() -> void;
+
+		static auto bake_all() -> asset_result;
 
 	private:
 		data* m_data;
@@ -333,6 +338,28 @@ auto gse::asset::fail_if_stale(const std::filesystem::path& baked_path) -> asset
 }
 
 template <typename T>
+auto gse::asset::bake_catalog() -> asset_result {
+	if constexpr (!has_compile_path<T>) {
+		return {};
+	}
+	else {
+		auto catalog = catalog_for<T>();
+		if (!catalog) {
+			return std::unexpected(std::move(catalog.error()));
+		}
+		for (const catalog_record& record : *catalog) {
+			if (!record.source_path) {
+				continue;
+			}
+			if (auto baked = recompile_if_stale<T>(record.baked_path); !baked) {
+				return baked;
+			}
+		}
+		return {};
+	}
+}
+
+template <typename T>
 auto gse::asset::discover_baked(data& d) -> asset_result {
 	if constexpr (!loadable<T> || !has_baked_asset<T>) {
 		return {};
@@ -444,6 +471,20 @@ auto gse::asset::system<Ts...>::discover_baked() -> asset_result {
 		result = asset::discover_baked<T>(*m_data);
 	};
 	(discover_one.template operator()<Ts>(), ...);
+	return result;
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::bake_all() -> asset_result {
+	asset_result result{};
+	auto bake_one = [&result]<typename T>() {
+		if (!result) {
+			return;
+		}
+		result = bake_catalog<T>();
+	};
+	(bake_one.template operator()<Ts>(), ...);
+	(bake_missing_built_ins<Ts>(), ...);
 	return result;
 }
 

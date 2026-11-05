@@ -33,6 +33,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view approve_goal_label = "Approve goal";
 	constexpr std::string_view code_shader_extension = ".slang";
 	constexpr std::string_view steered_task_opening = "The goal's steering run chose the next task. Scope it now, following your phase instructions.";
+	constexpr std::string_view follow_up_opening = "This chat finished a cycle; its final report follows. The owner's follow-up comes after it, and starts the next cycle. Scope it now, following your phase instructions.";
 
 	auto current_phase(
 		const session& s
@@ -45,6 +46,10 @@ namespace gse::ide::agent {
 	auto approved_steps(
 		const session& s
 	) -> std::span<const build_inbox::plan_step>;
+
+	auto refresh_step_gate(
+		const session& s
+	) -> void;
 
 	auto run_section_of(
 		const session& s,

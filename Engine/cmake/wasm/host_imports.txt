@@ -1,2 +1,9 @@
 gse_host_relaunch
 gse_host_open_url
+gse_host_surface
+gse_host_input
+gse_host_wait
+gse_host_wake
+gse_host_capture
+gse_host_gpu
+gse_host_gpu_poll

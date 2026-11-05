@@ -85,11 +85,11 @@ The engine itself is built for wasm32 through the `wasm32-wasi-gcc-Release` CMak
 whose toolchain file `Engine/cmake/toolchains/wasm32-wasi-gcc.cmake` uses that compiler
 straight from `.generated/.gcc-wasm-build`. Build it like any configuration (`gse_build`
 with that preset); the result is `.generated/out/build/wasm32-wasi-gcc-Release/Sandbox/Sandbox.wasm`,
-which runs the scenario named by the `GSE_WASM_SCENARIO` cache variable (default
-`scene_reset_cpu`). The build writes its runners beside it, so no Python is needed:
+which boots like a native exe launched with no arguments; a scenario runs only when
+`--engine-bench-scenario NAME` is passed (after `--` for `serve.mjs`). The build writes its runners beside it, so no Python is needed:
 `node Sandbox.mjs [ARGS]` runs it under node, and `node serve.mjs --open` serves the
 browser page (fetching each file the run opens from the repo tree) and opens it in Chrome
 or Edge. Both resolve paths and baked resources from the native build named by the
 `GSE_WASM_NATIVE_BUILD` cache variable (default `x64-mingw-gcc-Release`), so build that
-too. `Tools/run_wasm.py` and `Tools/wasm_parity_gate.py` are convenience wrappers over
-those two files.
+too. In the editor, a build profile set to the wasm configuration runs it from the Play
+button, under node, or in Chrome with the profile's "Run in browser" option.

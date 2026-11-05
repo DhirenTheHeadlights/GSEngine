@@ -297,6 +297,7 @@ namespace gse::window {
 	bool resize_pump_running = false;
 	time_t<double> modal_resize_interval{};
 	time_t<double> modal_resize_last_pump{};
+	resize_pump_stats modal_resize_stats{};
 
 	struct secondary_window_desc {
 		std::string title;
@@ -445,17 +446,24 @@ auto gse::window::run_resize_pump(const bool force) -> void {
 	if (!modal_resize_active || !resize_pump || resize_pump_running) {
 		return;
 	}
-	if (!force && system_clock::now<time_t<double>>() - modal_resize_last_pump < modal_resize_interval) {
+	const auto now = system_clock::now<time_t<double>>();
+	if (!force && now - modal_resize_last_pump < modal_resize_interval) {
+		++modal_resize_stats.throttled;
 		return;
 	}
+	modal_resize_stats.idle = modal_resize_last_pump == time_t<double>{} ? time_t<double>{} : now - modal_resize_last_pump;
+	modal_resize_last_pump = now;
 	resize_pump_running = true;
 	resize_pump();
 	resize_pump_running = false;
-	modal_resize_last_pump = system_clock::now<time_t<double>>();
 }
 
 auto gse::window::install_resize_pump(std::function<void()> pump) -> void {
 	resize_pump = std::move(pump);
+}
+
+auto gse::window::take_resize_pump_stats() -> resize_pump_stats {
+	return std::exchange(modal_resize_stats, {});
 }
 
 auto gse::to_input_key(const WPARAM wparam, const LPARAM lparam) -> std::optional<key> {
@@ -787,6 +795,9 @@ auto gse::window_proc(const HWND handle, const UINT msg, const WPARAM wparam, co
 		case wm_size:
 			surface->framebuffer_resized = true;
 			frame_demand::request_redraw();
+			if (window::modal_resize_active) {
+				++window::modal_resize_stats.wm_size;
+			}
 			window::run_resize_pump(false);
 			break;
 		case wm_setfocus:

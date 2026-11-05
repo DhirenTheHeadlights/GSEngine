@@ -26,7 +26,7 @@ set(GSE_WASM_HOST_BIN "${_gse_repo}/.generated/msys64/mingw64/bin")
 # The shared memory the launcher and the page instantiate, in 64 KiB wasm pages. The link's
 # --max-memory is derived from the maximum, so the module and its hosts cannot disagree.
 set(GSE_WASM_INITIAL_PAGES 256)
-set(GSE_WASM_MAX_PAGES 8192)
+set(GSE_WASM_MAX_PAGES 65536)
 
 set(CMAKE_C_COMPILER "${GSE_WASM_GCC_DIR}/xgcc.exe")
 set(CMAKE_CXX_COMPILER "${GSE_WASM_GCC_DIR}/xg++.exe")

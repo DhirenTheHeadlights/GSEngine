@@ -86,9 +86,6 @@ auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> 
 		for (auto& image : d.history) {
 			image = {};
 		}
-		for (auto& view : d.history_views) {
-			view = {};
-		}
 		return;
 	}
 	for (std::size_t i = 0; i < d.history.size(); ++i) {
@@ -101,10 +98,6 @@ auto gse::renderer::taa::recreate_history(const shared_view<gpu::context::data> 
 			std::format("taa_history_{}", i)
 		);
 		gpu::transition_image_to(*gpu_s.device, d.history[i]);
-		if (!d.history_views[i].valid()) {
-			d.history_views[i] = gpu_s.device->allocate_image_slot();
-		}
-		gpu_s.device->write_sampled_image(d.history_views[i].slot(), d.history[i]);
 	}
 }
 
@@ -151,10 +144,14 @@ auto gse::renderer::taa::init(context& ctx, const shared_view<gpu::context::data
 	return {};
 }
 
-auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<camera::jitter_request> jitter_out) -> async::task<> {
+auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<camera::jitter_request> jitter_out, const channel_read<camera::temporal_reset_request> reset_in) -> async::task<> {
 	jitter_out.push<camera::jitter_request>({
 		.enabled = d.taa_enabled,
 	});
+
+	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
+		d.frames_since_history_invalid = 0;
+	}
 
 	if (!gpu_s.render_graph->frame_in_progress()) {
 		co_return;
@@ -200,7 +197,7 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 		{
 			.hdr_color = d.hdr_view.slot(),
 			.velocity_color = d.velocity_view.slot(),
-			.history_color = d.history_views[1u - frame_index].slot(),
+			.history_color = d.history[1u - frame_index].sampled_slot(),
 			.color_sampler = d.sampler.slot(),
 		}
 	);

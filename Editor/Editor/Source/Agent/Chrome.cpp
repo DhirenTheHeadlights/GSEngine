@@ -291,13 +291,22 @@ auto gse::ide::agent::shown_goal(const session& s) -> const goal_state* {
 	return s.met_goal ? &*s.met_goal : nullptr;
 }
 
+auto gse::ide::agent::goal_chat(const session& s) -> bool {
+	return shown_goal(s)
+		|| std::ranges::contains(s.runs, task_phase::steer, &phase_run::phase)
+		|| (s.gate && !s.gate->goal.empty())
+		|| (s.pending_transition && !s.pending_transition->goal.empty());
+}
+
 auto gse::ide::agent::lifecycle_at(const session& s, const std::optional<std::uint32_t> position) -> lifecycle {
-	if (!shown_goal(s)) {
-		return lifecycle_on(s, task_runs(s), true, phase_timeline(s));
-	}
+	const bool goal = goal_chat(s);
 	const std::vector<goal_cycle> cycles = goal_cycles(s);
 	const auto count = static_cast<std::uint32_t>(cycles.size());
-	const std::uint32_t at = std::min(position.value_or(count), count);
+	if (!goal && count <= 1) {
+		return lifecycle_on(s, task_runs(s), true, phase_timeline(s));
+	}
+	const std::uint32_t first = goal ? 0 : 1;
+	const std::uint32_t at = std::clamp(position.value_or(count), first, count);
 	if (at == 0) {
 		lifecycle out;
 		out.goal = goal_dashboard_of(s);
@@ -307,9 +316,13 @@ auto gse::ide::agent::lifecycle_at(const session& s, const std::optional<std::ui
 	}
 	const bool latest = at == count;
 	const std::span<const phase_run> runs = cycles[at - 1].runs;
-	const std::vector<phase_step> route = phase_timeline(latest ? current_phase(s) : task_phase::settled, true, runs);
+	const std::vector<phase_step> route = phase_timeline(latest ? current_phase(s) : task_phase::settled, goal, runs);
 	lifecycle out = lifecycle_on(s, runs, latest, route);
-	out.cycle = { .position = at, .cycles = count, .shown = true };
+	out.cycle = { .position = at, .cycles = count, .first = first, .shown = true };
+	const auto scoping = std::ranges::find(out.pages, task_phase::scope, &summary_page::phase);
+	if (latest && current_phase(s) == task_phase::scope && scoping != out.pages.end() && scoping->kind == page_kind::empty) {
+		out.live_from = runs.front().first_row;
+	}
 	return out;
 }
 
@@ -321,10 +334,14 @@ auto gse::ide::agent::summary_ready(const session& s) -> bool {
 	if (kind_of(s) == chat_kind::sync) {
 		return false;
 	}
-	if (shown_goal(s)) {
+	if (goal_chat(s)) {
 		return true;
 	}
-	return std::ranges::any_of(lifecycle_at(s, std::nullopt).pages, [](const summary_page& page) { return page.kind != page_kind::empty; });
+	const auto has_content = [&s](const std::optional<std::uint32_t> position) {
+		return std::ranges::any_of(lifecycle_at(s, position).pages, [](const summary_page& page) { return page.kind != page_kind::empty; });
+	};
+	const auto count = static_cast<std::uint32_t>(goal_cycles(s).size());
+	return has_content(std::nullopt) || std::ranges::any_of(std::views::iota(std::uint32_t{ 1 }, std::max(count, std::uint32_t{ 1 })), has_content);
 }
 
 auto gse::ide::agent::fresh_page(const summary_page& page, const std::int64_t since) -> bool {
@@ -352,7 +369,7 @@ auto gse::ide::agent::since_of(const session& s, const std::int64_t since, const
 		out.failures += row.kind == row_kind::failure ? 1 : 0;
 	}
 	out.waiting = s.gate.has_value() || open_question;
-	if (!shown_goal(s)) {
+	if (!goal_chat(s)) {
 		return out;
 	}
 	const std::vector<goal_cycle> cycles = goal_cycles(s);
@@ -378,6 +395,10 @@ auto gse::ide::agent::opening_page(const session& s, const since_digest& since) 
 	if (since.anchor && !since.waiting) {
 		return *since.anchor;
 	}
+	return current_page(s);
+}
+
+auto gse::ide::agent::current_page(const session& s) -> summary_anchor {
 	const lifecycle life = lifecycle_at(s, std::nullopt);
 	const task_phase phase = s.gate ? s.gate->from : current_phase(s);
 	const task_phase stage = phase == task_phase::settled ? task_phase::summarize
@@ -696,10 +717,12 @@ auto gse::ide::agent::plan_from(const chrome_facts& facts) -> chrome_plan {
 		.overview_activity = facts.busy && !facts.build_waiting,
 		.stop_enabled = facts.busy || facts.goal_waiting,
 		.stop_interrupts = facts.busy,
+		.cancel_shown = facts.busy,
 		.question_shown = facts.asking,
 		.fork_allowed = !facts.busy,
 		.summary_ready = facts.summary_ready,
 		.toggle_shown = facts.summary_ready,
+		.transcript_on_send = facts.kind != chat_kind::sync && facts.phase != task_phase::scope && facts.phase != task_phase::settled,
 		.tab = {
 			.dirty = facts.hibernating || facts.has_gate || facts.asking || facts.build_waiting,
 			.busy = facts.busy,
@@ -827,6 +850,16 @@ auto gse::ide::agent::deadline_wait_clause(const chrome_facts& facts) -> std::st
 
 auto gse::ide::agent::plan_chrome(const data& d, const session& s) -> chrome_plan {
 	return plan_from(facts_of(d, s));
+}
+
+auto gse::ide::agent::entry_mode(const chrome_plan& plan, const transcript_mode mode, const bool sent_transcript, const bool entering) -> transcript_mode {
+	if (plan.action == chrome_action::approve && plan.summary_ready && (entering || sent_transcript)) {
+		return transcript_mode::summary;
+	}
+	if (entering && sent_transcript) {
+		return transcript_mode::summary;
+	}
+	return mode;
 }
 
 auto gse::ide::agent::excluded_by(const chat_kind kind, const task_phase phase, const agent_state state) -> std::string_view {
@@ -1120,6 +1153,52 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 		draw_cell(std::format("view \xC2\xB7 {} \xC2\xB7 {}, toggle {}", ready ? "first summary" : "fresh chat", plan.summary_ready ? "summary" : "transcript", plan.toggle_shown ? "shown" : "hidden"), plan);
 	}
 
+	chrome_facts follow_up = gallery_facts(chat_kind::chat, task_phase::scope, agent_state::working);
+	follow_up.summary_ready = true;
+	const chrome_plan follow_up_plan = plan_from(follow_up);
+	draw_cell(std::format("view \xC2\xB7 cycle 2 just started \xC2\xB7 {}, toggle {}", follow_up_plan.summary_ready ? "summary" : "transcript", follow_up_plan.toggle_shown ? "shown" : "hidden"), follow_up_plan);
+
+	for (const task_phase phase : { task_phase::scope, task_phase::apply }) {
+		chrome_facts sending = gallery_facts(chat_kind::chat, phase, agent_state::working);
+		sending.summary_ready = true;
+		const chrome_plan plan = plan_from(sending);
+		draw_cell(std::format("view \xC2\xB7 message sent in {} \xC2\xB7 {} until next visit", policy_of(phase).label, plan.transcript_on_send ? "transcript" : "summary"), plan);
+	}
+
+	chrome_facts held = gallery_facts(chat_kind::chat, task_phase::scope, agent_state::awaiting_approval);
+	held.summary_ready = true;
+	held.plan_summary = gallery_plan_summary;
+	const chrome_plan held_plan = plan_from(held);
+	draw_cell(std::format("view \xC2\xB7 gate held, transcript chosen mid-visit \xC2\xB7 {}, approve in the input row", enum_to_string(entry_mode(held_plan, transcript_mode::transcript, false, false))), held_plan);
+
+	const auto scoping_cell = [&](const std::string_view name, const session& scoping) {
+		chrome_facts facts = gallery_facts(chat_kind::chat, task_phase::scope, agent_state::working);
+		facts.summary_ready = summary_ready(scoping);
+		const chrome_plan plan = plan_from(facts);
+		draw_cell(std::format("view \xC2\xB7 {} \xC2\xB7 scoping \xC2\xB7 {}, toggle {}, scope page {}", name, plan.summary_ready ? "summary" : "transcript", plan.toggle_shown ? "shown" : "hidden", lifecycle_at(scoping, std::nullopt).live_from ? "live transcript" : "plan"), plan);
+	};
+	for (const bool met : { true, false }) {
+		session scoping;
+		scoping.runs = {
+			{ .phase = task_phase::scope, .summary = "previous cycle's plan" },
+			{ .phase = task_phase::steer, .verdict = met ? goal_verdict::met : goal_verdict::task },
+			{ .phase = task_phase::scope },
+		};
+		if (!met) {
+			scoping.goal = goal_state{ .record = "docs/example_goal.md" };
+		}
+		scoping_cell(met ? "new goal after met" : "goal next cycle", scoping);
+	}
+	session following;
+	following.runs = {
+		{ .phase = task_phase::scope, .summary = "previous cycle's plan" },
+		{ .phase = task_phase::apply },
+		{ .phase = task_phase::review },
+		{ .phase = task_phase::summarize, .summary = "previous cycle's report" },
+		{ .phase = task_phase::scope },
+	};
+	scoping_cell("follow-up next cycle", following);
+
 	const auto build_cell = [&](const std::string& name, const agent_state state, const auto& adjust) {
 		chrome_facts facts = gallery_facts(chat_kind::chat, task_phase::apply, state);
 		adjust(facts);
@@ -1363,6 +1442,12 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 	slept.status = build_status(slept);
 	plan_cell("opening \xC2\xB7 apply hibernating on a build", plan_from(slept), pages, page_of(page_kind::changes), attributed, edits, std::nullopt);
 	plan_cell("opening \xC2\xB7 scope held for approval", gated, pages, 0, {}, {}, std::nullopt);
+	chrome_facts goal_scoped = gallery_facts(chat_kind::goal, task_phase::scope, agent_state::awaiting_approval);
+	goal_scoped.plan_summary = gallery_plan_summary;
+	goal_scoped.plan_steps = sample;
+	goal_scoped.summary_ready = true;
+	const chrome_plan goal_gated = plan_from(goal_scoped);
+	plan_cell(std::format("opening \xC2\xB7 goal scope held, entered in transcript \xC2\xB7 {}", enum_to_string(entry_mode(goal_gated, transcript_mode::transcript, false, true))), goal_gated, pages, 0, {}, {}, std::nullopt);
 
 	const review_loop clean{ .cycles = { { .found = gallery_review_clean, .reviewed = true } } };
 	const review_loop revised{ .cycles = {
@@ -1455,6 +1540,35 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 	plan_cell("cycle \xC2\xB7 past cycle, steering verdict", approved, cycle_pages, verdict_page, {}, {}, std::nullopt, revised, 0, nullptr, nullptr, "cycle 2 of 4", gallery_ledger_task);
 	plan_cell("cycle \xC2\xB7 past cycle, its scope", approved, cycle_pages, 0, {}, {}, std::nullopt, revised, 0, nullptr, nullptr, "cycle 2 of 4");
 	plan_cell("cycle \xC2\xB7 old chat, no verdict recorded", approved, pages, 0, {}, {}, std::nullopt, {}, 0, nullptr, nullptr, "cycle 1 of 3");
+
+	const std::vector<summary_page> follow_pages = lifecycle_pages(phase_timeline(task_phase::settled, false, {}), gallery_plan_summary, sample.size(), edits.size(), revised.cycles.size(), true, false, false);
+	const auto follow_report = static_cast<std::uint32_t>(std::distance(follow_pages.begin(), std::ranges::find(follow_pages, page_kind::report, &summary_page::kind)));
+	plan_cell("follow-up \xC2\xB7 settled, one cycle, no pager", approved, follow_pages, follow_report, {}, {}, std::nullopt, revised, 0, nullptr, nullptr);
+	plan_cell("follow-up \xC2\xB7 cycle 2 of 2, << back to cycle 1", approved, pages, 0, {}, {}, std::nullopt, {}, 0, nullptr, nullptr, "cycle 2 of 2");
+
+	for (const std::string_view line : { std::string_view("cycle \xC2\xB7 scoping, no report yet \xC2\xB7 cycle 3 of 3"), live_scope_head }) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = line,
+			.position = { origin[0] + pad, top - row_h * 0.5f + text_view->vertical_center_offset(fs) },
+			.scale = fs,
+			.color = sty.color_text_secondary,
+			.clip_rect = frame.clip,
+		});
+		top -= row_h;
+	}
+	for (const auto& [said, color] : gallery_followup) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = said,
+			.position = { origin[0] + pad, top - row_h * 0.5f + text_view->vertical_center_offset(fs) },
+			.scale = fs,
+			.color = sty.*color,
+			.clip_rect = frame.clip,
+		});
+		top -= row_h;
+	}
+	top -= pad;
 
 	const since_digest unseen{ .since = gallery_steered_at, .stages = 7, .verdicts = 2, .questions = 1, .waiting = true };
 	for (const auto& [name, digest] : { std::pair<std::string_view, std::string>{ "since you were here \xC2\xB7 banner", digest_line(unseen) }, { "since you were here \xC2\xB7 caught up, no banner", std::string{} } }) {

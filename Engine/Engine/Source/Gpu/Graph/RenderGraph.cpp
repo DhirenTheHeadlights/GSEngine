@@ -100,7 +100,9 @@ auto gse::gpu::render_graph::screen_allocated(const image* img) const -> bool {
 
 auto gse::gpu::render_graph::resize_surface() -> void {
 	const auto target = allocated_extent();
-	if (!m_depth.handle() || m_depth.extent() != target) {
+	const vec3u target_extent{ target, 1u };
+	const auto begin = system_clock::now<time_t<double, seconds>>();
+	if (!m_depth.handle() || m_depth.extent() != target_extent) {
 		m_depth = create_framebuffer_image(
 			{
 				.format = image_format::d32_sfloat,
@@ -110,15 +112,34 @@ auto gse::gpu::render_graph::resize_surface() -> void {
 			"surface.depth"
 		);
 	}
+	const auto depth_done = system_clock::now<time_t<double, seconds>>();
+	std::size_t recreated = 0;
 	for (auto& [name, slot] : m_framebuffer_images) {
-		if (slot->img.handle() && slot->img.extent() == target) {
+		if (slot->img.handle() && slot->img.extent() == target_extent) {
 			continue;
 		}
 		slot->img = create_framebuffer_image(slot->desc, name.tag());
+		++recreated;
 	}
+	const auto images_done = system_clock::now<time_t<double, seconds>>();
 	for (const auto& callback : m_resize_callbacks) {
 		callback();
 	}
+	const auto callbacks_done = system_clock::now<time_t<double, seconds>>();
+	log::println(
+		log::category::render,
+		"[render_graph] resize_surface: extent={}x{} allocated={}x{} depth={:.2f:ms} images={}/{} {:.2f:ms} callbacks={} {:.2f:ms}",
+		extent().x(),
+		extent().y(),
+		target.x(),
+		target.y(),
+		depth_done - begin,
+		recreated,
+		m_framebuffer_images.size(),
+		images_done - depth_done,
+		m_resize_callbacks.size(),
+		callbacks_done - images_done
+	);
 }
 
 auto gse::gpu::render_graph::default_output() const -> frame_output {
@@ -173,6 +194,15 @@ auto gse::gpu::render_graph::output_ready() const -> bool {
 	const std::uint64_t next = offscreen->frame_number() + 1;
 	const std::uint64_t slots = offscreen->images.size();
 	return next <= slots || m_device->semaphore_counter_value(offscreen->timelines.consumed) >= next - slots;
+}
+
+auto gse::gpu::render_graph::wait_output_ready(const time timeout) const -> bool {
+	if (output_ready()) {
+		return true;
+	}
+	const auto& offscreen = std::get<offscreen_output>(m_output);
+	const std::uint64_t next = offscreen.frame_number() + 1;
+	return m_device->wait_semaphore_for(offscreen.timelines.consumed, next - offscreen.images.size(), timeout);
 }
 
 auto gse::gpu::render_graph::offscreen_surfaces() const -> std::span<const shared_surface> {
@@ -604,7 +634,13 @@ auto gse::gpu::render_graph::extent(const id window) const -> vec2u {
 }
 
 auto gse::gpu::render_graph::allocated_extent() const -> vec2u {
-	return screen_allocation_for(extent());
+	const auto bucketed = screen_allocation_for(extent());
+	const auto* present = std::get_if<present_output>(&m_output);
+	if (present == nullptr || present->swapchain == nullptr || bucketed.x() == 0 || bucketed.y() == 0) {
+		return bucketed;
+	}
+	const auto swapchain = present->swapchain->allocated();
+	return vec2u{ std::max(bucketed.x(), swapchain.x()), std::max(bucketed.y(), swapchain.y()) };
 }
 
 auto gse::gpu::render_graph::screen_uv_scale() const -> vec2f {

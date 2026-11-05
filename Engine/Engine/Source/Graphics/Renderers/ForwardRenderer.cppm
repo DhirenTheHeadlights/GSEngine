@@ -23,8 +23,8 @@ import :directional_light;
 import :geometry_collector;
 import :gi_probe_renderer;
 import :light_culling_renderer;
+import :lighting_source;
 import :point_light;
-import :rt_shadow_renderer;
 import :spot_light;
 import :texture;
 
@@ -59,7 +59,7 @@ export namespace gse::renderer::forward {
 			= settings::describe<"Shadow map resolution and filtering quality. Off disables shadow rendering "
 									  "entirely.">{}
 		]]
-		shadow_quality_level shadow_quality = shadow_quality_level::medium;
+		[[= shared]] shadow_quality_level shadow_quality = shadow_quality_level::medium;
 
 		[[
 			= settings::describe<"Trace a shadow ray only for lights whose attenuated irradiance at the surface "
@@ -74,24 +74,29 @@ export namespace gse::renderer::forward {
 		[[
 			= settings::describe<"Screen-space ambient occlusion sample count and blur quality.">{}
 		]]
-		ao_quality_level ao_quality = ao_quality_level::medium;
+		[[= shared]] ao_quality_level ao_quality = ao_quality_level::medium;
 
 		[[
 			= settings::
 				describe<"Screen-space and ray-traced reflection quality. Higher levels trace more rays "
 						 "per pixel.">{}
 		]]
-		reflection_quality_level reflection_quality = reflection_quality_level::medium;
+		[[= shared]] reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
 		gpu::shader_program pipeline;
+		bool vertex_pulled = false;
 
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
 		per_frame_resource<gpu::buffer> light_buffers;
-		per_frame_resource<gpu::bindless_handle> tlas_slots;
-		per_frame_resource<gpu::device_address> tlas_addresses;
+
+		std::optional<lighting_source::ray_traced_scene> ray_traced_scene;
+		std::optional<lighting_source::raster_shadows> raster_shadows;
+		std::optional<lighting_source::screen_ambient_occlusion> ambient_occlusion;
+		std::optional<lighting_source::screen_reflections> reflections;
 
 		gpu::bindless_handle gi_sampler;
 		gpu::bindless_handle material_sampler;
+		gpu::image material_fallback;
 
 		linear_vector<std::byte> light_staging;
 		std::uint32_t frame_counter = 0;
@@ -102,10 +107,9 @@ export namespace gse::renderer::forward {
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
-		shared_view<rt_shadow::data> rt_state,
+		shared_view<lighting::data> lighting_s,
 		shared_view<light_culling::data> lc_r,
 		shared_view<atmosphere::data> atm_state,
-		shared_view<gi_probe::data> gi_state,
 		shared_view<geometry_collector::data> gc_state,
 		data& d
 	) -> async::task<>;
@@ -122,10 +126,13 @@ export namespace gse::renderer::forward {
 		shared_view<light_culling::data> lc_r,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<cloud::data> cloud_state,
-		shared_view<gi_probe::data> gi_state,
+		std::optional<shared_view<gi_probe::data>> gi_s,
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,
 		read<point_light_component> point_lights,
-		read<physics::transform_component> transforms
+		read<physics::transform_component> transforms,
+		channel_read<camera::temporal_reset_request> reset_in,
+		shared_view<lighting::data> lighting_s,
+		channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in
 	) -> async::task<>;
 }

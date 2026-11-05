@@ -209,11 +209,11 @@ export namespace gse {
 		static constexpr bool is_writing = false;
 
 		explicit binary_reader(
-			std::ifstream& stream
+			std::istream& stream
 		);
 
 		binary_reader(
-			std::ifstream& stream,
+			std::istream& stream,
 			std::uint32_t expected_magic,
 			std::uint32_t expected_version,
 			std::string_view path,
@@ -221,7 +221,7 @@ export namespace gse {
 		);
 
 		[[nodiscard]] static auto open(
-			std::ifstream& stream,
+			std::istream& stream,
 			std::uint32_t expected_magic,
 			std::uint32_t expected_version
 		) -> std::expected<binary_reader, archive_mismatch>;
@@ -303,7 +303,7 @@ export namespace gse {
 			const archive_field& field
 		) -> void;
 
-		std::ifstream& m_stream;
+		std::istream& m_stream;
 		std::unordered_map<std::uint64_t, std::vector<archive_field>> m_schemas;
 		std::vector<std::string> m_skipped_fields;
 		std::uint64_t m_remaining = 0;
@@ -599,7 +599,7 @@ auto gse::binary_writer::operator&(const T& value) -> binary_writer& {
 	return *this;
 }
 
-gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
+gse::binary_reader::binary_reader(std::istream& stream) : m_stream(stream) {
 	const auto current = m_stream.tellg();
 	m_stream.seekg(0, std::ios::end);
 	const auto end = m_stream.tellg();
@@ -611,7 +611,7 @@ gse::binary_reader::binary_reader(std::ifstream& stream) : m_stream(stream) {
 	m_remaining = static_cast<std::uint64_t>(end - current);
 }
 
-gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc)
+gse::binary_reader::binary_reader(std::istream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version, std::string_view path, const std::source_location& loc)
 	: binary_reader(stream) {
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;
@@ -621,7 +621,7 @@ gse::binary_reader::binary_reader(std::ifstream& stream, const std::uint32_t exp
 	assert(m_valid, loc, "Invalid or outdated baked file: {}", path);
 }
 
-auto gse::binary_reader::open(std::ifstream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version) -> std::expected<binary_reader, archive_mismatch> {
+auto gse::binary_reader::open(std::istream& stream, const std::uint32_t expected_magic, const std::uint32_t expected_version) -> std::expected<binary_reader, archive_mismatch> {
 	binary_reader reader(stream);
 	std::uint32_t magic = 0;
 	std::uint32_t version = 0;

@@ -307,13 +307,13 @@ auto gse::ide::analysis::load_dyndep(const std::filesystem::path& path, const st
 }
 
 auto gse::ide::analysis::validate_module(const std::filesystem::path& module, const std::filesystem::path& directory, std::unordered_set<id>& visiting, std::unordered_set<id>& validated) -> std::expected<void, std::string> {
-	std::error_code exists_ec;
-	if (!std::filesystem::is_regular_file(module, exists_ec)) {
-		return std::unexpected(std::format("compiled module '{}' is missing", module.generic_display_string()));
-	}
 	const id module_id = generate_temp_id(module);
 	if (validated.contains(module_id)) {
 		return {};
+	}
+	std::error_code exists_ec;
+	if (!std::filesystem::is_regular_file(module, exists_ec)) {
+		return std::unexpected(std::format("compiled module '{}' is missing", module.generic_display_string()));
 	}
 	if (!visiting.insert(module_id).second) {
 		return {};
@@ -421,6 +421,11 @@ auto gse::ide::analysis::parse_compilation_database(const std::string_view text)
 }
 
 auto gse::ide::analysis::validate_module_graph(const compilation_entry& entry) -> std::expected<void, std::string> {
+	std::unordered_set<id> validated;
+	return validate_module_graph(entry, validated);
+}
+
+auto gse::ide::analysis::validate_module_graph(const compilation_entry& entry, std::unordered_set<id>& validated) -> std::expected<void, std::string> {
 	if (entry.command.output.empty()) {
 		return {};
 	}
@@ -433,7 +438,6 @@ auto gse::ide::analysis::validate_module_graph(const compilation_entry& entry) -
 		return {};
 	}
 	std::unordered_set<id> visiting;
-	std::unordered_set<id> validated;
 	return validate_module_edge(found->second, entry.command.directory, visiting, validated);
 }
 

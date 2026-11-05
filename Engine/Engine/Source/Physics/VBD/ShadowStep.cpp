@@ -430,7 +430,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 		co_return;
 	}
 
-	co_await d.solver.initialize_compute(ctx, *gpu_s, { .full_snapshot = true });
+	co_await d.solver.initialize_compute(ctx, *gpu_s, { .full_snapshot = true, .debug_dumps = true });
 	d.solver.set_preserve_warm_starts(true);
 
 	log::println(
@@ -441,7 +441,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component>) -> async::task<> {
 	if (!d.enabled || !d.solver.compute_initialized() || motion.empty()) {
 		co_return;
 	}
@@ -554,7 +554,7 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	};
 
 	d.solver.measure_scene(payload);
-	if (!d.solver.buffers_created()) {
+	if (!d.solver.buffers_created() || d.solver.regrow_pending()) {
 		log::println(
 			log::category::physics,
 			"shadow step: sizing the gpu copy for this step's {} bodies; its buffers and pipelines are built in this frame, so step {} has no residual",

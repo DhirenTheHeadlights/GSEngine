@@ -183,6 +183,7 @@ export namespace gse::ide::agent {
 		std::string action_label;
 		bool stop_enabled = false;
 		bool stop_interrupts = false;
+		bool cancel_shown = false;
 		bool question_shown = false;
 		bool plan_shown = false;
 		std::span<const build_inbox::plan_step> plan_steps;
@@ -192,6 +193,7 @@ export namespace gse::ide::agent {
 		bool fork_allowed = false;
 		bool summary_ready = false;
 		bool toggle_shown = false;
+		bool transcript_on_send = false;
 		chrome_tab tab;
 	};
 
@@ -325,6 +327,7 @@ export namespace gse::ide::agent {
 	struct cycle_paging {
 		std::uint32_t position = 0;
 		std::uint32_t cycles = 0;
+		std::uint32_t first = 0;
 		bool shown = false;
 	};
 
@@ -352,6 +355,10 @@ export namespace gse::ide::agent {
 		std::int64_t since,
 		std::int64_t until
 	) -> since_digest;
+
+	auto current_page(
+		const session& s
+	) -> summary_anchor;
 
 	auto opening_page(
 		const session& s,
@@ -405,6 +412,7 @@ export namespace gse::ide::agent {
 		std::optional<ledger_entry> steered;
 		cycle_paging cycle;
 		std::vector<summary_page> pages;
+		std::optional<std::uint32_t> live_from;
 	};
 
 	auto gate_summary(
@@ -497,6 +505,10 @@ export namespace gse::ide::agent {
 		const session& s
 	) -> const goal_state*;
 
+	auto goal_chat(
+		const session& s
+	) -> bool;
+
 	auto summary_ready(
 		const session& s
 	) -> bool;
@@ -519,6 +531,13 @@ export namespace gse::ide::agent {
 		const data& d,
 		const session& s
 	) -> chrome_plan;
+
+	auto entry_mode(
+		const chrome_plan& plan,
+		transcript_mode mode,
+		bool sent_transcript,
+		bool entering
+	) -> transcript_mode;
 
 	auto excluded_by(
 		chat_kind kind,

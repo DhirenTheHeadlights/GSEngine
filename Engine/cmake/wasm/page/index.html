@@ -2,15 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>GSE headless scenario</title>
+    <title>GSE scenario</title>
     <style>
       body { margin: 0; background: #111; color: #ddd;
              font: 12px/1.4 Consolas, monospace; }
-      pre { margin: 0; padding: 8px; height: 100vh; overflow: auto;
-            white-space: pre-wrap; }
+      canvas { position: fixed; inset: 0; width: 100vw; height: 100vh;
+               display: block; }
+      pre { position: fixed; inset: 0; margin: 0; padding: 8px; overflow: auto;
+            white-space: pre-wrap; pointer-events: none; }
+      textarea { position: fixed; left: 0; top: 0; width: 1px; height: 1px;
+                 opacity: 0; border: 0; padding: 0; resize: none; }
     </style>
   </head>
   <body>
+    <canvas id="surface"></canvas>
+    <textarea id="typing" autocomplete="off" spellcheck="false"></textarea>
     <pre id="out">page: loading</pre>
     <script type="module" src="page.mjs"></script>
   </body>

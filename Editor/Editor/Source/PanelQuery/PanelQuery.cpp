@@ -483,6 +483,14 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 	field(out, "active", std::format("{}", src.chats.active));
 	count(out, "motion_live", src.chats.motion.live);
 	count(out, "motion_moving", src.chats.motion.animating);
+	const std::uint32_t sync_open = src.chats.sync_open;
+	const bool sync_shown = std::ranges::any_of(src.chats.sessions, [&](const agent::session& s) {
+		return s.sync && s.id == sync_open;
+	});
+	field(out, "sync_open", sync_shown ? std::format("{}", sync_open) : std::string("none"));
+	count(out, "sync_history", static_cast<std::size_t>(std::ranges::count_if(src.chats.sessions, [](const agent::session& s) {
+		return s.sync.has_value();
+	})));
 	for (const agent::split_kind kind : enum_values<agent::split_kind>()) {
 		field(out, std::format("split_{}", annotation_from_enum<agent::split_style>(kind, {}).label), std::format("{:.3f}", agent::split_ratio(src.chats.splits, kind)));
 	}
@@ -505,10 +513,12 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		}
 		if (chat.sync) {
 			field(out, "syncing", chat.sync->root.generic_display_string());
+			field(out, "sync_state", chat.id == sync_open ? "open" : "closed");
 		}
 		field(out, "transcript_mode", enum_to_string(chat.mode));
 		const bool ready = agent::summary_ready(chat);
 		field(out, "summary", ready ? "ready" : "none");
+		field(out, "goal_chat", agent::goal_chat(chat) ? "1" : "0");
 		field(out, "view", chat.mode == agent::transcript_mode::summary && ready ? "summary" : chat.mode == agent::transcript_mode::everything ? "everything" : "transcript");
 		field(out, "toggle", ready ? "shown" : "hidden");
 		if (!chat.model_id.empty()) {
@@ -648,14 +658,15 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		field(out, "run", life.progress.ended ? "ended" : "live");
 		field(out, "split", agent::followup_of(chat) ? "on" : "off");
 		const agent::summary_anchor opening = agent::opening_page(chat, agent::since_of(chat, chat.arrived, chat.entered));
-		const agent::lifecycle opened = agent::lifecycle_at(chat, agent::shown_goal(chat) ? std::optional(opening.position) : std::nullopt);
+		field(out, "cycles", std::format("{}", std::max<std::size_t>(agent::goal_cycles(chat).size(), 1)));
+		field(out, "cycle", life.cycle.shown ? std::format("{}", life.cycle.position) : std::string("1"));
+		const agent::lifecycle opened = agent::lifecycle_at(chat, agent::goal_chat(chat) || opening.position > 0 ? std::optional(opening.position) : std::nullopt);
 		const agent::plan_paging landed = agent::paging_of(opened.pages, opening.page);
 		field(out, "opening", std::format("cycle {} page {}/{} {}", opening.position, landed.page, landed.pages, page_name(landed.shown)));
 		field(out, "waiting", chat.wait_shown.empty() ? std::string("none") : chat.wait_shown);
-		if (chat.gate && !agent::gate_summary(chat).empty()) {
-			const agent::plan_paging gate = agent::paging_of(agent::scope_pages(agent::gate_summary(chat), chat.gate->steps.size()), chat.plan_page);
-			field(out, "gate_page", std::format("{}/{} {}", gate.page, gate.pages, page_name(gate.shown)));
-		}
+		const agent::lifecycle newest = agent::lifecycle_at(chat, std::nullopt);
+		field(out, "scope", newest.live_from ? "transcript" : "plan");
+		field(out, "from", newest.live_from ? std::format("{}", *newest.live_from) : std::string("none"));
 	}
 
 	std::uint32_t tracked = 0;
@@ -794,10 +805,10 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 	std::uint32_t cycled_goals = 0;
 	section(out, "cycles");
 	for (const agent::session& chat : src.chats.sessions) {
-		if (!agent::shown_goal(chat)) {
+		const std::vector<agent::goal_cycle> cycles = agent::goal_cycles(chat);
+		if (!agent::goal_chat(chat) && cycles.size() <= 1) {
 			continue;
 		}
-		const std::vector<agent::goal_cycle> cycles = agent::goal_cycles(chat);
 		for (std::size_t at = 0; at < cycles.size() && cycled_goals < rows; ++at) {
 			const agent::goal_cycle& cycle = cycles[at];
 			const agent::lifecycle life = agent::lifecycle_at(chat, static_cast<std::uint32_t>(at + 1));

@@ -37,6 +37,7 @@ const run = {
   initial_pages: config.initial_pages,
   max_pages: config.max_pages,
   collect: options.collect,
+  writable: config.writable,
 };
 
 const pages = {
@@ -44,6 +45,7 @@ const pages = {
   "/index.html": ["index.html", "text/html"],
   "/page.mjs": ["page.mjs", "text/javascript"],
   "/guest.mjs": ["guest.mjs", "text/javascript"],
+  "/gpu.mjs": ["gpu.mjs", "text/javascript"],
   "/host.mjs": ["host.mjs", "text/javascript"],
   "/protocol.mjs": ["protocol.mjs", "text/javascript"],
 };
@@ -160,6 +162,9 @@ const server = createServer (async (request, response) => {
   if (path === "/collect") {
     const guest = url.searchParams.get ("path") ?? "";
     collected.add (guest);
+    for (const wanted of options.collect) {
+      if (wanted.endsWith ("/") && guest.startsWith (wanted)) collected.add (wanted);
+    }
     if (options.collect_out !== null) {
       mkdirSync (options.collect_out, { recursive: true });
       writeFileSync (join (options.collect_out, guest.split ("/").pop () || "collected"), data);

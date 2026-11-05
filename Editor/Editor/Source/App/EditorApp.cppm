@@ -635,7 +635,7 @@ auto gse::ide::draw_game_panel(gui::builder& ui, const rectf& area, session_view
 		draw_session_failure(ctx, area, error);
 		return;
 	}
-	if (!state.built || state.shape.clients != session.clients || state.shape.dedicated_server != session.dedicated_server) {
+	if (!state.built || build_runner::effective_clients(state.shape) != build_runner::effective_clients(session) || state.shape.dedicated_server != session.dedicated_server) {
 		state.tree = build_session_tree(session);
 		state.shape = session;
 		state.built = true;
@@ -700,7 +700,7 @@ auto gse::ide::editor_dock_metrics(const gui::style& sty) -> dock_metrics {
 }
 
 auto gse::ide::client_tile_count(const build_runner::play_session& session) -> std::size_t {
-	return std::clamp<std::size_t>(session.clients, 1, client_quadrant_names.size());
+	return std::clamp<std::size_t>(build_runner::effective_clients(session), 1, client_quadrant_names.size());
 }
 
 auto gse::ide::session_quadrants(const build_runner::play_session& session) -> std::vector<panel_desc> {
@@ -1437,7 +1437,8 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 	}
 
 	const std::optional<gui::layout::split_axis> held_axis = dragging_axis(v.tree);
-	const bool over_shelf = v.shelf.contains(in.mouse) || (open_edge && flyout.contains(in.mouse));
+	const bool over_floating = !vp.input_layers_data.input_available_at(render_layer::overlay, std::numeric_limits<std::uint32_t>::max(), in.mouse);
+	const bool over_shelf = v.shelf.contains(in.mouse) || (open_edge && flyout.contains(in.mouse)) || over_floating;
 
 	if (in.pressed && !blocked && d.shelf.open && !over_shelf) {
 		d.shelf.open.reset();
@@ -2160,7 +2161,8 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(source_control_panel_name),
 		.layer = render_layer::content,
-		.build = [](gui::builder& b, data& panel_d, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) {
+		.build = [](gui::builder& b, data& panel_d, const shared_view<agent::data> agent_s, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) {
+			const std::uint32_t open = agent_s.sync_open;
 			draw_source_control_panel(b, b.ctx.clip_stack.back(), panel_d.source_control, {
 				.status = panel_d.git_status,
 				.busy = panel_d.git_busy,
@@ -2168,6 +2170,12 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 				.project_root = config::project_root(),
 				.engine_root = config::engine_root(),
 				.engine_pin = panel_d.engine_pin,
+				.sync_open = std::ranges::any_of(agent_s.sessions, [&](const agent::session& s) {
+					return s.sync && s.id == open;
+				}),
+				.sync_history = std::ranges::any_of(agent_s.sessions, [](const agent::session& s) {
+					return s.sync.has_value();
+				}),
 			}, channels);
 		},
 	});

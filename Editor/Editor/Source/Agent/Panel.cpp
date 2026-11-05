@@ -235,7 +235,7 @@ auto gse::ide::agent::draw_session_info(gui::builder& ui, data& d, const rectf& 
 
 auto gse::ide::agent::history_label(const data& d, const past_chat& chat) -> std::string_view {
 	const auto open = std::ranges::find_if(d.sessions, [&](const session& s) {
-		return s.info.agent_id == chat.agent_id;
+		return owns_transcript(s, chat.agent_id);
 	});
 	if (open != d.sessions.end() && !open->name.empty()) {
 		return open->name;
@@ -253,23 +253,49 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 		return;
 	}
 
+	const std::optional<std::size_t> chosen = draw_pick_list(ui, {
+		.body = body,
+		.anchor = d.history_anchor,
+		.open = d.history_open,
+		.count = d.history.size(),
+		.empty_text = "no past chats for this project",
+		.key = "##agent_history_list",
+		.label = [&](const std::size_t index) -> std::string_view {
+			past_chat& chat = d.history[index];
+			if (!chat.summarized) {
+				chat.summarized = true;
+				chat.summary = chat_summary(chat.path);
+			}
+			return history_label(d, chat);
+		},
+	});
+
+	if (chosen) {
+		restore_chat(d, d.history[*chosen]);
+		d.history_open = false;
+		d.overview_active = false;
+	}
+}
+
+auto gse::ide::agent::draw_pick_list(gui::builder& ui, const pick_list& list) -> std::optional<std::size_t> {
 	gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float pad = sty.padding;
 	const float fs = sty.font_size;
 	const float row_h = text_view->line_height(fs) + pad;
+	const rectf& body = list.body;
 
 	const float pw = std::min(body.width(), std::max(body.width() * 0.5f, fs * 24.f));
-	const float rows = static_cast<float>(std::min(d.history.size(), history_visible_rows));
+	const float rows = static_cast<float>(std::min(list.count, history_visible_rows));
 	const float ph = std::min(body.height(), row_h * std::max(rows, 1.f) + pad * 2.f);
 
-	float px = d.history_anchor.left();
+	float px = list.anchor.left();
 	if (px + pw > body.right()) {
 		px = body.right() - pw;
 	}
 	px = std::max(px, body.left());
-	const float top_y = std::min(body.top(), d.history_anchor.bottom() - pad * 0.5f);
+	const float top_y = std::min(body.top(), list.anchor.bottom() - pad * 0.5f);
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
@@ -283,10 +309,10 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 	ctx.register_hit_region(render_layer::popup, panel);
 
-	if (d.history.empty()) {
+	if (list.count == 0) {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = "no past chats for this project",
+			.text = list.empty_text,
 			.position = { panel.left() + pad, panel.top() - pad - row_h * 0.5f + text_view->vertical_center_offset(fs) },
 			.scale = fs,
 			.color = sty.color_text_secondary,
@@ -294,32 +320,28 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 		});
 	}
 
-	const rectf list = rectf::from_position_size(
+	const rectf inner = rectf::from_position_size(
 		{ panel.left() + pad, panel.top() - pad },
 		{ panel.width() - pad * 2.f, std::max(0.f, panel.height() - pad * 2.f) }
 	);
-	ctx.layout_cursor = { list.left(), list.top() };
+	ctx.layout_cursor = { inner.left(), inner.top() };
 
-	const past_chat* chosen = nullptr;
+	std::optional<std::size_t> chosen;
 	ui.scroll_region({
-		.id = "##agent_history_list",
-		.size = list.size(),
+		.id = list.key,
+		.size = inner.size(),
 	}, [&](gui::builder& b) {
 		gui::draw_context& c = b.ctx;
 		const vec2f mouse = c.mouse_position();
-		const rectf clip = c.current_clip().value_or(list);
-		for (past_chat& chat : d.history) {
+		const rectf clip = c.current_clip().value_or(inner);
+		for (std::size_t index = 0; index < list.count; ++index) {
 			const rectf row = rectf::from_position_size(
-				{ list.left(), c.layout_cursor.y() },
-				{ list.width(), row_h }
+				{ inner.left(), c.layout_cursor.y() },
+				{ inner.width(), row_h }
 			);
 			c.layout_cursor.y() -= row_h;
 			if (!row.intersects(clip)) {
 				continue;
-			}
-			if (!chat.summarized) {
-				chat.summarized = true;
-				chat.summary = chat_summary(chat.path);
 			}
 
 			const bool over = clip.contains(mouse) && c.hovers(row);
@@ -334,29 +356,27 @@ auto gse::ide::agent::draw_history(gui::builder& ui, data& d, const rectf& body)
 			}
 			c.queue_text({
 				.font = c.fonts.text,
-				.text = history_label(d, chat),
+				.text = list.label(index),
 				.position = { row.left() + pad * 0.5f, row.top() - row_h * 0.5f + text_view->vertical_center_offset(fs) },
 				.scale = fs,
 				.color = over ? sty.color_text : sty.color_text_secondary,
 				.clip_rect = clip,
 			});
 			if (c.clicked_in_rect(row)) {
-				chosen = &chat;
+				chosen = index;
 			}
 		}
 	});
 
 	if (chosen) {
-		restore_chat(d, *chosen);
-		d.history_open = false;
-		d.overview_active = false;
-		return;
+		return chosen;
 	}
 
 	const vec2f mouse = ctx.mouse_position();
-	if (ctx.mouse_pressed() && !panel.contains(mouse) && !d.history_anchor.contains(mouse)) {
-		d.history_open = false;
+	if (ctx.mouse_pressed() && !panel.contains(mouse) && !list.anchor.contains(mouse)) {
+		list.open = false;
 	}
+	return std::nullopt;
 }
 
 auto gse::ide::agent::session_tab_id(const std::uint32_t session_id) -> id {
@@ -799,6 +819,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 			if (renaming->name.empty()) {
 				renaming->name = std::format("Agent {}", renaming->id);
 			}
+			remember_name(d, *renaming);
 			d.renaming = 0;
 		}
 	}
@@ -812,7 +833,7 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 	if (gui::caption_button(ui, history, "##agent_history", gui::symbol::chevron_down(), sty.caption_button)) {
 		d.history_open = !d.history_open;
 		if (d.history_open) {
-			d.history = past_chats(config::primary().project_root);
+			d.history = past_chats(d, config::primary().project_root);
 		}
 	}
 	d.history_anchor = history;
@@ -912,7 +933,9 @@ auto gse::ide::agent::draw_transcript(gui::builder& ui, session& s, transcript_v
 	const float pad = sty.padding;
 
 	if (!std::ranges::any_of(s.rows, [&](const transcript_row& row) { return shows(v.filter, row); })) {
-		draw_transcript_hint(ctx, v.filter == row_filter::changes
+		draw_transcript_hint(ctx, s.history.active()
+			? std::string("Loading history...")
+			: v.filter == row_filter::changes
 			? std::string("No file edits yet.")
 			: "Type a prompt below to start claude in " + s.cwd.generic_display_string() + ".", area);
 		return;
@@ -1565,7 +1588,7 @@ auto gse::ide::agent::layout_goal(const gui::draw_context& ctx, plan_block& laid
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
 	if (!goal) {
-		laid.head = "goal \xC2\xB7 this chat pursues no goal";
+		laid.head = "goal \xC2\xB7 the next goal is still being scoped";
 		return;
 	}
 	laid.head = goal_head(*goal);
@@ -1607,26 +1630,31 @@ auto gse::ide::agent::layout_goal(const gui::draw_context& ctx, plan_block& laid
 auto gse::ide::agent::sync_step_diffs(const gui::draw_context& ctx, transcript_view& v, std::vector<transcript_row>& rows, const std::span<const step_edit* const> edits, const std::optional<std::size_t> group, const float width) -> void {
 	const gui::style& sty = ctx.style;
 	const float wrap = std::max(0.f, width - sty.padding * 2.f - gui::scroll_config{}.scrollbar_width);
-	const std::uint64_t key = gui::style_key(sty) ^ hash_of(group.value_or(std::numeric_limits<std::size_t>::max()), edits.size(), edits.empty() ? std::int64_t{} : edits.back()->stamped);
+	const std::uint64_t key = gui::style_key(sty) ^ hash_of(group.value_or(std::numeric_limits<std::size_t>::max()), edits.empty() ? std::int64_t{} : edits.front()->stamped);
 	const bool current = !v.buffer.lines.empty() && std::abs(v.wrap_width - wrap) <= 0.5f && v.style_key == key;
-	if (current && v.flushed_rows >= rows.size()) {
+	const bool grows = current && !rows.empty() && edits.size() >= rows.size();
+	if (grows && edits.size() == rows.size() && v.flushed_rows >= rows.size()) {
 		return;
 	}
 
-	if (!current) {
+	const auto row_of = [](const step_edit* edit) {
+		return transcript_row{
+			.kind = row_kind::tool,
+			.text = edit->file.generic_display_string(),
+			.file = edit->file,
+			.removed = edit->removed,
+			.added = edit->added,
+		};
+	};
+	if (grows) {
+		std::ranges::copy(edits.subspan(rows.size()) | std::views::transform(row_of), std::back_inserter(rows));
+	}
+	else {
 		v = {};
 		v.filter = row_filter::changes;
 		v.wrap_width = wrap;
 		v.style_key = key;
-		rows = edits | std::views::transform([](const step_edit* edit) {
-			return transcript_row{
-				.kind = row_kind::tool,
-				.text = edit->file.generic_display_string(),
-				.file = edit->file,
-				.removed = edit->removed,
-				.added = edit->added,
-			};
-		}) | std::ranges::to<std::vector>();
+		rows = edits | std::views::transform(row_of) | std::ranges::to<std::vector>();
 	}
 
 	const auto code_view = ctx.fonts.code.resolve();
@@ -1639,12 +1667,18 @@ auto gse::ide::agent::sync_step_diffs(const gui::draw_context& ctx, transcript_v
 		.scale = sty.font_size,
 	};
 	for (auto at = static_cast<std::uint32_t>(v.flushed_rows); at < rows.size(); ++at) {
+		const auto opened = static_cast<std::uint32_t>(v.buffer.lines.size());
 		push_transcript_line(v, sty, {
 			.text = rows[at].text,
 			.color = sty.color_file,
 			.face = gui::text_face::code,
 			.row = at,
 		}, metrics);
+		v.links.push_back({
+			.first_line = opened,
+			.last_line = static_cast<std::uint32_t>(v.buffer.lines.size()) - 1,
+			.row = at,
+		});
 		push_diff(v, sty, rows[at], at, metrics);
 	}
 	v.flushed_rows = rows.size();
@@ -1790,11 +1824,6 @@ auto gse::ide::agent::layout_plan(const gui::draw_context& ctx, const std::span<
 			break;
 	}
 	return laid;
-}
-
-auto gse::ide::agent::plan_extent(const gui::draw_context& ctx, const session& s, const chrome_plan& plan, const plan_block& laid) -> float {
-	const rectf target = rectf::from_position_size({ 0.f, 0.f }, { 0.f, plan.plan_shown ? laid.extent : 0.f });
-	return ctx.animated_rect(generate_temp_id(hash_of(s.id, "agent_plan")), target).height();
 }
 
 auto gse::ide::agent::plan_rects_of(const gui::draw_context& ctx, const plan_block& laid, const rectf& area) -> plan_rects {
@@ -1963,7 +1992,7 @@ auto gse::ide::agent::draw_plan_body(const gui::draw_context& ctx, const plan_bl
 	}
 }
 
-auto gse::ide::agent::draw_plan_summary(const gui::draw_context& ctx, transcript_view& v, const rectf& rect, const float shown, const id key, id& hot, id& active, id& focus) -> void {
+auto gse::ide::agent::draw_plan_summary(const gui::draw_context& ctx, transcript_view& v, const rectf& rect, const float shown, const id key, id& hot, id& active, id& focus, const std::span<const gui::text_underline> underlines) -> void {
 	if (rect.height() <= 0.f || v.buffer.lines.empty()) {
 		return;
 	}
@@ -1987,6 +2016,7 @@ auto gse::ide::agent::draw_plan_summary(const gui::draw_context& ctx, transcript
 		.state = v.state,
 		.widget_id = key,
 		.spans = v.spans,
+		.underlines = underlines,
 		.fades = fades,
 		.blocks = v.blocks,
 		.stops = v.stops,
@@ -2000,6 +2030,52 @@ auto gse::ide::agent::draw_plan_summary(const gui::draw_context& ctx, transcript
 	if (stale_diff) {
 		relayout_from(v, *stale_diff);
 	}
+}
+
+auto gse::ide::agent::step_diff_links(const gui::draw_context& ctx, const session& s, const rectf& rect, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> std::vector<gui::text_underline> {
+	const transcript_view& v = s.step_diffs;
+	if (!ctx.hovers(rect) || v.buffer.lines.empty()) {
+		return {};
+	}
+
+	const gui::buffer_position at = gui::text_area_position_at(ctx, {
+		.buffer = v.buffer,
+		.state = v.state,
+		.rect = rect,
+		.spans = v.spans,
+		.stops = v.stops,
+		.blocks = v.blocks,
+		.indent_width = transcript_tab_width,
+	}, ctx.mouse_position());
+	const auto line = static_cast<std::uint32_t>(std::min<std::size_t>(at.line, v.buffer.lines.size() - 1));
+	const std::string_view text = v.buffer.line(line);
+	const link_marker* hit = at.column < text.size() ? link_at(v, line) : nullptr;
+	if (!hit) {
+		return {};
+	}
+
+	jump_out.push<set_cursor_shape_request>({
+		.shape = cursor_shape::hand,
+	});
+	if (ctx.clicked_in_rect(rect)) {
+		const transcript_row& row = s.step_rows[hit->row];
+		const std::uint32_t first = jump_line_for(row);
+		jump_out.push<jump_to_request>({
+			.path = row.file,
+			.line = first,
+			.column = 0,
+			.end_line = row.added.empty() ? first : first + static_cast<std::uint32_t>(row.added.size()) - 1,
+			.end_column = ~0u,
+		});
+	}
+
+	const std::size_t start = text.find_first_not_of(' ');
+	return { {
+		.line = line,
+		.start_col = static_cast<std::uint32_t>(start == std::string_view::npos ? 0 : start),
+		.end_col = static_cast<std::uint32_t>(text.size()),
+		.color = ctx.style.color_file,
+	} };
 }
 
 auto gse::ide::agent::split_ratio(const std::span<const split_memory> splits, const split_kind kind) -> float {
@@ -2118,7 +2194,8 @@ auto gse::ide::agent::draw_plan(gui::builder& ui, session& s, split_memory& colu
 		draw_plan_summary(ctx, s.plan_summary, rects.summary, shown, gui::ids::make(std::format("##agent_plan_summary_{}", s.id)), ui.hot_widget_id, ui.active_widget_id, ui.focus_widget_id);
 	}
 	if (kind == page_kind::changes) {
-		draw_plan_summary(ctx, s.step_diffs, rects.diffs, shown, gui::ids::make(std::format("##agent_step_diffs_{}", s.id)), ui.hot_widget_id, ui.active_widget_id, ui.focus_widget_id);
+		const std::vector<gui::text_underline> underlines = settled ? step_diff_links(ctx, s, rects.diffs, jump_out) : std::vector<gui::text_underline>{};
+		draw_plan_summary(ctx, s.step_diffs, rects.diffs, shown, gui::ids::make(std::format("##agent_step_diffs_{}", s.id)), ui.hot_widget_id, ui.active_widget_id, ui.focus_widget_id, underlines);
 	}
 	if (kind == page_kind::goal) {
 		draw_plan_summary(ctx, s.plan_summary, rects.diffs, shown, gui::ids::make(std::format("##agent_goal_ledger_{}", s.id)), ui.hot_widget_id, ui.active_widget_id, ui.focus_widget_id);
@@ -2170,7 +2247,7 @@ auto gse::ide::agent::draw_plan(gui::builder& ui, session& s, split_memory& colu
 		.key = std::format("##agent_plan_revise_{}", s.id),
 		.enabled = !input_empty(s.draft) || !s.attachments.items.empty(),
 	})) {
-		submit_draft(s);
+		submit_draft(s, false);
 	}
 	if (ui.draw<gui::button>({
 		.text = laid.approve,
@@ -2183,14 +2260,19 @@ auto gse::ide::agent::draw_plan(gui::builder& ui, session& s, split_memory& colu
 	}
 }
 
-auto gse::ide::agent::submit_draft(session& s) -> void {
+auto gse::ide::agent::submit_draft(session& s, const bool to_transcript) -> void {
 	if (!s.running && !agent_credentials().token) {
 		request_token_prompt();
 		return;
 	}
 	const std::string prompt = input_text(s.draft);
 
-	if (current_phase(s) == task_phase::settled) {
+	std::string sent = prompt;
+	if (!s.sync && current_phase(s) == task_phase::settled) {
+		const auto summarized = std::ranges::find_last(task_runs(s), task_phase::summarize, &phase_run::phase);
+		if (!summarized.empty() && !summarized.front().summary.empty()) {
+			sent = std::format("{}\n\nThe previous cycle's final report:\n\n{}\n\nThe owner's follow-up:\n\n{}", follow_up_opening, summarized.front().summary, prompt);
+		}
 		restart_task(s);
 	}
 
@@ -2202,8 +2284,22 @@ auto gse::ide::agent::submit_draft(session& s) -> void {
 		return;
 	}
 
-	if (send_to_session(s, prompt, s.attachments.items)) {
-		reset_input(s);
+	const std::optional<transcript_row> shown = sent == prompt ? std::nullopt : std::optional(transcript_row{
+		.kind = row_kind::user,
+		.text = prompt,
+		.detail = s.attachments.items.empty() ? std::string{} : std::format("{} image(s) attached", s.attachments.items.size()),
+	});
+	if (!send_to_session(s, sent, s.attachments.items, false, shown)) {
+		return;
+	}
+	reset_input(s);
+	s.lifecycle_cycle.reset();
+	s.lifecycle_page = current_page(s).page;
+	s.plan_selected.reset();
+	s.arrived = 0;
+	if (to_transcript) {
+		s.mode = transcript_mode::transcript;
+		s.sent_transcript = true;
 	}
 }
 
@@ -2325,7 +2421,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 	}
 
 	if (gated) {
-		if (!plan.plan_shown && ui.draw<gui::button>({
+		if (!layout.plan_drawn && ui.draw<gui::button>({
 			.text = action_text,
 			.rect = stop,
 			.key = std::format("##agent_phase_approve_{}", s.id),
@@ -2344,7 +2440,7 @@ auto gse::ide::agent::draw_input(gui::builder& ui, session& s, const input_layou
 	}
 
 	if (submit) {
-		submit_draft(s);
+		submit_draft(s, plan.transcript_on_send);
 	}
 }
 
@@ -2570,7 +2666,7 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 	if (s.arriving) {
 		s.arriving = false;
 		const summary_anchor opening = opening_page(s, since);
-		s.lifecycle_cycle = shown_goal(s) ? std::optional(opening.position) : std::nullopt;
+		s.lifecycle_cycle = goal_chat(s) || opening.position > 0 ? std::optional(opening.position) : std::nullopt;
 		s.lifecycle_page = opening.page;
 	}
 	const lifecycle life = lifecycle_of(s);
@@ -2640,6 +2736,10 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 		const std::optional<std::size_t> group = s.plan_selected ? std::optional<std::size_t>(*s.plan_selected) : std::nullopt;
 		sync_step_diffs(ctx, s.step_diffs, s.step_rows, edits_in_group(life.edits, life.steps.size(), group), group, laid.files_w);
 	}
+	const bool live = paging.shown.phase == task_phase::scope && life.live_from.has_value();
+	if (live) {
+		laid.head = live_scope_head;
+	}
 	if (fresh_page(paging.shown, s.arrived)) {
 		laid.head += " \xC2\xB7 new";
 	}
@@ -2647,6 +2747,14 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 		laid.cycle_label = cycle_label(life.cycle);
 	}
 	draw_plan(ui, s, columns, area, laid, s.lifecycle_page, "agent_lifecycle_page", jump_out);
+
+	if (live && area.height() > laid.extent) {
+		if (s.live_scope.first_row != *life.live_from) {
+			s.live_scope.first_row = *life.live_from;
+			reset_view(s.live_scope);
+		}
+		draw_transcript(ui, s, s.live_scope,rectf::from_position_size({ area.left(), area.top() - laid.extent }, { area.width(), area.height() - laid.extent }), body, jump_out);
+	}
 
 	if (life.cycle.shown && area.height() >= laid.extent) {
 		const plan_rects rects = plan_rects_of(ctx, laid, area);
@@ -2663,7 +2771,7 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 			.text = cycle_back_label,
 			.rect = rects.cycle_back,
 			.key = std::format("##agent_cycle_back_{}", s.id),
-			.enabled = position > 0,
+			.enabled = position > life.cycle.first,
 		})) {
 			go(position - 1);
 		}
@@ -2720,6 +2828,7 @@ auto gse::ide::agent::draw_view_toggles(gui::builder& ui, session& s, const chro
 		const auto modes = enum_values<transcript_mode>();
 		const auto at = std::ranges::find(modes, s.mode);
 		s.mode = std::next(at) == std::ranges::end(modes) ? *std::ranges::begin(modes) : *std::next(at);
+		s.sent_transcript = false;
 	}
 
 	if (ui.draw<gui::button>({
@@ -2743,7 +2852,82 @@ auto gse::ide::agent::cancel_sync(session& s) -> void {
 	s.sync_report = "the sync was cancelled from the panel before it finished";
 }
 
-auto gse::ide::agent::draw_sync_header(gui::builder& ui, session& s, const rectf& area) -> void {
+auto gse::ide::agent::sync_history_label(const session& s) -> std::string {
+	const std::int64_t started = s.runs.empty() ? 0 : s.runs.front().started;
+	return std::format("{} \xC2\xB7 {} \xC2\xB7 {}", s.name, s.sync->branch, local_time_label(started));
+}
+
+auto gse::ide::agent::draw_sync_history(gui::builder& ui, data& d, const rectf& body) -> void {
+	if (!d.sync_history_open) {
+		return;
+	}
+
+	std::vector<std::uint32_t> ids;
+	std::vector<std::string> labels;
+	for (const session& s : d.sessions | std::views::reverse | std::views::filter(std::not_fn(is_chat))) {
+		ids.push_back(s.id);
+		labels.push_back(sync_history_label(s));
+	}
+
+	const std::optional<std::size_t> chosen = draw_pick_list(ui, {
+		.body = body,
+		.anchor = d.sync_history_anchor,
+		.open = d.sync_history_open,
+		.count = labels.size(),
+		.empty_text = "no past sync chats",
+		.key = "##sync_history_list",
+		.label = [&](const std::size_t index) -> std::string_view {
+			return labels[index];
+		},
+	});
+
+	if (chosen) {
+		d.sync_open = ids[*chosen];
+		d.sync_history_open = false;
+	}
+}
+
+auto gse::ide::agent::sync_strip_extent(const gui::draw_context& ctx) -> float {
+	return ctx.style.font_size * 2.f;
+}
+
+auto gse::ide::agent::draw_sync_strip(gui::builder& ui, data& d, const rectf& body) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const auto text_view = ctx.fonts.text.resolve();
+	const rectf area = rectf::from_position_size(body.top_left(), { body.width(), sync_strip_extent(ctx) });
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+
+	const float extent = std::min(area.height() - pad * 0.5f, sty.font_size * 1.6f);
+	const rectf history = rectf::from_position_size(
+		{ area.right() - pad - extent, area.center().y() + extent * 0.5f },
+		{ extent, extent }
+	);
+	if (gui::caption_button(ui, history, "##sync_history_closed", gui::symbol::chevron_down(), sty.caption_button)) {
+		d.sync_history_open = !d.sync_history_open;
+	}
+	d.sync_history_anchor = history;
+
+	const float text_left = area.left() + pad;
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = "Past sync chats",
+		.position = { text_left, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text_secondary,
+		.clip_rect = rectf::from_position_size({ text_left, area.top() }, { std::max(0.f, history.left() - pad - text_left), area.height() }),
+	});
+
+	draw_sync_history(ui, d, body);
+}
+
+auto gse::ide::agent::draw_sync_header(gui::builder& ui, data& d, session& s, const rectf& area) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const gui::style& sty = ctx.style;
 	const float pad = sty.padding;
@@ -2760,14 +2944,26 @@ auto gse::ide::agent::draw_sync_header(gui::builder& ui, session& s, const rectf
 		.texture = ctx.blank_texture,
 	});
 
+	const bool busy = plan_chrome(d, s).cancel_shown;
+	constexpr std::string_view close_label = "Close";
 	constexpr std::string_view cancel_label = "Cancel";
-	const float button_w = text_view->width(cancel_label, sty.font_size) + pad * 2.f;
 	const float button_h = std::min(area.height() - pad * 0.5f, sty.font_size * 1.6f);
-	const rectf cancel = rectf::from_position_size(
-		{ area.right() - pad - button_w, area.center().y() + button_h * 0.5f },
-		{ button_w, button_h }
+	const float close_w = text_view->width(close_label, sty.font_size) + pad * 2.f;
+	const rectf close = rectf::from_position_size(
+		{ area.right() - pad - close_w, area.center().y() + button_h * 0.5f },
+		{ close_w, button_h }
 	);
-	if (ui.draw<gui::button>({
+	const float cancel_w = text_view->width(cancel_label, sty.font_size) + pad * 2.f;
+	const rectf cancel = rectf::from_position_size(
+		{ close.left() - pad * 0.5f - cancel_w, close.top() },
+		{ cancel_w, button_h }
+	);
+	const rectf history = rectf::from_position_size(
+		{ (busy ? cancel.left() : close.left()) - pad * 0.5f - button_h, close.top() },
+		{ button_h, button_h }
+	);
+
+	if (busy && ui.draw<gui::button>({
 		.text = cancel_label,
 		.rect = cancel,
 		.key = std::format("##sync_cancel_{}", s.id),
@@ -2775,22 +2971,41 @@ auto gse::ide::agent::draw_sync_header(gui::builder& ui, session& s, const rectf
 	})) {
 		cancel_sync(s);
 	}
+	if (ui.draw<gui::button>({
+		.text = close_label,
+		.rect = close,
+		.key = std::format("##sync_close_{}", s.id),
+	})) {
+		if (busy) {
+			cancel_sync(s);
+		}
+		d.sync_open = 0;
+		d.sync_history_open = false;
+	}
+	if (busy) {
+		d.sync_history_open = false;
+	}
+	else if (gui::caption_button(ui, history, "##sync_history", gui::symbol::chevron_down(), sty.caption_button)) {
+		d.sync_history_open = !d.sync_history_open;
+	}
+	d.sync_history_anchor = history;
 
 	const float text_left = area.left() + sty.accent_bar_width + pad;
-	const std::string title = std::format("Syncing {} \xC2\xB7 {}", s.sync->root.filename().generic_display_string(), s.sync->branch);
+	const std::string title = std::format("{} {} \xC2\xB7 {}", busy ? "Syncing" : "Sync", s.sync->root.filename().generic_display_string(), s.sync->branch);
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = title,
 		.position = { text_left, area.center().y() + text_view->vertical_center_offset(sty.font_size) },
 		.scale = sty.font_size,
 		.color = sty.color_text,
-		.clip_rect = rectf::from_position_size({ text_left, area.top() }, { std::max(0.f, cancel.left() - pad - text_left), area.height() }),
+		.clip_rect = rectf::from_position_size({ text_left, area.top() }, { std::max(0.f, history.left() - pad - text_left), area.height() }),
 	});
 }
 
 auto gse::ide::agent::draw_sync_chat(gui::builder& ui, data& d, const rectf& body, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) -> void {
 	session* hosted = sync_session(d);
 	if (!hosted) {
+		draw_sync_strip(ui, d, body);
 		return;
 	}
 
@@ -2843,7 +3058,8 @@ auto gse::ide::agent::draw_sync_chat(gui::builder& ui, data& d, const rectf& bod
 		.plan = plan,
 	});
 	draw_context_bar(ctx, s, context_area);
-	draw_sync_header(ui, s, header_area);
+	draw_sync_header(ui, d, s, header_area);
+	draw_sync_history(ui, d, body);
 }
 
 auto gse::ide::agent::note_visits(data& d) -> void {
@@ -2858,6 +3074,15 @@ auto gse::ide::agent::note_visits(data& d) -> void {
 			s.arriving = true;
 			s.arrived = s.seen;
 			s.entered = now;
+			s.mode = entry_mode(plan_chrome(d, s), s.mode, s.sent_transcript, true);
+			s.sent_transcript = false;
+		}
+		else if (s.sent_transcript) {
+			if (const transcript_mode mode = entry_mode(plan_chrome(d, s), s.mode, true, false); mode != s.mode) {
+				s.mode = mode;
+				s.sent_transcript = false;
+				s.arriving = true;
+			}
 		}
 		s.seen = now;
 	}
@@ -2949,21 +3174,7 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		? layout_question(ctx, *shown->question, body.width(), body.height() * question_body_share)
 		: question_block{};
 	const float question_h = plan ? question_extent(ctx, *shown, *plan, question) : 0.f;
-	const bool gate_block = plan && plan->plan_shown && shown->mode != transcript_mode::summary;
-	split_memory& followup = split_of(d, split_kind::plan_followup);
-	const float followup_w = gate_block ? followup_width(ctx, *shown, *plan, followup, body.width()) : 0.f;
-	const float gate_w = body.width() - followup_w;
-	if (gate_block && !plan->plan_summary.empty()) {
-		sync_plan_summary(ctx, shown->plan_summary, plan->plan_summary, gate_w);
-	}
-	const float gate_room = body.height() * (plan && plan->plan_split ? plan_split_share : plan_body_share);
-	plan_block steps = gate_block
-		? layout_plan(ctx, plan->plan_steps, {}, shown->plan_summary.buffer.lines.size(), paging_of(scope_pages(plan->plan_summary, plan->plan_steps.size()), shown->plan_page), plan->action_label, split_of(d, split_kind::plan_files).ratio, gate_w, gate_room)
-		: plan_block{};
-	if (gate_block && plan->plan_split) {
-		steps.extent = std::max(steps.extent, gate_room);
-	}
-	const float steps_h = plan ? plan_extent(ctx, *shown, *plan, steps) : 0.f;
+	const bool plan_drawn = plan && plan->plan_shown && plan->summary_ready && shown->mode == transcript_mode::summary;
 
 	const float context_h = std::max(2.f, std::round(3.f * sty.scale_factor));
 
@@ -2973,30 +3184,21 @@ auto gse::ide::agent::draw_panel(gui::builder& ui, data& d, const channel_write<
 		{ body.left(), input_area.top() + question_h },
 		{ body.width(), question_h }
 	);
-	const rectf steps_area = rectf::from_position_size(
-		{ body.left(), question_area.top() + steps_h },
-		{ body.width(), steps_h }
-	);
 	const rectf phase_area = rectf::from_position_size(
-		{ body.left(), steps_area.top() + phase_h },
+		{ body.left(), question_area.top() + phase_h },
 		{ body.width(), phase_h }
 	);
 	const rectf transcript = rectf::from_position_size(
 		{ body.left(), body.top() - strip_h },
-		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - question_h - steps_h - phase_h) }
+		{ body.width(), std::max(0.f, body.height() - strip_h - context_h - input_h - question_h - phase_h) }
 	);
 
 	if (question_h > 0.f) {
 		draw_question(ui, *shown, question_area, question);
 	}
-	if (steps_h > 0.f) {
-		const rectf gate_area = rectf::from_position_size(steps_area.top_left(), { gate_w, steps_h });
-		draw_plan(ui, *shown, split_of(d, plan_split_kind(steps.paging.shown.kind)), gate_area, steps, shown->plan_page, "agent_plan_page", jump_out);
-		draw_followup(ui, *shown, *plan, followup, steps_area, followup_w, body, jump_out);
-	}
 	if (shown) {
 		draw_status(ui, *shown, *plan, phase_area);
-		draw_input(ui, *shown, { .area = input_area, .body = body, .plan = *plan });
+		draw_input(ui, *shown, { .area = input_area, .body = body, .plan = *plan, .plan_drawn = plan_drawn });
 		draw_context_bar(ctx, *shown, context_area);
 	}
 

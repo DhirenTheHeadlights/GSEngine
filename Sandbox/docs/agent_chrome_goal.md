@@ -881,3 +881,154 @@ window; attachment added; model or effort changed mid-turn; a canvas drawn by `g
   Summary after the revised recovery rule (it will read `record unknown`, `aim none`), the
   gallery cells, and the away-only digest banner. Verdict: met in source; criterion 18 needs the
   owner to open wasm once. Escalate.
+- **2026-10-28 — owner moves to the source-control sync chat.** Owner: "nice". Taken as
+  acceptance of the goal-met Summary pass; the three named checks were not confirmed one by one.
+  Owner defect: after a sync agent finishes, the source-control panel shows the chat as a thin
+  sliver at the top with the git view below. Direction: (a) the sync chat stays full-panel until
+  the owner closes it; (b) follow-ups can be asked in it; (c) the owner can close it at any time;
+  (d) a history of past sync chats, in a dropdown like the agent panel's chat list. The sync chat
+  is drawn from `Agent/System.cpp:188` into `source_control_panel_name` beside the git panel's own
+  content, so the layout fix may touch `Editor/Source/Git/**`, which is outside the charter. The
+  owner asked for it directly. Verdict: next task; scope names any Git/ edit explicitly.
+- **2026-10-28 — steering after the sync chat stays full-panel.** Task report: a finished sync
+  chat stays as the full source-control panel until closed. Follow-ups relaunch it in place.
+  The header reads "Syncing …"/"Sync …", Cancel shows only while it runs, and Close is always
+  there. A chevron dropdown lists past sync chats, and a "Past sync chats" strip shows when none
+  is open; the newest 20 are kept. Sync is refused while any sync chat is busy, a review fix.
+  The query gains `sync_open`, `sync_history` and `sync_state`. The Git panel edits are in
+  `SourceControl.cppm`/`EditorApp.cppm`, with nothing under `Git/`. Those two files are outside
+  the charter's path list, but the owner asked for this directly. A build someone else started
+  went green; no agent saw it. Nothing seen on screen, the query fields not read live, restart
+  survival untested. Verdict: met in source. Criterion 18 needs the owner's eye. Escalate.
+- **2026-10-28 — owner: a message to a settled chat starts its next cycle.** The owner moved on
+  without ruling on the sync-chat pass. New direction: sending a message to a settled chat
+  should act as the next cycle of that chat, not as a fresh chat. The new cycle starts with the
+  previous cycle's summary as context, and only the summary, so the owner can re-assess or
+  follow up. Past cycles must be pageable, as the goal page's cycles already are. This changes
+  what submitting does on a settled chat, which is behaviour, but the owner asked for it
+  directly. The scope must state exactly what changes. Verdict: next task.
+- **2026-10-28 — steering after follow-up cycles on settled chats.** Task report: a message to
+  a settled chat starts its next cycle. The scope session gets a preamble, the previous cycle's
+  final report and the owner's text, and nothing else. With no prior report it falls back to the
+  old send. A "follow-up · cycle N" row marks each cycle; Summary pages cycles with `<<`/`>>`
+  ("cycle k of N") for multi-cycle non-goal chats; the query reports `cycles`/`cycle` for them.
+  2 gallery cells, doc event row. Routing, gating, caps and relaunch timing unchanged. Review 0
+  findings; apply saw a green build. Decisions: the since-you-were-here banner now shows on
+  multi-cycle non-goal chats; chats relaunched after settling before this change now read as
+  several cycles. Not seen by anyone: a real follow-up, the marker, the pager, the query fields
+  live. The sync full-panel pass is still unruled. Verdict: met in source; criterion 18 needs
+  the owner. Escalate.
+- **2026-10-28 — owner: a follow-up kicks a settled chat out of Summary.** From source:
+  `summary_ready` (`Agent/Chrome.cpp:322-330`) checks only the newest cycle,
+  `lifecycle_at(s, std::nullopt)`. A brand-new follow-up cycle has no page content yet, so the
+  transcript-until-first-summary rule applies again and the toggle disappears. Verdict: the
+  rule should mean "until the chat's *first* summary ever", so a chat counts as ready when any
+  earlier cycle has content. The new cycle's page should show "no screen yet" or the pager
+  should land on it the way the opening-page rule says. Next task.
+- **2026-10-28 — steering after the follow-up Summary fix.** Task report: `summary_ready`
+  (`Agent/Chrome.cpp`) now counts a chat as ready if any cycle has page content. A follow-up
+  keeps the toggle and opens on the new cycle's current-phase page ("no screen for this stage
+  yet") with `<<` back to earlier cycles. There is 1 gallery cell and a doc event row. Apply saw
+  a green editor build; review found 0 findings. The query's `toggle` still copies `ready`. Not
+  seen live by anyone. The sync full-panel and follow-up-cycles passes are still unruled.
+  Verdict: met in source. Criterion 18 needs the owner to send a follow-up to a settled chat.
+  Escalate.
+- **2026-10-30 — owner accepts the follow-up Summary fix.** Owner: "works". This meets
+  criterion 18 for that pass. It is also taken to cover the follow-up-cycles and sync full-panel
+  passes, which were not ruled on one by one. New direction: in a goal chat, the current cycle's
+  scope page should show the transcript (only the rows since that goal turn started) until the
+  scope report arrives, the same way a non-goal chat shows its transcript before its first
+  summary. Verdict: next task.
+- **2026-10-30 — steering after goal-scope live transcript.** Task report: on a live goal's
+  newest cycle, while it scopes and before the scope report, the scope page shows the
+  transcript since that goal turn began, through the split gate's follow-up renderer (no
+  second renderer). The query reports the live-scope state, and there is 1 hand-drawn gallery
+  cell, so it does not bear on 15. Review found 0 findings. **Not compiled**, and nobody has
+  seen it on screen. Regression found: criterion 14's grep now returns 2 `is_busy` matches in
+  the sync chat header (`Panel.cpp` ~2880/2912), left by the sync full-panel pass. Verdict: met
+  in source. Criterion 18 needs the owner's eye on the next goal cycle, and 14 needs that check
+  moved into `chrome_plan`. Escalate.
+- **2026-10-31 — steering after the criterion-14 fix (sync header).** Task report: the sync
+  header reads Cancel/Close from `chrome_plan` (`cancel_shown`), with no `is_busy` call.
+  Re-checked this run: the criterion-14 grep over `Agent/Panel.cpp` returns 0, so 14 holds
+  again. At the owner's request mid-task, the apply page's diffs now keep their scroll as edits
+  arrive (appended, not rebuilt; rebuilt on cycle switch), and diff filenames are clickable.
+  Review fixed stale diffs left after cycle paging. A build someone else started went green; no
+  agent saw its errors. A Sandbox `Scenarios.cppm` failure was attributed here but is not this
+  chat's file. Not seen on screen: scroll holding, filename links, cycle paging, the sync header,
+  and the goal-scope live transcript from the prior pass. Verdict: met in source. Criterion 18
+  needs the owner's eye. Escalate.
+- **2026-11-03 — owner: two goal-chat defects.** No ruling on the last pass; the owner moved to
+  two bugs. (a) When a new goal starts on a chat whose previous goal finished, the top half of
+  the panel shows the chat transcript. Likely the goal-scope live transcript drawn in the plan
+  block's area, or the kept met-goal page colliding with the new goal. Not confirmed from source.
+  (b) When a goal chat scopes its next cycle, the Summary view is not offered while it scopes.
+  A non-goal chat that re-scopes after a task keeps its Summary (2026-10-28 follow-up fix).
+  Expected: the same behaviour, with the scope page showing the live transcript. Verdict: next task.
+- **2026-11-03 — steering after the goal-chat re-scope fix.** Task report: a chat counts as a
+  goal chat if it shows a live or met goal, has a steer run in its history, or holds a
+  gate/pending transition that carries a goal record. Such a chat keeps Summary while scoping
+  its next goal, and the scope page shows the live transcript. Head text: "goal · the next goal
+  is still being scoped". Defect (a): the live scope transcript shared a scroll view with the
+  split gate's follow-up column, and each reset the other. It now has its own view. The query
+  gained `goal_chat` (79/81/82 read 1). There are 2 gallery cells and 2 doc event rows. Review
+  found 0 findings. A build someone else started went green; no agent saw it. Not confirmed:
+  that the scroll-view fix is the cause of (a), because no chat was in that state. Nothing seen
+  on screen. Verdict: met in source. Criterion 18 needs the owner's eye on the next new goal.
+- **2026-11-03 — owner on sending a message.** No explicit ruling on the goal re-scope pass.
+  New direction: (a) sending a message jumps the Summary pager to the newest cycle; (b) a
+  message sent after the scoping phase switches the body to Transcript for the moment; (c) the
+  next time the tab is entered, it is back on Summary, as the opening-page rule already says.
+  Verdict: the next task covers (a)-(c). This is presentation only, and the saved mode stays
+  unpersisted.
+- **2026-11-03 — steering after send-jumps-to-newest-cycle.** Task report: sending a message
+  moves the pager to the newest cycle's current-phase page. A send during scoping stays on
+  Summary. A send after scoping switches to Transcript for that moment, and the next tab entry
+  returns to Summary. A Transcript the owner chose is left alone. Settled follow-ups count as
+  scoping. There are 2 gallery cells and a doc event row. Review found 0 findings. A build
+  someone else started went green; no agent saw it. Criterion 14's grep was re-run this run.
+  Not tried live: a send from apply, and the return on re-entry. Verdict: met in source.
+  Criterion 18 needs one real send from the owner. Escalate.
+- **2026-11-03 — owner: the transcript sits on top of the scope plan (wgpu, next goal scope).**
+  The owner's screenshot shows the wasm/wgpu goal chat held at the scope gate ("waiting for
+  approval"). The transcript fills the top half of the body. Below the status row, the plan
+  block takes the rest: page 1/2 and Revise/Start applying. The view toggle reads "Transcript"
+  in ghost style, not accent, so the body is not in Summary mode. Read from source: this is the
+  Transcript-mode gate block (`Panel.cpp:3174`, `gate_block = plan_shown && mode != summary`),
+  which stacks the plan under the transcript. Not yet known: why the chat was not in Summary.
+  Candidates are the previous pass's send-switches-to-Transcript, or a re-entry that did not
+  restore Summary. Also suspect: `Panel.cpp:2759` places the live-scope transcript at
+  `area.top() - laid.extent`. Verdict: defect; next task.
+- **2026-11-03 — steering after the gate-in-Transcript fix.** Task report: entering a chat held
+  at a gate opens Summary on the gated scope page. A gate raised mid-visit also returns to
+  Summary if the only reason for Transcript was a send. A mode picked by hand during a visit is
+  never overridden. In Transcript/Everything at a held gate the transcript fills the body; the
+  stacked plan block and its page index, constants and the query's `gate_page` are deleted, and
+  approve stays reachable via "Start applying" in the input row. `Panel.cpp:2759` checked and
+  correct (y is up). 2 gallery cells (`gallery_gate_mode`, row 4625), doc "Mode on entry" plus an
+  event row. Apply and revise each saw a green build; review fixed a hand-picked Transcript being
+  flipped by a mid-visit gate. Re-checked this run: criterion 14's grep over `Agent/Panel.cpp`
+  is 0. Not seen on screen: the wgpu entry case (relaunch resets mode, so the live query proves
+  nothing), the gallery cells (the 4096 px canvas cap may clip them). Open gap: no approve control
+  on Summary pages other than the gated scope page. Verdict: met in source; criterion 18 needs
+  the owner's eye on wgpu, and a ruling on approve off the scope page. Escalate.
+- **2026-11-04 — owner: a follow-up cycle opens on an empty page.** No ruling on the
+  gate-in-Transcript pass or on approve off the scope page. Defect: a message sent to a settled
+  chat starts the next cycle and the pager jumps to it. Its scope page shows no transcript and
+  nothing else, and the owner sees content only by paging back to an earlier cycle. Read from
+  source: `lifecycle_at` sets `live_from` (`Agent/Chrome.cpp:323`) only when `goal` is set, so
+  the live-scope transcript (`Panel.cpp:2737-2755`) exists only in goal chats. A non-goal
+  follow-up cycle falls through to the empty "no screen for this stage yet" page. Verdict: the
+  next task drops the goal condition, so every newest cycle that is still scoping without a
+  report shows its live transcript.
+- **2026-11-04 — steering after the follow-up cycle live transcript.** Task report: the goal
+  condition is gone, so any newest cycle that is still scoping without a report shows the live
+  transcript from the cycle's start ("scope · live transcript since this cycle began"). First
+  cycles, earlier cycles and held gates are unchanged. Only `Chrome.cpp`, `PanelQuery.cpp` and
+  the doc changed; review found 0 findings. Observed live this run: the running editor reports
+  the new `plans[].scope`/`from` for all 8 chats, so the build with these edits is running.
+  Settled non-goal chats 91/100/102 read `scope plan`, as they should. Goal chat 81, scoping
+  cycle 21, reads `scope transcript from 3062`. No non-goal follow-up was in that state, so the
+  target case has not been seen. Verdict: met in source. Criterion 18 needs one real follow-up
+  to 91, 100 or 102 from the owner. Still unruled: the gate-in-Transcript fix on wgpu, and
+  approve off the scope page.

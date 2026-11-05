@@ -5,7 +5,7 @@ import gse;
 
 import :orbit_camera;
 
-auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<component> orbits, gse::structural<gse::camera::follow_component> follows) -> gse::async::task<> {
+auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<component> orbits) -> gse::async::task<> {
 	for (const auto owner_id : orbits.drain(gse::component_event::added)) {
 		const auto* o = orbits.find(owner_id);
 		if (!o) {
@@ -16,7 +16,7 @@ auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<compon
 			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o->pitch)
 		);
 
-		follows.add(
+		ctx.add_component<gse::camera::follow_component>(
 			owner_id,
 			{
 				.offset = gse::vec3<gse::length>(gse::meters(0.f)),

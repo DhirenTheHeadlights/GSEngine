@@ -174,6 +174,7 @@ export namespace gse::renderer::ui {
 		gpu::shader_program sprite_pipeline;
 		gpu::shader_program text_pipeline;
 		gpu::bindless_handle ui_sampler;
+		bool bound_textures = false;
 		std::array<frame_resources, frames_in_flight> gpu_frames;
 
 		triple_buffer<gpu_frame_data> buffered_frames;

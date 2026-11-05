@@ -61,20 +61,15 @@ auto sandbox::spawn_elevator(gse::scene& s, const gse::vec3<gse::position>& orig
 	platform_arch.motion.body = gse::physics::kinematic_body{};
 
 	const auto platform_id = s.spawn("Elevator Platform", std::move(platform_arch));
-	s.registry().add_component<piston::component>(
-		platform_id,
-		{
+	s.build(platform_id)
+		.with<piston::component>({
 			.center = platform_origin,
 			.amplitude = gse::meters(0.f, oscillation_amplitude, 0.f),
 			.omega = gse::radians_per_second(omega_value),
-		}
-	);
-	s.registry().add_component<gse::physics::kinematic_target_component>(
-		platform_id,
-		{
+		})
+		.with<gse::physics::kinematic_target_component>({
 			.position = platform_origin,
-		}
-	);
+		});
 
 	constexpr int grid = 3;
 	constexpr float box_size = 0.5f;
@@ -131,20 +126,15 @@ auto sandbox::spawn_vise(gse::scene& s, const gse::vec3<gse::position>& origin) 
 		wall_arch.motion.body = gse::physics::kinematic_body{};
 
 		const auto wall_id = s.spawn(std::format("Vise {} Wall", name), std::move(wall_arch));
-		s.registry().add_component<piston::component>(
-			wall_id,
-			{
+		s.build(wall_id)
+			.with<piston::component>({
 				.center = wall_center,
 				.amplitude = gse::meters(-sign * wall_amplitude, 0.f, 0.f),
 				.omega = gse::radians_per_second(omega_value),
-			}
-		);
-		s.registry().add_component<gse::physics::kinematic_target_component>(
-			wall_id,
-			{
+			})
+			.with<gse::physics::kinematic_target_component>({
 				.position = wall_center,
-			}
-		);
+			});
 	}
 
 	s.spawn(
@@ -316,21 +306,16 @@ auto sandbox::spawn_tumbler(gse::scene& s, const int index, const gse::vec3<gse:
 		wall_arch.motion.body = gse::physics::kinematic_body{};
 		wall_arch.spec.material.opacity = 0.2f;
 		const auto wall_id = s.spawn(std::format("Tumbler {} Wall {}", index, wall.suffix), std::move(wall_arch));
-		s.registry().add_component<tumbler::component>(
-			wall_id,
-			{
+		s.build(wall_id)
+			.with<tumbler::component>({
 				.center = center,
 				.axis = rotation_axis,
 				.angular_speed = angular_speed,
 				.local_offset = wall.local_offset,
-			}
-		);
-		s.registry().add_component<gse::physics::kinematic_target_component>(
-			wall_id,
-			{
+			})
+			.with<gse::physics::kinematic_target_component>({
 				.position = center + wall.local_offset,
-			}
-		);
+			});
 	}
 
 	const int nx = params.tumbler_radial_cubes;

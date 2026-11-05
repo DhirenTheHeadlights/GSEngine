@@ -87,6 +87,7 @@ export {
 
 	inline constexpr SlangCompileTarget slang_spirv = SLANG_SPIRV;
 	inline constexpr SlangCompileTarget slang_dxil = SLANG_DXIL;
+	inline constexpr SlangCompileTarget slang_wgsl = SLANG_WGSL;
 	inline constexpr SlangMatrixLayoutMode slang_matrix_layout_column_major = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 	inline constexpr SlangDebugInfoLevel slang_debug_info_level_standard = SLANG_DEBUG_INFO_LEVEL_STANDARD;
 	inline constexpr SlangFloatingPointMode slang_floating_point_mode_default = SLANG_FLOATING_POINT_MODE_DEFAULT;

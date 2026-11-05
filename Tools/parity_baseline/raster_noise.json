@@ -1,0 +1,42 @@
+{
+  "tolerance": {
+    "pixel_threshold": 8,
+    "max_mean_error": 0.01,
+    "max_over_fraction": 0.0
+  },
+  "comparisons": [
+    {
+      "a": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_180814.png",
+      "b": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_180929.png",
+      "width": 2810,
+      "height": 1538,
+      "max_error": 1,
+      "mean_error": 1.5425742788079603e-06,
+      "over_fraction": 0.0,
+      "psnr": 106.24834275294084,
+      "within_tolerance": true
+    },
+    {
+      "a": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_180814.png",
+      "b": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_181030.png",
+      "width": 2810,
+      "height": 1538,
+      "max_error": 1,
+      "mean_error": 1.0798019951655722e-06,
+      "over_fraction": 0.0,
+      "psnr": 107.79736235279827,
+      "within_tolerance": true
+    },
+    {
+      "a": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_180929.png",
+      "b": "C:\\Users\\Dhire\\AppData\\Local\\GSE\\captures\\screenshots\\screenshot_20261031_181030.png",
+      "width": 2810,
+      "height": 1538,
+      "max_error": 1,
+      "mean_error": 9.255445672847761e-07,
+      "over_fraction": 0.0,
+      "psnr": 108.4668302491044,
+      "within_tolerance": true
+    }
+  ]
+}

@@ -52,6 +52,7 @@ export namespace gse::vbd {
 	struct vbd_prepare_color_indirect_stage {};
 	struct vbd_post_stabilize_stage {};
 	struct vbd_finalize_stage {};
+	struct vbd_build_active_stage {};
 	struct vbd_state_copy_stage {};
 	struct vbd_gather_snapshot_stage {};
 	struct vbd_ring_copy_stage {};
@@ -62,6 +63,7 @@ export namespace gse::vbd {
 	struct solver_diagnostics {
 		std::uint32_t attempted_contacts = 0;
 		std::uint32_t max_used_color = 0;
+		std::uint32_t coloring_rounds_used = 0;
 		std::uint32_t coloring_fallbacks = 0;
 		std::uint32_t coloring_conflicts = 0;
 		std::uint32_t contact_duplicates = 0;
@@ -120,6 +122,7 @@ export namespace gse::vbd {
 		bool full_snapshot = false;
 		bool joint_snapshot = false;
 		bool contact_snapshot = false;
+		bool debug_dumps = false;
 	};
 
 	struct snapshot_generations {
@@ -147,6 +150,8 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto capacities() const -> const vbd_capacities&;
+
+		auto regrow_pending() const -> bool;
 
 		auto wait_for_latest_dispatch() const -> void;
 
@@ -177,8 +182,7 @@ export namespace gse::vbd {
 			bool preserve
 		) -> void;
 
-		auto set_color_launch_hint(
-			std::uint32_t max_used_color
+		auto refresh_launch_hints(
 		) -> void;
 
 		auto read_grounded() const -> std::span<const std::uint32_t>;
@@ -193,7 +197,11 @@ export namespace gse::vbd {
 
 		auto read_body_states() const -> std::span<const body_state>;
 
+		auto sync_body_snapshots() -> void;
+
 		auto read_body_snapshots() const -> std::span<const body_snapshot>;
+
+		auto changed_bodies() const -> std::span<const std::uint32_t>;
 
 		auto read_joint_states() const -> std::span<const joint_constraint>;
 
@@ -257,6 +265,9 @@ export namespace gse::vbd {
 		struct solve_plan;
 		struct per_frame_data;
 
+		auto latest_diagnostics(
+		) const -> std::optional<solver_diagnostics>;
+
 		static constexpr std::uint32_t ring_max_history = 64;
 		static constexpr std::uint32_t max_seed_contacts = 16384;
 
@@ -268,6 +279,14 @@ export namespace gse::vbd {
 
 		auto create_buffers(
 			shared_view<gpu::context::data> ctx
+		) -> void;
+
+		auto build_sized_resources(
+			shared_view<gpu::context::data> gpu_s
+		) -> void;
+
+		auto regrow(
+			shared_view<gpu::context::data> gpu_s
 		) -> void;
 
 		auto stage_ring_copy(
@@ -394,6 +413,13 @@ export namespace gse::vbd {
 			pass_channel pass_out
 		) -> async::task<>;
 
+		auto stage_build_active(
+			const solve_plan& p,
+			std::uint32_t sub,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
 		auto stage_predict(
 			const solve_plan& p,
 			std::uint32_t sub,
@@ -411,6 +437,8 @@ export namespace gse::vbd {
 		auto stage_solve_iterations(
 			const solve_plan& p,
 			std::uint32_t sub,
+			std::uint32_t it_begin,
+			std::uint32_t it_end,
 			std::uint32_t chain_index,
 			pass_channel pass_out
 		) -> async::task<>;
@@ -528,8 +556,13 @@ export namespace gse::vbd {
 
 		struct compute_shaders {
 			gpu::shader_program predict_pipeline;
+			gpu::shader_program mark_active_pipeline;
+			gpu::shader_program compact_active_pipeline;
+			gpu::shader_program prepare_active_indirect_pipeline;
 			gpu::shader_program solve_color_pipeline;
 			gpu::shader_program solve_sweep_pipeline;
+			gpu::shader_program solve_islands_pipeline;
+			gpu::shader_program build_island_levels_pipeline;
 			gpu::shader_program update_lambda_pipeline;
 			gpu::shader_program derive_velocities_pipeline;
 			gpu::shader_program finalize_pipeline;
@@ -574,6 +607,7 @@ export namespace gse::vbd {
 			std::array<id, limits.max_colors> color{};
 			id sweep;
 			id island;
+			id island_levels;
 			id jacobi;
 			id apply_jacobi;
 			id update_lambda;
@@ -605,6 +639,8 @@ export namespace gse::vbd {
 			gpu::buffer coloring_scratch_buffer;
 			gpu::buffer render_body_buffer;
 			gpu::buffer snapshot_buffer;
+			gpu::buffer snapshot_index_buffer;
+			gpu::buffer snapshot_count_buffer;
 		};
 
 		gpu::buffer m_body_buffer;
@@ -627,7 +663,9 @@ export namespace gse::vbd {
 		bool m_full_snapshot = false;
 		bool m_joint_snapshot = false;
 		bool m_contact_snapshot = false;
+		bool m_debug_dumps = false;
 		vbd_capacities m_capacities{};
+		std::optional<vbd_capacities> m_grown_capacities;
 		vbd_scene_counts m_scene_counts{};
 		std::uint64_t m_recorded_frame = 0;
 
@@ -657,6 +695,15 @@ export namespace gse::vbd {
 		gpu::readback_channel m_muscle_snapshot_channel;
 		gpu::readback_channel m_contact_snapshot_channel;
 		gpu::readback_channel m_body_snapshot_channel;
+		gpu::buffer m_snapshot_linger_buffer;
+		gpu::buffer m_active_list_buffer;
+		gpu::buffer m_active_data_buffer;
+		gpu::buffer m_active_args_buffer;
+		std::vector<body_snapshot> m_snapshot_mirror;
+		std::vector<std::uint32_t> m_changed_bodies;
+		std::uint64_t m_mirror_generation = 0;
+		std::uint32_t m_snapshot_bound = 0;
+		std::uint32_t m_snapshot_full_dispatches = 0;
 		gpu::readback_channel m_grounded_channel;
 		gpu::readback_channel m_collision_state_channel;
 		gpu::readback_channel m_contact_dump_channel;
@@ -672,12 +719,14 @@ export namespace gse::vbd {
 		bool m_merge_joint_inputs = false;
 		bool m_apply_all_body_inputs = false;
 		bool m_preserve_warm_starts = false;
+		bool m_force_active_full = false;
 
 		std::uint32_t m_body_count = 0;
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_joint_count = 0;
 		std::uint32_t m_muscle_count = 0;
-		std::uint32_t m_color_launch_hint = 0;
+		std::optional<std::uint32_t> m_color_launch_hint;
+		std::uint32_t m_coloring_round_bound = limits.coloring_rounds;
 		std::uint32_t m_island_count = 0;
 		std::uint32_t m_jointless_body_count = 0;
 		std::uint32_t m_impulse_count = 0;

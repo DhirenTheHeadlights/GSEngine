@@ -41,6 +41,8 @@ export namespace gse::ide {
 		std::filesystem::path project_root;
 		std::filesystem::path engine_root;
 		std::string_view engine_pin;
+		bool sync_open = false;
+		bool sync_history = false;
 	};
 
 	[[nodiscard]] auto edit_for(
@@ -213,7 +215,7 @@ auto gse::ide::edit_for(source_control_state& state, const std::filesystem::path
 auto gse::ide::apply_sync_finished(source_control_state& state, const agent::sync_finished& finished) -> void {
 	state.sync_root.clear();
 	state.sync_summary = finished.failure.empty()
-		? finished.summary
+		? std::string{}
 		: "the sync could not start: " + finished.failure;
 }
 
@@ -560,7 +562,7 @@ auto gse::ide::draw_banner(gui::builder& ui, message_banner& banner, const std::
 }
 
 auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) -> void {
-	if (!state.sync_root.empty()) {
+	if (inputs.sync_open || !state.sync_root.empty()) {
 		return;
 	}
 
@@ -570,7 +572,11 @@ auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, so
 	const float pad = sty.padding;
 	const float row_h = text_view->line_height(sty.font_size) + pad;
 
-	rectf list_rect = rect;
+	const float strip = inputs.sync_history ? agent::sync_strip_extent(ctx) : 0.f;
+	rectf list_rect = rectf::from_position_size(
+		{ rect.left(), rect.top() - strip },
+		{ rect.width(), std::max(0.f, rect.height() - strip) }
+	);
 	draw_banner(ui, state.error_banner, "##source_control_error", inputs.action_error, sty.color_error, list_rect);
 	draw_banner(ui, state.summary_banner, "##source_control_summary", state.sync_summary, sty.color_text_secondary, list_rect);
 

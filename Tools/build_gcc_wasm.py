@@ -46,7 +46,7 @@ from repo_paths import GENERATED_ROOT
 # The harness and the exit taxonomy every run probe is read with. Imported from the
 # scenario runner rather than restated, so a probe's `ran` and a scenario's exit 0 are
 # the same verdict.
-from run_wasm import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
+from wasm_paths import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
                       write_harness)
 
 # The snapshot the engine's own native toolchain is built from, which is what this has

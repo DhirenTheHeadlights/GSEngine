@@ -20,6 +20,12 @@ A running executable never blocks a build. The binary is renamed before the new 
 
 Pass `settings` to override configuration for that run alone — `["Graphics.validation_layers_enabled=true"]` — delivered as `--engine-setting` arguments and applied in memory. **Never edit `settings.ini` to turn a diagnostic on.** That is the owner's file, it persists into every later run including theirs, and it is the kind of change that gets forgotten and then blamed on something else.
 
+A run blocks until the game exits and comes back with each process's exit code, the last lines of its output, and the exe and run key of its log — so an abort, an `_Exit` or a crash is in the result, not something to go looking for. `detach: true` returns at launch instead. `standalone: true` launches the game as its own window rather than embedded in the editor; reach for it only for what the attached form cannot show — display modes, window behaviour, timing without the embed — because it opens a window on the owner's desktop.
+
+## Read-Only Tools In Every Phase
+
+`gse_symbolize` resolves `<Exe>.exe+0xRVA` frames from a crash record, a log run or pasted text, and refuses when the binary has been rebuilt since the frames were recorded. `gse_git` reads `log`, `show`, `diff`, `blame` and `status`. Neither needs a shell, so both work in scoping; use them rather than recording a capability gap for a symbolization or a history read.
+
 A `deferred` result means another chat is still editing and your build is queued. Nothing failed. Hibernate, wait, or move to unrelated work; do not re-run in a loop.
 
 ## Build Errors Are Attributed

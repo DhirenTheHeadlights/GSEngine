@@ -15,12 +15,6 @@ import gse.math;
 import gse.log;
 
 export namespace gse::gpu {
-	constexpr std::uint32_t screen_allocation_granularity = 256;
-
-	[[nodiscard]] auto screen_allocation_for(
-		vec2u active
-	) -> vec2u;
-
 	[[nodiscard]] auto screen_uv_scale_for(
 		vec2u active,
 		vec2u allocated
@@ -48,6 +42,8 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto extent() const -> vec2u;
+
+		[[nodiscard]] auto allocated() const -> vec2u;
 
 		[[nodiscard]] auto image_count() const -> std::uint32_t;
 
@@ -113,6 +109,10 @@ export namespace gse::gpu {
 			gpu::present_mode preferred_present_mode
 		) -> expected<void>;
 
+		[[nodiscard]] auto resize_in_place(
+			vec2i framebuffer_size
+		) -> bool;
+
 		[[nodiscard]] auto current_handle() const -> swap_chain_handle;
 
 	private:
@@ -148,6 +148,10 @@ auto gse::gpu::swap_chain::replace_surface(const gpu::surface surface) -> void {
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
 	return m_info.extent;
+}
+
+auto gse::gpu::swap_chain::allocated() const -> vec2u {
+	return m_info.allocated;
 }
 
 auto gse::gpu::swap_chain::image_count() const -> std::uint32_t {
@@ -258,18 +262,16 @@ auto gse::gpu::swap_chain::recreate_detached(const vec2i framebuffer_size, const
 	return {};
 }
 
-auto gse::gpu::swap_chain::current_handle() const -> swap_chain_handle {
-	return m_info.handle;
+auto gse::gpu::swap_chain::resize_in_place(const vec2i framebuffer_size) -> bool {
+	if (!m_device->resize_swapchain_in_place(m_info.handle, framebuffer_size)) {
+		return false;
+	}
+	m_info.extent = vec2u{ static_cast<std::uint32_t>(framebuffer_size.x()), static_cast<std::uint32_t>(framebuffer_size.y()) };
+	return true;
 }
 
-auto gse::gpu::screen_allocation_for(const vec2u active) -> vec2u {
-	const auto round_up = [](const std::uint32_t value) -> std::uint32_t {
-		if (value == 0) {
-			return 0;
-		}
-		return ((value + screen_allocation_granularity - 1) / screen_allocation_granularity) * screen_allocation_granularity;
-	};
-	return vec2u{ round_up(active.x()), round_up(active.y()) };
+auto gse::gpu::swap_chain::current_handle() const -> swap_chain_handle {
+	return m_info.handle;
 }
 
 auto gse::gpu::screen_uv_scale_for(const vec2u active, const vec2u allocated) -> vec2f {

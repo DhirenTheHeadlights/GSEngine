@@ -12,6 +12,7 @@ namespace gse::ide::agent {
 	constexpr std::wstring_view resume_option = L" --resume ";
 	constexpr std::string_view inquiry_command_head = R"(claude -p --output-format stream-json --input-format stream-json --verbose --tools "Read Grep Glob" --strict-mcp-config --no-session-persistence --fork-session)";
 	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
+	constexpr std::string_view step_gate_hook_format = R"( --settings "{{\"hooks\":{{\"PreToolUse\":[{{\"matcher\":\"Edit|Write|NotebookEdit\",\"hooks\":[{{\"type\":\"command\",\"command\":\"node {} {}\"}}]}}]}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
 	constexpr std::wstring_view user_profile_name = L"USERPROFILE";
@@ -22,10 +23,11 @@ namespace gse::ide::agent {
 	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
 	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
-	constexpr std::uint32_t sessions_version = 9;
+	constexpr std::uint32_t sessions_version = 10;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
 	constexpr std::uint32_t chat_names_sessions_version = 5;
 	constexpr std::uint32_t overview_sessions_version = 9;
+	constexpr std::uint32_t closed_sessions_version = 10;
 
 	struct handoff {
 		std::uint32_t session = 0;
@@ -102,6 +104,12 @@ namespace gse::ide::agent {
 		data& d
 	) -> session*;
 
+	constexpr std::ptrdiff_t max_sync_history = 20;
+
+	auto trim_sync_history(
+		data& d
+	) -> void;
+
 	auto session_command(
 		const session& s,
 		const std::filesystem::path& prompt
@@ -148,6 +156,20 @@ namespace gse::ide::agent {
 	auto close_session(
 		session& s
 	) -> void;
+
+	auto owns_transcript(
+		const session& s,
+		std::string_view agent_id
+	) -> bool;
+
+	auto remember_name(
+		data& d,
+		const session& s
+	) -> void;
+
+	auto persisted(
+		const session& s
+	) -> session;
 
 	auto erase_session(
 		data& d,

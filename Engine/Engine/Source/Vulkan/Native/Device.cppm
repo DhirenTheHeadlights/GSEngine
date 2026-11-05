@@ -68,6 +68,7 @@ namespace gse::vulkan {
 
 	struct swap_chain_resources {
 		vk::raii::SwapchainKHR swapchain = nullptr;
+		vec2u scaled_allocation;
 		std::vector<vk::raii::ImageView> image_views;
 		std::vector<vk::raii::Fence> release_fences;
 	};
@@ -510,8 +511,14 @@ export namespace gse::vulkan {
 			gpu::surface surface,
 			vec2i framebuffer_size,
 			gpu::present_mode preferred_present_mode,
+			vec2u monitor,
 			gpu::swap_chain_handle old_swapchain = {}
 		) -> gpu::expected<gpu::swap_chain_info>;
+
+		[[nodiscard]] auto resize_swapchain_in_place(
+			gpu::swap_chain_handle swapchain,
+			vec2u extent
+		) const -> bool;
 
 		auto destroy_swapchain(
 			gpu::swap_chain_handle swapchain

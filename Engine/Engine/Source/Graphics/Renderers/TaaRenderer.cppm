@@ -32,7 +32,6 @@ export namespace gse::renderer::taa {
 		gpu::bindless_handle sampler;
 		gpu::bindless_handle hdr_view;
 		gpu::bindless_handle velocity_view;
-		std::array<gpu::bindless_handle, 2> history_views;
 		std::uint32_t frames_since_history_invalid = 0;
 		vec2u history_active_extent{ 0, 0 };
 
@@ -53,6 +52,7 @@ export namespace gse::renderer::taa {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
-		channel_write<camera::jitter_request> jitter_out
+		channel_write<camera::jitter_request> jitter_out,
+		channel_read<camera::temporal_reset_request> reset_in
 	) -> async::task<>;
 }

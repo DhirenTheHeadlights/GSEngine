@@ -302,7 +302,6 @@ auto gse::renderer::physics_debug::ensure_bindless_buffer_capacity(gpu::device& 
 			.size = capacity,
 			.stride = stride,
 			.usage = usage,
-			.bindless = true
 		},
 		tag
 	);
@@ -321,7 +320,6 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 				.size = camera_ubo_size,
 				.stride = sizeof(shaders::common::camera_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"physics_debug.camera_ubo"
 		);
@@ -342,7 +340,6 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = box_verts.data(),
-				.bindless = true,
 			},
 			"physics_debug.unit_box"
 		);
@@ -353,7 +350,6 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = sphere_verts.data(),
-				.bindless = true,
 			},
 			"physics_debug.unit_sphere"
 		);
@@ -364,7 +360,6 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 				.stride = sizeof(vec4f),
 				.usage = gpu::buffer_flag::storage,
 				.data = capsule_verts.data(),
-				.bindless = true,
 			},
 			"physics_debug.unit_capsule"
 		);

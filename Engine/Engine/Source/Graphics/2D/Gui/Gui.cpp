@@ -64,6 +64,7 @@ auto gse::gui::widget_context_init(data& d, viewport_state& vp, const render_lay
 		.pending_text_edit = &vp.pending_text_edit,
 		.image_paste = vp.image_paste,
 		.clip_stack = { info.clip },
+		.frame_rect = vp.frame_rect,
 	};
 }
 

@@ -79,9 +79,12 @@ scrolling when long. Page 2 is the steps/files view below. `<` / `>` and a "1/2"
 right; they are inert until the block has grown, like Revise and Approve, which stay under both
 pages. A new gate opens on page 1. With no `steps` only the summary page exists and the
 navigation is not drawn. A page switch eases the block's height (`animated_rect`) and fades the
-incoming page in (`presence`). `gse_panel_query` Agent reports it in `plans` as `gate_page`.
-In the **Summary** view this block is not drawn above the input, because the lifecycle pages
-below carry the same pages and buttons; it is drawn in Transcript and Everything.
+incoming page in (`presence`). The block lives **only in the Summary view**, as the scope
+station's lifecycle pages. Transcript and Everything draw the transcript alone, full height, with
+nothing stacked under it; there the gate is the input row's compact `gate_label` button (Enter
+still sends a revision). `input_layout::plan_drawn` decides which of the two is drawn, so approval
+is reachable in every mode. `gse_panel_query` Agent reports the Summary page as `page` and
+`opening` in `plans`.
 
 **Summary view = the lifecycle summary.** The Summary view draws no transcript. It fills the
 transcript area with one page set per stage on the chat's route (`phase_timeline`), paged with the
@@ -197,8 +200,7 @@ same `<` / `>` and "k/N" label (`lifecycle_of`, `lifecycle_pages`, `draw_lifecyc
   the owner left it.
 
 `gse_panel_query` Agent's `plans` reports, for every chat, `pages` (each `stage:kind`), `page`
-(`k/N stage:kind`), `scope_steps`, `progress` (reported/unreported), and `gate_page` when a
-scope gate is held. Its `progress` section lists, for every chat with step reports or apply
+(`k/N stage:kind`), `scope_steps` and `progress` (reported/unreported). Its `progress` section lists, for every chat with step reports or apply
 edits, each step's `state`, `edits` and attributed `files`, plus an `unattributed` item.
 
 The old digest (Summary filter `row_filter::digest`) is deleted. Every row it showed is a
@@ -265,7 +267,7 @@ whose `note_style::text` is non-empty, drawn in `note_style::color`. Priority is
 
 **Kind flavour.** Kind changes only the icon and its colour (`kind_style`) in the tab strip and
 the overview, apart from two exceptions:
-- sync replaces the status row's route with its own header (`draw_sync_header`: "Syncing <root> · <branch>" and **Cancel**), and shows the status row only while busy;
+- sync replaces the status row's route with its own header (`draw_sync_header`: "Syncing <root> · <branch>" while busy, "Sync …" after; a history chevron; **Cancel** only while busy; **Close** always), and shows the status row only while busy. The open sync chat fills the Source Control panel until Close; the git view returns after it. Closed sync chats are kept (newest 20, `max_sync_history`) and listed in the history dropdown, reachable from the open chat's header or, with none open, from a "Past sync chats" strip above the git view. A follow-up typed in a sync chat relaunches it without starting a task route. The sync report is now read in the chat; the git panel banners only a sync that could not start;
 - crash is unattended, which shows up only as R6.
 - build_error has its own Summary page, `apply:errors`, placed first at the apply station, ahead of
   apply's changes page. `fix_unclaimed` archives the unclaimed errors and the chats that denied them
@@ -305,8 +307,9 @@ Read from source as of this change. Where a row says "transcript row", the event
 | build red, errors unclaimed | inquiry forks; status note "build red · N error(s) nobody claims" on every chat in that tree; popover "unclaimed" row |
 | phase reported (`gate`) | transcript row "<phase> reported done/N finding(s)"; note on the status row if gated |
 | scope approved | the gate block leaves; the Summary view's scoping pages stay, read from the scope run, without Revise/Approve |
-| gate needing the owner, scope with `steps` | the scope plan block grows in, with **Revise** and the `gate_label` button; the input's approve button is not drawn; note, state and tab as below |
-| owner follows up while the scope gate is held | the split opens: a follow-up column slides in from the right (the stored `plan_followup` split, default 38% of the width, eased by `animated_rect`, snapping to the cursor while its divider is dragged) holding the conversation from the row where the gate was first raised; the plan narrows to the rest. In Transcript mode the gate block also grows to `plan_split_share` of the body. Query: `plans[].split on` |
+| gate needing the owner, scope with `steps` | in Summary, the scope plan page carries **Revise** and the `gate_label` button and the input's approve button is not drawn; in Transcript/Everything the transcript stays full height and the input row's approve button is drawn; note, state and tab as below |
+| gate raised after a send that switched to Transcript | `entry_mode` ends the send's Transcript switch at once: the body returns to Summary and lands on the gated scope page (`arriving` re-armed), without waiting for the next tab entry |
+| owner follows up while the scope gate is held | the split opens: a follow-up column slides in from the right (the stored `plan_followup` split, default 38% of the width, eased by `animated_rect`, snapping to the cursor while its divider is dragged) holding the conversation from the row where the gate was first raised; the plan narrows to the rest. Summary view only; Transcript shows the same conversation inline. Query: `plans[].split on` |
 | scope re-reports while its gate is held | the plan updates in place and the split stays open; `first_row` is kept so the column keeps the whole follow-up exchange |
 | scope gate released (approve or the phase moving on) | the split closes: the column eases back to zero width and the plan widens |
 | gate needing the owner | **Start applying / Continue goal / Approve goal** button (`gate_label`) in place of stop; note "reported done" or "reported N finding(s)"; state awaiting_approval; tab dirty. Model and effort stay, since they apply at the next launch. |
@@ -335,9 +338,12 @@ Read from source as of this change. Where a row says "transcript row", the event
 | process exit (failure) | state failed, "stopped"; note carries `info.failure`; tab error and dimmed |
 | launch failure | transcript failure row "failed to launch 'claude' – is it on PATH?" |
 | `restart_task` from settled | route current returns to scope |
+| follow-up to a settled chat | the owner's message starts the next cycle in the same chat. The fresh scope session gets the previous cycle's final summarize report as a preamble, and only that (no transcript). The transcript row shows only the owner's text, after a "follow-up · cycle N" phase row. Summary gains the `<<`/`>>` cycle pager (`cycle k of N`, no goal page at 0), each cycle's pages built from its own runs. The query's `plans` gains `cycles`/`cycle`, and `cycles` lists every multi-cycle chat |
 | sync start | sync chat with its header and Cancel |
-| sync finish | sync report delivered; chat leaves |
+| sync finish | transcript row "sync reported done" with the report; chat stays open, input live for follow-ups |
 | sync cancelled | transcript note "cancelled from the panel" |
+| sync closed | panel returns to the git view under the "Past sync chats" strip |
+| sync reopened from history | chosen chat fills the panel again |
 | crash chat opened | crash icon tab; scope does not gate (R6) |
 | build-error chat opened | hammer icon tab; the Summary view gains the `apply:errors` page with the raw-error strip and "no diagnosis yet" |
 | diagnosis reported | a build_error chat's apply `gse_phase_done` carries `diagnosis`; it is stored in `build_fix::diagnosis` and drawn as markdown under the strip, and the head turns to "diagnosed". Any other chat or phase sending it is refused, naming the field. Query: `errors[].diagnosis on` |
@@ -350,6 +356,11 @@ Read from source as of this change. Where a row says "transcript row", the event
 | step reported by `gse_step` | the apply page re-marks the step (begun → current, and any other current step returns to remaining; done → done); activity verb "ticking off a step" |
 | apply run ended with steps unmarked | the apply page shows the run as ended: unmarked and current steps become `[-]` not reported (muted), the head reads "ended · k/N marked" |
 | first summary presented | the first Summary page with content appears (a scope gate's summary or steps, an apply/review/summarize/steer screen, build-error records); the view-mode button grows in through `presence` and the body switches from Transcript to the Summary page, which fades in. Query: `summary ready`, `view summary`, `toggle shown` |
+| follow-up starts cycle 2 of a settled chat | the chat stays in Summary: readiness counts any cycle with content, not only the newest, so the toggle stays shown and the body opens on the new cycle's scope page, which shows the live transcript since the cycle began until scope reports, with `<<` reaching earlier cycles. Query: `summary ready`, `toggle shown`, `plans[].scope transcript` |
+| newest cycle begun (goal or follow-up), scope not yet reported | the newest cycle's scope page reads "scope · live transcript since this cycle began" and shows the transcript from that cycle's first row (`lifecycle::live_from`, the cycle's first `phase_run::first_row`), drawn through its own `live_scope` view (separate from the split's follow-up column, so the two never reset each other); earlier rows are not shown. When scope reports, the page becomes the plan. Past cycles never show it, and neither does a chat's first cycle, which shows the plain transcript until its first summary. Query: `plans[].scope transcript\|plan`, `plans[].from <row>` |
+| new goal scoped on a chat whose last goal was met | still a goal chat (`goal_chat`: a goal shown, any steer run in history, or a gate/pending transition carrying a goal record), so Summary and its toggle stay; the goal page at cycle 0 reads "goal · the next goal is still being scoped" until the new goal is approved, and the newest cycle's scope page shows the live transcript. Query: `goal_chat 1`, `summary ready`, `plans[].scope transcript` |
+| owner sends a message | the Summary pager jumps to the newest cycle and its current-phase page (`current_page`, the opening-page rule without the since anchor). Past scope (apply, review, revise, summarize, steer; `chrome_plan.transcript_on_send`), the body also switches to Transcript; the next tab entry restores Summary. A Transcript view picked by hand is kept. Scope, settled follow-ups and sync chats only jump. Query: `view transcript` and `plans[].cycle` = `cycles` after the send, `view summary` after a tab switch |
+| goal chat scopes its next cycle | same as a settled chat's follow-up: Summary and toggle stay, the opening page is the newest cycle's scope page with the live transcript until scope reports. Query: `goal_chat 1`, `plans[].opening cycle N page 1/… scope:…` |
 | file edit during apply | recorded against the current step (or unattributed) and counted on the apply page, its diff appearing live on the right |
 
 ## Gallery cells beyond the enumeration
@@ -386,7 +397,8 @@ After one row per reachable cell, `chrome_gallery` draws:
   record found.
 
 - view cells: a fresh chat with no summary (Transcript, toggle hidden) and the same chat once its
-  first summary is presented (Summary, toggle shown); each name is derived from the plan's
+  first summary is presented (Summary, toggle shown), and a settled chat whose follow-up cycle 2
+  has just started in scope (Summary, toggle shown); each name is derived from the plan's
   `summary_ready` and `toggle_shown`.
 
 - cycle cells: a past cycle's `steer:verdict` page and its scope page, both at "cycle 2 of 4", and
@@ -499,6 +511,16 @@ its Summary is placed by `opening_page(session, since_digest)`. The first rule t
 The owner wait beats the unseen anchor because an owner-gated chat makes no progress until the
 owner acts. The digest banner and " · new" marks still show what is unseen. Within a visit the
 owner's paging is left alone, so a phase change mid-visit does not move the page.
+
+**Mode on entry** (`entry_mode`, applied by `note_visits`). The page rule above places the pager;
+the mode decides whether the pager is seen. Entering a chat whose plan action is approve (a held
+gate, `summary_ready`) sets Summary, even if Transcript was chosen on an earlier visit. Entering
+any chat after a send that switched to Transcript also sets Summary, as before. The one mid-visit
+exception: while a send's Transcript switch is still on, a gate appearing ends it immediately and
+re-arms `arriving`, so the gated page opens. A Transcript the owner picks by hand during the
+visit is never overridden. Nothing is lost by the forced mode: the plan, its steps and
+Revise/Approve are on the Summary scope pages, the toggle returns to Transcript, and approve is in
+the input row there.
 
 ## Wait line
 

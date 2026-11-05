@@ -146,6 +146,29 @@ export namespace sandbox {
 	) -> mountain_ring_archetype;
 }
 
+namespace sandbox {
+	auto position_tint(
+		const gse::vec3<gse::position>& position
+	) -> gse::vec3f;
+}
+
+auto sandbox::position_tint(const gse::vec3<gse::position>& position) -> gse::vec3f {
+	std::uint64_t state = 0x9e3779b97f4a7c15ull;
+	for (const float component : { position.x().as<gse::meters>(), position.y().as<gse::meters>(), position.z().as<gse::meters>() }) {
+		state = (state ^ std::bit_cast<std::uint32_t>(component)) * 0xbf58476d1ce4e5b9ull;
+		state ^= state >> 31;
+	}
+	const auto channel = [&state] -> float {
+		state = (state ^ (state >> 30)) * 0x94d049bb133111ebull;
+		state ^= state >> 27;
+		return 0.3f + 0.7f * static_cast<float>(state >> 40) / static_cast<float>(1ull << 24);
+	};
+	const float r = channel();
+	const float g = channel();
+	const float b = channel();
+	return gse::vec3f(r, g, b);
+}
+
 auto sandbox::box(const gse::vec3<gse::position>& position, const gse::vec3<gse::length>& size, const gse::mass m, const gse::quat& orientation, const float roughness, const float metallic) -> box_archetype {
 	return {
 		.transform = {
@@ -164,11 +187,7 @@ auto sandbox::box(const gse::vec3<gse::position>& position, const gse::vec3<gse:
 		},
 		.spec = {
 			.material = {
-				.base_color = gse::vec3f(
-					gse::random_value(0.3f, 1.0f),
-					gse::random_value(0.3f, 1.0f),
-					gse::random_value(0.3f, 1.0f)
-				),
+				.base_color = position_tint(position),
 				.roughness = roughness,
 				.metallic = metallic,
 			},

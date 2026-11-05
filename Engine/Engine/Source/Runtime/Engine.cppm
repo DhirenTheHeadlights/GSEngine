@@ -77,13 +77,13 @@ export namespace gse {
 		bool load_settings = true;
 		bool persist_settings = true;
 		bool author_baked_assets = true;
+		bool bake_assets = false;
 		bool dump_settings = false;
 		bool trace = true;
 		bool restart_on_device_lost = false;
-		bool restarted_after_device_lost = false;
 		bool simulate_device_lost = false;
 		bool restart_on_crash = false;
-		bool restarted_after_crash = false;
+		int restart_streak = 0;
 		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
@@ -158,6 +158,8 @@ export namespace gse {
 		auto shutdown() -> void;
 
 		auto make_channel_writer() -> channel_writer;
+
+		auto flip_channels() -> void;
 
 		auto registry() -> registry&;
 
@@ -246,11 +248,16 @@ export namespace gse {
 		std::uint32_t m_attached_frames_presented = 0;
 		std::uint32_t m_attached_frames_skipped = 0;
 		interval_timer<> m_attached_report{ seconds(2.f) };
+		time m_attached_wait{};
 		std::uint32_t m_attached_revision = 0;
 		vec2u m_attached_requested_extent{ 0, 0 };
 		bool m_attached_surface_ready = false;
 		bool m_attached_surface_attempted = false;
 	};
+}
+
+namespace gse {
+	auto bake_game_assets() -> int;
 }
 
 template <typename T>

@@ -291,6 +291,11 @@ export namespace gse::gpu {
 			swap_chain_handle old_handle
 		) -> expected<swap_chain_info>;
 
+		[[nodiscard]] auto resize_swapchain_in_place(
+			swap_chain_handle swapchain,
+			vec2i framebuffer_size
+		) -> bool;
+
 		[[nodiscard]] auto boot_surface() const -> surface;
 
 		[[nodiscard]] auto recreate_surface(
@@ -429,6 +434,8 @@ export namespace gse::gpu {
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]] auto max_push_data_size() const -> std::uint32_t;
+
+		[[nodiscard]] auto capabilities() const -> backend_capabilities;
 
 		auto collect_garbage() -> void;
 
@@ -699,6 +706,10 @@ auto gse::gpu::dx12_device_backend::create_swapchain(surface, const vec2i frameb
 	return swapchain.create(framebuffer_size, mode, old_handle);
 }
 
+auto gse::gpu::dx12_device_backend::resize_swapchain_in_place(swap_chain_handle, const vec2i framebuffer_size) -> bool {
+	return swapchain.resize_in_place(framebuffer_size);
+}
+
 auto gse::gpu::dx12_device_backend::boot_surface() const -> surface {
 	return {};
 }
@@ -837,6 +848,18 @@ auto gse::gpu::dx12_device_backend::bindless_sampler_heap_binding() const -> bin
 
 auto gse::gpu::dx12_device_backend::max_push_data_size() const -> std::uint32_t {
 	return dx12::bindless_root_constant_count * 4;
+}
+
+auto gse::gpu::dx12_device_backend::capabilities() const -> backend_capabilities {
+	return {
+		.ray_queries = true,
+		.shader_target = true,
+		.mesh_shaders = device->mesh_shaders_supported(),
+		.bindless_texture_table = true,
+		.shader_int64 = true,
+		.untyped_atomics = true,
+		.shared_surface_export = true,
+	};
 }
 
 auto gse::gpu::dx12_device_backend::collect_garbage() -> void {

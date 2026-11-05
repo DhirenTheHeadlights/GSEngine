@@ -8,10 +8,23 @@ on:
     branches: [main, dev]
   pull_request:
   workflow_dispatch:
+  # build-gcc-trunk.yml calls this as the gate a candidate toolchain must pass before it is
+  # published, so the gate is this suite rather than a copy of it.
+  workflow_call:
+    inputs:
+      toolchain:
+        description: Tag the candidate toolchain will be published under
+        required: true
+        type: string
+      toolchain-artifact:
+        description: Name of the workflow artifact holding the candidate toolchain zip
+        required: true
+        type: string
 
-# A cold run is long enough that superseded commits must not keep burning a runner.
+# A cold run is long enough that superseded commits must not keep burning a runner. A gate
+# run is keyed apart so that it and a push to the same ref never cancel each other.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.toolchain }}
   cancel-in-progress: true
 
 jobs:
@@ -27,9 +40,18 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Download the candidate toolchain
+        if: inputs.toolchain-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.toolchain-artifact }}
+          path: ${{ runner.temp }}/candidate
+
       - uses: ./.github/actions/gse-build-setup
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: ${{ inputs.toolchain }}
+          toolchain-archive: ${{ inputs.toolchain-artifact != '' && format('{0}/candidate/gcc-trunk-windows-x64.zip', runner.temp) || '' }}
 
       # Sandbox is the only target that sweeps ^^gse::tests and the only one the editor's
       # build row produces, so it is what the suite runs out of. Not the Editor: it is the

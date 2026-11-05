@@ -54,6 +54,23 @@ bool restitution_gate(uint ci) {
     return true;
 }
 
+uint restitution_owner(uint ci) {
+    uint body_a = contact_data[ci].body_a;
+    return body_data[body_a].locked == 0 ? body_a : contact_data[ci].body_b;
+}
+
+void apply_owned_restitution(uint bi) {
+    if (body_data[bi].locked != 0) return;
+    uint offset = contact_offsets[bi];
+    uint count = min(contact_counts[bi], max_contact_adjacency() - offset);
+    for (uint k = 0; k < count; k++) {
+        uint ci = contact_adjacency[offset + k];
+        if (restitution_gate(ci) && restitution_owner(ci) == bi) {
+            apply_one_restitution(ci);
+        }
+    }
+}
+
 uint restitution_ci_bits() { return firstbithigh(max_contacts() - 1) + 1; }
 uint restitution_ci_mask() { return (1u << restitution_ci_bits()) - 1; }
 uint restitution_local_island_bits() { return 30 - restitution_ci_bits(); }
@@ -100,7 +117,16 @@ void restitution_gather(uint ci, uint local_island) {
 bool restitution_greater(uint i, uint j) {
     uint64_t hi_i = restitution_keys_hi[i];
     uint64_t hi_j = restitution_keys_hi[j];
-    return hi_i > hi_j || (hi_i == hi_j && restitution_keys_lo[i] > restitution_keys_lo[j]);
+    if (hi_i != hi_j) return hi_i > hi_j;
+    uint lo_i = restitution_keys_lo[i];
+    uint lo_j = restitution_keys_lo[j];
+    uint rank_i = lo_i >> restitution_ci_bits();
+    uint rank_j = lo_j >> restitution_ci_bits();
+    if (rank_i != rank_j || lo_i == 0xFFFFFFFFu || lo_j == 0xFFFFFFFFu) return lo_i > lo_j;
+    uint64_t fk_i = contact_data[lo_i & restitution_ci_mask()].feature_key;
+    uint64_t fk_j = contact_data[lo_j & restitution_ci_mask()].feature_key;
+    if (fk_i != fk_j) return fk_i > fk_j;
+    return lo_i > lo_j;
 }
 
 void restitution_sort(uint tid, uint q) {
@@ -188,10 +214,8 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
         }
         if (q > restitution_capacity) {
             if (tid == 0) {
-                for (uint ci = 0; ci < num_contacts; ci++) {
-                    if (restitution_gate(ci)) {
-                        apply_one_restitution(ci);
-                    }
+                for (uint bi = 0; bi < pc.body_count; bi++) {
+                    apply_owned_restitution(bi);
                 }
             }
             return;
@@ -214,15 +238,10 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
     }
 
     if (q > restitution_capacity) {
-        if (tid == 0) {
-            for (uint ci = 0; ci < num_contacts; ci++) {
-                if (!restitution_gate(ci)) {
-                    continue;
-                }
-                uint island = restitution_island(ci);
-                if (island >= island_begin && island < island_end) {
-                    apply_one_restitution(ci);
-                }
+        uint own_island = island_begin + tid;
+        for (uint bi = 0; bi < pc.body_count; bi++) {
+            if (body_env_data[bi] == own_island) {
+                apply_owned_restitution(bi);
             }
         }
         return;

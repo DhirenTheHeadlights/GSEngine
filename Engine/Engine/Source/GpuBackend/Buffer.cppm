@@ -30,11 +30,14 @@ export namespace gse::gpu {
 		buffer_usage usage = buffer_flag::storage;
 		const void* data = nullptr;
 		const void* pnext = nullptr;
-		bool bindless = false;
 		bool writable = false;
 		bool readback = false;
 		bool device_local = false;
 	};
+
+	[[nodiscard]] auto takes_slot(
+		const buffer_desc& desc
+	) -> bool;
 
 	struct buffer_copy_region {
 		device_size src_offset = 0;
@@ -107,6 +110,10 @@ export namespace gse::gpu {
 		bindless_slot m_slot;
 		mutable std::atomic<bool> m_host_dirty{ false };
 	};
+}
+
+auto gse::gpu::takes_slot(const buffer_desc& desc) -> bool {
+	return desc.usage.test(buffer_flag::storage) && !desc.readback;
 }
 
 gse::gpu::buffer::buffer(const gpu::handle<buffer> buffer, const device_size size, const gpu::device_address address, std::byte* mapped, const bindless_slot slot)

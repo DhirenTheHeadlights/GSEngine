@@ -1,5 +1,4 @@
 {
-  "scenario": "@GSE_WASM_SCENARIO@",
   "module": "@GSE_WASM_RUN_MODULE@",
   "root": "@GSE_WASM_RUN_ROOT@",
   "initial_pages": @GSE_WASM_INITIAL_PAGES@,

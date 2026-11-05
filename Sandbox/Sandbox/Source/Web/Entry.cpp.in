@@ -6,11 +6,8 @@ extern "C" auto entry() -> int {
 	constexpr int arg_limit = 64;
 	static std::array<char*, arg_limit> args = {
 		const_cast<char*>("sandbox"),
-		const_cast<char*>("--no-engine-gpu"),
-		const_cast<char*>("--engine-bench-scenario"),
-		const_cast<char*>("@GSE_WASM_SCENARIO@"),
 	};
-	int argc = 4;
+	int argc = 1;
 
 	static std::array<char, 4096> extra{};
 	if (const char* from_env = std::getenv("GSE_RUN_ARGS"); from_env != nullptr) {

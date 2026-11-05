@@ -3,15 +3,10 @@ export module sandbox:dev_spawn_system;
 import std;
 import gse;
 
-import :character_controller;
 import :characters;
 import :lights;
-import :orbit_camera;
-import :piston;
-import :sidearm;
 import :spawn_params;
 import :stacks;
-import :tumbler;
 import :workloads;
 
 export namespace sandbox {
@@ -99,65 +94,14 @@ export namespace sandbox::dev_spawn {
 		gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
-		gse::shared_view<gse::asset::data> assets_d,
-		gse::entities ents,
-		gse::structural<gse::physics::transform_component>,
-		gse::structural<gse::physics::motion_component>,
-		gse::structural<gse::physics::collision_component>,
-		gse::structural<gse::primitive_box_spec>,
-		gse::structural<gse::primitive_sphere_spec>,
-		gse::structural<gse::point_light_component>,
-		gse::structural<gse::physics::joint_spec>,
-		gse::structural<gse::physics::muscle_component>,
-		gse::structural<gse::physics::joint_drive_component>,
-		gse::structural<tumbler::component>,
-		gse::structural<piston::component>,
-		gse::structural<gse::physics::kinematic_target_component>,
-		gse::structural<gse::physics::motor_component>,
-		gse::structural<character_controller::component>,
-		gse::structural<orbit_camera::component>,
-		gse::structural<sidearm::component>,
-		gse::structural<gse::skeleton_instance_component>,
-		gse::structural<gse::clip_player_component>
+		gse::shared_view<gse::asset::data> assets_d
 	) -> gse::async::task<>;
 }
 
-auto sandbox::dev_spawn::run(
-	gse::context& ctx,
-	data& state,
-	const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
-	const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
-	const gse::channel_write<gse::physics::impulse_request> impulse_out,
-	const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
-	const gse::shared_view<gse::actions::data> actions_d,
-	const gse::shared_view<gse::world_system::data> world_d,
-	const gse::shared_view<gse::asset::data> assets_d,
-	gse::entities,
-	gse::structural<gse::physics::transform_component>,
-	gse::structural<gse::physics::motion_component>,
-	gse::structural<gse::physics::collision_component>,
-	gse::structural<gse::primitive_box_spec>,
-	gse::structural<gse::primitive_sphere_spec>,
-	gse::structural<gse::point_light_component>,
-	gse::structural<gse::physics::joint_spec>,
-	gse::structural<gse::physics::muscle_component>,
-	gse::structural<gse::physics::joint_drive_component>,
-	gse::structural<tumbler::component>,
-	gse::structural<piston::component>,
-	gse::structural<gse::physics::kinematic_target_component>,
-	gse::structural<gse::physics::motor_component>,
-	gse::structural<character_controller::component>,
-	gse::structural<orbit_camera::component>,
-	gse::structural<sidearm::component>,
-	gse::structural<gse::skeleton_instance_component>,
-	gse::structural<gse::clip_player_component>
-) -> gse::async::task<> {
+auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = world_d.active_scene_ptr;
-	std::optional<gse::scene::mutation_scope> scope;
-	if (scene != nullptr) {
-		scope.emplace(*scene, ctx);
-	}
+	const gse::scene::mutation_scope _(ctx);
 
 	const bool key_stress = gse::actions::pressed(state.spawn_stress, cs, actions_d);
 	const bool key_joints = gse::actions::pressed(state.spawn_joints, cs, actions_d);

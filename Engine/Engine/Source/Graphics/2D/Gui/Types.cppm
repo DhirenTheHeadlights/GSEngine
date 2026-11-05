@@ -339,7 +339,7 @@ export namespace gse::gui {
 		std::unordered_map<std::uint64_t, scroll_state>& widget_scrolls;
 		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>>& widget_tree_open;
 		mutable render_layer current_layer = render_layer::content;
-		std::uint32_t current_z_order = 0;
+		mutable std::uint32_t current_z_order = 0;
 		render_layer input_layer = render_layer::content;
 		bool input_suppressed = false;
 		bool owns_keyboard = true;
@@ -349,9 +349,10 @@ export namespace gse::gui {
 		std::optional<text_edit_request>* pending_text_edit = nullptr;
 		image_paste_state& image_paste;
 		std::vector<rectf> clip_stack;
+		rectf frame_rect;
 	};
 
-	struct draw_context : draw_context_init, non_copyable, non_movable {
+	struct draw_context :draw_context_init, non_copyable, non_movable {
 		~draw_context() = default;
 
 		auto queue_sprite(
@@ -423,6 +424,10 @@ export namespace gse::gui {
 		[[nodiscard]]
 		auto mouse_released(
 			mouse_button button = mouse_button::button_1
+		) const -> bool;
+
+		[[nodiscard]]
+		auto within_click_slop(
 		) const -> bool;
 
 		[[nodiscard]]
@@ -528,6 +533,11 @@ export namespace gse::gui {
 			render_layer layer
 		) const -> layer_scope;
 
+		[[nodiscard]] auto scoped_layer(
+			render_layer layer,
+			std::uint32_t z_order
+		) const -> layer_scope;
+
 	protected:
 		draw_context(
 			draw_context_init init,
@@ -547,6 +557,12 @@ export namespace gse::gui {
 		) noexcept;
 
 		layer_scope(
+			const draw_context& ctx,
+			render_layer layer,
+			std::uint32_t z_order
+		) noexcept;
+
+		layer_scope(
 			layer_scope&& other
 		) noexcept;
 
@@ -559,6 +575,7 @@ export namespace gse::gui {
 	private:
 		const draw_context* m_ctx = nullptr;
 		render_layer m_saved = render_layer::content;
+		std::uint32_t m_saved_z = 0;
 		bool m_active = false;
 	};
 

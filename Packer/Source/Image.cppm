@@ -333,6 +333,13 @@ auto packer::stage_image(const image_plan& plan, transcript& out) -> std::expect
 
 auto packer::stage_runtime(const image_plan& plan, transcript& out) -> std::expected<void, std::string> {
 	std::error_code ec;
+	if (const std::filesystem::path baked = plan.build_dir / "Engine" / "Resources"; !std::filesystem::exists(baked, ec)) {
+		return std::unexpected(std::format(
+			"no baked asset tree at {}; the engine writes it at runtime, so run {} --engine-bake-assets first",
+			baked.generic_display_string(),
+			plan.game_executable.generic_display_string()
+		));
+	}
 	const std::filesystem::path bin_source = plan.game_executable.parent_path();
 	const std::array<tree_copy, 3> trees = {{
 		{

@@ -19,14 +19,16 @@ namespace gse::ide::terminal {
 	constexpr std::string_view profile_label_server = "Dedicated server";
 	constexpr std::string_view profile_label_attached = "Attached to the editor";
 	constexpr std::string_view profile_label_port = "Server port";
+	constexpr std::string_view profile_label_browser = "Run in browser";
 
-	constexpr std::array<std::string_view, 6> profile_field_labels = {
+	constexpr std::array<std::string_view, 7> profile_field_labels = {
 		profile_label_name,
 		profile_label_config,
 		profile_label_clients,
 		profile_label_server,
 		profile_label_attached,
 		profile_label_port,
+		profile_label_browser,
 	};
 
 	auto level_color(
@@ -996,7 +998,9 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 	d.editing_index = std::min(d.editing_index, d.profiles.size() - 1);
 	build_runner::build_profile& edited = d.profiles[d.editing_index];
 
-	const std::size_t form_rows = edited.session.dedicated_server ? 8 : 7;
+	const build_runner::build_config* edited_config = build_runner::build_config_for(edited.config);
+	const bool web = edited_config != nullptr && edited_config->web;
+	const std::size_t form_rows = 6 + (edited.session.dedicated_server ? 2 : 0) + (web ? 1 : 0);
 	const std::size_t rows = d.profiles.size() + form_rows;
 	const float height = metrics.advance * static_cast<float>(rows) + pad;
 
@@ -1015,27 +1019,45 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 	const auto _ = ctx.scoped_layer(render_layer::modal);
 	ctx.register_hit_region(render_layer::modal, body);
 
-	ctx.queue_sprite({
-		.rect = body.inset({ -1.f, -1.f }),
-		.color = ctx.style.color_border,
-		.texture = ctx.blank_texture,
-	});
-	ctx.queue_sprite({
-		.rect = body,
-		.color = ctx.style.panel_alt.fill,
-		.texture = ctx.blank_texture,
-	});
+	const gui::style& sty = ctx.style;
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size(
+			{ body.left() + sty.modal_shadow_offset, body.top() - sty.modal_shadow_offset },
+			{ body.width(), body.height() }
+		),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, body, {
+		.fill = sty.modal.panel.fill,
+		.stroke = sty.color_border,
+		.stroke_width = sty.separator_thickness,
+		.radii = sty.modal.panel.radii,
+	}, {});
+
+	const auto separator_below = [&](const rectf& row_rect) {
+		ctx.queue_sprite({
+			.rect = rectf::from_position_size(
+				{ body.left() + pad, row_rect.bottom() - pad * 0.5f + sty.separator_thickness * 0.5f },
+				{ body.width() - pad * 2.f, sty.separator_thickness }
+			),
+			.color = sty.color_border,
+			.texture = ctx.blank_texture,
+		});
+	};
 
 	std::size_t row = 0;
 	const rectf title_row = profile_editor_row(body, metrics, row++);
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = "Build Profiles",
-		.position = { title_row.left(), title_row.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text_secondary,
+		.position = { title_row.left(), title_row.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.modal.title_color,
 		.clip_rect = title_row,
 	});
+	separator_below(title_row);
 
 	const rectf close_btn = rectf::from_position_size(
 		{ title_row.right() - metrics.row_h, title_row.top() },
@@ -1081,6 +1103,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 	}
 
 	const rectf actions = profile_editor_row(body, metrics, row++);
+	separator_below(actions);
 	const std::array<rectf, 3> action_cells = gui::layout::split_horizontal<3>(actions, {
 		gui::layout::size_spec::flex(1.f),
 		gui::layout::size_spec::flex(1.f),
@@ -1113,6 +1136,11 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 		d.profile_name_state = {};
 		changed = true;
 	}
+	if (changed) {
+		d.profile_name_draft = d.profiles.back().name;
+		d.profile_name_state.caret = static_cast<int>(d.profile_name_draft.size());
+		ui.focus_widget_id = gui::ids::make("terminal.profile.name");
+	}
 	if (ui.draw<gui::button>({
 		.text = "Delete",
 		.rect = action_cells[2],
@@ -1139,22 +1167,76 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 		return;
 	}
 
-	const std::string previous_name = edited.name;
+	const id name_id = gui::ids::make("terminal.profile.name");
+	if (ui.focus_widget_id != name_id) {
+		d.profile_name_draft = edited.name;
+	}
 	ui.draw<gui::text_input>({
-		.name = "terminal.profile.name",
-		.buffer = edited.name,
+		.buffer = d.profile_name_draft,
 		.state = d.profile_name_state,
 		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_name),
+		.widget_id = name_id,
 	});
-	if (edited.name != previous_name) {
-		const build_runner::build_profile* clash = build_runner::profile_for(d.profiles, edited.name);
-		if (edited.name.empty() || (clash != nullptr && clash != &edited)) {
-			edited.name = previous_name;
-		}
-		else {
-			if (previous_name == d.active_profile) {
-				d.active_profile = edited.name;
+	if (d.profile_name_draft != edited.name) {
+		const build_runner::build_profile* clash = build_runner::profile_for(d.profiles, d.profile_name_draft);
+		if (!d.profile_name_draft.empty() && clash == nullptr) {
+			if (edited.name == d.active_profile) {
+				d.active_profile = d.profile_name_draft;
 			}
+			edited.name = d.profile_name_draft;
+			changed = true;
+		}
+	}
+
+	const rectf config_rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_config);
+	const bool config_open = d.config_dropdown.open_dropdown_id.exists();
+
+	const auto draw_toggle = [&](const std::string_view label, bool& value) {
+		bool shown = value;
+		if (ui.draw<gui::toggle>({
+			.name = label,
+			.value = shown,
+			.rect = profile_editor_row(body, metrics, row++),
+		})) {
+			value = shown;
+			changed = true;
+		}
+	};
+	draw_toggle(profile_label_server, edited.session.dedicated_server);
+	if (edited.session.dedicated_server) {
+		int clients = edited.session.clients;
+		const std::string clients_label = std::to_string(clients);
+		ui.draw<gui::slider<int>>({
+			.name = "terminal.profile.clients",
+			.value = clients,
+			.min = 1,
+			.max = build_runner::max_profile_clients,
+			.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_clients),
+			.value_label = clients_label,
+		});
+		if (clients != edited.session.clients) {
+			edited.session.clients = static_cast<std::uint8_t>(clients);
+			changed = true;
+		}
+	}
+	draw_toggle(profile_label_attached, edited.session.attached);
+	if (web) {
+		draw_toggle(profile_label_browser, edited.session.browser);
+	}
+
+	if (edited.session.dedicated_server) {
+		int port = edited.session.base_port;
+		const std::string port_label = std::to_string(port);
+		ui.draw<gui::slider<int>>({
+			.name = "terminal.profile.port",
+			.value = port,
+			.min = 1024,
+			.max = 65535,
+			.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_port),
+			.value_label = port_label,
+		});
+		if (port != edited.session.base_port) {
+			edited.session.base_port = static_cast<std::uint16_t>(port);
 			changed = true;
 		}
 	}
@@ -1165,56 +1247,12 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 		.current_index = config_index,
 		.options = d.config_options,
 		.state = d.config_dropdown,
-		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_config),
+		.rect = config_rect,
+		.config = { .max_visible_items = d.config_options.size() },
 	});
 	if (config_picked.changed) {
 		edited.config = config_for_option(config_picked.new_index);
 		changed = true;
-	}
-
-	int clients = edited.session.clients;
-	const int previous_clients = clients;
-	const std::string clients_label = std::to_string(clients);
-	ui.draw<gui::slider<int>>({
-		.name = "terminal.profile.clients",
-		.value = clients,
-		.min = 1,
-		.max = build_runner::max_profile_clients,
-		.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_clients),
-		.value_label = clients_label,
-	});
-	if (clients != previous_clients) {
-		edited.session.clients = static_cast<std::uint8_t>(clients);
-		changed = true;
-	}
-
-	changed |= ui.draw<gui::toggle>({
-		.name = profile_label_server,
-		.value = edited.session.dedicated_server,
-		.rect = profile_editor_row(body, metrics, row++),
-	});
-	changed |= ui.draw<gui::toggle>({
-		.name = profile_label_attached,
-		.value = edited.session.attached,
-		.rect = profile_editor_row(body, metrics, row++),
-	});
-
-	if (edited.session.dedicated_server) {
-		int port = edited.session.base_port;
-		const int previous_port = port;
-		const std::string port_label = std::to_string(port);
-		ui.draw<gui::slider<int>>({
-			.name = "terminal.profile.port",
-			.value = port,
-			.min = 1024,
-			.max = 65535,
-			.rect = profile_editor_field(ctx, profile_editor_row(body, metrics, row++), profile_label_port),
-			.value_label = port_label,
-		});
-		if (port != previous_port) {
-			edited.session.base_port = static_cast<std::uint16_t>(port);
-			changed = true;
-		}
 	}
 
 	if (changed) {
@@ -1228,7 +1266,7 @@ auto gse::ide::terminal::draw_profile_editor(gui::builder& ui, data& d, const re
 	if (gui::interaction::dismissed_by_outside_press(ctx, {
 		.body = body,
 		.keep_open = keep_open,
-		.suppressed = d.config_dropdown.open_dropdown_id.exists(),
+		.suppressed = config_open,
 	})) {
 		d.editing_profiles = false;
 	}

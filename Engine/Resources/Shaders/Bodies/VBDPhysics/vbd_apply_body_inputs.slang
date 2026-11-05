@@ -10,6 +10,15 @@ void vbd_apply_body_inputs(uint3 dispatch_id) {
     }
 
     body_state input = body_input_data[bi];
+    if (pc.apply_all_body_inputs == 0 && input.locked == 0 && input.reset_pending == 3) {
+        body_data[bi].orientation = input.orientation;
+        body_data[bi].predicted_orientation = input.orientation;
+        body_data[bi].old_orientation = input.orientation;
+        body_data[bi].angular_inertia_target = input.orientation;
+        body_data[bi].inv_inertia = input.inv_inertia;
+        body_data[bi].reset_pending = 3;
+        return;
+    }
     if (pc.apply_all_body_inputs != 0 || input.locked != 0 || input.reset_pending != 0) {
         if ((pc.warm_start_bits & warm_start_preserve_accel_weight_bit) != 0) {
             input.accel_weight = body_data[bi].accel_weight;

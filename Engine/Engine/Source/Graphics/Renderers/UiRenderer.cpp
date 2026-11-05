@@ -80,7 +80,18 @@ namespace gse::renderer::ui {
 		using element = vertex;
 	};
 
+	struct [[= shaders::texture2d]] ui_texture {
+		using element = vec4f;
+	};
+
+	struct [[= shaders::texture2d]] ui_snapshot {
+		using element = vec4f;
+	};
+
+	struct [[= shaders::sampler_state]] ui_texture_sampler {};
+
 	using shader_binding_types = type_pack<vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
+	using bound_binding_types = type_pack<vertex_buffer, ui_texture, ui_snapshot, ui_texture_sampler>;
 
 	using shader_types = type_pack<vertex>;
 
@@ -91,10 +102,12 @@ namespace gse::renderer::ui {
 		vec2f inv_screen_size;
 	};
 
-	using sprite_entry = gpu::graphics_entry<
+	template <typename Bindings, fixed_string Texture>
+	using sprite_entry_for = gpu::graphics_entry<
 		gpu::body_path<"Graphics/sprite">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<Bindings>,
+		gpu::helpers<Texture>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<sprite_push_constants>,
@@ -115,10 +128,12 @@ namespace gse::renderer::ui {
 		float shadow_strength;
 	};
 
-	using msdf_entry = gpu::graphics_entry<
+	template <typename Bindings, fixed_string Texture>
+	using msdf_entry_for = gpu::graphics_entry<
 		gpu::body_path<"Graphics/msdf">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<Bindings>,
+		gpu::helpers<Texture>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<msdf_push_constants>,
@@ -127,6 +142,11 @@ namespace gse::renderer::ui {
 		gpu::blend<gpu::blend_preset::alpha>,
 		gpu::depth_target<gpu::depth_format::none>
 	>;
+
+	using sprite_entry = sprite_entry_for<shader_binding_types, "Ui/ui_texture_bindless">;
+	using msdf_entry = msdf_entry_for<shader_binding_types, "Ui/ui_texture_bindless">;
+	using sprite_bound_entry = sprite_entry_for<bound_binding_types, "Ui/ui_texture_bound">;
+	using msdf_bound_entry = msdf_entry_for<bound_binding_types, "Ui/ui_texture_bound">;
 }
 
 auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> std::size_t {
@@ -221,8 +241,13 @@ auto gse::renderer::ui::add_text_quads(linear_vector<vertex>& vertices, linear_v
 }
 
 auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
-	d.sprite_pipeline = gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
-	d.text_pipeline = gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
+	d.bound_textures = !gpu_s.device->capabilities().bindless_texture_table;
+	d.sprite_pipeline = d.bound_textures
+		? gpu::build_graphics_program(*gpu_s.device, sprite_bound_entry::pod)
+		: gpu::build_graphics_program(*gpu_s.device, sprite_entry::pod);
+	d.text_pipeline = d.bound_textures
+		? gpu::build_graphics_program(*gpu_s.device, msdf_bound_entry::pod)
+		: gpu::build_graphics_program(*gpu_s.device, msdf_entry::pod);
 
 	d.ui_sampler = gpu_s.device->register_sampler(
 		{
@@ -243,7 +268,6 @@ auto gse::renderer::ui::init(const shared_view<gpu::context::data> gpu_s, data& 
 				.size = vertex_buffer_size,
 				.stride = sizeof(vertex),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true,
 			}
 		);
 
@@ -586,54 +610,84 @@ auto gse::renderer::ui::frame(context& ctx, shared_view<gpu::context::data> gpu_
 			}
 
 			std::uint32_t tex_idx = 0;
-			bool has_texture = false;
+			gpu::bindless_slot bound_texture = {};
 			const auto texture_view = texture.valid() ? texture.resolve() : nullptr;
 			const auto font_view = font.valid() ? font.resolve() : nullptr;
 			if (type == command_type::sprite) {
 				if (image_slot.valid()) {
 					tex_idx = image_slot.index;
-					has_texture = true;
+					bound_texture = image_slot;
 				}
-				else if (texture_view && texture_view->bindless_slot().valid()) {
+				else if (texture_view && (d.bound_textures || texture_view->bindless_slot().valid())) {
 					tex_idx = texture_view->bindless_slot().index;
-					has_texture = true;
+					bound_texture = texture_view->gpu_image().sampled_slot();
 				}
 			}
 			else {
-				if (font_view && font_view->texture()->bindless_slot().valid()) {
+				if (font_view && (d.bound_textures || font_view->texture()->bindless_slot().valid())) {
 					tex_idx = font_view->texture()->bindless_slot().index;
-					has_texture = true;
+					bound_texture = font_view->texture()->gpu_image().sampled_slot();
 				}
 			}
 
-			if (!has_texture) {
+			if (!bound_texture.valid()) {
 				continue;
 			}
 
 			if (type == command_type::sprite) {
-				sprite_pc.tex_idx = tex_idx;
-				sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
-				rec.push_bindings<sprite_entry>(
-					sprite_pc,
-					{
-						.vertex_buffer = vertex_buffer.slot(),
-						.textures_sampler = d.ui_sampler.slot(),
-					}
-				);
+				const bool snapshot = sample_scene_snapshot && snapshot_idx != shaders::bindless::invalid_index;
+				if (d.bound_textures) {
+					sprite_pc.tex_idx = 0;
+					sprite_pc.snapshot_tex_idx = snapshot ? 1 : shaders::bindless::invalid_index;
+					rec.push_bindings<sprite_bound_entry>(
+						sprite_pc,
+						{
+							.vertex_buffer = vertex_buffer.slot(),
+							.ui_texture = bound_texture,
+							.ui_snapshot = snapshot ? snapshot_s->snapshots[frame_index].sampled_slot() : bound_texture,
+							.ui_texture_sampler = d.ui_sampler.slot(),
+						}
+					);
+				}
+				else {
+					sprite_pc.tex_idx = tex_idx;
+					sprite_pc.snapshot_tex_idx = sample_scene_snapshot ? snapshot_idx : shaders::bindless::invalid_index;
+					rec.push_bindings<sprite_entry>(
+						sprite_pc,
+						{
+							.vertex_buffer = vertex_buffer.slot(),
+							.textures_sampler = d.ui_sampler.slot(),
+						}
+					);
+				}
 			}
 			else {
 				const auto atlas_size = font_view->texture()->image_data().size;
 				const float atlas_w = std::max(static_cast<float>(atlas_size.x()), 1.f);
 				const float atlas_h = std::max(static_cast<float>(atlas_size.y()), 1.f);
 				text_pc.unit_range = { font_view->pixel_range() / atlas_w, font_view->pixel_range() / atlas_h };
-				text_pc.tex_idx = tex_idx;
-				rec.push_bindings<msdf_entry>(
-					text_pc,
-					{
-						.vertex_buffer = vertex_buffer.slot(),
-						.textures_sampler = d.ui_sampler.slot(),
-					}
-				);
+				if (d.bound_textures) {
+					text_pc.tex_idx = 0;
+					rec.push_bindings<msdf_bound_entry>(
+						text_pc,
+						{
+							.vertex_buffer = vertex_buffer.slot(),
+							.ui_texture = bound_texture,
+							.ui_snapshot = bound_texture,
+							.ui_texture_sampler = d.ui_sampler.slot(),
+						}
+					);
+				}
+				else {
+					text_pc.tex_idx = tex_idx;
+					rec.push_bindings<msdf_entry>(
+						text_pc,
+						{
+							.vertex_buffer = vertex_buffer.slot(),
+							.textures_sampler = d.ui_sampler.slot(),
+						}
+					);
+				}
 			}
 
 			if (clip_rect) {

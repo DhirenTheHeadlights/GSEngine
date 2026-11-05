@@ -54,7 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from msys2 import REPO_ROOT
-from run_wasm import WASM_BUILD, WASM_MODULE, WASM_PRESET, WASM_SERVER, run_config
+from wasm_paths import WASM_BUILD, WASM_MODULE, WASM_PRESET, WASM_SERVER, run_config
 from parity_gate import drift_row_pattern, hash_pattern, p50_pattern
 from repo_paths import BUILD_ROOT, GENERATED_ROOT
 from wasm_divergence import bit_scan, read_dump, scan_bits
@@ -203,7 +203,8 @@ def run_page(state_dir: str, out_dir: Path, port: int, timeout: float) -> arm_ru
            "--timeout", str(int(timeout)),
            "--collect", guest_dump,
            "--collect-out", str(out_dir),
-           "--", "--engine-bench-state-dump-out", guest_dump]
+           "--", "--engine-bench-scenario", SCENARIO,
+           "--engine-bench-state-dump-out", guest_dump]
     out_dir.mkdir(parents=True, exist_ok=True)
     fresh(out_dir / DUMP_NAME)
     start = time.monotonic()
@@ -511,15 +512,8 @@ def main() -> int:
         print("an editor build in progress displaces a locked exe to Sandbox.exe.bak; "
               "it returns on the next build")
         return 2
-    # The module's entry runs the scenario its configure named, so a build configured for
-    # another one would be gated against the wrong native run.
-    config = run_config()
-    if config is None:
+    if run_config() is None:
         print(f"refusing to gate: no {WASM_MODULE}; build the {WASM_PRESET} configuration")
-        return 2
-    built_for = config["scenario"]
-    if built_for != SCENARIO:
-        print(f"refusing to gate: {WASM_MODULE} runs {built_for}, not {SCENARIO}")
         return 2
 
     print("== wasm <-> native parity gate ==")

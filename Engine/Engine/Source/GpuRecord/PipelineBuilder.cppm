@@ -115,6 +115,14 @@ export namespace gse::gpu {
 	template <typename Entry>
 	using entry_push_constants_t = [:entry_push_constants_info<Entry>():];
 
+	template <typename Pack>
+	auto binding_layout_of() -> std::vector<binding_layout_entry>;
+
+	template <typename Spec>
+	auto collect_spec_struct_layouts(
+		std::vector<shaders::struct_layout>& out
+	) -> void;
+
 	struct compute_param_pod {
 		std::string_view name;
 		std::string_view slang_type;
@@ -156,6 +164,12 @@ export namespace gse::gpu {
 		std::uint32_t (
 			*binding_args_size_fn
 		)() = nullptr;
+		std::vector<binding_layout_entry> (
+			*binding_layout_fn
+		)() = nullptr;
+		std::vector<shaders::struct_layout> (
+			*struct_layouts_fn
+		)() = nullptr;
 	};
 
 	[[nodiscard]]
@@ -189,7 +203,7 @@ export namespace gse::gpu {
 		std::uint32_t push_constant_stages = 0;
 		std::array<graphics_stage_pod, 4> stages{};
 		std::size_t stage_count = 0;
-		std::array<std::string_view, 8> helper_paths{};
+		std::array<std::string_view, 12> helper_paths{};
 		std::size_t helper_count = 0;
 		rasterization_state rasterization{};
 		depth_state depth{};
@@ -216,6 +230,12 @@ export namespace gse::gpu {
 		)() = nullptr;
 		std::uint32_t (
 			*binding_args_size_fn
+		)() = nullptr;
+		std::vector<binding_layout_entry> (
+			*binding_layout_fn
+		)() = nullptr;
+		std::vector<shaders::struct_layout> (
+			*struct_layouts_fn
 		)() = nullptr;
 	};
 
@@ -427,6 +447,11 @@ export namespace gse::gpu {
 							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
 						}(Spec{});
 					};
+					e.binding_layout_fn = +[]() -> std::vector<binding_layout_entry> {
+						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
+							return binding_layout_of<Pack>();
+						}(Spec{});
+					};
 				}
 				else if constexpr (is_types<Spec>::value) {
 					e.emit_types = +[]() -> std::string {
@@ -452,6 +477,11 @@ export namespace gse::gpu {
 				}
 			};
 			(apply.template operator()<Specs>(), ...);
+			e.struct_layouts_fn = +[]() -> std::vector<shaders::struct_layout> {
+				std::vector<shaders::struct_layout> out;
+				(collect_spec_struct_layouts<Specs>(out), ...);
+				return out;
+			};
 			if (e.call_count == 0 && !e.body_path.empty()) {
 				const auto slash = e.body_path.find_last_of('/');
 				e.call_names[e.call_count++] = (slash == std::string_view::npos) ? e.body_path : e.body_path.substr(slash + 1);
@@ -651,6 +681,11 @@ export namespace gse::gpu {
 							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
 						}(Spec{});
 					};
+					e.binding_layout_fn = +[]() -> std::vector<binding_layout_entry> {
+						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
+							return binding_layout_of<Pack>();
+						}(Spec{});
+					};
 				}
 				else if constexpr (is_types<Spec>::value) {
 					e.emit_types = +[]() -> std::string {
@@ -671,6 +706,11 @@ export namespace gse::gpu {
 				}
 			};
 			(apply.template operator()<Specs>(), ...);
+			e.struct_layouts_fn = +[]() -> std::vector<shaders::struct_layout> {
+				std::vector<shaders::struct_layout> out;
+				(collect_spec_struct_layouts<Specs>(out), ...);
+				return out;
+			};
 			return e;
 		}();
 	};
@@ -710,6 +750,74 @@ consteval auto gse::gpu::binding_args_layout_is_flat() -> bool {
 	return []<typename... Ts>(type_pack<Ts...>) {
 		return (binding_arg_is_flat<Ts>() && ...);
 	}(Pack{});
+}
+
+namespace gse::gpu {
+	template <typename Args, typename T>
+	consteval auto binding_args_member() -> std::meta::info;
+
+	template <typename Pack, typename T>
+	auto append_binding_layout(
+		std::vector<binding_layout_entry>& out
+	) -> void;
+}
+
+template <typename Args, typename T>
+consteval auto gse::gpu::binding_args_member() -> std::meta::info {
+	for (const auto m : std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked())) {
+		if (std::meta::identifier_of(m) == std::meta::identifier_of(^^T)) {
+			return m;
+		}
+	}
+	return std::meta::info{};
+}
+
+template <typename Pack, typename T>
+auto gse::gpu::append_binding_layout(std::vector<binding_layout_entry>& out) -> void {
+	if constexpr (shaders::is_shader_binding<T> && !is_bindless_table_v<T>) {
+		constexpr auto member = binding_args_member<binding_args<Pack>, T>();
+		constexpr auto kind = shaders::binding_kind_of<T>();
+		auto offset = static_cast<std::uint32_t>(std::meta::offset_of(member).bytes);
+		if constexpr (kind == binding_kind::acceleration_structure) {
+			offset += static_cast<std::uint32_t>(std::meta::offset_of(^^acceleration_structure_arg::slot).bytes);
+		}
+		gpu::image_format storage_format = image_format::undefined;
+		if constexpr (kind == binding_kind::storage_texture_2d || kind == binding_kind::storage_texture_3d) {
+			storage_format = shaders::storage_format_of<T>();
+		}
+		out.push_back({
+			.kind = kind,
+			.args_offset = offset,
+			.storage_format = storage_format,
+		});
+	}
+}
+
+template <typename Pack>
+auto gse::gpu::binding_layout_of() -> std::vector<binding_layout_entry> {
+	std::vector<binding_layout_entry> out;
+	[&]<typename... Ts>(type_pack<Ts...>) {
+		(append_binding_layout<Pack, Ts>(out), ...);
+	}(Pack{});
+	return out;
+}
+
+template <typename Spec>
+auto gse::gpu::collect_spec_struct_layouts(std::vector<shaders::struct_layout>& out) -> void {
+	if constexpr (is_push_constant<Spec>::value) {
+		using T = typename Spec::type;
+		out.push_back(shaders::wgsl_struct_layout<T>(shaders::slang_type<T>::name));
+	}
+	else if constexpr (is_types<Spec>::value) {
+		[&]<typename... Packs>(types<Packs...>) {
+			(shaders::emit_pack_struct_layouts<Packs>(out), ...);
+		}(Spec{});
+	}
+	else if constexpr (is_bindings<Spec>::value) {
+		[&]<typename... Packs>(bindings<Packs...>) {
+			(shaders::emit_pack_struct_layouts<Packs>(out), ...);
+		}(Spec{});
+	}
 }
 
 template <typename T>

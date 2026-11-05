@@ -643,7 +643,6 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const gpu::encode
 					.size = extent,
 					.format = gpu::image_format::r8_unorm,
 					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
-					.bindless = true
 				},
 				"encode.y_plane"
 			);
@@ -652,7 +651,6 @@ auto gse::vulkan::video_encoder::create(device& dev, queue& q, const gpu::encode
 					.size = vec2u{ extent.x() / 2, extent.y() / 2 },
 					.format = gpu::image_format::r8g8_unorm,
 					.usage = { gpu::image_flag::storage, gpu::image_flag::transfer_src },
-					.bindless = true
 				},
 				"encode.uv_plane"
 			);

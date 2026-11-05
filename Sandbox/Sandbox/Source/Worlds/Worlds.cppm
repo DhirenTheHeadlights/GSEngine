@@ -8,6 +8,7 @@ import :joints;
 import :machines;
 import :spawn_params;
 import :stacks;
+import :workloads;
 
 export namespace sandbox {
 	auto sandbox_scene_setup(
@@ -35,6 +36,10 @@ export namespace sandbox {
 	) -> void;
 
 	auto swings_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto grass_scene_setup(
 		gse::scene& s
 	) -> void;
 
@@ -315,6 +320,22 @@ auto sandbox::swings_scene_setup(gse::scene& s) -> void {
 			.speed = gse::meters_per_second(18.f),
 			.yaw = gse::degrees(0.f),
 			.pitch = gse::degrees(-12.f),
+			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::grass_scene_setup(gse::scene& s) -> void {
+	spawn_outdoor_ground(s, { .prefix = "Grass" });
+
+	spawn_grass_field(s, gse::vec3<gse::position>(gse::meters(0.f), gse::meters(0.f), gse::meters(0.f)), { .blades_per_side = 180 });
+
+	s.build("Grass Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(6.f), gse::meters(22.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(8.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(-14.f),
 			.collide_with_geometry = false,
 		});
 }

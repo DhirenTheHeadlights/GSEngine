@@ -6,76 +6,63 @@ import gse.core;
 import gse.diag;
 import std;
 
-import :access_token;
+import :access;
 import :registries;
 import :registry;
-import :task_context;
-import :task_graph;
-import :traits;
+import :system_anno;
 
 export namespace gse {
-	class scheduler;
-	struct system_node;
+	struct init_yield {
+		async::manual_event resume;
+		async::manual_event paused;
+	};
 
-	class context : public task_context {
+	class context {
 	public:
-		class construction_scope : public non_copyable {
-		public:
-			explicit construction_scope(
-				context& ctx
-			);
-
-			~construction_scope();
-
-		private:
-			context* m_ctx = nullptr;
-		};
-
 		context(
-			scheduler& sched,
+			system_hook hook,
 			state_registry& states,
-			resource_registry& resources_store,
-			channel_registry& channels_store,
-			channel_writer& channels,
-			task_graph& graph,
-			registry& reg,
-			access_guard& guard,
-			async::manual_event* resume_event = nullptr,
-			async::manual_event* paused_event = nullptr,
-			bool live_state = true
+			resource_registry& resources,
+			channel_registry& channels,
+			registry& reg
 		);
 
-		auto add_system_node(
-			system_node node
-		) -> void;
+		context(
+			init_yield& yield,
+			state_registry& states,
+			resource_registry& resources,
+			channel_registry& channels,
+			registry& reg
+		);
 
 		[[nodiscard]] auto yield_tick() -> async::task<>;
 
 		template <typename T>
 		auto add_component(
+			id owner
+		) -> void;
+
+		template <typename T>
+		auto add_component(
 			id owner,
-			T value = T{}
-		) -> T*;
+			T value
+		) -> void;
 
 		template <typename T>
 		auto remove_component(
 			id owner
 		) -> void;
 
-		template <typename T>
-		auto ensure_storage() -> void;
+		auto defer_structural_change(
+			std::move_only_function<void()> change
+		) -> void;
+
+		auto apply_structural_changes() -> void;
 
 		[[nodiscard]] auto held_lock_count() const -> int;
 
-		[[nodiscard]] auto has_structural_authority(
-			id type
-		) const -> bool;
-
 		template <typename Access>
 		auto make_access() -> Access;
-
-		template <typename T>
-		auto make_structural() -> structural<T>;
 
 		auto make_entities() -> entities;
 
@@ -86,85 +73,76 @@ export namespace gse {
 		[[nodiscard]] auto pending_reveals() const -> std::vector<std::string_view>;
 
 	private:
-		scheduler& m_sched;
+		template <typename Arg, typename S>
+		friend auto resolve_run_arg(
+			context& ctx,
+			S& state
+		) -> decltype(auto);
+
+		template <typename Data>
+		friend auto live_system_state(
+			context& ctx
+		) -> Data*;
+
+		system_hook m_hook;
+		init_yield* m_yield = nullptr;
+		state_registry& m_states;
+		resource_registry& m_resources;
+		channel_registry& m_channels;
 		registry& m_reg;
-		access_guard& m_guard;
 		std::atomic<int> m_held_locks{ 0 };
-		std::vector<id> m_structural_authority;
-		bool m_construction = false;
-		async::manual_event* m_resume_event = nullptr;
-		async::manual_event* m_paused_event = nullptr;
+		std::vector<std::move_only_function<void()>> m_structural_changes;
 	};
 }
 
-namespace gse {
-	template <typename Access>
-	auto make_locked_handle(
-		access_token token,
-		registry& reg,
-		access_guard& guard,
-		std::atomic<int>* held_locks
-	) -> Access;
+gse::context::context(const system_hook hook, state_registry& states, resource_registry& resources, channel_registry& channels, registry& reg) : m_hook(hook), m_states(states), m_resources(resources), m_channels(channels), m_reg(reg) {}
 
-}
-
-gse::context::context(scheduler& sched, state_registry& states, resource_registry& resources_store, channel_registry& channels_store, channel_writer& channels, task_graph& graph, registry& reg, access_guard& guard, async::manual_event* resume_event, async::manual_event* paused_event, bool live_state)
-	: task_context{ states, resources_store, channels_store, channels, graph, live_state }, m_sched(sched), m_reg(reg), m_guard(guard), m_resume_event(resume_event), m_paused_event(paused_event) {
-}
-
-template <typename Access>
-auto gse::make_locked_handle(access_token token, registry& reg, access_guard& guard, std::atomic<int>* held_locks) -> Access {
-	using element_t = access_element_t<Access>;
-	if constexpr (is_read_access_v<Access>) {
-		return reg.template acquire_read<element_t>(std::move(token), &guard, held_locks);
-	}
-	else {
-		return reg.template acquire_write<element_t>(std::move(token), &guard, held_locks);
-	}
-}
+gse::context::context(init_yield& yield, state_registry& states, resource_registry& resources, channel_registry& channels, registry& reg) : m_hook(system_hook::init), m_yield(&yield), m_states(states), m_resources(resources), m_channels(channels), m_reg(reg) {}
 
 template <typename Access>
 auto gse::context::make_access() -> Access {
-	return make_locked_handle<Access>(access_token{}, m_reg, m_guard, &m_held_locks);
+	return m_reg.acquire<Access>(m_held_locks);
 }
 
 auto gse::context::held_lock_count() const -> int {
 	return m_held_locks.load(std::memory_order_acquire);
 }
 
-gse::context::construction_scope::construction_scope(context& ctx) : m_ctx(&ctx) {
-	m_ctx->m_construction = true;
-}
-
-gse::context::construction_scope::~construction_scope() {
-	m_ctx->m_construction = false;
-}
-
-auto gse::context::has_structural_authority(const id type) const -> bool {
-	return m_construction || std::ranges::find(m_structural_authority, type) != m_structural_authority.end();
+template <typename T>
+auto gse::context::add_component(const id owner) -> void {
+	defer_structural_change([&reg = m_reg, owner] {
+		if (reg.exists(owner)) {
+			reg.add_component<T>(owner);
+		}
+	});
 }
 
 template <typename T>
-auto gse::context::add_component(const id owner, T value) -> T* {
-	assert(has_structural_authority(id_of<T>()), "add_component<{}> requires structural<{}> authority in the current phase", type_tag<T>(), type_tag<T>());
-	return m_reg.add_component<T>(owner, std::move(value));
+auto gse::context::add_component(const id owner, T value) -> void {
+	defer_structural_change([&reg = m_reg, owner, value = std::move(value)]() mutable {
+		if (reg.exists(owner)) {
+			reg.add_component<T>(owner, std::move(value));
+		}
+	});
 }
 
 template <typename T>
 auto gse::context::remove_component(const id owner) -> void {
-	assert(has_structural_authority(id_of<T>()), "remove_component<{}> requires structural<{}> authority in the current phase", type_tag<T>(), type_tag<T>());
-	m_reg.remove_component<T>(owner);
+	defer_structural_change([&reg = m_reg, owner] {
+		reg.remove_component<T>(owner);
+	});
 }
 
-template <typename T>
-auto gse::context::ensure_storage() -> void {
-	assert(has_structural_authority(id_of<T>()), "ensure_storage<{}> requires structural<{}> authority in the current phase", type_tag<T>(), type_tag<T>());
-	m_reg.ensure_storage<T>();
+auto gse::context::defer_structural_change(std::move_only_function<void()> change) -> void {
+	assert(m_hook == system_hook::run, "structural changes can only be deferred from run(), and apply once every run() of the tick has finished; take gse::entities to change structure immediately");
+	m_structural_changes.push_back(std::move(change));
 }
 
-template <typename T>
-auto gse::context::make_structural() -> structural<T> {
-	return structural<T>(&m_reg, &m_guard, &m_held_locks, &m_structural_authority);
+auto gse::context::apply_structural_changes() -> void {
+	for (auto& change : m_structural_changes) {
+		change();
+	}
+	m_structural_changes.clear();
 }
 
 auto gse::context::make_entities() -> entities {
@@ -174,11 +152,11 @@ auto gse::context::make_entities() -> entities {
 template <typename T>
 requires gse::is_same_frame_channel_v<T>
 auto gse::context::drain_channel() -> std::vector<T> {
-	return channels_store.template drain<T>();
+	return m_channels.drain<T>();
 }
 
 auto gse::context::pending_reveals() const -> std::vector<std::string_view> {
-	return channels_store.pending_reveals();
+	return m_channels.pending_reveals();
 }
 
 gse::entities::entities(registry* reg) : m_reg(reg) {
@@ -209,21 +187,16 @@ auto gse::entities::remove(const id owner) const -> void {
 }
 
 template <typename T>
-auto gse::structural<T>::add(const id owner, T value) const -> T* {
+auto gse::entities::add_component(const id owner, T value) const -> T* {
 	return m_reg->add_component<T>(owner, std::move(value));
 }
 
 template <typename T>
-auto gse::structural<T>::remove(const id owner) const -> void {
+auto gse::entities::remove_component(const id owner) const -> void {
 	m_reg->remove_component<T>(owner);
 }
 
 template <typename T>
-auto gse::structural<T>::ensure_storage() const -> void {
+auto gse::entities::ensure_storage() const -> void {
 	m_reg->ensure_storage<T>();
-}
-
-template <typename T>
-auto gse::structural<T>::contains(const id owner) const -> bool {
-	return m_reg->try_component<T>(owner) != nullptr;
 }

@@ -16,9 +16,26 @@ void exposure_histogram(uint3 dispatch_id, uint group_index) {
     GroupMemoryBarrierWithGroupSync();
 
     uint2 size = pc.active_extent;
-    if (dispatch_id.x < size.x && dispatch_id.y < size.y) {
-        float3 color = histogram_source.Load(int3(dispatch_id.xy, 0)).rgb;
-        InterlockedAdd(s_histogram[luminance_bin(color)], 1);
+    uint2 origin = dispatch_id.xy * histogram_tile;
+    uint run_bin = 0;
+    uint run_count = 0;
+    for (uint y = 0; y < histogram_tile; y += histogram_sample_step) {
+        for (uint x = 0; x < histogram_tile; x += histogram_sample_step) {
+            uint2 pixel = origin + uint2(x, y);
+            if (pixel.x >= size.x || pixel.y >= size.y) {
+                continue;
+            }
+            uint bin = luminance_bin(histogram_source.Load(int3(pixel, 0)).rgb);
+            if (run_count > 0 && bin != run_bin) {
+                InterlockedAdd(s_histogram[run_bin], run_count);
+                run_count = 0;
+            }
+            run_bin = bin;
+            ++run_count;
+        }
+    }
+    if (run_count > 0) {
+        InterlockedAdd(s_histogram[run_bin], run_count);
     }
     GroupMemoryBarrierWithGroupSync();
 

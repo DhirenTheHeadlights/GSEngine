@@ -22,6 +22,10 @@ export namespace gse::ide::agent {
 		const rectf& body,
 		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
 	) -> void;
+
+	auto sync_strip_extent(
+		const gui::draw_context& ctx
+	) -> float;
 }
 
 namespace gse::ide::agent {
@@ -30,8 +34,6 @@ namespace gse::ide::agent {
 	constexpr std::size_t min_question_lines = 2;
 	constexpr std::size_t max_option_lines = 3;
 	constexpr float question_body_share = 0.6f;
-	constexpr float plan_body_share = 0.6f;
-	constexpr float plan_split_share = 0.8f;
 	constexpr float error_strip_fill = 0.12f;
 	constexpr float error_strip_border = 0.45f;
 	constexpr std::string_view unattributed_label = "unattributed";
@@ -41,6 +43,7 @@ namespace gse::ide::agent {
 	constexpr std::string_view cycle_back_label = "<<";
 	constexpr std::string_view cycle_forward_label = ">>";
 	constexpr std::string_view catch_up_label = "Catch up";
+	constexpr std::string_view live_scope_head = "scope \xC2\xB7 live transcript since this cycle began";
 	constexpr std::string_view fork_open_label = "Ask about this stage";
 	constexpr std::string_view fork_busy_label = "Ask (wait for the turn to end)";
 	constexpr std::string_view fork_ask_label = "Ask";
@@ -96,6 +99,37 @@ namespace gse::ide::agent {
 	) -> std::string_view;
 
 	auto draw_history(
+		gui::builder& ui,
+		data& d,
+		const rectf& body
+	) -> void;
+
+	struct pick_list {
+		const rectf& body;
+		const rectf& anchor;
+		bool& open;
+		std::size_t count = 0;
+		std::string_view empty_text;
+		std::string_view key;
+		std::function<std::string_view(std::size_t)> label;
+	};
+
+	auto draw_pick_list(
+		gui::builder& ui,
+		const pick_list& list
+	) -> std::optional<std::size_t>;
+
+	auto sync_history_label(
+		const session& s
+	) -> std::string;
+
+	auto draw_sync_history(
+		gui::builder& ui,
+		data& d,
+		const rectf& body
+	) -> void;
+
+	auto draw_sync_strip(
 		gui::builder& ui,
 		data& d,
 		const rectf& body
@@ -237,6 +271,7 @@ namespace gse::ide::agent {
 
 	auto draw_sync_header(
 		gui::builder& ui,
+		data& d,
 		session& s,
 		const rectf& area
 	) -> void;
@@ -390,13 +425,6 @@ namespace gse::ide::agent {
 		float room
 	) -> plan_block;
 
-	auto plan_extent(
-		const gui::draw_context& ctx,
-		const session& s,
-		const chrome_plan& plan,
-		const plan_block& laid
-	) -> float;
-
 	auto plan_rects_of(
 		const gui::draw_context& ctx,
 		const plan_block& laid,
@@ -421,8 +449,16 @@ namespace gse::ide::agent {
 		id key,
 		id& hot,
 		id& active,
-		id& focus
+		id& focus,
+		std::span<const gui::text_underline> underlines = {}
 	) -> void;
+
+	auto step_diff_links(
+		const gui::draw_context& ctx,
+		const session& s,
+		const rectf& rect,
+		channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out
+	) -> std::vector<gui::text_underline>;
 
 	auto split_of(
 		data& d,
@@ -474,7 +510,8 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto submit_draft(
-		session& s
+		session& s,
+		bool to_transcript
 	) -> void;
 
 	auto draw_model_controls(
@@ -488,6 +525,7 @@ namespace gse::ide::agent {
 		rectf area;
 		rectf body;
 		const chrome_plan& plan;
+		bool plan_drawn = false;
 	};
 
 	auto draw_input(

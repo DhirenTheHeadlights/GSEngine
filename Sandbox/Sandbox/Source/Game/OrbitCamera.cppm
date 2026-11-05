@@ -69,8 +69,7 @@ export namespace sandbox::orbit_camera {
 	auto attach(
 		gse::context& ctx,
 		data& d,
-		gse::write<component> orbits,
-		gse::structural<gse::camera::follow_component> follows
+		gse::write<component> orbits
 	) -> gse::async::task<>;
 
 	[[= gse::system_run<1>{}]]

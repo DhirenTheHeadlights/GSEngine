@@ -4,19 +4,24 @@ public float remap(float value, float old_lo, float old_hi, float new_lo, float 
     return new_lo + (value - old_lo) * (new_hi - new_lo) / max(old_hi - old_lo, 1e-6);
 }
 
-public float hash13(float3 p) {
-    p = frac(p * 0.1031);
-    p += dot(p, p.yzx + 33.33);
-    return frac((p.x + p.y) * p.z);
+public uint3 pcg3d(uint3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
 }
 
 public float3 hash33(float3 p) {
-    p = float3(
-        dot(p, float3(127.1, 311.7, 74.7)),
-        dot(p, float3(269.5, 183.3, 246.1)),
-        dot(p, float3(113.5, 271.9, 124.6))
-    );
-    return frac(sin(p) * 43758.5453);
+    return float3(pcg3d(uint3(int3(floor(p))))) * (1.0 / 4294967296.0);
+}
+
+public float hash13(float3 p) {
+    return hash33(p).x;
 }
 
 public float worley_3d(float3 p, float tiling) {

@@ -11,8 +11,16 @@ import :scenarios;
 namespace sandbox::scenarios {
 	using namespace scenario_camera;
 
+	constexpr gse::vec2i parity_extent{ 1280, 720 };
+
 	auto build_stress_workload(
 		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto capture_parity_frame(
+		gse::scenario::context& ctx,
+		std::string_view name,
+		gse::camera::target target
 	) -> gse::async::task<>;
 
 	auto push_pyramid_impulses(
@@ -50,6 +58,22 @@ namespace sandbox::scenarios {
 	auto pitch_probe(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
+
+	constexpr std::string_view persist_probe_category = "WebPersistProbe";
+	constexpr std::string_view persist_probe_key = "token";
+	constexpr std::string_view persist_probe_token = "7f3a9c";
+
+	auto persist_probe_settings_path(
+	) -> std::filesystem::path;
+
+	auto persist_probe_save_path(
+	) -> std::filesystem::path;
+
+	auto persist_probe_settings(
+	) -> std::string;
+
+	auto persist_probe_save(
+	) -> std::string;
 }
 
 auto sandbox::scenarios::build_stress_workload(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -61,6 +85,27 @@ auto sandbox::scenarios::build_stress_workload(gse::scenario::context& ctx) -> g
 
 auto sandbox::scenarios::physics_stress(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await build_stress_workload(ctx);
+}
+
+auto sandbox::scenarios::physics_grow(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t wave_frames = 120;
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_joints_request>({});
+	co_await gse::scenario::wait_frames(ctx, wave_frames);
+	expect_bodies_sane(ctx);
+
+	ctx.channels().push<spawn_stress_request>({});
+	co_await gse::scenario::wait_frames(ctx, wave_frames);
+	expect_bodies_sane(ctx);
+
+	ctx.channels().push<spawn_pyramid_request>({});
+	co_await gse::scenario::wait_frames(ctx, wave_frames);
+	expect_bodies_sane(ctx);
+}
+
+auto sandbox::scenarios::grass_sleep_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
 }
 
 auto sandbox::scenarios::render_stress(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -173,6 +218,111 @@ auto sandbox::scenarios::relaunch_probe(gse::scenario::context&) -> gse::async::
 	gse::process::open_url("about:blank");
 	gse::app::relaunch_self_on_exit();
 	gse::app::add_relaunch_handoff({}, L"--engine-bench-scenario scene_reset_cpu");
+	co_return;
+}
+
+auto sandbox::scenarios::web_host_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	auto last = gse::window::viewport({});
+	auto last_minimized = gse::window::minimized({});
+	ctx.channels().push<gse::ui_focus_request>({ .focus = true });
+	gse::log::println("scenario: web host frame {} viewport {}x{} minimized {}", ctx.frame(), last.x(), last.y(), last_minimized);
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+		const auto now = gse::window::viewport({});
+		const auto now_minimized = gse::window::minimized({});
+		if (now != last || now_minimized != last_minimized) {
+			gse::log::println("scenario: web host frame {} viewport {}x{} minimized {}", ctx.frame(), now.x(), now.y(), now_minimized);
+			last = now;
+			last_minimized = now_minimized;
+		}
+		else {
+			gse::log::println("scenario: web host frame {}", ctx.frame());
+		}
+	}
+}
+
+auto sandbox::scenarios::web_pointer_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	ctx.channels().push<gse::ui_focus_request>({ .focus = true });
+	ctx.channels().push<gse::cursor_capture_request>({ .capture = true });
+	gse::log::println("scenario: web pointer requested capture at frame {}", ctx.frame());
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+	}
+}
+
+auto sandbox::scenarios::web_idle_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto start = gse::system_clock::now<gse::time_t<double, gse::seconds>>();
+	const auto since_start = [start] {
+		return gse::time_t<double, gse::seconds>(gse::system_clock::now<gse::time_t<double, gse::seconds>>() - start);
+	};
+	gse::log::println("scenario: web idle start at clock {:.1f:ms}", start);
+	std::jthread waker([&since_start](const std::stop_token stop) {
+		for (int post = 1; post <= 5 && !stop.stop_requested(); ++post) {
+			std::this_thread::sleep_for(std::chrono::seconds(2));
+			gse::log::println("scenario: web idle post {} at {:.1f:ms}", post, since_start());
+			gse::frame_demand::request_redraw();
+		}
+	});
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		gse::log::println("scenario: web idle frame {} at {:.1f:ms} minimized {}", ctx.frame(), since_start(), gse::window::minimized({}));
+	}
+}
+
+auto sandbox::scenarios::persist_probe_settings_path() -> std::filesystem::path {
+	return gse::config::user_config_dir() / "web_persist_probe.ini";
+}
+
+auto sandbox::scenarios::persist_probe_save_path() -> std::filesystem::path {
+	return gse::config::user_state_dir() / "saves" / "web_persist_probe.sav";
+}
+
+auto sandbox::scenarios::persist_probe_settings() -> std::string {
+	return std::format("[{}]\n{} = {}\n", persist_probe_category, persist_probe_key, persist_probe_token);
+}
+
+auto sandbox::scenarios::persist_probe_save() -> std::string {
+	constexpr std::size_t size = 2 * 4096 + 77;
+	std::string bytes(size, '\0');
+	for (std::size_t index = 0; index < size; ++index) {
+		bytes[index] = static_cast<char>((index * 167 + index / 256) & 0xff);
+	}
+	return bytes;
+}
+
+auto sandbox::scenarios::web_persist_write(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto settings = gse::fs::write_text(persist_probe_settings_path(), persist_probe_settings());
+	const auto save = gse::fs::write_text(persist_probe_save_path(), persist_probe_save());
+	gse::log::println(
+		"scenario: web persist wrote settings {} ({}) save {} ({} bytes)",
+		persist_probe_settings_path().generic_display_string(),
+		settings ? "ok" : settings.error(),
+		persist_probe_save_path().generic_display_string(),
+		save ? std::to_string(persist_probe_save().size()) : save.error()
+	);
+	ctx.expect(settings.has_value());
+	ctx.expect(save.has_value());
+	gse::app::relaunch_self_on_exit();
+	gse::app::add_relaunch_handoff({}, L"--engine-bench-scenario web_persist_read");
+	co_return;
+}
+
+auto sandbox::scenarios::web_persist_read(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto token = gse::save::registry::read_one<std::string>(persist_probe_settings_path(), persist_probe_category, persist_probe_key);
+	const bool settings_match = gse::fs::read_text(persist_probe_settings_path()) == persist_probe_settings() && token == persist_probe_token;
+	const auto save = gse::fs::read_text(persist_probe_save_path());
+	const bool save_match = save == persist_probe_save();
+	gse::log::println(
+		"scenario: web persist settings {} token '{}' save {} bytes {}",
+		settings_match ? "match" : "mismatch",
+		token,
+		save_match ? "match" : "mismatch",
+		save.size()
+	);
+	ctx.expect(settings_match);
+	ctx.expect(save_match);
 	co_return;
 }
 
@@ -725,6 +875,51 @@ auto sandbox::scenarios::lighting_showcase(gse::scenario::context& ctx) -> gse::
 	}
 
 	ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
+}
+
+auto sandbox::scenarios::capture_parity_frame(gse::scenario::context& ctx, const std::string_view name, const gse::camera::target target) -> gse::async::task<> {
+	constexpr std::uint64_t converge_frames = 240;
+
+	ctx.channels().push<gse::camera::temporal_reset_request>({});
+
+	for (std::uint64_t i = 0; i < converge_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = target,
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+	gse::log::println("scenario: {} capture frame {}", name, ctx.frame());
+
+	while (true) {
+		ctx.channels().push<gse::camera::request>({
+			.target = target,
+			.priority = 100,
+			.blend_duration = {},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+}
+
+auto sandbox::scenarios::lighting_parity(gse::scenario::context& ctx) -> gse::async::task<> {
+	ctx.channels().push<gse::window_resize_request>({ .size = parity_extent });
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_lights_request>({});
+	co_await capture_parity_frame(ctx, "lighting_parity", lighting_target(0.f));
+}
+
+auto sandbox::scenarios::textured_parity(gse::scenario::context& ctx) -> gse::async::task<> {
+	ctx.channels().push<gse::window_resize_request>({ .size = parity_extent });
+	co_await gse::scenario::wait_settled(ctx);
+	co_await capture_parity_frame(ctx, "textured_parity", orbit_at(
+		gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.f), gse::meters(0.f)),
+		gse::meters(9.f),
+		gse::meters(3.f),
+		gse::degrees(20.f)
+	));
 }
 
 auto sandbox::scenarios::parity_stress_cpu(gse::scenario::context& ctx) -> gse::async::task<> {

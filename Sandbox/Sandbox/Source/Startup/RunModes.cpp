@@ -112,12 +112,8 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 	own("video-encode");
 
 	std::vector<std::string> pinned;
-	pinned.push_back(std::format("Physics.use_gpu_solver={}", selected->info.gpu_solver));
-	for (const auto& s : selected->info.settings) {
-		if (s[0] != '\0') {
-			pinned.emplace_back(s);
-		}
-	}
+	pinned.push_back(gse::scenario::pin<^^gse::physics::data::use_gpu_solver>{ selected->info.gpu_solver }.assignment());
+	pinned.append_range(selected->settings);
 	cfg.engine.setting.insert(cfg.engine.setting.begin(), pinned.begin(), pinned.end());
 
 	cfg.engine.load_settings = cfg.engine.load_settings && std::ranges::contains(passed_flags, std::string_view("--engine-load-settings"));

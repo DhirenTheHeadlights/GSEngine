@@ -15,6 +15,8 @@ import gse.save;
 import gse.time;
 import std;
 
+import :body_requests;
+import :bounding_box;
 import :collision_component;
 import :convex_hull;
 import :joint_drive_component;
@@ -306,7 +308,7 @@ export namespace gse::physics {
 	};
 
 	struct gpu_upload_report {
-		std::flat_map<id, std::uint32_t> body_index;
+		std::optional<std::flat_map<id, std::uint32_t>> body_index;
 		std::vector<joint_rest_orientation> rest_orientations;
 		std::vector<recorded_tick_inputs> recorded;
 	};
@@ -482,14 +484,6 @@ export namespace gse::physics {
 		bool gpu_island_colored_sweep = true;
 
 		[[
-			= settings::describe<"Pack several small gpu islands into one solve workgroup and give each lane the next "
-									  "body of the current colour step, so a step keeps most lanes busy. Each island keeps "
-									  "its colours and solve order, so results are unchanged.">{},
-			= shared
-		]]
-		bool gpu_island_pack = true;
-
-		[[
 			= settings::describe<"Fewest gpu islands at which island packing turns on. Packing divides the solve "
 									  "workgroup count, so below this count the packed dispatch leaves the device "
 									  "underfilled and runs slower than one island per workgroup.">{},
@@ -497,6 +491,16 @@ export namespace gse::physics {
 			= shared
 		]]
 		int gpu_island_pack_min_islands = 2048;
+
+		[[
+			= settings::describe<"Solver iterations recorded per GPU queue submission. Each submission ends with its "
+									  "own signal, so a heavy solve reaches the driver as several short packets instead "
+									  "of one long one that the OS can mistake for a hang and remove the device. "
+									  "Zero records every iteration of a substep in one submission.">{},
+			= settings::range<0, 64>{},
+			= shared
+		]]
+		int gpu_solve_iterations_per_submit = 10;
 
 		[[
 			= settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
@@ -811,9 +815,13 @@ export namespace gse::physics {
 		[[= shared]] sleep_counter_table sleep_counters;
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
+		std::vector<id> gpu_body_owners;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
 		std::unordered_map<id, std::uint64_t> gpu_reset_ticks;
+		[[= shared]] std::vector<id> reset_bodies;
+		std::vector<id> reset_scan_owners;
+		[[= shared]] std::uint64_t shape_generation = 1;
 		[[= shared]] gpu_tick_plan gpu_plan;
 		[[= shared]] interpolation_state interpolation;
 		bool gpu_sweep_fold_bailed = false;
@@ -854,6 +862,21 @@ export namespace gse::physics {
 			std::vector<vbd::impulse_constraint> impulses;
 		};
 
+		struct body_cache {
+			std::vector<id> motion_owners;
+			std::vector<id> transform_owners;
+			std::vector<id> collision_owners;
+			std::uint64_t shape_generation = 0;
+			std::size_t hull_count = 0;
+			std::vector<vbd::body_scan_entry> rest_scan;
+			std::vector<mass_properties> props;
+			std::vector<std::uint8_t> has_transform;
+			std::vector<std::uint32_t> transform_slot;
+			std::vector<std::uint32_t> collision_slot;
+			std::vector<std::uint32_t> locked;
+			bool valid = false;
+		};
+
 		struct [[= system_state<"Physics GPU Upload">{}, = deferred_system{}]] data {
 			std::uint64_t built_generation = 0;
 			std::uint64_t uploaded_joints_generation = 0;
@@ -882,8 +905,10 @@ export namespace gse::physics {
 			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
 			std::vector<std::pair<id, std::uint32_t>> body_index_entries;
+			std::vector<std::pair<id, std::uint32_t>> reported_body_index_entries;
 			std::vector<std::uint32_t> motor_body_slots;
 			std::vector<std::uint32_t> wake_body_slots;
+			body_cache cached_bodies;
 			std::array<upload_scratch, 3> scratch;
 			std::size_t scratch_slot = 0;
 		};
@@ -984,6 +1009,13 @@ export namespace gse::physics {
 		auto filled(std::size_t body_index) const -> bool;
 	};
 
+	auto body_state_of(
+		const motion_component& mc,
+		const transform_component& tc,
+		const mass_properties& props,
+		std::uint32_t sleep_counter
+	) -> vbd::body_state;
+
 	auto build_body_states(
 		const body_build_view& view,
 		const sleep_counter_table& sleep_counters,
@@ -994,6 +1026,28 @@ export namespace gse::physics {
 		const body_scan_fill& scan = {}
 	) -> void;
 
+	auto shape_bounds_of(
+		const collision_component& cc,
+		const transform_component& tc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets,
+		vec3<displacement>& shape_params,
+		std::uint32_t& hull_offset
+	) -> bounding_box;
+
+	auto rest_max_half_extent(
+		const collision_component& cc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets
+	) -> displacement;
+
+	auto write_body_bounds(
+		vbd::body_state& b,
+		const collision_component& cc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets
+	) -> displacement;
+
 	auto build_body_bounds(
 		const body_build_view& view,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
@@ -1001,6 +1055,34 @@ export namespace gse::physics {
 		std::span<vbd::body_state> bodies,
 		const body_scan_fill& scan = {}
 	) -> void;
+
+	namespace gpu_upload {
+		auto cache_matches(
+			const body_cache& cache,
+			const body_build_view& view,
+			std::uint64_t shape_generation,
+			std::size_t hull_count
+		) -> bool;
+
+		auto refresh_body_cache(
+			body_cache& cache,
+			const body_build_view& view,
+			std::span<const vbd::body_scan_entry> scan,
+			std::span<const std::uint8_t> has_transform,
+			std::uint64_t shape_generation
+		) -> void;
+
+		auto fill_cached_bodies(
+			body_cache& cache,
+			const body_build_view& view,
+			const std::flat_map<id, std::uint32_t>& body_index,
+			std::span<const id> reset_bodies,
+			const sleep_counter_table& sleep_counters,
+			std::vector<vbd::body_state>& bodies,
+			std::vector<vbd::body_scan_entry>& scan,
+			std::vector<std::uint8_t>& has_transform
+		) -> void;
+	}
 
 	auto build_joint_constraints(
 		std::span<joint_definition> definitions,
@@ -1089,6 +1171,8 @@ export namespace gse::physics {
 		context& ctx,
 		data& d,
 		channel_write<interpolation_state> interp_out,
+		set_request_read set_requests_in,
+		channel_write<component_events<transform_component>, component_events<motion_component>, component_events<collision_component>> events_out,
 		write<joint_spec> specs,
 		write<muscle_spec> muscle_specs,
 		read<muscle_component> muscles,
@@ -1096,7 +1180,8 @@ export namespace gse::physics {
 		read<kinematic_target_component> targets,
 		read<collision_exclusion> exclusions,
 		write<transform_component> transform,
-		write<motion_component> motion
+		write<motion_component> motion,
+		write<collision_component> collision
 	) -> async::task<>;
 
 	[[= system_run<1>{}]]
@@ -1104,7 +1189,7 @@ export namespace gse::physics {
 		context& ctx,
 		data& d,
 		write<collision_component> collision,
-		structural<collision_result_component> results
+		read<collision_result_component> results
 	) -> async::task<>;
 
 	[[= system_run<2>{}]]
@@ -1156,6 +1241,28 @@ export namespace gse::physics {
 		shared_view<data> d,
 		id entity_id
 	) -> bool;
+
+	template <std::meta::info Member>
+	auto set_request_target(
+		id target,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision
+	) -> auto*;
+
+	template <typename T>
+	auto publish_component_events(
+		const write<T>& components,
+		const channel_write<component_events<transform_component>, component_events<motion_component>, component_events<collision_component>> events_out
+	) -> void;
+
+	auto apply_set_requests(
+		data& d,
+		const set_request_read& requests,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision
+	) -> void;
 
 	auto apply_kinematic_targets(
 		read<kinematic_target_component>& targets,
@@ -1222,6 +1329,12 @@ export namespace gse::physics {
 		write<motion_component>& motion
 	) -> bool;
 
+	auto gpu_world_quiescent(
+		const step_inputs& inputs,
+		const data& d,
+		write<motion_component>& motion
+	) -> bool;
+
 	[[nodiscard]] auto history_steps(
 		const data& d
 	) -> std::size_t;
@@ -1269,7 +1382,8 @@ export namespace gse::physics {
 		std::span<const rollback_request> rollbacks,
 		std::span<const gpu_upload_report> reports,
 		channel_write<gpu_solver_frame_info> frame_info_out,
-		bool reset
+		bool reset,
+		bool quiescent
 	) -> void;
 }
 

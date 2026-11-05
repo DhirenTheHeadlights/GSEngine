@@ -272,12 +272,19 @@ auto gse::gui::draw_context::clicked_in_rect(const rectf& rect, const mouse_butt
 	if (!hit_regions || !rect.contains(hit_regions->press_origin())) {
 		return false;
 	}
-	constexpr float click_slop = 3.f;
-	const vec2f travel = m_input.mouse_position() - hit_regions->press_origin();
-	if (std::abs(travel.x()) > click_slop || std::abs(travel.y()) > click_slop) {
+	if (!within_click_slop()) {
 		return false;
 	}
 	return mouse_released_for(rect, button);
+}
+
+auto gse::gui::draw_context::within_click_slop() const -> bool {
+	if (!hit_regions) {
+		return true;
+	}
+	constexpr float click_slop = 4.f;
+	const vec2f travel = m_input.mouse_position() - hit_regions->press_origin();
+	return std::abs(travel.x()) <= click_slop && std::abs(travel.y()) <= click_slop;
 }
 
 auto gse::gui::draw_context::mouse_pressed(const mouse_button button) const -> bool {
@@ -515,13 +522,21 @@ auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> lay
 	return layer_scope{ *this, layer };
 }
 
+auto gse::gui::draw_context::scoped_layer(const render_layer layer, const std::uint32_t z_order) const -> layer_scope {
+	return layer_scope{ *this, layer, z_order };
+}
+
 gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer) noexcept
-	: m_ctx(&ctx), m_saved(ctx.current_layer), m_active(true) {
+	: layer_scope(ctx, layer, ctx.current_z_order) {}
+
+gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer, const std::uint32_t z_order) noexcept
+	: m_ctx(&ctx), m_saved(ctx.current_layer), m_saved_z(ctx.current_z_order), m_active(true) {
 	ctx.current_layer = layer;
+	ctx.current_z_order = z_order;
 }
 
 gse::gui::layer_scope::layer_scope(layer_scope&& other) noexcept
-	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_active(other.m_active) {
+	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_saved_z(other.m_saved_z), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -531,9 +546,11 @@ auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_sco
 	}
 	if (m_active && m_ctx) {
 		m_ctx->current_layer = m_saved;
+		m_ctx->current_z_order = m_saved_z;
 	}
 	m_ctx = other.m_ctx;
 	m_saved = other.m_saved;
+	m_saved_z = other.m_saved_z;
 	m_active = other.m_active;
 	other.m_active = false;
 	return *this;
@@ -542,5 +559,6 @@ auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_sco
 gse::gui::layer_scope::~layer_scope() noexcept {
 	if (m_active && m_ctx) {
 		m_ctx->current_layer = m_saved;
+		m_ctx->current_z_order = m_saved_z;
 	}
 }

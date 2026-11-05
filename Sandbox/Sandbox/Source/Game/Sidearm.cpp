@@ -93,12 +93,13 @@ auto sandbox::sidearm::run(gse::context& ctx, data& d, const gse::shared_view<gs
 	return {};
 }
 
-auto sandbox::sidearm::rounds::run(data& d, const gse::shared_view<gse::world_system::data> world_d, const gse::channel_read<spawn_round> spawn_in, gse::structural<gse::physics::transform_component> round_transforms, gse::structural<gse::physics::motion_component>, gse::structural<gse::physics::collision_component>, gse::structural<gse::primitive_sphere_spec>) -> gse::async::task<> {
+auto sandbox::sidearm::rounds::run(gse::context& ctx, data& d, const gse::shared_view<gse::world_system::data> world_d, const gse::channel_read<spawn_round> spawn_in, gse::read<gse::physics::transform_component> round_transforms) -> gse::async::task<> {
 	auto* scene = world_d.active_scene_ptr;
 	if (!scene) {
 		return {};
 	}
 
+	const gse::scene::mutation_scope _(ctx);
 	const auto dt = gse::system_clock::dt();
 
 	for (auto& round : d.rounds) {
@@ -108,7 +109,7 @@ auto sandbox::sidearm::rounds::run(data& d, const gse::shared_view<gse::world_sy
 	std::erase_if(
 		d.rounds,
 		[scene, &round_transforms](const live_round& r) {
-			if (!round_transforms.contains(r.entity)) {
+			if (!round_transforms.find(r.entity)) {
 				return true;
 			}
 			if (r.remaining > gse::time{}) {

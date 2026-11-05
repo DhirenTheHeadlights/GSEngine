@@ -48,9 +48,9 @@ export namespace gse::save {
 			std::span<const std::string> assignments
 		) -> void;
 
-		template <typename State, fixed_string Key>
+		template <std::meta::info... Path>
 		auto pin(
-			const auto& value
+			const typename settings::member_path<Path...>::value_type& value
 		) -> void;
 
 		auto set_pin(
@@ -59,9 +59,9 @@ export namespace gse::save {
 			std::string_view value
 		) -> void;
 
-		template <typename State, fixed_string Key>
+		template <std::meta::info... Path>
 		auto default_for(
-			const auto& value
+			const typename settings::member_path<Path...>::value_type& value
 		) -> void;
 
 		auto set_app_default(
@@ -206,6 +206,7 @@ export namespace gse::save {
 		doc m_app_defaults;
 		doc m_pins;
 		doc m_overrides;
+		std::vector<std::string> m_malformed_overrides;
 		doc m_staged;
 		doc m_written;
 		doc m_defaults;
@@ -226,30 +227,16 @@ auto gse::save::registry::for_each_entry(auto&& fn) const -> void {
 	}
 }
 
-template <typename State, gse::fixed_string Key>
-auto gse::save::registry::pin(const auto& value) -> void {
-	static_assert(
-		!settings::category_of<State>().empty(),
-		"pinned state has no settings::category annotation, so its keys are unreachable"
-	);
-	static_assert(
-		settings::settings_key_exists<State>(std::string_view(Key)),
-		"pinned key does not name an annotated setting on that state"
-	);
-	set_pin(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
+template <std::meta::info... Path>
+auto gse::save::registry::pin(const typename settings::member_path<Path...>::value_type& value) -> void {
+	using path = settings::member_path<Path...>;
+	set_pin(path::category, path::key, meta::write_field(value));
 }
 
-template <typename State, gse::fixed_string Key>
-auto gse::save::registry::default_for(const auto& value) -> void {
-	static_assert(
-		!settings::category_of<State>().empty(),
-		"defaulted state has no settings::category annotation, so its keys are unreachable"
-	);
-	static_assert(
-		settings::settings_key_exists<State>(std::string_view(Key)),
-		"defaulted key does not name an annotated setting on that state"
-	);
-	set_app_default(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
+template <std::meta::info... Path>
+auto gse::save::registry::default_for(const typename settings::member_path<Path...>::value_type& value) -> void {
+	using path = settings::member_path<Path...>;
+	set_app_default(path::category, path::key, meta::write_field(value));
 }
 
 gse::save::registry::~registry() {
@@ -283,12 +270,7 @@ auto gse::save::registry::set_overrides(const std::span<const std::string> assig
 		const std::size_t equals = text.find('=');
 		const std::size_t dot = text.find('.');
 		if (equals == std::string_view::npos || dot == std::string_view::npos || dot > equals) {
-			log::println(
-				log::level::warning,
-				log::category::general,
-				"ignoring setting override '{}'; expected Section.key=value",
-				text
-			);
+			m_malformed_overrides.push_back(assignment);
 			continue;
 		}
 		const std::string category(trim(text.substr(0, dot)));
@@ -548,36 +530,50 @@ auto gse::save::registry::audit_files() const -> void {
 }
 
 auto gse::save::registry::audit_overrides() const -> void {
-	std::vector<std::string> unknown;
+	std::vector<std::string> errors;
+	for (const std::string& assignment : m_malformed_overrides) {
+		errors.push_back(std::format("setting override '{}' is not of the form Section.key=value", assignment));
+	}
 
 	for (const auto& [category, values] : m_overrides) {
-		if (!category_registered(category)) {
-			for (const auto& key : std::views::keys(values)) {
+		for (const auto& [key, value] : values) {
+			if (!find_key(category, key)) {
 				log::println(
 					log::level::warning,
 					log::category::save_system,
-					"setting override '{}.{}' was not applied: no system registered section '{}' in this run mode",
+					"setting override '{}.{}' was not applied: no system registered that setting in this run mode",
 					category,
-					key,
-					category
+					key
 				);
+				continue;
 			}
-			continue;
-		}
-		for (const auto& key : std::views::keys(values)) {
-			if (!find_key(category, key)) {
-				unknown.push_back(std::format("{}.{}", category, key));
+			for (const auto& entry : m_entries) {
+				if (entry.category != category) {
+					continue;
+				}
+				const auto field = std::ranges::find(entry.fields, key, &settings::settings_field::key);
+				if (field == entry.fields.end() || !field->normalize || !field->normalize(value).empty()) {
+					continue;
+				}
+				std::string units;
+				for (const auto name : field->units) {
+					units += units.empty() ? "" : ", ";
+					units += name;
+				}
+				errors.push_back(std::format("setting override '{}.{}' could not parse '{}'; it needs a unit suffix, one of: {}", category, key, value, units));
 			}
 		}
 	}
 
-	if (unknown.empty()) {
+	if (errors.empty()) {
 		return;
 	}
 
-	for (const auto& name : unknown) {
-		std::println(std::cerr, "error: setting override '{}' does not name a setting in that section", name);
+	for (const auto& error : errors) {
+		log::println(log::level::error, log::category::save_system, "{}", error);
+		std::println(std::cerr, "error: {}", error);
 	}
+	log::flush();
 	std::cerr.flush();
 	std::_Exit(2);
 }

@@ -94,6 +94,68 @@ const text_result = (payload, is_error = false) => ({
 
 // --- tools -----------------------------------------------------------------------------
 
+const read_exit = (pid, since) => {
+	const path = join(inbox, 'exits', `${pid}.txt`);
+	try {
+		if (statSync(path).mtimeMs < since - 2000) {
+			return undefined;
+		}
+		const lines = readFileSync(path, 'utf8').split('\n');
+		const code = Number((lines.find((line) => line.startsWith('exit_code ')) ?? '').slice('exit_code '.length));
+		return {
+			exit_code: code,
+			exit_code_hex: `0x${(code >>> 0).toString(16)}`,
+			output_tail: lines.filter((line) => line.startsWith('| ')).map((line) => line.slice(2)),
+		};
+	}
+	catch {
+		return undefined;
+	}
+};
+
+const log_run_of = (pid, since) => {
+	try {
+		const found = readdirSync(logs_dir)
+			.filter((name) => name.endsWith('.log') && name.split('.')[1] === String(pid))
+			.map((name) => ({ name, modified: statSync(join(logs_dir, name)).mtimeMs }))
+			.filter((entry) => entry.modified >= since - 2000)
+			.sort((a, b) => b.modified - a.modified)[0];
+		if (!found) {
+			return undefined;
+		}
+		const parts = found.name.slice(0, -'.log'.length).split('.');
+		return { exe: parts[0], run: parts[2] };
+	}
+	catch {
+		return undefined;
+	}
+};
+
+const await_exits = async (pids, since, timeout) => {
+	const deadline = Date.now() + timeout * 1000;
+	const exits = new Map();
+	while (exits.size < pids.length && Date.now() < deadline) {
+		for (const pid of pids) {
+			if (!exits.has(pid)) {
+				const record = read_exit(pid, since);
+				if (record) {
+					exits.set(pid, record);
+				}
+			}
+		}
+		if (exits.size < pids.length) {
+			await sleep(1000);
+		}
+	}
+	const processes = pids.map((pid) => ({ pid: Number(pid), log: log_run_of(pid, since), ...(exits.get(pid) ?? { still_running: true }) }));
+	return {
+		processes,
+		next: processes.some((p) => p.still_running)
+			? 'Timed out before every process exited; the ones marked still_running are still going. Read their logs with gse_log_query.'
+			: 'Every process exited. Read the full log with gse_log_query using the exe and run named here; output_tail is only the last lines the editor captured.',
+	};
+};
+
 const build = async (args, run_only = false) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	if (!agent) {
@@ -118,6 +180,7 @@ const build = async (args, run_only = false) => {
 		}), true);
 	}
 
+	const launched_at = Date.now();
 	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
 	write_atomically(join(inbox, 'requests'), id, [
 		`id ${id}`,
@@ -125,6 +188,7 @@ const build = async (args, run_only = false) => {
 		`target ${target}`,
 		`run ${run_only || args.run ? 1 : 0}`,
 		`run_only ${run_only ? 1 : 0}`,
+		`standalone ${launching && args.standalone ? 1 : 0}`,
 		`tree ${args.tree ?? ''}`,
 		`profile ${args.profile ?? ''}`,
 		`config ${String(args.config ?? '').replace(/[\r\n]+/g, '').trim()}`,
@@ -162,6 +226,17 @@ const build = async (args, run_only = false) => {
 			}
 			else {
 				result.remove();
+				if (result.status === 'ok' && launching && !args.detach) {
+					const pids = result.body.split('\n').map((line) => /^pid (\d+)$/.exec(line.trim())?.[1]).filter(Boolean);
+					if (pids.length > 0) {
+						return text_result(header(project, {
+							id,
+							target,
+							outcome: 'exited',
+							...(await await_exits(pids, launched_at, Math.max(1, timeout - waited))),
+						}));
+					}
+				}
 				const ok = run_only ? 'launched' : 'succeeded';
 				const outcome = result.status === 'ok' ? ok
 					: result.status === 'failed' ? (result.owned > 0 ? 'failed_yours' : 'failed_not_yours')
@@ -1207,6 +1282,291 @@ const report_gap = async (args) => {
 	}));
 };
 
+const image_base_of = (exe) => {
+	const bytes = readFileSync(exe);
+	const pe = bytes.readUInt32LE(0x3c);
+	const optional = pe + 24;
+	return bytes.readUInt16LE(optional) === 0x20b ? bytes.readBigUInt64LE(optional + 24) : BigInt(bytes.readUInt32LE(optional + 28));
+};
+
+const cmake_cache_above = (exe) => {
+	let dir = dirname(exe);
+	while (dir && dirname(dir) !== dir) {
+		const cache = join(dir, 'CMakeCache.txt');
+		if (existsSync(cache)) {
+			return cache;
+		}
+		dir = dirname(dir);
+	}
+	return undefined;
+};
+
+const addr2line_for = (exe) => {
+	const cache = cmake_cache_above(exe);
+	if (!cache) {
+		return undefined;
+	}
+	const compiler = /^CMAKE_CXX_COMPILER:[A-Z]+=(.*)$/m.exec(readFileSync(cache, 'utf8'))?.[1]?.trim();
+	if (!compiler) {
+		return undefined;
+	}
+	const tool = join(dirname(compiler), 'addr2line.exe');
+	return existsSync(tool) ? tool : undefined;
+};
+
+const build_executables = (stem) => {
+	const root = join(engine_root, '.generated', 'out', 'build');
+	const out = [];
+	let presets = [];
+	try {
+		presets = readdirSync(root);
+	}
+	catch {
+		return out;
+	}
+	for (const preset of presets) {
+		let subdirs = [];
+		try {
+			subdirs = readdirSync(join(root, preset));
+		}
+		catch {
+			continue;
+		}
+		for (const sub of subdirs) {
+			const exe = join(root, preset, sub, `${stem}.exe`);
+			if (existsSync(exe)) {
+				out.push(windows_path(exe));
+			}
+		}
+	}
+	return out;
+};
+
+const symbolize = async (args) => {
+	const project = project_of(process.cwd());
+	let text = String(args.text ?? '');
+	let source;
+	if (args.crash) {
+		const path = resolve(String(args.crash));
+		try {
+			text = readFileSync(path, 'utf8');
+			source = { path: windows_path(path), modified: statSync(path).mtimeMs };
+		}
+		catch {
+			return text_result(header(project, { error: `cannot read crash record '${args.crash}'` }), true);
+		}
+	}
+	else if (args.run) {
+		const run = String(args.run);
+		const name = (() => {
+			try {
+				return readdirSync(logs_dir).find((entry) => entry.endsWith('.log') && entry.includes(`.${run}.`) || entry === `${run}.log`);
+			}
+			catch {
+				return undefined;
+			}
+		})();
+		if (!name) {
+			return text_result(header(project, { error: `no log for run '${run}' in ${windows_path(logs_dir)}` }), true);
+		}
+		const path = join(logs_dir, name);
+		text = readFileSync(path, 'utf8');
+		source = { path: windows_path(path), modified: statSync(path).mtimeMs };
+	}
+	if (!text.trim()) {
+		return text_result(header(project, { error: 'pass one of `crash` (a crash record path), `run` (a log run stamp) or `text` (a pasted stack dump).' }), true);
+	}
+
+	const frames = [];
+	const frame = /([\w.-]+\.exe)\s*\+\s*0x([0-9a-f]+)/gi;
+	let match;
+	while ((match = frame.exec(text)) !== null) {
+		frames.push({ module: match[1], rva: BigInt(`0x${match[2]}`) });
+	}
+	if (frames.length === 0) {
+		return text_result(header(project, { error: 'no `<exe>.exe+0x<rva>` frames in the input. DLL frames are not symbolized.' }), true);
+	}
+
+	const stem = basename(String(args.exe ?? frames[0].module).replaceAll('\\', '/')).replace(/\.exe$/i, '');
+	const named = /^exe:\s*(.+\.exe)\s*$/mi.exec(text)?.[1];
+	let exe;
+	if (args.exe && /[\\/]/.test(String(args.exe))) {
+		exe = windows_path(String(args.exe));
+	}
+	else if (named && basename(named).toLowerCase() === `${stem.toLowerCase()}.exe`) {
+		exe = windows_path(named);
+	}
+	else {
+		const candidates = build_executables(stem);
+		if (candidates.length !== 1) {
+			return text_result(header(project, {
+				error: candidates.length === 0 ? `no ${stem}.exe under .generated/out/build` : `${candidates.length} builds of ${stem}.exe exist and the input does not say which crashed - pass exe as a full path`,
+				candidates,
+			}), true);
+		}
+		exe = candidates[0];
+	}
+	if (!existsSync(exe)) {
+		return text_result(header(project, { error: `no executable at ${exe}` }), true);
+	}
+
+	const exe_modified = statSync(exe).mtimeMs;
+	const written = /^binary:.*written (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)/m.exec(text)?.[1];
+	const stale = written
+		? Math.abs(exe_modified - Date.parse(`${written.replace(' ', 'T')}Z`)) > 2000 && Math.abs(exe_modified - Date.parse(written.replace(' ', 'T'))) > 2000
+		: source !== undefined && exe_modified > source.modified;
+	if (stale) {
+		return text_result(header(project, {
+			exe,
+			error: 'the executable on disk was rebuilt after these frames were recorded, so the offsets point into different code. Nothing was symbolized; a name resolved now would be a plausible lie.',
+			exe_modified: new Date(exe_modified).toISOString(),
+			recorded: written ?? (source ? new Date(source.modified).toISOString() : undefined),
+		}), true);
+	}
+
+	const addr2line = addr2line_for(exe);
+	if (!addr2line) {
+		return text_result(header(project, { exe, error: 'could not find addr2line: no CMakeCache.txt above the exe names a CMAKE_CXX_COMPILER whose bin holds addr2line.exe' }), true);
+	}
+
+	const own = frames.filter((f) => f.module.toLowerCase() === `${stem.toLowerCase()}.exe`);
+	const base = image_base_of(exe);
+	const addresses = own.map((f) => `0x${(base + f.rva).toString(16)}`);
+	let output;
+	try {
+		output = execFileSync(addr2line, ['-f', '-C', '-i', '-a', '-e', exe, ...addresses], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+	}
+	catch (error) {
+		return text_result(header(project, { exe, error: `addr2line failed: ${String(error?.stderr ?? error?.message ?? error).trim()}` }), true);
+	}
+
+	const resolved = [];
+	let current;
+	const lines = output.split(/\r?\n/).filter((line) => line !== '');
+	for (let at = 0; at < lines.length; at += 1) {
+		if (/^0x[0-9a-f]+$/i.test(lines[at])) {
+			current = { address: lines[at], rva: `0x${(BigInt(lines[at]) - base).toString(16)}`, inlined: [] };
+			resolved.push(current);
+			continue;
+		}
+		const entry = { function: lines[at], location: (lines[at + 1] ?? '').replace(/\\/g, '/') };
+		at += 1;
+		if (current) {
+			current.inlined.push(entry);
+		}
+	}
+
+	return text_result(header(project, {
+		exe,
+		image_base: `0x${base.toString(16)}`,
+		addr2line: windows_path(addr2line),
+		skipped_other_modules: frames.length - own.length,
+		frames: resolved.map((f) => ({ rva: f.rva, function: f.inlined[0]?.function, location: f.inlined[0]?.location, inlined_into: f.inlined.length > 1 ? f.inlined.slice(1) : undefined })),
+	}));
+};
+
+const git_subcommands = ['log', 'show', 'diff', 'blame', 'status'];
+
+const git = async (args) => {
+	const project = project_of(process.cwd());
+	const command = String(args.command ?? '');
+	if (!git_subcommands.includes(command)) {
+		return text_result(header(project, { error: `command must be one of ${git_subcommands.join(', ')}` }), true);
+	}
+	const values = [args.rev, args.base, args.grep, args.pickaxe, ...(Array.isArray(args.paths) ? args.paths : [])].filter((value) => value !== undefined);
+	if (values.some((value) => typeof value !== 'string' || value.startsWith('-') || /[\r\n\0]/.test(value))) {
+		return text_result(header(project, { error: 'rev, base, grep, pickaxe and paths must be plain strings that do not start with "-".' }), true);
+	}
+	const paths = Array.isArray(args.paths) ? args.paths : [];
+	const max_count = Math.max(1, Math.min(500, Math.trunc(Number(args.max_count ?? 20)) || 20));
+	const max_bytes = Math.max(1000, Math.min(400_000, Number(args.max_bytes ?? 60_000)));
+
+	const argv = ['--no-pager', '-c', 'core.pager=cat', command];
+	if (command !== 'status' && command !== 'blame') {
+		argv.push('--no-color', '--no-ext-diff', '--no-textconv');
+	}
+	switch (command) {
+		case 'log':
+			argv.push(`--max-count=${max_count}`, '--date=iso');
+			if (args.patch) {
+				argv.push('-p');
+			}
+			if (args.stat) {
+				argv.push('--stat');
+			}
+			if (args.grep) {
+				argv.push(`--grep=${args.grep}`);
+			}
+			if (args.pickaxe) {
+				argv.push(`-G${args.pickaxe}`);
+			}
+			if (args.rev) {
+				argv.push(args.base ? `${args.base}..${args.rev}` : args.rev);
+			}
+			break;
+		case 'show':
+			if (args.stat) {
+				argv.push('--stat');
+			}
+			argv.push(args.rev ?? 'HEAD');
+			break;
+		case 'diff':
+			if (args.stat) {
+				argv.push('--stat');
+			}
+			if (args.base) {
+				argv.push(args.base);
+			}
+			if (args.rev) {
+				argv.push(args.rev);
+			}
+			break;
+		case 'blame':
+			if (paths.length !== 1) {
+				return text_result(header(project, { error: 'blame needs exactly one path' }), true);
+			}
+			if (args.lines) {
+				if (!/^\d+,\d+$/.test(String(args.lines))) {
+					return text_result(header(project, { error: 'lines must be "start,end"' }), true);
+				}
+				argv.push(`-L${args.lines}`);
+			}
+			if (args.rev) {
+				argv.push(args.rev);
+			}
+			break;
+		case 'status':
+			argv.push('--porcelain=v1', '--branch');
+			break;
+	}
+	if (paths.length > 0) {
+		argv.push('--', ...paths);
+	}
+
+	let output;
+	try {
+		output = execFileSync('git', argv, {
+			cwd: engine_root,
+			encoding: 'utf8',
+			maxBuffer: 64 * 1024 * 1024,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: { ...process.env, GIT_PAGER: 'cat', GIT_EXTERNAL_DIFF: '', GIT_TERMINAL_PROMPT: '0' },
+		});
+	}
+	catch (error) {
+		return text_result(header(project, { command, error: String(error?.stderr ?? error?.message ?? error).trim() }), true);
+	}
+	const truncated = output.length > max_bytes;
+	return text_result(header(project, {
+		command,
+		argv: argv.slice(3),
+		bytes: output.length,
+		truncated,
+		hint: truncated ? 'Narrow with paths, stat, a rev range, max_count, or raise max_bytes (max 400000).' : undefined,
+		output: truncated ? output.slice(0, max_bytes) : output,
+	}));
+};
+
 const owned_by_tree = ['out', '.git'];
 
 const inside = (root, path) => {
@@ -1273,6 +1633,42 @@ const delete_file = async (args) => {
 };
 
 const tools = {
+	gse_symbolize: {
+		description:
+			'Resolve `<Exe>.exe+0xRVA` stack frames - from a crash record, a log\'s watchdog or assert dump, or pasted text - to function, file and line, with inlined frames, using addr2line from the toolchain the binary was built with. Read-only and available in every phase, including scoping, so a crash can be symbolized before anything is built. It refuses when the executable on disk was rebuilt after the frames were recorded, because the offsets then point into different code. DLL frames are skipped.',
+		schema: {
+			type: 'object',
+			properties: {
+				crash: { type: 'string', description: 'Path to a crash record (*.crash). Its exe: and binary: lines pick the executable and prove it is the one that crashed.' },
+				run: { type: 'string', description: 'A log run stamp, e.g. "20261102_143543": symbolize every frame in that log.' },
+				text: { type: 'string', description: 'Pasted text containing frames.' },
+				exe: { type: 'string', description: 'Executable stem or full path. Defaults to the exe the input names; a stem with several builds on disk needs the full path.' },
+			},
+		},
+		run: symbolize,
+	},
+	gse_git: {
+		description:
+			'Read the repository\'s history and working-tree state without a shell: log (with grep, pickaxe, patch, stat, a rev range), show, diff (between revs, or a rev against the working tree), blame and status. Read-only and available in every phase. Arguments are typed and none may start with "-", so nothing here can write, rewrite or push. Output is capped by max_bytes.',
+		schema: {
+			type: 'object',
+			properties: {
+				command: { type: 'string', enum: git_subcommands, description: 'Which read to run.' },
+				rev: { type: 'string', description: 'log: the tip (or range end with base). show: the commit (default HEAD). diff: the second side. blame: blame as of this rev.' },
+				base: { type: 'string', description: 'log: range start, giving base..rev. diff: the first side; omit rev to diff base against the working tree.' },
+				paths: { type: 'array', items: { type: 'string' }, description: 'Limit to these paths, relative to the repo root. blame takes exactly one.' },
+				grep: { type: 'string', description: 'log: only commits whose message matches.' },
+				pickaxe: { type: 'string', description: 'log: only commits whose diff adds or removes a line matching this regex (-G).' },
+				patch: { type: 'boolean', description: 'log: include each commit\'s diff.' },
+				stat: { type: 'boolean', description: 'log/show/diff: a per-file summary instead of, or alongside, the diff.' },
+				lines: { type: 'string', description: 'blame: "start,end" line range.' },
+				max_count: { type: 'number', description: 'log: commits to return (default 20, max 500).' },
+				max_bytes: { type: 'number', description: 'Output cap (default 60000, max 400000).' },
+			},
+			required: ['command'],
+		},
+		run: git,
+	},
 	gse_delete_file: {
 		description:
 			'Delete one file from the project or engine source tree. Use this instead of rm, del or Remove-Item: the deletion shows in the editor\'s agent panel with the file path, and the editor counts it as an unbuilt edit of the chats working in that tree, so gse_hibernate wakes on the build that covers it. Build errors in files that imported it are still blamed per file and will not come back as yours. Only deletes clean, committed files, so every delete is recoverable with git checkout: untracked, ignored and modified files are refused, as are directories, links, anything under out/ or .git/, and paths outside the project and engine roots. Creating a file needs no tool - use Write. If the file declared a C++ module, the response names it: remove its imports before you build.',
@@ -1369,6 +1765,8 @@ const tools = {
 				run: { type: 'boolean', description: 'Launch a play session after a successful game build. Like gse_run, it must be bounded: pass scenario, or seconds for a free run.' },
 				scenario: { type: 'string', description: 'With run: the scenario to launch afterwards. See gse_run.' },
 				seconds: { type: 'number', description: 'With run: bound a free run to this long. See gse_run.' },
+				detach: { type: 'boolean', description: 'With run: return once the game starts instead of waiting for its exit. See gse_run.' },
+				standalone: { type: 'boolean', description: 'With run: launch standalone rather than attached. See gse_run.' },
 				profile: { type: 'string', description: 'Named build profile from the editor build row. Omit to build the editor\'s own configuration.' },
 				config: { type: 'string', description: 'Configure preset name from CMakePresets.json to build the game in, e.g. "x64-mingw-gcc-Release-portable-simd". Each preset has its own build directory, configured on first use (a full engine compile). Omit for the editor\'s own configuration; a profile overrides it.' },
 				tree: { type: 'string', description: 'Build in a named worktree instead of the one you are in.' },
@@ -1425,7 +1823,7 @@ const tools = {
 	},
 	gse_run: {
 		description:
-			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Returns once the game has been started, not when it exits; the game writes its own log, so read it afterwards with gse_log_query rather than waiting here. Only the game can be launched - the editor is the process answering you.',
+			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Blocks until the game exits, then returns each process\'s exit code, the last lines of its output (stderr included) and the exe/run key of its log for gse_log_query - so a crash, an _Exit or an early abort is visible here. Pass `detach: true` to return as soon as the game starts instead. Pass `standalone: true` to launch it as its own window rather than embedded in the editor viewport - needed for fullscreen, display-mode or window-level behaviour, and for timing without the editor\'s embed cost; it opens a real window on the owner\'s desktop, so only use it when the attached form cannot show what you need. Only the game can be launched - the editor is the process answering you.',
 		schema: {
 			type: 'object',
 			properties: {
@@ -1437,6 +1835,8 @@ const tools = {
 					description: 'Setting overrides for this run only, each "Section.key=value", e.g. "Graphics.validation_layers_enabled=true". Applied in memory; the ini is never touched. Entries not in Section.key=value form are dropped. A scenario pins its own declared settings ahead of these.',
 				},
 				config: { type: 'string', description: 'Configure preset name from CMakePresets.json whose executable to run, e.g. "x64-mingw-gcc-Release-portable-simd". Omit to run the editor\'s own configuration.' },
+				detach: { type: 'boolean', description: 'Return once the game has started instead of waiting for it to exit.' },
+				standalone: { type: 'boolean', description: 'Launch as a standalone window instead of attached to the editor viewport. Opens a window on the owner\'s desktop.' },
 				tree: { type: 'string', description: 'Worktree name to run; defaults to the one owning your working directory.' },
 				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
 				wait: { type: 'number', description: 'Seconds to wait for an in-flight build before giving up and returning "deferred" (default 600).' },

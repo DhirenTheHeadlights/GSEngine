@@ -462,6 +462,7 @@ export namespace gse::win32 {
 	using ::WriteFile;
 	using ::PeekNamedPipe;
 	using ::GetStdHandle;
+	using ::SetStdHandle;
 	using ::GetFileType;
 	using ::GetConsoleMode;
 	using ::SetConsoleMode;

@@ -63,7 +63,6 @@ auto gse::renderer::sdf_grid::init(context& ctx, const shared_view<gpu::context:
 				.size = camera_ubo_size,
 				.stride = sizeof(shaders::common::camera_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"sdf_grid.camera_ubo"
 		);

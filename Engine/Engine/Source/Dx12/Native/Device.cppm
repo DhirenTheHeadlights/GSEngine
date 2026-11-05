@@ -118,6 +118,8 @@ export namespace gse::dx12 {
 			gpu::device_settings& cfg
 		);
 
+		~device();
+
 		[[nodiscard]] auto handle() const -> gpu::device_handle;
 
 		[[nodiscard]] auto queue_family(
@@ -129,6 +131,8 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto timestamp_period() const -> float;
 
 		[[nodiscard]] auto video_support() const -> const directx::video_support&;
+
+		[[nodiscard]] auto mesh_shaders_supported() const -> bool;
 
 		[[nodiscard]] auto calibrated_timestamp(
 			gpu::queue_type queue
@@ -696,6 +700,7 @@ export namespace gse::dx12 {
 		std::uint32_t m_sampler_size = 0;
 		root_signature_cache m_root_signatures;
 		bool m_gpu_upload_supported = false;
+		bool m_mesh_shaders_supported = false;
 		directx::video_support m_video_support;
 		bool m_validation_enabled = false;
 		std::atomic<bool> m_dred_dumped{ false };

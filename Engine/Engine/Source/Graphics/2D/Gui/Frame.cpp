@@ -320,8 +320,7 @@ auto gse::gui::update_viewport(context& run_ctx, data& d, viewport_state& vp, co
 	}
 
 	if (vp.adopts_unclaimed_content && !vp.menu_stack.occludes()) {
-		const channel_read_guard<hud_content> hud = requests_in.of<hud_content>();
-		process_hud(run_ctx, d, vp, input_st, std::span(hud.begin(), hud.size()));
+		process_hud(run_ctx, d, vp, input_st, requests_in.of<hud_content>());
 	}
 
 	ui_out.push<window_chrome_metrics_request>({

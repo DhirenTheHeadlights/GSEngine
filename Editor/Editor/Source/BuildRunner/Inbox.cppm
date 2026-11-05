@@ -26,6 +26,7 @@ export namespace gse::ide::build_inbox {
 		time exit_after{};
 		bool run = false;
 		bool run_only = false;
+		bool standalone = false;
 	};
 
 	struct result {
@@ -68,6 +69,15 @@ export namespace gse::ide::build_inbox {
 
 	auto take_presence() -> std::vector<presence>;
 
+	auto step_gate_path(
+		std::uint32_t session
+	) -> std::filesystem::path;
+
+	auto publish_step_gate(
+		std::uint32_t session,
+		std::string_view refusal
+	) -> void;
+
 	auto peek_hibernations() -> std::vector<hibernate_request>;
 
 	auto peek_requests() -> std::vector<request>;
@@ -90,6 +100,14 @@ export namespace gse::ide::build_inbox {
 
 	auto withdraw(
 		std::string_view id
+	) -> void;
+
+	auto exits_dir() -> std::filesystem::path;
+
+	auto publish_exit(
+		std::uint32_t pid,
+		std::uint32_t exit_code,
+		std::span<const std::string> tail
 	) -> void;
 
 

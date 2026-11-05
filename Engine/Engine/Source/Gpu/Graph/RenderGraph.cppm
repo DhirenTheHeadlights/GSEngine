@@ -157,6 +157,10 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto output_ready() const -> bool;
 
+		[[nodiscard]] auto wait_output_ready(
+			time timeout
+		) const -> bool;
+
 		[[nodiscard]] auto offscreen_surfaces() const -> std::span<const shared_surface>;
 
 		[[nodiscard]] auto offscreen_timelines() const -> gpu::offscreen_timelines;

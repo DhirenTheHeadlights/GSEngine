@@ -56,6 +56,24 @@ export namespace gse::ide {
 	};
 
 	struct dock_tree {
+		dock_tree() = default;
+
+		dock_tree(
+			const dock_tree& other
+		);
+
+		dock_tree(
+			dock_tree&& other
+		) noexcept;
+
+		auto operator=(
+			const dock_tree& other
+		) -> dock_tree&;
+
+		auto operator=(
+			dock_tree&& other
+		) noexcept -> dock_tree&;
+
 		id_mapped_collection<dock_node, id> nodes;
 		id root;
 		id maximized;

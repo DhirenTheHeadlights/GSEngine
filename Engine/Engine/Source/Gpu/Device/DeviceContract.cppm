@@ -286,6 +286,11 @@ export namespace gse::gpu {
 			swap_chain_handle old_handle
 		) -> expected<swap_chain_info>;
 
+		[[nodiscard]] auto resize_swapchain_in_place(
+			swap_chain_handle swapchain,
+			vec2i framebuffer_size
+		) -> bool;
+
 		[[nodiscard]] auto boot_surface() const -> surface;
 
 		[[nodiscard]] auto recreate_surface(
@@ -424,6 +429,8 @@ export namespace gse::gpu {
 		[[nodiscard]] auto bindless_sampler_heap_binding() const -> bindless_heap_binding;
 
 		[[nodiscard]] auto max_push_data_size() const -> std::uint32_t;
+
+		[[nodiscard]] auto capabilities() const -> backend_capabilities;
 
 		auto collect_garbage() -> void;
 

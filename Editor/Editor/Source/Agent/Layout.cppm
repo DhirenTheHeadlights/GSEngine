@@ -334,5 +334,5 @@ namespace gse::ide::agent {
 
 	auto views_of(
 		session& s
-	) -> std::array<transcript_view*, 4>;
+	) -> std::array<transcript_view*, 5>;
 }

@@ -25,8 +25,12 @@ import gse.meta;
 import gse.time;
 
 namespace gse::renderer::tonemap {
+	constexpr std::uint32_t histogram_tile = 4;
+
 	struct [[= shaders::shader_constant_block]] exposure_limits {
 		std::uint32_t histogram_bins = tonemap::histogram_bins;
+		std::uint32_t histogram_tile = tonemap::histogram_tile;
+		std::uint32_t histogram_sample_step = 2;
 		irradiance histogram_min_luminance = watts_per_square_meter(0.001f);
 		irradiance histogram_max_luminance = watts_per_square_meter(65536.f);
 		vec3f luminance_weights = { 0.2126f, 0.7152f, 0.0722f };
@@ -129,6 +133,43 @@ namespace gse::renderer::tonemap {
 		gpu::system_values<gpu::group_index>
 	>;
 
+	namespace atomic {
+		struct [[= shaders::ssbo_readwrite]] histogram_out {
+			using element = shaders::atomic_u32;
+		};
+
+		struct [[= shaders::ssbo_readwrite]] histogram_in {
+			using element = shaders::atomic_u32;
+		};
+
+		using histogram_entry = gpu::compute_entry<
+			gpu::body_path<"Compute/exposure_histogram_atomic">,
+			gpu::types<exposure_types>,
+			gpu::bindings<type_pack<histogram_source, histogram_out>>,
+			gpu::push_constant<histogram_push_constants>,
+			gpu::threads<16, 16, 1>,
+			gpu::system_values<gpu::dispatch_thread_id, gpu::group_index>
+		>;
+
+		using exposure_entry = gpu::compute_entry<
+			gpu::body_path<"Compute/exposure_update_atomic">,
+			gpu::types<exposure_types>,
+			gpu::bindings<type_pack<histogram_in, exposure_out>>,
+			gpu::push_constant<exposure_push_constants>,
+			gpu::threads<histogram_bins>,
+			gpu::system_values<gpu::group_index>
+		>;
+	}
+
+	template <typename HistogramEntry, typename ExposureEntry>
+	auto record_exposure(
+		channel_write<gpu::render_pass_request> pass_out,
+		data& d,
+		vec2u ext,
+		std::uint32_t frame_index,
+		const exposure_push_constants& exposure_push
+	) -> async::task<>;
+
 	auto rebind_views(
 		shared_view<gpu::context::data> gpu_s,
 		data& d
@@ -164,10 +205,46 @@ auto gse::renderer::tonemap::adaptation_blend(const time dt, const time constant
 	return 1.f - std::exp(-(dt / constant));
 }
 
+template <typename HistogramEntry, typename ExposureEntry>
+auto gse::renderer::tonemap::record_exposure(const channel_write<gpu::render_pass_request> pass_out, data& d, const vec2u ext, const std::uint32_t frame_index, const exposure_push_constants& exposure_push) -> async::task<> {
+	auto histogram_rec = co_await gpu::pass<^^histogram_pass>(pass_out)
+		.pipeline(d.histogram_pipeline)
+		.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
+	histogram_rec.template dispatch<HistogramEntry>(
+		{
+			.active_extent = ext,
+		},
+		{
+			.histogram_source = d.hdr_view.slot(),
+			.histogram_out = d.histogram_buffers[frame_index].slot(),
+		},
+		vec3u{ (ext.x() + 16u * histogram_tile - 1u) / (16u * histogram_tile), (ext.y() + 16u * histogram_tile - 1u) / (16u * histogram_tile), 1u }
+	);
+
+	auto exposure_rec = co_await gpu::pass<^^exposure_pass>(pass_out)
+		.pipeline(d.exposure_pipeline)
+		.after<^^histogram_pass>();
+	exposure_rec.template dispatch<ExposureEntry>(
+		exposure_push,
+		{
+			.histogram_in = d.histogram_buffers[frame_index].slot(),
+			.exposure_out = d.exposure_buffer.slot(),
+		},
+		vec3u{ 1u, 1u, 1u }
+	);
+}
+
 auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<bloom::data> bloom_state, data& d) -> async::task<> {
 	d.pipeline = gpu::build_graphics_program(*gpu_s.device, entry::pod);
-	d.histogram_pipeline = gpu::build_compute_program(*gpu_s.device, histogram_entry::pod);
-	d.exposure_pipeline = gpu::build_compute_program(*gpu_s.device, exposure_entry::pod);
+	d.typed_atomics = !gpu_s.device->capabilities().untyped_atomics;
+	if (d.typed_atomics) {
+		d.histogram_pipeline = gpu::build_compute_program(*gpu_s.device, atomic::histogram_entry::pod);
+		d.exposure_pipeline = gpu::build_compute_program(*gpu_s.device, atomic::exposure_entry::pod);
+	}
+	else {
+		d.histogram_pipeline = gpu::build_compute_program(*gpu_s.device, histogram_entry::pod);
+		d.exposure_pipeline = gpu::build_compute_program(*gpu_s.device, exposure_entry::pod);
+	}
 
 	d.sampler = gpu_s.device->register_sampler(
 		{
@@ -185,7 +262,6 @@ auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::
 				.size = sizeof(std::uint32_t) * histogram_bins,
 				.stride = sizeof(std::uint32_t),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true,
 				.writable = true,
 			},
 			"tonemap.histogram"
@@ -198,7 +274,6 @@ auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::
 			.size = sizeof(float),
 			.stride = sizeof(float),
 			.usage = gpu::buffer_flag::storage,
-			.bindless = true,
 			.writable = true,
 		},
 		"tonemap.exposure"
@@ -216,7 +291,7 @@ auto gse::renderer::tonemap::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<bloom::data> bloom_state, shared_view<atmosphere::data> atm_state) -> async::task<> {
+auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<bloom::data> bloom_state, shared_view<atmosphere::data> atm_state, const channel_read<camera::temporal_reset_request> reset_in) -> async::task<> {
 	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
 		co_return;
 	}
@@ -229,6 +304,8 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 	const auto ext = gpu_s.render_graph->extent();
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
+	const bool snap_exposure = !reset_in.of<camera::temporal_reset_request>().empty();
+
 	if (d.auto_exposure) {
 		const auto dt = system_clock::dt<time>();
 		const exposure_limits limits{};
@@ -238,40 +315,22 @@ auto gse::renderer::tonemap::frame(const context& ctx, shared_view<gpu::context:
 			: irradiance{};
 		const irradiance card_luminance = limits.middle_grey * incident / std::numbers::pi_v<float>;
 
-		auto histogram_rec = co_await gpu::pass<^^histogram_pass>(pass_out)
-			.pipeline(d.histogram_pipeline)
-			.after<^^forward::frame, ^^atmosphere::sky_raster_pass, ^^physics_debug::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^taa::frame>();
-		histogram_rec.dispatch<histogram_entry>(
-			{
-				.active_extent = ext,
-			},
-			{
-				.histogram_source = d.hdr_view.slot(),
-				.histogram_out = d.histogram_buffers[frame_index].slot(),
-			},
-			vec3u{ (ext.x() + 15u) / 16u, (ext.y() + 15u) / 16u, 1u }
-		);
-
-		auto exposure_rec = co_await gpu::pass<^^exposure_pass>(pass_out)
-			.pipeline(d.exposure_pipeline)
-			.after<^^histogram_pass>();
-		exposure_rec.dispatch<exposure_entry>(
-			{
-				.low_percentile = d.low_percentile,
-				.high_percentile = d.high_percentile,
-				.compensation = std::exp2(d.exposure_compensation),
-				.blend_bright = adaptation_blend(dt, d.adaptation_time_bright),
-				.blend_dark = adaptation_blend(dt, d.adaptation_time_dark),
-				.min_luminance = d.min_luminance,
-				.max_luminance = d.max_luminance,
-				.incident_luminance = card_luminance,
-			},
-			{
-				.histogram_in = d.histogram_buffers[frame_index].slot(),
-				.exposure_out = d.exposure_buffer.slot(),
-			},
-			vec3u{ 1u, 1u, 1u }
-		);
+		const exposure_push_constants exposure_push{
+			.low_percentile = d.low_percentile,
+			.high_percentile = d.high_percentile,
+			.compensation = std::exp2(d.exposure_compensation),
+			.blend_bright = snap_exposure ? 1.f : adaptation_blend(dt, d.adaptation_time_bright),
+			.blend_dark = snap_exposure ? 1.f : adaptation_blend(dt, d.adaptation_time_dark),
+			.min_luminance = d.min_luminance,
+			.max_luminance = d.max_luminance,
+			.incident_luminance = card_luminance,
+		};
+		if (d.typed_atomics) {
+			co_await record_exposure<atomic::histogram_entry, atomic::exposure_entry>(pass_out, d, ext, frame_index, exposure_push);
+		}
+		else {
+			co_await record_exposure<histogram_entry, exposure_entry>(pass_out, d, ext, frame_index, exposure_push);
+		}
 	}
 
 	const bool bloom_active = bloom_state.bloom_quality != bloom::quality_level::off && bloom_state.active_mip_count > 0;

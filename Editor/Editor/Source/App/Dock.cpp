@@ -5,6 +5,14 @@ import gse;
 
 import :dock;
 
+gse::ide::dock_tree::dock_tree(const dock_tree& other) = default;
+
+gse::ide::dock_tree::dock_tree(dock_tree&& other) noexcept = default;
+
+auto gse::ide::dock_tree::operator=(const dock_tree& other) -> dock_tree& = default;
+
+auto gse::ide::dock_tree::operator=(dock_tree&& other) noexcept -> dock_tree& = default;
+
 auto gse::ide::is_leaf(const dock_node& node) -> bool {
 	return !node.first.exists() && !node.second.exists();
 }

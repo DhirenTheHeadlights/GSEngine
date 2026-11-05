@@ -19,7 +19,7 @@ float median(float r, float g, float b) {
 }
 
 float mtsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float4 s = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv);
+    float4 s = ui_sample(tex_idx, uv);
     float sd = median(s.r, s.g, s.b);
     if ((sd < 0.5) != (s.a < 0.5)) {
         sd = s.a;
@@ -28,7 +28,7 @@ float mtsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
 }
 
 float tsd_alpha(uint tex_idx, float2 uv, float screen_px_range) {
-    float sd = textures[NonUniformResourceIndex(tex_idx)].Sample(textures_sampler, uv).a;
+    float sd = ui_sample(tex_idx, uv).a;
     return clamp(screen_px_range * (sd - 0.5) + 0.5, 0.0, 1.0);
 }
 

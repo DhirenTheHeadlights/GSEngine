@@ -8,6 +8,7 @@ import gse.win32;
 import std;
 
 import :configs;
+import :inbox;
 import :profiles;
 import :spawn;
 
@@ -63,6 +64,7 @@ export namespace gse::ide::build_runner {
 		stream_kind kind = stream_kind::none;
 		std::vector<build_error> errors;
 		std::vector<std::string> output;
+		std::vector<std::uint32_t> pids;
 		std::string tree;
 		std::string inbox_id;
 		bool succeeded = false;
@@ -553,7 +555,16 @@ namespace gse::ide::build_runner {
 		const config::worktree& tree
 	) -> std::filesystem::path;
 
+	auto wasm_server(
+		const config::worktree& tree
+	) -> std::filesystem::path;
+
 	auto game_launch_command(
+		const config::worktree& tree
+	) -> std::wstring;
+
+	auto browser_launch_command(
+		spawn::output_stream& stream,
 		const config::worktree& tree
 	) -> std::wstring;
 
@@ -561,6 +572,7 @@ namespace gse::ide::build_runner {
 		build_completion& completion,
 		spawn::output_stream& stream,
 		const config::worktree& tree,
+		const std::wstring& game,
 		std::string label,
 		const std::wstring& extra_args
 	) -> void;
@@ -614,6 +626,16 @@ namespace gse::ide::build_runner {
 	auto poll_games(
 		channel_write<attached_session_ended, stream_opened, build_finished, attached_surface_ready, attached_fatal_reported> events_out,
 		data& d
+	) -> void;
+
+	auto report_game_exit(
+		spawn::output_stream& stream,
+		std::uint32_t pid,
+		std::uint32_t exit_code
+	) -> void;
+
+	auto reap_game(
+		attached_game& game
 	) -> void;
 
 	auto stop_games(
@@ -1855,6 +1877,12 @@ auto gse::ide::build_runner::wasm_launcher(const config::worktree& tree) -> std:
 	return std::filesystem::exists(launcher, ec) ? launcher : std::filesystem::path{};
 }
 
+auto gse::ide::build_runner::wasm_server(const config::worktree& tree) -> std::filesystem::path {
+	const std::filesystem::path server = tree.game_executable.parent_path() / "serve.mjs";
+	std::error_code ec;
+	return std::filesystem::exists(server, ec) ? server : std::filesystem::path{};
+}
+
 auto gse::ide::build_runner::game_launch_command(const config::worktree& tree) -> std::wstring {
 	std::error_code ec;
 	if (std::filesystem::exists(tree.game_executable, ec)) {
@@ -1866,8 +1894,16 @@ auto gse::ide::build_runner::game_launch_command(const config::worktree& tree) -
 	return {};
 }
 
-auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, std::string label, const std::wstring& extra_args) -> void {
-	const std::wstring game = game_launch_command(tree);
+auto gse::ide::build_runner::browser_launch_command(spawn::output_stream& stream, const config::worktree& tree) -> std::wstring {
+	const std::filesystem::path server = wasm_server(tree);
+	if (server.empty()) {
+		spawn::emit(stream, "no serve.mjs beside " + tree.game_executable.generic_display_string() + "; running under node instead of the browser");
+		return game_launch_command(tree);
+	}
+	return L"node \"" + server.wstring() + L"\" --open --headed --";
+}
+
+auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const std::wstring& game, std::string label, const std::wstring& extra_args) -> void {
 	if (game.empty()) {
 		spawn::emit(stream, "game executable not found: " + tree.game_executable.generic_display_string());
 		return;
@@ -1900,7 +1936,7 @@ auto gse::ide::build_runner::launch_child(build_completion& completion, spawn::o
 auto gse::ide::build_runner::launch_play_session(build_completion& completion, spawn::output_stream& stream, const config::worktree& tree, const play_session& session, const std::uint32_t generation, const std::span<const std::string> settings, const run_bounds& bounds) -> void {
 	const bool scripted = !bounds.scenario.empty();
 	const bool dedicated_server = session.dedicated_server && !scripted;
-	const std::uint32_t clients = scripted ? 1u : std::min<std::uint32_t>(std::max<std::uint32_t>(session.clients, 1), max_attached_instances);
+	const std::uint32_t clients = scripted ? 1u : std::min<std::uint32_t>(std::max<std::uint32_t>(effective_clients(session), 1), max_attached_instances);
 	const std::uint32_t processes = clients + (dedicated_server ? 1u : 0u) + 1u;
 	const std::uint32_t hardware = std::max<std::uint32_t>(2, std::thread::hardware_concurrency());
 	std::wstring pool_args = L" --engine-worker-threads " + std::to_wstring(std::max<std::uint32_t>(2, hardware / processes));
@@ -1924,19 +1960,22 @@ auto gse::ide::build_runner::launch_play_session(build_completion& completion, s
 			completion,
 			stream,
 			tree,
+			game_launch_command(tree),
 			"server",
 			L" --engine-net-role dedicated --engine-net-listen-port " + std::to_wstring(session.base_port) + pool_args
 		);
 		connect_args += L" --engine-net-connect 127.0.0.1:" + std::to_wstring(session.base_port);
 	}
 
+	const bool wasm = !wasm_launcher(tree).empty();
+	const std::wstring client = session.browser && wasm ? browser_launch_command(stream, tree) : game_launch_command(tree);
 	for (std::uint32_t i = 0; i < clients; ++i) {
 		auto label = std::format("client {}", i + 1);
-		if (session.attached && wasm_launcher(tree).empty()) {
+		if (session.attached && !wasm) {
 			launch_game_attached(completion, stream, tree, generation, i, std::move(label), connect_args);
 		}
 		else {
-			launch_child(completion, stream, tree, std::move(label), connect_args);
+			launch_child(completion, stream, tree, client, std::move(label), connect_args);
 		}
 	}
 }
@@ -2164,7 +2203,7 @@ auto gse::ide::build_runner::start_build(const channel_write<attached_session_en
 	// Windows keeps the image mapped while the process lives, so the linker cannot
 	// overwrite the game exe until every running instance has actually exited.
 	if (resolved.target == build_target::game) {
-		if (const std::optional<std::uint32_t> ended = stop_games(d)) {
+		if (const std::optional<std::uint32_t> ended = resolved.skip_build ? std::nullopt : stop_games(d)) {
 			events_out.push<attached_session_ended>({
 				.generation = *ended,
 			});
@@ -2253,7 +2292,9 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		}
 	}
 
+	std::vector<std::uint32_t> pids;
 	for (launched_child& child : d.completion.children) {
+		pids.push_back(child.pid);
 		if (child.attached && child.instance < max_attached_instances) {
 			close_surface_pipe(d, child.instance);
 			d.pipes[child.instance].generation = d.completion.generation;
@@ -2295,6 +2336,7 @@ auto gse::ide::build_runner::drain_completion(const channel_write<attached_sessi
 		.kind = d.completion.kind,
 		.errors = std::move(d.completion.errors),
 		.output = std::move(d.completion.output),
+		.pids = std::move(pids),
 		.tree = std::move(d.completion.tree),
 		.inbox_id = std::exchange(d.inbox_id, {}),
 		.succeeded = d.completion.succeeded,
@@ -2314,13 +2356,7 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 			++i;
 			continue;
 		}
-		if (game.output) {
-			spawn::pump_output(*game.stream, game.output, game.pending);
-			win32::CloseHandle(game.output);
-			game.output = nullptr;
-		}
-		spawn::close_process(*game.stream);
-		win32::CloseHandle(game.process);
+		reap_game(game);
 
 		const bool owned_pipe = game.owns_pipe;
 		const std::uint32_t generation = game.generation;
@@ -2353,6 +2389,31 @@ auto gse::ide::build_runner::poll_games(const channel_write<attached_session_end
 	}
 }
 
+auto gse::ide::build_runner::report_game_exit(spawn::output_stream& stream, const std::uint32_t pid, const std::uint32_t exit_code) -> void {
+	constexpr std::size_t tail_lines = 40;
+
+	std::vector<std::string> lines;
+	{
+		std::lock_guard _(stream.mutex);
+		const std::size_t first = stream.lines.size() > tail_lines ? stream.lines.size() - tail_lines : 0;
+		lines.assign(stream.lines.begin() + static_cast<std::ptrdiff_t>(first), stream.lines.end());
+	}
+	build_inbox::publish_exit(pid, exit_code, lines);
+
+	spawn::emit(stream, std::format("game (pid {}) exited with code 0x{:x}", pid, exit_code));
+	if (exit_code == 0) {
+		log::println(log::level::info, log::category::general, "game (pid {}) exited with code 0", pid);
+		return;
+	}
+
+	std::string tail;
+	for (const std::string& line : lines) {
+		tail += "\n  ";
+		tail += line;
+	}
+	log::println(log::level::error, log::category::general, "game (pid {}) exited with code 0x{:x}; last output:{}", pid, exit_code, tail);
+}
+
 auto gse::ide::build_runner::poll_stopping_games(data& d, const bool block_until_exit) -> void {
 	if (d.stopping.empty()) {
 		return;
@@ -2367,16 +2428,23 @@ auto gse::ide::build_runner::poll_stopping_games(data& d, const bool block_until
 			if (!expired && win32::WaitForSingleObject(game.process, timeout) != win32::wait_object_0) {
 				return false;
 			}
-			if (game.output) {
-				spawn::pump_output(*game.stream, game.output, game.pending);
-				win32::CloseHandle(game.output);
-				game.output = nullptr;
-			}
-			spawn::close_process(*game.stream);
-			win32::CloseHandle(game.process);
+			reap_game(game);
 			return true;
 		}
 	);
+}
+
+auto gse::ide::build_runner::reap_game(attached_game& game) -> void {
+	if (game.output) {
+		spawn::pump_output(*game.stream, game.output, game.pending);
+		win32::CloseHandle(game.output);
+		game.output = nullptr;
+	}
+	win32::DWORD exit_code = 0;
+	win32::GetExitCodeProcess(game.process, &exit_code);
+	spawn::close_process(*game.stream);
+	win32::CloseHandle(game.process);
+	report_game_exit(*game.stream, game.pid, exit_code);
 }
 
 auto gse::ide::build_runner::stop_games(data& d) -> std::optional<std::uint32_t> {

@@ -60,6 +60,7 @@ export namespace gse::async {
 		std::atomic<void*> m_continuation{ nullptr };
 		std::atomic<bool> m_started{ false };
 		std::atomic<bool> m_detached{ false };
+		std::atomic<bool> m_finished{ false };
 
 		static auto initial_suspend() noexcept -> std::suspend_always;
 
@@ -233,9 +234,13 @@ namespace gse::async {
 
 template <typename P>
 auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<> {
+	const bool detached = h.promise().m_detached.load(std::memory_order_acquire);
 	void* const previous = h.promise().m_continuation.exchange(completed_marker(), std::memory_order_acq_rel);
-	if (h.promise().m_detached.load(std::memory_order_acquire)) {
+	if (detached) {
 		h.destroy();
+	}
+	else {
+		h.promise().m_finished.store(true, std::memory_order_release);
 	}
 	if (previous == nullptr || previous == completed_marker()) {
 		return std::noop_coroutine();
@@ -330,12 +335,12 @@ auto gse::async::task<T>::consume_start_handle() -> std::coroutine_handle<> {
 
 template <typename T>
 auto gse::async::task<T>::done() const -> bool {
-	return !m_handle || m_handle.done();
+	return !m_handle || m_handle.promise().m_finished.load(std::memory_order_acquire);
 }
 
 template <typename T>
 auto gse::async::task<T>::awaiter::await_ready() const noexcept -> bool {
-	return !m_handle || m_handle.done();
+	return !m_handle || m_handle.promise().m_finished.load(std::memory_order_acquire);
 }
 
 template <typename T>
@@ -348,6 +353,9 @@ auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller)
 	void* expected = nullptr;
 	if (promise.m_continuation.compare_exchange_strong(expected, caller.address(), std::memory_order_acq_rel, std::memory_order_acquire)) {
 		return std::noop_coroutine();
+	}
+	while (!promise.m_finished.load(std::memory_order_acquire)) {
+		std::this_thread::yield();
 	}
 	return caller;
 }

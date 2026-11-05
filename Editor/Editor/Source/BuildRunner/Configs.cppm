@@ -10,6 +10,7 @@ export namespace gse::ide::build_runner {
 		std::string label;
 		std::string directory;
 		std::string source_relative;
+		bool web = false;
 	};
 
 	auto build_configs() -> std::span<const build_config>;
@@ -30,9 +31,10 @@ namespace gse::ide::build_runner {
 
 	auto presets_path() -> std::filesystem::path;
 
-	auto preset_binary_dir(
+	auto preset_value(
 		const json::value& presets,
 		std::string_view name,
+		std::string_view key,
 		std::uint32_t depth
 	) -> std::string_view;
 
@@ -45,7 +47,7 @@ auto gse::ide::build_runner::presets_path() -> std::filesystem::path {
 	return config::engine_root() / "CMakePresets.json";
 }
 
-auto gse::ide::build_runner::preset_binary_dir(const json::value& presets, const std::string_view name, const std::uint32_t depth) -> std::string_view {
+auto gse::ide::build_runner::preset_value(const json::value& presets, const std::string_view name, const std::string_view key, const std::uint32_t depth) -> std::string_view {
 	if (depth > max_preset_depth) {
 		return {};
 	}
@@ -55,7 +57,7 @@ auto gse::ide::build_runner::preset_binary_dir(const json::value& presets, const
 		if (preset_name == nullptr || preset_name->text() != name) {
 			continue;
 		}
-		if (const json::value* directory = preset.find("binaryDir")) {
+		if (const json::value* directory = preset.find(key)) {
 			return directory->text();
 		}
 
@@ -64,10 +66,10 @@ auto gse::ide::build_runner::preset_binary_dir(const json::value& presets, const
 			return {};
 		}
 		if (inherits->is_string()) {
-			return preset_binary_dir(presets, inherits->text(), depth + 1);
+			return preset_value(presets, inherits->text(), key, depth + 1);
 		}
 		for (const json::value& parent : inherits->elements()) {
-			if (const std::string_view found = preset_binary_dir(presets, parent.text(), depth + 1); !found.empty()) {
+			if (const std::string_view found = preset_value(presets, parent.text(), key, depth + 1); !found.empty()) {
 				return found;
 			}
 		}
@@ -107,7 +109,7 @@ auto gse::ide::build_runner::read_build_configs() -> std::vector<build_config> {
 			continue;
 		}
 
-		const std::string_view binary_dir = preset_binary_dir(*presets, name->text(), 0);
+		const std::string_view binary_dir = preset_value(*presets, name->text(), "binaryDir", 0);
 		if (binary_dir.empty()) {
 			continue;
 		}
@@ -120,6 +122,7 @@ auto gse::ide::build_runner::read_build_configs() -> std::vector<build_config> {
 			.label = label != nullptr && label->is_string() ? std::string(label->text()) : std::string(name->text()),
 			.directory = std::string(slash == std::string_view::npos ? binary_dir : binary_dir.substr(slash + 1)),
 			.source_relative = binary_dir.starts_with(source_macro) ? std::string(binary_dir.substr(source_macro.size())) : std::string{},
+			.web = preset_value(*presets, name->text(), "toolchainFile", 0).contains("wasm32"),
 		});
 	}
 	return out;

@@ -34,8 +34,16 @@ export namespace gse::animation {
 		channel_read<ragdoll_request> ragdoll_in,
 		write<skeleton_instance_component> skeletons,
 		write<clip_player_component> players,
-		write<physics::motion_component> motions,
-		write<physics::collision_component> collisions,
-		write<physics::transform_component> transforms
+		channel_write<
+			physics::set_request<^^physics::transform_component::position>,
+			physics::set_request<^^physics::transform_component::orientation>,
+			physics::set_request<^^physics::motion_component::current_velocity>,
+			physics::set_request<^^physics::motion_component::angular_velocity>,
+			physics::set_request<^^physics::motion_component::body>,
+			physics::set_request<^^physics::collision_component::resolve_collisions>
+		> physics_out,
+		read<physics::motion_component> motions,
+		read<physics::collision_component> collisions,
+		read<physics::transform_component> transforms
 	) -> async::task<>;
 }

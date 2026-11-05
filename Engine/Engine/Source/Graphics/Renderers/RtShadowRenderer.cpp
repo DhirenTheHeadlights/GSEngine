@@ -4,6 +4,7 @@ import std;
 
 import :rt_shadow_renderer;
 import :geometry_collector;
+import :lighting_source;
 import :mesh;
 import :physics_transform_renderer;
 
@@ -39,6 +40,20 @@ namespace gse::renderer::rt_shadow {
 	using shader_binding_types = type_pack<source_instance_data, index_mapping, tlas_instances>;
 
 	using entry = gpu::compute_entry<gpu::body_path<"Compute/tlas_transform_update">, gpu::types<shaders::common::shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<64>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
+
+	auto write_tlas_slots(
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> void;
+}
+
+auto gse::renderer::rt_shadow::write_tlas_slots(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
+		if (!d.tlas_slots[i].valid()) {
+			d.tlas_slots[i] = gpu_s.device->allocate_acceleration_structure_slot();
+		}
+		gpu_s.device->write_acceleration_structure(d.tlas_slots[i].slot(), d.tlas_per_frame[i].device_address());
+	}
 }
 
 auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -47,7 +62,6 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
 		d.tlas_per_frame[i] = gpu::build_tlas(*gpu_s.device, geometry_collector::data::max_instances);
-		d.tlas_ptrs[i] = &d.tlas_per_frame[i];
 		d.instances[i].reserve(geometry_collector::data::max_instances);
 	}
 
@@ -55,10 +69,27 @@ auto gse::renderer::rt_shadow::init(context& ctx, const shared_view<gpu::context
 		d.tlas_update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
 	}
 
+	write_tlas_slots(gpu_s, d);
+
+	gpu_s.render_graph->on_resize(
+		[gpu_s, &d]() {
+			write_tlas_slots(gpu_s, d);
+		}
+	);
+
 	return {};
 }
 
-auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<lighting_source::ray_traced_scene> scene_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r) -> async::task<> {
+	lighting_source::ray_traced_scene scene{
+		.pass = gpu::pass_id<^^frame>(),
+	};
+	for (std::size_t i = 0; i < per_frame_resource<gpu::tlas>::frames_in_flight; ++i) {
+		scene.tlas_addresses[i] = d.tlas_per_frame[i].device_address();
+		scene.tlas_slots[i] = d.tlas_slots[i].slot();
+	}
+	scene_out.push<lighting_source::ray_traced_scene>(std::move(scene));
+
 	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -210,7 +241,6 @@ auto gse::renderer::rt_shadow::frame(context& ctx, shared_view<gpu::context::dat
 							.size = mapping_bytes,
 							.stride = sizeof(std::uint32_t),
 							.usage = gpu::buffer_flag::storage,
-							.bindless = true
 						}
 					);
 				}

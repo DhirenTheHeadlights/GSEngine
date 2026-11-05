@@ -28,12 +28,13 @@ export namespace gse::physics {
 
 	constexpr std::uint8_t reset_pose = 1;
 	constexpr std::uint8_t reset_pose_keep_solver_state = 2;
+	constexpr std::uint8_t reset_orientation = 3;
 
 	struct kinematic_body {};
 
 	struct static_body {};
 
-	struct motion_component {
+	struct [[= gse::written_by<^^gse::physics>{}]] motion_component {
 		[[= networked]] vec3<velocity> current_velocity;
 		[[= networked]] vec3<angular_velocity> angular_velocity;
 		[[= networked]] std::variant<dynamic_body, kinematic_body, static_body> body = dynamic_body{};

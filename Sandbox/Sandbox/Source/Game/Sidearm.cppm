@@ -76,12 +76,10 @@ export namespace sandbox::sidearm::rounds {
 
 	[[= gse::system_run<>{}]]
 	auto run(
+		gse::context& ctx,
 		data& d,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::channel_read<spawn_round> spawn_in,
-		gse::structural<gse::physics::transform_component> round_transforms,
-		gse::structural<gse::physics::motion_component>,
-		gse::structural<gse::physics::collision_component>,
-		gse::structural<gse::primitive_sphere_spec>
+		gse::read<gse::physics::transform_component> round_transforms
 	) -> gse::async::task<>;
 }

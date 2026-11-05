@@ -308,7 +308,6 @@ export namespace gse::renderer::cloud {
 		gpu::bindless_handle sky_view_sampler;
 		gpu::bindless_handle composite_sampler;
 		gpu::bindless_handle resolve_sampler;
-		per_frame_resource<gpu::bindless_handle> cloud_resolve_views;
 		gpu::bindless_handle depth_sampler;
 		gpu::bindless_handle depth_view;
 
@@ -349,6 +348,7 @@ export namespace gse::renderer::cloud {
 		channel_write<gpu::render_pass_request> pass_out,
 		channel_read<weather_request> weather_in,
 		shared_view<atmosphere::data> atm_state,
-		shared_view<camera::data> cam_state
+		shared_view<camera::data> cam_state,
+		channel_read<camera::temporal_reset_request> reset_in
 	) -> async::task<>;
 }

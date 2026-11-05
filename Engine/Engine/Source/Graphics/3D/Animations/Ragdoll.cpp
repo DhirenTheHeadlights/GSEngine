@@ -15,7 +15,7 @@ import gse.math;
 import gse.assets;
 import gse.physics;
 
-auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_request> ragdoll_in, write<skeleton_instance_component> skeletons, write<clip_player_component> players, write<physics::motion_component> motions, write<physics::collision_component> collisions, write<physics::transform_component> transforms) -> async::task<> {
+auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_request> ragdoll_in, write<skeleton_instance_component> skeletons, write<clip_player_component> players, const channel_write<physics::set_request<^^physics::transform_component::position>, physics::set_request<^^physics::transform_component::orientation>, physics::set_request<^^physics::motion_component::current_velocity>, physics::set_request<^^physics::motion_component::angular_velocity>, physics::set_request<^^physics::motion_component::body>, physics::set_request<^^physics::collision_component::resolve_collisions>> physics_out, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::transform_component> transforms) -> async::task<> {
 	for (const auto& [character] : ragdoll_in.of<ragdoll_request>()) {
 		auto* skeleton = skeletons.find(character);
 		if (!skeleton || !skeleton->model.valid()) {
@@ -24,14 +24,22 @@ auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_r
 
 		skeleton->ragdolling = true;
 
-		if (auto* proxy_collision = collisions.find(skeleton->proxy)) {
-			proxy_collision->resolve_collisions = false;
-		}
-		if (auto* proxy_motion = motions.find(skeleton->proxy)) {
-			proxy_motion->body = physics::kinematic_body{};
-			proxy_motion->current_velocity = {};
-			proxy_motion->angular_velocity = {};
-		}
+		physics_out.push<physics::set_request<^^physics::collision_component::resolve_collisions>>({
+			.target = skeleton->proxy,
+			.value = false,
+		});
+		physics_out.push<physics::set_request<^^physics::motion_component::body>>({
+			.target = skeleton->proxy,
+			.value = physics::kinematic_body{},
+		});
+		physics_out.push<physics::set_request<^^physics::motion_component::current_velocity>>({
+			.target = skeleton->proxy,
+			.value = {},
+		});
+		physics_out.push<physics::set_request<^^physics::motion_component::angular_velocity>>({
+			.target = skeleton->proxy,
+			.value = {},
+		});
 
 		if (auto* player = players.find(character)) {
 			player->playing = false;
@@ -56,16 +64,20 @@ auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_r
 		for (std::uint32_t i = 0; i < skeleton->bone_count && i < bones.size(); ++i) {
 			const auto& bone = bones[i];
 
-			auto* motion = motions.find(skeleton->bones[i]);
-			auto* collision = collisions.find(skeleton->bones[i]);
-			if (!motion || !collision) {
+			if (!motions.find(skeleton->bones[i]) || !collisions.find(skeleton->bones[i])) {
 				continue;
 			}
 
-			motion->body = physics::dynamic_body{
-				.mass = bone.mass,
-			};
-			collision->resolve_collisions = true;
+			physics_out.push<physics::set_request<^^physics::motion_component::body>>({
+				.target = skeleton->bones[i],
+				.value = physics::dynamic_body{
+					.mass = bone.mass,
+				},
+			});
+			physics_out.push<physics::set_request<^^physics::collision_component::resolve_collisions>>({
+				.target = skeleton->bones[i],
+				.value = true,
+			});
 		}
 	}
 
@@ -82,19 +94,28 @@ auto gse::animation::ragdoll(context& ctx, data& d, const channel_read<ragdoll_r
 		}
 
 		const auto* root = transforms.find(skeleton.bones[0]);
-		auto* proxy = transforms.find(skeleton.proxy);
-		if (root == nullptr || proxy == nullptr) {
+		if (root == nullptr || transforms.find(skeleton.proxy) == nullptr) {
 			continue;
 		}
 
-		proxy->position = root->position;
-		proxy->orientation = root->orientation * inverse(anchor->second.root) * anchor->second.proxy;
+		physics_out.push<physics::set_request<^^physics::transform_component::position>>({
+			.target = skeleton.proxy,
+			.value = root->position,
+		});
+		physics_out.push<physics::set_request<^^physics::transform_component::orientation>>({
+			.target = skeleton.proxy,
+			.value = root->orientation * inverse(anchor->second.root) * anchor->second.proxy,
+		});
 
-		const auto* root_motion = motions.find(skeleton.bones[0]);
-		auto* proxy_motion = motions.find(skeleton.proxy);
-		if (root_motion != nullptr && proxy_motion != nullptr) {
-			proxy_motion->current_velocity = root_motion->current_velocity;
-			proxy_motion->angular_velocity = root_motion->angular_velocity;
+		if (const auto* root_motion = motions.find(skeleton.bones[0]); root_motion != nullptr && motions.find(skeleton.proxy) != nullptr) {
+			physics_out.push<physics::set_request<^^physics::motion_component::current_velocity>>({
+				.target = skeleton.proxy,
+				.value = root_motion->current_velocity,
+			});
+			physics_out.push<physics::set_request<^^physics::motion_component::angular_velocity>>({
+				.target = skeleton.proxy,
+				.value = root_motion->angular_velocity,
+			});
 		}
 	}
 

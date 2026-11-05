@@ -97,6 +97,7 @@ namespace gse::gui::interaction {
 		bool hovered = false;
 		bool pressed_on_widget = false;
 		bool released = false;
+		bool within_slop = true;
 		bool enabled = true;
 		bool selected = false;
 	};
@@ -179,7 +180,7 @@ auto gse::gui::interaction::activate_on_click(id& active, const id widget, const
 auto gse::gui::interaction::press_from(id& hot, id& active, const id widget, const press_signals& signals) -> press {
 	const bool live = signals.enabled && signals.hovered;
 	mark_hot(hot, widget, live);
-	const bool activated = activate_on_click(active, widget, live, signals.enabled && signals.pressed_on_widget, signals.released);
+	const bool activated = activate_on_click(active, widget, live, signals.enabled && signals.pressed_on_widget, signals.released) && signals.within_slop;
 	return {
 		.widget = widget,
 		.enabled = signals.enabled,
@@ -195,6 +196,7 @@ auto gse::gui::interaction::press_in_rect(const draw_context& ctx, id& hot, id& 
 		.hovered = ctx.hovers(info.rect),
 		.pressed_on_widget = ctx.mouse_pressed_for(info.rect),
 		.released = ctx.mouse_released(),
+		.within_slop = ctx.within_click_slop(),
 		.enabled = info.enabled,
 		.selected = info.selected,
 	});

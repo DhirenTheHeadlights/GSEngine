@@ -5,9 +5,10 @@ import gse.core;
 import gse.diag;
 import std;
 
-import :access_token;
+import :access;
 import :context;
 import :registries;
+import :registry;
 import :settings;
 import :shared_view;
 import :system_anno;
@@ -18,44 +19,6 @@ export namespace gse {
 	using dep_pointee_t = std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>;
 
 	template <typename T>
-	constexpr bool is_optional_dep_v = std::is_pointer_v<std::remove_cvref_t<T>>;
-
-	template <typename Arg, typename S>
-	constexpr bool is_state_dep_v = [] consteval {
-		using U = dep_pointee_t<Arg>;
-		if constexpr (std::is_same_v<U, context>) {
-			return false;
-		}
-		else if constexpr (std::is_same_v<U, state_of_t<S>>) {
-			return false;
-		}
-		else if constexpr (is_shared_view_v<U>) {
-			return false;
-		}
-		else if constexpr (is_optional_shared_view_v<U>) {
-			return false;
-		}
-		else if constexpr (is_access_v<U>) {
-			return false;
-		}
-		else if constexpr (is_structural_v<U>) {
-			return false;
-		}
-		else if constexpr (is_entities_v<U>) {
-			return false;
-		}
-		else if constexpr (is_channel_read_v<U>) {
-			return false;
-		}
-		else if constexpr (is_channel_write_v<U>) {
-			return false;
-		}
-		else {
-			return meta::has_system_state<U>();
-		}
-	}();
-
-	template <typename T>
 	constexpr bool is_system_data_v = [] consteval {
 		constexpr auto entity = std::meta::dealias(^^T);
 		if constexpr (std::meta::is_class_member(entity)) {
@@ -64,41 +27,6 @@ export namespace gse {
 			}
 		}
 		return false;
-	}();
-
-	template <typename Arg, typename S>
-	constexpr bool is_external_resource_arg_v = [] consteval {
-		using U = dep_pointee_t<Arg>;
-		if constexpr (std::is_same_v<U, context>) {
-			return false;
-		}
-		else if constexpr (std::is_same_v<U, state_of_t<S>>) {
-			return false;
-		}
-		else if constexpr (is_shared_view_v<U>) {
-			return false;
-		}
-		else if constexpr (is_optional_shared_view_v<U>) {
-			return false;
-		}
-		else if constexpr (is_access_v<U>) {
-			return false;
-		}
-		else if constexpr (is_structural_v<U>) {
-			return false;
-		}
-		else if constexpr (is_entities_v<U>) {
-			return false;
-		}
-		else if constexpr (is_channel_read_v<U>) {
-			return false;
-		}
-		else if constexpr (is_channel_write_v<U>) {
-			return false;
-		}
-		else {
-			return !meta::has_system_state<U>() && !is_system_data_v<U>;
-		}
 	}();
 
 	template <typename Arg>
@@ -118,311 +46,231 @@ export namespace gse {
 	template <auto MemberFn, std::size_t I>
 	using arg_type_of = typename[:std::meta::type_of(std::meta::parameters_of(MemberFn)[I]):];
 
-	struct run_signature_metadata {
-		std::vector<id> state_deps;
-		std::vector<id> optional_state_deps;
+	enum class arg_kind : std::uint8_t {
+		context,
+		state,
+		access,
+		entities,
+		channel_read,
+		channel_write,
+		shared_view,
+		optional_shared_view,
+		resource
+	};
+
+	struct hook_signature {
+		std::vector<id> views;
+		std::vector<id> optional_views;
+		std::vector<id> order;
+		std::vector<id> optional_order;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
-		std::vector<id> component_structural;
 		std::vector<id> resource_reads;
 		std::vector<id> resource_writes;
+		std::vector<id> channel_reads;
+		std::vector<id> channel_writes;
+		std::vector<id> channel_lends;
+		std::vector<void (registry::*)()> ensure_storage_fns;
 		bool entity_structural = false;
 	};
 
-	struct phase_state_deps {
-		std::vector<id> required;
-		std::vector<id> optional;
-	};
+	template <typename Arg, typename S>
+	consteval auto arg_kind_of() -> arg_kind;
 
 	template <typename Arg, typename S>
-	auto append_arg_state_dep(
-		std::vector<id>& out
-	) -> void;
-
-	template <typename Arg>
-	auto append_arg_view_deps(
-		std::vector<id>& required_out,
-		std::vector<id>& optional_out
-	) -> void;
-
-	template <typename Arg>
-	auto append_arg_shared_view(
-		std::vector<id>& shared_out
-	) -> void;
-
-	template <typename Arg>
-	auto append_arg_channel_ids(
-		std::vector<id>& reads_out,
-		std::vector<id>& writes_out,
-		std::vector<id>& lends_out
-	) -> void;
-
-	template <typename Arg, typename S>
-	auto append_arg_resource_access(
-		run_signature_metadata& out
-	) -> void;
-
-	template <typename Arg, typename S>
-	auto append_arg_run_metadata(
-		run_signature_metadata& out
-	) -> void;
-
-	template <auto Fn>
-	auto append_fn_order_deps(
-		run_signature_metadata& out
+	auto append_arg_signature(
+		hook_signature& out
 	) -> void;
 
 	template <auto Fn, typename S>
-	auto append_signature_run_metadata(
-		run_signature_metadata& out
-	) -> void;
-
-	template <typename T>
-	auto external_resource_ref(
-		const task_context& ctx
-	) -> const T&;
-
-	template <typename T>
-	auto mutable_external_resource_ref(
-		task_context& ctx
-	) -> T&;
+	auto hook_signature_of() -> hook_signature;
 
 	template <typename Arg, typename S>
 	auto resolve_run_arg(
 		context& ctx,
-		state_of_t<S>& state
+		S& state
 	) -> decltype(auto);
 
 	template <typename Data>
 	auto live_system_state(
 		context& ctx
 	) -> Data*;
-
-	auto noop_shutdown(
-		void* data_ptr
-	) -> void;
-
-	struct noop_dispatchers {
-		template <typename S>
-		static auto noop_frame_for(
-			context& ctx,
-			void* data_ptr
-		) -> async::task<>;
-	};
-
-	template <typename T>
-	constexpr id state_dep_id_v = id_of<dep_pointee_t<T>>();
-
-}
-
-template <typename T>
-auto gse::external_resource_ref(const task_context& ctx) -> const T& {
-	const void* p = ctx.resources_store.resources_ptr(id_of<T>());
-	assert(p != nullptr, "external resource not found; register it with register_external_resource");
-	return *static_cast<const T*>(p);
-}
-
-template <typename T>
-auto gse::mutable_external_resource_ref(task_context& ctx) -> T& {
-	void* p = ctx.resources_store.resources_ptr(id_of<T>());
-	assert(p != nullptr, "external resource not found; register it with register_external_resource");
-	return *static_cast<T*>(p);
 }
 
 template <typename Data>
 auto gse::live_system_state(context& ctx) -> Data* {
-	return static_cast<Data*>(ctx.states.state_ptr(id_of<Data>()));
+	return static_cast<Data*>(ctx.m_states.state_ptr(id_of<Data>()));
 }
 
 template <typename Arg, typename S>
-auto gse::resolve_run_arg(context& ctx, state_of_t<S>& state) -> decltype(auto) {
+consteval auto gse::arg_kind_of() -> arg_kind {
 	using U = std::remove_cvref_t<Arg>;
 	if constexpr (std::is_same_v<U, context>) {
-		return (ctx);
+		return arg_kind::context;
 	}
-	else if constexpr (std::is_same_v<U, state_of_t<S>>) {
-		return (state);
+	else if constexpr (std::is_same_v<U, S>) {
+		return arg_kind::state;
 	}
 	else if constexpr (is_access_v<U>) {
-		return ctx.template make_access<U>();
-	}
-	else if constexpr (is_structural_v<U>) {
-		return ctx.template make_structural<structural_element_t<U>>();
+		return arg_kind::access;
 	}
 	else if constexpr (is_entities_v<U>) {
-		return ctx.make_entities();
+		return arg_kind::entities;
 	}
 	else if constexpr (is_channel_read_v<U>) {
-		return U(ctx.channels_store);
+		return arg_kind::channel_read;
 	}
 	else if constexpr (is_channel_write_v<U>) {
-		return U(ctx.channels, id_of<state_of_t<S>>());
+		return arg_kind::channel_write;
 	}
 	else if constexpr (is_shared_view_v<U>) {
-		using Target = shared_view_target_t<U>;
-		constexpr id lookup_id = id_of<Target>();
-		if (ctx.live_state) {
-			const void* p = ctx.states.state_ptr(lookup_id);
-			assert(p != nullptr, "shared_view target system not registered");
-			return make_shared_view_live<Target>(*static_cast<const state_of_t<Target>*>(p));
-		}
-		const void* sp = ctx.states.state_snapshot_ptr(lookup_id);
-		assert(sp != nullptr, "shared_view target system not registered");
-		return make_shared_view_snapshot<Target>(*static_cast<const shared_snapshot<state_of_t<Target>>*>(sp));
+		return arg_kind::shared_view;
 	}
 	else if constexpr (is_optional_shared_view_v<U>) {
-		using Target = optional_shared_view_target_t<U>;
-		constexpr id lookup_id = id_of<Target>();
-		if (ctx.live_state) {
-			const void* p = ctx.states.state_ptr(lookup_id);
-			if (!p) {
-				return std::optional<shared_view<Target>>{};
-			}
-			return std::optional<shared_view<Target>>{ make_shared_view_live<Target>(*static_cast<const state_of_t<Target>*>(p)) };
-		}
-		const void* sp = ctx.states.state_snapshot_ptr(lookup_id);
-		if (!sp) {
-			return std::optional<shared_view<Target>>{};
-		}
-		return std::optional<shared_view<Target>>{ make_shared_view_snapshot<Target>(*static_cast<const shared_snapshot<state_of_t<Target>>*>(sp)) };
-	}
-	else if constexpr (std::is_pointer_v<U>) {
-		using Pointee = dep_pointee_t<Arg>;
-		static_assert(
-			!is_system_data_v<Pointee>,
-			"cross-system state is private; use shared_view<X> ([[= gse::shared]] fields) or channels"
-		);
-		if constexpr (is_read_resource_arg_v<Arg>) {
-			return static_cast<const Pointee*>(ctx.resources_store.resources_ptr(id_of<Pointee>()));
-		}
-		else {
-			return static_cast<Pointee*>(ctx.resources_store.resources_ptr(id_of<Pointee>()));
-		}
+		return arg_kind::optional_shared_view;
 	}
 	else {
 		static_assert(
-			!is_system_data_v<U>,
+			!is_system_data_v<dep_pointee_t<Arg>> && !meta::has_system_state<dep_pointee_t<Arg>>(),
 			"cross-system state is private; use shared_view<X> ([[= gse::shared]] fields) or channels"
 		);
 		static_assert(
-			std::is_reference_v<Arg>,
+			std::is_pointer_v<U> || std::is_reference_v<Arg>,
 			"external resources must be taken by reference: const T& to read it, T& to write it"
 		);
-		if constexpr (is_read_resource_arg_v<Arg>) {
-			return external_resource_ref<U>(ctx);
+		return arg_kind::resource;
+	}
+}
+
+template <typename Arg, typename S>
+auto gse::append_arg_signature(hook_signature& out) -> void {
+	using U = std::remove_cvref_t<Arg>;
+	constexpr arg_kind kind = arg_kind_of<Arg, S>();
+	if constexpr (kind == arg_kind::access) {
+		using T = access_element_t<U>;
+		(void)trace_id<T>();
+		out.ensure_storage_fns.push_back(&registry::ensure_storage<T>);
+		if constexpr (is_read_access_v<U>) {
+			out.component_reads.push_back(id_of<T>());
 		}
 		else {
-			return mutable_external_resource_ref<U>(ctx);
+			static_assert(
+				meta::may_write(^^access_element_t<U>, ^^S),
+				std::string(meta::qualified_name_of(std::meta::dealias(^^S))) + " declares write<" + std::string(meta::qualified_name_of(std::meta::dealias(^^access_element_t<U>))) + ">, which is written_by another namespace; send that namespace a request instead"
+			);
+			out.component_writes.push_back(id_of<T>());
 		}
 	}
-}
-
-auto gse::noop_shutdown(void*) -> void {
-}
-
-template <typename S>
-auto gse::noop_dispatchers::noop_frame_for(context&, void*) -> async::task<> {
-	co_return;
-}
-
-template <typename Arg, typename S>
-auto gse::append_arg_state_dep(std::vector<id>& out) -> void {
-	if constexpr (is_state_dep_v<Arg, S>) {
-		(void)trace_id<dep_pointee_t<Arg>>();
-		if constexpr (!is_optional_dep_v<Arg>) {
-			out.push_back(state_dep_id_v<Arg>);
-		}
-	}
-}
-
-template <typename Arg>
-auto gse::append_arg_view_deps(std::vector<id>& required_out, std::vector<id>& optional_out) -> void {
-	using U = std::remove_cvref_t<Arg>;
-	if constexpr (is_shared_view_v<U>) {
-		required_out.push_back(id_of<shared_view_target_t<U>>());
-	}
-	else if constexpr (is_optional_shared_view_v<U>) {
-		optional_out.push_back(id_of<optional_shared_view_target_t<U>>());
-	}
-}
-
-template <typename Arg>
-auto gse::append_arg_shared_view(std::vector<id>& shared_out) -> void {
-	using U = std::remove_cvref_t<Arg>;
-	if constexpr (is_shared_view_v<U>) {
-		shared_out.push_back(id_of<shared_view_target_t<U>>());
-	}
-	else if constexpr (is_optional_shared_view_v<U>) {
-		shared_out.push_back(id_of<optional_shared_view_target_t<U>>());
-	}
-}
-
-template <typename Arg>
-auto gse::append_arg_channel_ids(std::vector<id>& reads_out, std::vector<id>& writes_out, std::vector<id>& lends_out) -> void {
-	using U = std::remove_cvref_t<Arg>;
-	if constexpr (is_channel_read_v<U>) {
-		channel_pack_ids<U>::append(reads_out);
-	}
-	else if constexpr (is_channel_write_v<U>) {
-		channel_pack_ids<U>::append(writes_out);
-		channel_pack_ids<U>::append_lending(lends_out);
-	}
-}
-
-template <typename Arg, typename S>
-auto gse::append_arg_resource_access(run_signature_metadata& out) -> void {
-	if constexpr (is_external_resource_arg_v<Arg, S>) {
-		using U = dep_pointee_t<Arg>;
-		(void)trace_id<U>();
-		if constexpr (is_read_resource_arg_v<Arg>) {
-			out.resource_reads.push_back(id_of<U>());
-		}
-		else {
-			out.resource_writes.push_back(id_of<U>());
-		}
-	}
-}
-
-template <typename Arg, typename S>
-auto gse::append_arg_run_metadata(run_signature_metadata& out) -> void {
-	append_arg_state_dep<Arg, S>(out.state_deps);
-	append_arg_view_deps<Arg>(out.state_deps, out.optional_state_deps);
-	append_arg_resource_access<Arg, S>(out);
-
-	using ArgT = std::remove_cvref_t<Arg>;
-	if constexpr (is_access_v<ArgT> && is_read_access_v<ArgT>) {
-		(void)trace_id<access_element_t<ArgT>>();
-		out.component_reads.push_back(id_of<access_element_t<ArgT>>());
-	}
-
-	if constexpr (is_access_v<ArgT> && !is_read_access_v<ArgT>) {
-		(void)trace_id<access_element_t<ArgT>>();
-		out.component_writes.push_back(id_of<access_element_t<ArgT>>());
-	}
-	else if constexpr (is_structural_v<ArgT>) {
-		(void)trace_id<structural_element_t<ArgT>>();
-		out.component_structural.push_back(id_of<structural_element_t<ArgT>>());
-	}
-
-	if constexpr (is_entities_v<ArgT>) {
+	else if constexpr (kind == arg_kind::entities) {
 		out.entity_structural = true;
 	}
-}
-
-template <auto Fn>
-auto gse::append_fn_order_deps(run_signature_metadata& out) -> void {
-	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(Fn))) {
-		out.state_deps.push_back(id_of<typename [:s:]>());
+	else if constexpr (kind == arg_kind::channel_read) {
+		channel_pack_ids<U>::append(out.channel_reads);
 	}
-	template for (constexpr auto s : std::define_static_array(meta::optional_order_deps_of(Fn))) {
-		out.optional_state_deps.push_back(id_of<typename [:s:]>());
+	else if constexpr (kind == arg_kind::channel_write) {
+		channel_pack_ids<U>::append(out.channel_writes);
+		channel_pack_ids<U>::append_lending(out.channel_lends);
+	}
+	else if constexpr (kind == arg_kind::shared_view) {
+		out.views.push_back(id_of<shared_view_target_t<U>>());
+	}
+	else if constexpr (kind == arg_kind::optional_shared_view) {
+		out.optional_views.push_back(id_of<optional_shared_view_target_t<U>>());
+	}
+	else if constexpr (kind == arg_kind::resource) {
+		using Pointee = dep_pointee_t<Arg>;
+		(void)trace_id<Pointee>();
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			out.resource_reads.push_back(id_of<Pointee>());
+		}
+		else {
+			out.resource_writes.push_back(id_of<Pointee>());
+		}
 	}
 }
 
 template <auto Fn, typename S>
-auto gse::append_signature_run_metadata(run_signature_metadata& out) -> void {
+auto gse::hook_signature_of() -> hook_signature {
+	hook_signature out;
 	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((append_arg_run_metadata<arg_type_of<Fn, Is>, S>(out)), ...);
+		(append_arg_signature<arg_type_of<Fn, Is>, S>(out), ...);
 	}(std::make_index_sequence<arity_of<Fn>>{});
-	append_fn_order_deps<Fn>(out);
+	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(Fn))) {
+		out.order.push_back(id_of<typename [:s:]>());
+	}
+	template for (constexpr auto s : std::define_static_array(meta::optional_order_deps_of(Fn))) {
+		out.optional_order.push_back(id_of<typename [:s:]>());
+	}
+	return out;
+}
+
+template <typename Arg, typename S>
+auto gse::resolve_run_arg(context& ctx, S& state) -> decltype(auto) {
+	using U = std::remove_cvref_t<Arg>;
+	constexpr arg_kind kind = arg_kind_of<Arg, S>();
+	if constexpr (kind == arg_kind::context) {
+		return (ctx);
+	}
+	else if constexpr (kind == arg_kind::state) {
+		return (state);
+	}
+	else if constexpr (kind == arg_kind::access) {
+		return ctx.template make_access<U>();
+	}
+	else if constexpr (kind == arg_kind::entities) {
+		return ctx.make_entities();
+	}
+	else if constexpr (kind == arg_kind::channel_read) {
+		return U(ctx.m_channels);
+	}
+	else if constexpr (kind == arg_kind::channel_write) {
+		return U(ctx.m_channels, id_of<S>());
+	}
+	else if constexpr (kind == arg_kind::shared_view) {
+		using Target = shared_view_target_t<U>;
+		constexpr id lookup_id = id_of<Target>();
+		if (ctx.m_hook != system_hook::frame) {
+			const void* p = ctx.m_states.state_ptr(lookup_id);
+			assert(p != nullptr, "shared_view target system not registered");
+			return make_shared_view_live<Target>(*static_cast<const Target*>(p));
+		}
+		const void* sp = ctx.m_states.state_snapshot_ptr(lookup_id);
+		assert(sp != nullptr, "shared_view target system not registered");
+		return make_shared_view_snapshot<Target>(*static_cast<const shared_snapshot<Target>*>(sp));
+	}
+	else if constexpr (kind == arg_kind::optional_shared_view) {
+		using Target = optional_shared_view_target_t<U>;
+		constexpr id lookup_id = id_of<Target>();
+		if (ctx.m_hook != system_hook::frame) {
+			const void* p = ctx.m_states.state_ptr(lookup_id);
+			if (!p) {
+				return std::optional<shared_view<Target>>{};
+			}
+			return std::optional<shared_view<Target>>{ make_shared_view_live<Target>(*static_cast<const Target*>(p)) };
+		}
+		const void* sp = ctx.m_states.state_snapshot_ptr(lookup_id);
+		if (!sp) {
+			return std::optional<shared_view<Target>>{};
+		}
+		return std::optional<shared_view<Target>>{ make_shared_view_snapshot<Target>(*static_cast<const shared_snapshot<Target>*>(sp)) };
+	}
+	else if constexpr (std::is_pointer_v<U>) {
+		using Pointee = dep_pointee_t<Arg>;
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			return static_cast<const Pointee*>(ctx.m_resources.resources_ptr(id_of<Pointee>()));
+		}
+		else {
+			return static_cast<Pointee*>(ctx.m_resources.resources_ptr(id_of<Pointee>()));
+		}
+	}
+	else {
+		auto* resource = static_cast<U*>(ctx.m_resources.resources_ptr(id_of<U>()));
+		assert(resource != nullptr, "external resource not found; register it with register_external_resource");
+		if constexpr (is_read_resource_arg_v<Arg>) {
+			return static_cast<const U&>(*resource);
+		}
+		else {
+			return (*resource);
+		}
+	}
 }

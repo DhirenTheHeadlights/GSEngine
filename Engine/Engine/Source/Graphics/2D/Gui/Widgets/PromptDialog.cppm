@@ -133,7 +133,7 @@ auto gse::gui::draw::prompt_dialog(builder& ui, const prompt_params& params) -> 
 		{ dialog.left() + pad * 2.f, dialog.top() - pad * 3.f - line_h * 2.f },
 		{ dialog_w - pad * 4.f, field_h }
 	);
-	text_input_in_rect(ctx, field_id, params.value, params.state, field, ui.hot_widget_id, ui.focus_widget_id);
+	const text_input_result field_result = text_input_in_rect(ctx, field_id, params.value, params.state, field, ui.hot_widget_id, ui.focus_widget_id);
 	if (ui.focus_widget_id != field_id) {
 		ui.focus_widget_id = field_id;
 	}
@@ -158,12 +158,10 @@ auto gse::gui::draw::prompt_dialog(builder& ui, const prompt_params& params) -> 
 		.enabled = named,
 	}, ui.hot_widget_id, ui.active_widget_id);
 
-	if (ctx.key_pressed_for(key::escape)) {
-		ctx.consume_key_press(key::escape);
+	if (field_result == text_input_result::cancelled || ctx.key_pressed_for(key::escape)) {
 		cancel = true;
 	}
-	if (ctx.key_pressed_for(key::enter) && named) {
-		ctx.consume_key_press(key::enter);
+	if (field_result == text_input_result::submitted && named) {
 		submit = true;
 	}
 

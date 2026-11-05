@@ -8,6 +8,12 @@ groupshared uint gs_island_index[island_slots];
 groupshared uint gs_island_slot[island_span];
 groupshared uint gs_island_min;
 groupshared uint gs_island_level[island_slots];
+groupshared uint gs_island_next[island_slots];
+groupshared uint gs_island_lower[island_slots];
+groupshared uint gs_island_upper[island_slots];
+groupshared uint gs_island_low[island_slots];
+groupshared uint gs_island_forward[island_slots];
+groupshared uint gs_island_backward[island_slots];
 groupshared uint gs_island_changed;
 groupshared uint gs_island_first[island_pack_max + 1];
 groupshared uint gs_island_max_level[island_pack_max];
@@ -101,6 +107,7 @@ void island_neighbour_masks(uint bi, uint self, uint count, uint lo, uint hi, ou
         uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) != 0) {
             muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
+            [loop]
             for (uint k = 0; k < m.path_count + m.wrap_count; k++) {
                 uint other = muscle_path_data[m.path_first + k].body;
                 if (other == bi) continue;
@@ -143,25 +150,24 @@ uint island_mask_color(uint mask, uint lo) {
     return firstbitlow(~used);
 }
 
-void island_fixpoint(uint masks[island_slots_per_lane], uint lows[island_slots_per_lane], bool colored, uint lane, uint total, out uint result[island_slots_per_lane]) {
+void island_fixpoint(bool upper, bool colored, uint lane, uint total) {
     for (uint j = 0; j < island_slots_per_lane; j++) {
         gs_island_level[lane + j * workgroup_size] = 0;
-        result[j] = 0;
     }
     if (lane == 0) gs_island_changed = 0;
     GroupMemoryBarrierWithGroupSync();
 
     for (uint iter = 0; iter < total; iter++) {
-        uint next[island_slots_per_lane];
         for (uint j = 0; j < island_slots_per_lane; j++) {
-            next[j] = colored ? island_mask_color(masks[j], lows[j]) : island_mask_level(masks[j], lows[j]);
+            uint s = lane + j * workgroup_size;
+            uint mask = upper ? gs_island_upper[s] : gs_island_lower[s];
+            gs_island_next[s] = colored ? island_mask_color(mask, gs_island_low[s]) : island_mask_level(mask, gs_island_low[s]);
         }
         GroupMemoryBarrierWithGroupSync();
         for (uint j = 0; j < island_slots_per_lane; j++) {
             uint s = lane + j * workgroup_size;
-            if (s < total && next[j] != result[j]) {
-                result[j] = next[j];
-                gs_island_level[s] = next[j];
+            if (s < total && gs_island_next[s] != gs_island_level[s]) {
+                gs_island_level[s] = gs_island_next[s];
                 gs_island_changed = 1;
             }
         }
@@ -174,7 +180,7 @@ void island_fixpoint(uint masks[island_slots_per_lane], uint lows[island_slots_p
     GroupMemoryBarrierWithGroupSync();
 }
 
-void island_build_sweeps(uint bodies[island_slots_per_lane], bool valid[island_slots_per_lane], uint forward[island_slots_per_lane], uint backward[island_slots_per_lane], uint lane) {
+void island_build_sweeps(uint lane) {
     for (uint k = lane; k <= island_slots; k += workgroup_size) {
         gs_sweep_forward_end[k] = 0;
         gs_sweep_backward_end[k] = 0;
@@ -186,11 +192,12 @@ void island_build_sweeps(uint bodies[island_slots_per_lane], bool valid[island_s
     GroupMemoryBarrierWithGroupSync();
 
     for (uint j = 0; j < island_slots_per_lane; j++) {
-        if (!valid[j]) continue;
-        InterlockedAdd(gs_sweep_forward_end[forward[j] + 1], 1);
-        InterlockedAdd(gs_sweep_backward_end[backward[j] + 1], 1);
-        InterlockedMax(gs_sweep_forward_steps, forward[j] + 1);
-        InterlockedMax(gs_sweep_backward_steps, backward[j] + 1);
+        uint s = lane + j * workgroup_size;
+        if (gs_island_index[s] >= pc.body_count) continue;
+        InterlockedAdd(gs_sweep_forward_end[gs_island_forward[s] + 1], 1);
+        InterlockedAdd(gs_sweep_backward_end[gs_island_backward[s] + 1], 1);
+        InterlockedMax(gs_sweep_forward_steps, gs_island_forward[s] + 1);
+        InterlockedMax(gs_sweep_backward_steps, gs_island_backward[s] + 1);
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -201,36 +208,16 @@ void island_build_sweeps(uint bodies[island_slots_per_lane], bool valid[island_s
     GroupMemoryBarrierWithGroupSync();
 
     for (uint j = 0; j < island_slots_per_lane; j++) {
-        if (!valid[j]) continue;
+        uint s = lane + j * workgroup_size;
+        uint bi = gs_island_index[s];
+        if (bi >= pc.body_count) continue;
         uint slot;
-        InterlockedAdd(gs_sweep_forward_end[forward[j]], 1, slot);
-        gs_sweep_forward[slot] = bodies[j];
-        InterlockedAdd(gs_sweep_backward_end[backward[j]], 1, slot);
-        gs_sweep_backward[slot] = bodies[j];
+        InterlockedAdd(gs_sweep_forward_end[gs_island_forward[s]], 1, slot);
+        gs_sweep_forward[slot] = bi;
+        InterlockedAdd(gs_sweep_backward_end[gs_island_backward[s]], 1, slot);
+        gs_sweep_backward[slot] = bi;
     }
     GroupMemoryBarrierWithGroupSync();
-}
-
-void island_sweep_forward(uint lane) {
-    uint steps = gs_sweep_forward_steps;
-    for (uint l = 0; l < steps; l++) {
-        uint end = gs_sweep_forward_end[l];
-        for (uint k = (l == 0 ? 0 : gs_sweep_forward_end[l - 1]) + lane; k < end; k += workgroup_size) {
-            solve_body(gs_sweep_forward[k], true);
-        }
-        AllMemoryBarrierWithGroupSync();
-    }
-}
-
-void island_sweep_backward(uint lane) {
-    uint steps = gs_sweep_backward_steps;
-    for (uint l = 0; l < steps; l++) {
-        uint end = gs_sweep_backward_end[l];
-        for (uint k = (l == 0 ? 0 : gs_sweep_backward_end[l - 1]) + lane; k < end; k += workgroup_size) {
-            solve_body(gs_sweep_backward[k], true);
-        }
-        AllMemoryBarrierWithGroupSync();
-    }
 }
 
 int64_t fx_encode(float v) {
@@ -360,6 +347,7 @@ coupled_frame shared_coupled_frame(inout coupled_newton newton, uint joint_words
 
 moving_frame muscle_frame_of(muscle_constraint m, inout coupled_newton newton) {
     moving_frame frame = {};
+    [loop]
     for (uint k = 0; k < m.path_count; k++) {
         muscle_path_point p = muscle_path_data[m.path_first + k];
         if (p.frame_words != no_curve_words) {
@@ -484,6 +472,7 @@ void accumulate_muscle_for_body(
     moving_frame frame = muscle_frame_of(m, newton);
     float path = 0.0;
     float3 previous = muscle_point(frame, muscle_path_data[m.path_first]);
+    [loop]
     for (uint k = 0; k + 1 < m.path_count; k++) {
         float3 next = muscle_point(frame, muscle_path_data[m.path_first + k + 1]);
         path += length(next - previous);
@@ -502,6 +491,7 @@ void accumulate_muscle_for_body(
     plain_node node = plain_node_of(frame, pk);
     float3 in_dir = float3(0, 0, 0);
     bool in_valid = false;
+    [loop]
     for (uint k = 0; k < m.path_count; k++) {
         muscle_path_point next_point = pk;
         plain_node next_node = node;
@@ -817,6 +807,7 @@ void solve_body(uint bi, bool live_jac) {
         motor_grad_before = length(motor_grad);
     }
 
+    [loop]
     for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
         uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency());
         if (ci >= max_contacts()) continue;
@@ -940,6 +931,7 @@ void solve_body(uint bi, bool live_jac) {
     uint joint_count_for_body = joint_counts[bi];
     coupled_newton newton = { no_curve_words, 0, 0, float3(0, 0, 0) };
 
+    [loop]
     for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
         uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
         if ((ji & muscle_adjacency_tag) != 0) {
@@ -1344,124 +1336,90 @@ void solve_islands(uint3 dispatch_id) {
     uint env = idx / workgroup_size;
     uint lane = idx % workgroup_size;
 
-    if (env == 0) {
-        uint seq_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-        for (uint color = 0; color < seq_colors; color++) {
-            uint count = color_data[max_colors + color];
-            uint offset = color_data[color];
-            for (uint k = lane; k < count; k += workgroup_size) {
-                uint bi = color_data[max_colors * 2 + offset + k];
-                if (bi < pc.body_count && joint_counts[bi] == 0) {
-                    solve_body(bi, false);
-                }
-            }
-            AllMemoryBarrierWithGroupSync();
-        }
-    }
-
     uint island_count = island_data[0];
     uint pack = max(solver_config_data[0].islands_per_workgroup, 1u);
     uint first = env * pack;
-    if (first < island_count) {
-        uint base = 1 + 2 * max_islands();
-        uint islands = min(pack, island_count - first);
-        uint offset = island_data[1 + first];
+    bool owned = first < island_count;
+    uint base = 1 + 2 * max_islands();
+    uint islands = 0;
+    uint offset = 0;
+    uint count = 0;
+    if (owned) {
+        islands = min(pack, island_count - first);
+        offset = island_data[1 + first];
         uint last = first + islands - 1;
-        uint count = island_data[1 + last] + island_data[1 + max_islands() + last] - offset;
-        uint fold_base = env * fold_cache_float4s;
-        bool cacheable = fold_base + fold_cache_float4s <= pc.body_count * solve_state_float4s_per_body;
+        count = island_data[1 + last] + island_data[1 + max_islands() + last] - offset;
+    }
+    bool swept = owned && (islands > 1 || count <= workgroup_size);
+    bool serial = owned && !swept;
 
+    if (owned) {
         if (lane <= islands) {
             gs_island_first[lane] = lane < islands ? island_data[1 + first + lane] - offset : count;
         }
         GroupMemoryBarrierWithGroupSync();
 
-        if (islands > 1 || count <= workgroup_size) {
-            uint bodies[island_slots_per_lane];
-            bool valid[island_slots_per_lane];
-            uint forward[island_slots_per_lane];
-            uint backward[island_slots_per_lane];
+        if (swept) {
             for (uint j = 0; j < island_slots_per_lane; j++) {
                 uint s = lane + j * workgroup_size;
-                bodies[j] = s < count ? island_data[base + offset + s] : 0xFFFFFFFFu;
-                valid[j] = bodies[j] < pc.body_count;
+                uint bi = s < count ? island_data[base + offset + s] : 0xFFFFFFFFu;
+                uint4 own = bi < pc.body_count ? asuint(solve_deltas[bi * 2]) : uint4(0, 0, 0, 0);
+                gs_island_index[s] = bi;
+                gs_island_forward[s] = own.x;
+                gs_island_backward[s] = own.y;
             }
+            island_build_sweeps(lane);
+        }
+    }
 
-            if (pc.iteration == 0) {
-                if (lane == 0) gs_island_min = 0xFFFFFFFFu;
-                if (lane < islands) gs_island_max_level[lane] = 0;
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    gs_island_index[lane + j * workgroup_size] = bodies[j];
-                }
-                for (uint k = lane; k < island_span; k += workgroup_size) {
-                    gs_island_slot[k] = 0xFFFFFFFFu;
-                }
-                GroupMemoryBarrierWithGroupSync();
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    if (valid[j]) InterlockedMin(gs_island_min, bodies[j]);
-                }
-                GroupMemoryBarrierWithGroupSync();
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    if (valid[j] && bodies[j] - gs_island_min < island_span) {
-                        gs_island_slot[bodies[j] - gs_island_min] = lane + j * workgroup_size;
-                    }
-                }
-                GroupMemoryBarrierWithGroupSync();
-
-                uint lower[island_slots_per_lane];
-                uint upper[island_slots_per_lane];
-                uint owner[island_slots_per_lane];
-                uint lows[island_slots_per_lane];
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    uint s = lane + j * workgroup_size;
-                    owner[j] = island_of_slot(s, islands);
-                    lows[j] = gs_island_first[owner[j]];
-                    lower[j] = 0;
-                    upper[j] = 0;
-                    if (valid[j]) island_neighbour_masks(bodies[j], s, count, lows[j], gs_island_first[owner[j] + 1], lower[j], upper[j]);
-                }
-
-                bool colored = solver_config_data[0].island_colored_sweep != 0;
-                island_fixpoint(lower, lows, colored, lane, count, forward);
-                if (colored) {
-                    for (uint j = 0; j < island_slots_per_lane; j++) {
-                        if (lane + j * workgroup_size < count) InterlockedMax(gs_island_max_level[owner[j]], forward[j]);
-                    }
-                    GroupMemoryBarrierWithGroupSync();
-                    for (uint j = 0; j < island_slots_per_lane; j++) {
-                        backward[j] = gs_island_max_level[owner[j]] - forward[j];
-                    }
-                }
-                else {
-                    island_fixpoint(upper, lows, false, lane, count, backward);
-                }
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    if (valid[j]) solve_deltas[bodies[j] * 2] = asfloat(uint4(forward[j], backward[j], 0, 0));
-                }
+    uint colors = env == 0 ? min(collision_state[state_max_used_color_index], pc.color_count) : 0;
+    uint forward_steps = swept ? gs_sweep_forward_steps : 0;
+    uint sweeps = swept ? forward_steps + gs_sweep_backward_steps : 0;
+    uint steps = colors + sweeps + (serial ? 1 : 0);
+    [loop]
+    for (uint step = 0; step < steps; step++) {
+        bool jointless = step < colors;
+        bool in_serial = step >= colors + sweeps;
+        bool backward = step >= colors + forward_steps;
+        uint level = backward ? step - colors - forward_steps : step - colors;
+        uint begin = lane;
+        uint end = 0;
+        uint stride = workgroup_size;
+        if (jointless) {
+            end = color_data[max_colors + step];
+        }
+        else if (in_serial) {
+            begin = 0;
+            end = lane == 0 ? count * 2 : 0;
+            stride = 1;
+        }
+        else {
+            begin += level == 0 ? 0 : (backward ? gs_sweep_backward_end[level - 1] : gs_sweep_forward_end[level - 1]);
+            end = backward ? gs_sweep_backward_end[level] : gs_sweep_forward_end[level];
+        }
+        [loop]
+        for (uint k = begin; k < end; k += stride) {
+            uint bi;
+            if (jointless) {
+                bi = color_data[max_colors * 2 + color_data[step] + k];
+                if (bi < pc.body_count && joint_counts[bi] != 0) bi = 0xFFFFFFFFu;
+            }
+            else if (in_serial) {
+                bi = island_data[base + offset + (k < count ? k : count * 2 - 1 - k)];
             }
             else {
-                for (uint j = 0; j < island_slots_per_lane; j++) {
-                    uint4 own = valid[j] ? asuint(solve_deltas[bodies[j] * 2]) : uint4(0, 0, 0, 0);
-                    forward[j] = own.x;
-                    backward[j] = own.y;
-                }
+                bi = backward ? gs_sweep_backward[k] : gs_sweep_forward[k];
             }
-            island_build_sweeps(bodies, valid, forward, backward, lane);
-            island_sweep_forward(lane);
-            island_sweep_backward(lane);
+            if (bi < pc.body_count) solve_body(bi, !jointless);
         }
-        else if (lane == 0) {
-            for (uint k = 0; k < count; k++) {
-                uint bi = island_data[base + offset + k];
-                if (bi < pc.body_count) solve_body(bi, true);
-            }
-            for (uint k = count; k > 0; k--) {
-                uint bi = island_data[base + offset + k - 1];
-                if (bi < pc.body_count) solve_body(bi, true);
-            }
-        }
+        if (!in_serial) AllMemoryBarrierWithGroupSync();
+    }
 
-        if (pc.fold_lambda != 0) {
+    if (owned) {
+        uint fold_base = env * fold_cache_float4s;
+        bool cacheable = fold_base + fold_cache_float4s <= pc.body_count * solve_state_float4s_per_body;
+
+        if ((pc.lambda_bits & 1u) != 0) {
             if (lane == 0) {
                 gs_fold_count = 0;
                 gs_island_linear_residual = 0;
@@ -1494,7 +1452,7 @@ void solve_islands(uint3 dispatch_id) {
         }
     }
 
-    if (pc.lambda_pass != 0) {
+    if ((pc.lambda_bits >> 1) != 0) {
         AllMemoryBarrierWithGroupSync();
         if (lane == 0) {
             uint arrived;
@@ -1508,13 +1466,100 @@ void solve_islands(uint3 dispatch_id) {
                 update_contact_lambda(unowned_contacts[1 + k]);
             }
             AllMemoryBarrierWithGroupSync();
-            if (lane == 0) fold_convergence_check(pc.lambda_pass == 2);
+            if (lane == 0) fold_convergence_check((pc.lambda_bits >> 1) == 2);
         }
     }
 
-    if (idx == 0 && pc.fold_lambda == 0) {
+    if (idx == 0 && (pc.lambda_bits & 1u) == 0) {
         collision_state[state_convergence_max_delta_index] = 0;
         collision_state[state_convergence_max_angular_delta_index] = 0;
+    }
+}
+
+void build_island_levels(uint3 dispatch_id) {
+    uint idx = dispatch_id.x;
+    uint env = idx / workgroup_size;
+    uint lane = idx % workgroup_size;
+
+    uint island_count = island_data[0];
+    uint pack = max(solver_config_data[0].islands_per_workgroup, 1u);
+    uint first = env * pack;
+    if (first >= island_count) return;
+
+    uint base = 1 + 2 * max_islands();
+    uint islands = min(pack, island_count - first);
+    uint offset = island_data[1 + first];
+    uint last = first + islands - 1;
+    uint count = island_data[1 + last] + island_data[1 + max_islands() + last] - offset;
+    if (islands <= 1 && count > workgroup_size) return;
+
+    if (lane <= islands) {
+        gs_island_first[lane] = lane < islands ? island_data[1 + first + lane] - offset : count;
+    }
+    if (lane == 0) gs_island_min = 0xFFFFFFFFu;
+    if (lane < islands) gs_island_max_level[lane] = 0;
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint s = lane + j * workgroup_size;
+        gs_island_index[s] = s < count ? island_data[base + offset + s] : 0xFFFFFFFFu;
+    }
+    for (uint k = lane; k < island_span; k += workgroup_size) {
+        gs_island_slot[k] = 0xFFFFFFFFu;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint bi = gs_island_index[lane + j * workgroup_size];
+        if (bi < pc.body_count) InterlockedMin(gs_island_min, bi);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint s = lane + j * workgroup_size;
+        uint bi = gs_island_index[s];
+        if (bi < pc.body_count && bi - gs_island_min < island_span) {
+            gs_island_slot[bi - gs_island_min] = s;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint s = lane + j * workgroup_size;
+        uint bi = gs_island_index[s];
+        uint owner = island_of_slot(s, islands);
+        uint lower = 0;
+        uint upper = 0;
+        gs_island_low[s] = gs_island_first[owner];
+        if (bi < pc.body_count) island_neighbour_masks(bi, s, count, gs_island_first[owner], gs_island_first[owner + 1], lower, upper);
+        gs_island_lower[s] = lower;
+        gs_island_upper[s] = upper;
+    }
+
+    bool colored = solver_config_data[0].island_colored_sweep != 0;
+    island_fixpoint(false, colored, lane, count);
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint s = lane + j * workgroup_size;
+        gs_island_forward[s] = gs_island_level[s];
+    }
+    if (colored) {
+        for (uint j = 0; j < island_slots_per_lane; j++) {
+            uint s = lane + j * workgroup_size;
+            if (s < count) InterlockedMax(gs_island_max_level[island_of_slot(s, islands)], gs_island_forward[s]);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint j = 0; j < island_slots_per_lane; j++) {
+            uint s = lane + j * workgroup_size;
+            gs_island_backward[s] = gs_island_max_level[island_of_slot(s, islands)] - gs_island_forward[s];
+        }
+    }
+    else {
+        island_fixpoint(true, false, lane, count);
+        for (uint j = 0; j < island_slots_per_lane; j++) {
+            uint s = lane + j * workgroup_size;
+            gs_island_backward[s] = gs_island_level[s];
+        }
+    }
+    for (uint j = 0; j < island_slots_per_lane; j++) {
+        uint s = lane + j * workgroup_size;
+        uint bi = gs_island_index[s];
+        if (bi < pc.body_count) solve_deltas[bi * 2] = asfloat(uint4(gs_island_forward[s], gs_island_backward[s], 0, 0));
     }
 }
 
@@ -1523,42 +1568,32 @@ void vbd_solve_color(uint3 dispatch_id) {
 
     if (collision_state[state_converged_flag_index] != 0) return;
 
-    if (pc.color_offset == 0xFFFFFFFFu) {
-        solve_islands(dispatch_id);
-        return;
+    bool jacobi = solver_config_data[0].use_jacobi != 0;
+    uint bi = 0xFFFFFFFFu;
+    bool reset = false;
+    if (jacobi) {
+        if (idx >= pc.body_count) return;
+        solve_deltas[idx * 2] = float4(0, 0, 0, 0);
+        solve_deltas[idx * 2 + 1] = float4(0, 0, 0, 0);
+        bi = idx;
+        reset = idx == 0;
+    }
+    else {
+        uint num_colors = min(collision_state[state_max_used_color_index], pc.color_count);
+        uint color = pc.color_offset;
+        if (color >= num_colors) return;
+        if (idx < color_data[max_colors + color]) {
+            bi = color_data[max_colors * 2 + color_data[color] + idx];
+        }
+        reset = color == num_colors - 1 && idx == 0;
     }
 
-if (solver_config_data[0].use_jacobi != 0) {
-    uint bi = idx;
-    if (bi >= pc.body_count) return;
-
-    solve_deltas[bi * 2] = float4(0, 0, 0, 0);
-    solve_deltas[bi * 2 + 1] = float4(0, 0, 0, 0);
-
-    solve_body(bi, false);
-
-    if (bi == 0) {
-        collision_state[state_convergence_max_delta_index] = 0;
-        collision_state[state_convergence_max_angular_delta_index] = 0;
-    }
-    return;
-}
-
-uint num_colors = min(collision_state[state_max_used_color_index], pc.color_count);
-uint color = pc.color_offset;
-if (color >= num_colors) return;
-
-uint count = color_data[max_colors + color];
-if (idx < count) {
-    uint offset = color_data[color];
-    uint bi = color_data[max_colors * 2 + offset + idx];
     if (bi < pc.body_count) {
         solve_body(bi, false);
     }
-}
 
-if (color == num_colors - 1 && idx == 0) {
-    collision_state[state_convergence_max_delta_index] = 0;
-    collision_state[state_convergence_max_angular_delta_index] = 0;
-}
+    if (reset) {
+        collision_state[state_convergence_max_delta_index] = 0;
+        collision_state[state_convergence_max_angular_delta_index] = 0;
+    }
 }

@@ -893,6 +893,7 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 		}
 		queued.run_only = incoming.run_only;
 		queued.run = incoming.run || incoming.run_only;
+		queued.standalone = incoming.standalone;
 		queued.tree = queued.target == build_runner::build_target::editor ? nullptr : origin;
 
 		if (queued.run_only && queued.target == build_runner::build_target::editor) {
@@ -923,6 +924,7 @@ auto gse::ide::agent::accept_requests(data& d) -> void {
 				&& existing.target == queued.target
 				&& existing.run == queued.run
 				&& existing.run_only == queued.run_only
+				&& existing.standalone == queued.standalone
 				&& existing.settings == queued.settings
 				&& existing.scenario == queued.scenario
 				&& existing.exit_after == queued.exit_after
@@ -994,11 +996,15 @@ auto gse::ide::agent::accept_hibernations(data& d) -> bool {
 			.text = std::format("hibernating until built: {}", awaited),
 		});
 
-		build_inbox::publish({
+		build_inbox::result accepted{
 			.id = incoming.id,
 			.outcome = build_inbox::status::ok,
 			.lines = { std::format("hibernating until {} covers your edits - end your turn now; the editor will prompt you when it lands", awaited) },
-		});
+		};
+		if (found->unbuilt.size() > 1) {
+			accepted.lines.emplace_back("your edits span more than one build target, so you are woken by the first build that covers any of them and told which remain");
+		}
+		build_inbox::publish(accepted);
 	}
 
 	return recorded;
@@ -1125,7 +1131,9 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 			continue;
 		}
 
-		if (finished.succeeded && !edits_built(d, s)) {
+		const auto own_entry = s.unbuilt.find(finished.key);
+		const bool started_before_edits = own_entry != s.unbuilt.end() && own_entry->second > built_through(d, finished.key);
+		if (finished.succeeded && started_before_edits) {
 			const std::string pending = unbuilt_label(s);
 			const std::string reason = "that build started before these edits";
 			if (s.asleep_blocker != reason) {
@@ -1144,6 +1152,16 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 		std::string lead = finished.succeeded
 			? "The build you were waiting on succeeded and your edits are in the current binaries."
 			: "The build you were waiting on failed. These errors land on lines you wrote:\n" + blame_prompt({}, s.blame);
+		if (finished.succeeded && !edits_built(d, s)) {
+			std::erase_if(s.unbuilt, [&d](const auto& entry) {
+				return entry.second <= built_through(d, entry.first);
+			});
+			lead = std::format(
+				"The build you were waiting on succeeded, but it only covered part of your edits - {} is still unbuilt. "
+				"Edits under Editor/ are only built by gse_build target: editor, which relaunches the editor; if you need them in the binary, request that build.",
+				unbuilt_label(s)
+			);
+		}
 		if (!finished.succeeded) {
 			s.blame.clear();
 			s.blame_build = {};
@@ -1231,6 +1249,7 @@ auto gse::ide::agent::request_of(const queued_build& queued) -> build_inbox::req
 		.exit_after = queued.exit_after,
 		.run = queued.run,
 		.run_only = queued.run_only,
+		.standalone = queued.standalone,
 	};
 }
 
@@ -1362,6 +1381,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	const build_runner::build_target target = head.target;
 	const bool run = head.run;
 	const bool run_only = head.run_only;
+	const bool standalone = head.standalone;
 	const config::worktree* tree = head.tree;
 	const std::string profile = head.profile;
 	const std::string config = head.config;
@@ -1372,7 +1392,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	std::vector<queued_build> group;
 	std::vector<queued_build> deferred;
 	for (queued_build& queued : d.inbox_queue) {
-		if (queued.target == target && queued.run == run && queued.run_only == run_only && queued.tree == tree && queued.profile == profile && queued.config == config && queued.settings == settings && queued.scenario == scenario && queued.exit_after == exit_after) {
+		if (queued.target == target && queued.run == run && queued.run_only == run_only && queued.standalone == standalone && queued.tree == tree && queued.profile == profile && queued.config == config && queued.settings == settings && queued.scenario == scenario && queued.exit_after == exit_after) {
 			group.push_back(std::move(queued));
 		}
 		else {
@@ -1388,6 +1408,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 		.skip_build = run_only,
 		.settings = settings,
 		.bounds = { .scenario = scenario, .exit_after = exit_after },
+		.session = { .attached = !standalone },
 		.config = config,
 		.profile = profile,
 		.tree = tree != nullptr ? tree->name : std::string{},
@@ -1418,6 +1439,9 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 			.outcome = finished.succeeded ? build_inbox::status::ok : build_inbox::status::failed,
 		};
 		if (finished.succeeded) {
+			for (const std::uint32_t pid : finished.pids) {
+				outcome.lines.push_back(std::format("pid {}", pid));
+			}
 			build_inbox::publish(outcome);
 			continue;
 		}
@@ -1459,7 +1483,10 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 
 		outcome.owned = owned;
 		if (mine.empty() && theirs.empty() && unattributed.empty()) {
-			outcome.lines.emplace_back("the build failed without a parseable diagnostic; open the build stream in the editor terminal");
+			outcome.lines.emplace_back("the build failed without a parseable diagnostic - the tail of the build output follows:");
+			for (const std::string& line : finished.output) {
+				outcome.lines.push_back("  " + line);
+			}
 		}
 		if (!mine.empty()) {
 			outcome.lines.emplace_back("your errors:");
@@ -1571,9 +1598,9 @@ auto gse::ide::agent::crash_prompt(const std::span<const pending_crash> reports)
 
 	prompt +=
 		"Find the cause and fix it. Every report here was recorded against the binary that is on disk right now, so the stack frames can be symbolized - "
-		"but do it before you build anything, because a build replaces the binary and the offsets stop meaning anything:\n"
-		"  addr2line -e <exe from the record> -f -C -s -p <0x140000000 + RVA>\n"
-		"using the addr2line from the toolchain the binary was built with.\n\n"
+		"but do it before you build anything, because a build replaces the binary and the offsets stop meaning anything. "
+		"Call gse_symbolize with crash set to the record's path; it picks the exe and toolchain from the record and refuses if the binary has changed since. "
+		"gse_git reads the history when you need to find what changed.\n\n"
 		"Nobody is watching this chat, so your scope is approved automatically and you carry the task through to a fix yourself.";
 	return prompt;
 }

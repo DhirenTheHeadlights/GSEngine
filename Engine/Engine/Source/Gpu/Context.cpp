@@ -1,5 +1,6 @@
 module gse.gpu:context_impl;
 
+import gse.assert;
 import gse.concurrency;
 import gse.core;
 import gse.diag;
@@ -14,12 +15,16 @@ import :frame;
 import :render_graph;
 import :swap_chain;
 
-auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, save::registry* const save_reg, data& d) -> async::task<> {
+auto gse::gpu::context::create_device(data& d, const std::optional<shared_view<window::data>> window_s, save::registry* const save_reg) -> void {
 	const auto requested_backend = d.backend;
 	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
 	if (save_reg && d.backend != requested_backend) {
 		save_reg->save_now();
 	}
+}
+
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, data& d) -> async::task<> {
+	assert(d.device != nullptr, "gpu::context::init runs after the engine created the device; registration reads its capabilities first");
 
 	if (window_s) {
 		d.swapchain = swap_chain::create(

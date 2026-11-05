@@ -16,6 +16,7 @@ export namespace gse::ide::build_runner {
 		std::uint8_t clients = 1;
 		bool dedicated_server = false;
 		bool attached = true;
+		bool browser = false;
 		std::uint16_t base_port = 9000;
 
 		auto operator==(
@@ -34,6 +35,10 @@ export namespace gse::ide::build_runner {
 	};
 
 	constexpr std::uint8_t max_profile_clients = 4;
+
+	auto effective_clients(
+		const play_session& session
+	) -> std::uint8_t;
 
 	auto profiles_path() -> std::filesystem::path;
 
@@ -71,11 +76,15 @@ export namespace gse::ide::build_runner {
 
 namespace gse::ide::build_runner {
 	constexpr std::uint32_t profiles_magic = 0x47534250;
-	constexpr std::uint32_t profiles_version = 1;
+	constexpr std::uint32_t profiles_version = 2;
 }
 
 auto gse::ide::build_runner::profiles_path() -> std::filesystem::path {
 	return config::project_state_dir() / "build_profiles.bin";
+}
+
+auto gse::ide::build_runner::effective_clients(const play_session& session) -> std::uint8_t {
+	return session.dedicated_server ? session.clients : std::uint8_t{ 1 };
 }
 
 auto gse::ide::build_runner::default_profiles() -> std::vector<build_profile> {

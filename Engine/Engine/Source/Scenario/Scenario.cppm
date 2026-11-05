@@ -22,7 +22,15 @@ export namespace gse::scenario {
 		bool real_time = false;
 		int warmup_frames = 120;
 		int frames = 600;
-		char settings[16][96] = {};
+	};
+
+	template <std::meta::info... Path>
+	struct pin {
+		using path = settings::member_path<Path...>;
+
+		typename path::value_type value;
+
+		[[nodiscard]] auto assignment() const -> std::string;
 	};
 
 	struct wait_gate {
@@ -101,6 +109,7 @@ export namespace gse::scenario {
 		id id;
 		info info;
 		body_fn body = nullptr;
+		std::vector<std::string> settings;
 	};
 
 	template <std::meta::info Ns>
@@ -116,11 +125,40 @@ namespace gse::scenario {
 	template <std::meta::info Ns>
 	consteval auto scenario_members() -> std::vector<std::meta::info>;
 
+	consteval auto is_pin(
+		std::meta::info annotation
+	) -> bool;
+
+	template <std::meta::info M>
+	auto pinned_settings() -> std::vector<std::string>;
+
 	[[nodiscard]] auto backend_variant_of(
 		const info& declared,
 		std::string_view suffix,
 		bool gpu_solver
 	) -> info;
+}
+
+template <std::meta::info... Path>
+auto gse::scenario::pin<Path...>::assignment() const -> std::string {
+	return std::format("{}.{}={}", path::category, path::key, meta::write_field(value));
+}
+
+consteval auto gse::scenario::is_pin(const std::meta::info annotation) -> bool {
+	const auto type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(annotation)));
+	return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^pin;
+}
+
+template <std::meta::info M>
+auto gse::scenario::pinned_settings() -> std::vector<std::string> {
+	std::vector<std::string> out;
+	template for (constexpr auto a : std::define_static_array(std::meta::annotations_of(M))) {
+		if constexpr (is_pin(a)) {
+			static constexpr auto declared = [:std::meta::constant_of(a):];
+			out.push_back(declared.assignment());
+		}
+	}
+	return out;
 }
 
 auto gse::scenario::backend_variant_of(const info& declared, const std::string_view suffix, const bool gpu_solver) -> info {
@@ -225,6 +263,7 @@ auto gse::scenario::registry() -> std::span<const entry> {
 		template for (constexpr auto m : std::define_static_array(scenario_members<Ns>())) {
 			constexpr auto ann = first_annotation_of_type(m, ^^info);
 			static constexpr info declared = [:std::meta::constant_of(ann):];
+			const std::vector<std::string> settings = pinned_settings<m>();
 			if constexpr (declared.backend_variants) {
 				constexpr std::array<std::pair<std::string_view, bool>, 2> variants = {
 					std::pair{ std::string_view("_cpu"), false },
@@ -236,6 +275,7 @@ auto gse::scenario::registry() -> std::span<const entry> {
 						.id = find_or_generate_id(std::string_view(resolved.name)),
 						.info = resolved,
 						.body = &[:m:],
+						.settings = settings,
 					});
 				}
 			}
@@ -244,6 +284,7 @@ auto gse::scenario::registry() -> std::span<const entry> {
 					.id = find_or_generate_id(std::string_view(declared.name)),
 					.info = declared,
 					.body = &[:m:],
+					.settings = settings,
 				});
 			}
 		}

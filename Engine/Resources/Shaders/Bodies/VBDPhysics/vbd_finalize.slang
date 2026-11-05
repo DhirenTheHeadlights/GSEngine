@@ -1,7 +1,7 @@
 
 void vbd_finalize(uint3 dispatch_id) {
-    uint bi = dispatch_id.x;
-    if (bi >= pc.body_count) return;
+    if (dispatch_id.x >= active_data[active_count_word]) return;
+    uint bi = active_list[active_data[active_half_word] * max_bodies() + dispatch_id.x];
 
     body_state body = body_data[bi];
     bool locked = body.locked != 0;

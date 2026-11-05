@@ -29,6 +29,8 @@ export namespace gse::camera {
 	struct world_visibility_update {
 		bool visible = false;
 	};
+
+	struct temporal_reset_request {};
 }
 
 export namespace gse::camera {
@@ -75,7 +77,7 @@ export namespace gse::camera {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update> requests_in,
+		channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update, temporal_reset_request> requests_in,
 		read<follow_component> cameras
 	) -> async::task<>;
 

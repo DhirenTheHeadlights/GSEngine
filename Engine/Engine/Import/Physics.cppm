@@ -2,6 +2,7 @@ export module gse.physics;
 
 export import gse.math;
 
+export import :body_requests;
 export import :bounding_box;
 export import :collision_component;
 export import :contact_manifold;

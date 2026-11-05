@@ -1,5 +1,6 @@
 export module gse.ecs:task_graph;
 
+import gse.assert;
 import gse.concurrency;
 import gse.containers;
 import gse.core;
@@ -8,7 +9,26 @@ import std;
 
 export namespace gse {
 	class task_graph {
+		struct state_slot;
+
 	public:
+		struct ready_awaiter {
+			state_slot* slot;
+
+			[[nodiscard]] auto await_ready() const noexcept -> bool;
+
+			auto await_suspend(
+				std::coroutine_handle<> h
+			) const noexcept -> bool;
+
+			auto await_resume() const noexcept -> void;
+		};
+
+		auto add_state(
+			id state_type,
+			bool ready
+		) -> void;
+
 		auto clear() -> void;
 
 		auto notify_state_ready(
@@ -21,11 +41,11 @@ export namespace gse {
 
 		auto wait_state_ready(
 			id state_type
-		) -> async::task<>;
+		) -> ready_awaiter;
 
-		auto is_state_ready(
+		[[nodiscard]] auto is_state_ready(
 			id state_type
-		) -> bool;
+		) const -> bool;
 
 	private:
 		struct state_slot {
@@ -34,50 +54,38 @@ export namespace gse {
 			std::vector<async::checked_handle> waiters;
 		};
 
-		auto get_or_create_slot(
+		auto slot_of(
 			id state_type
-		) -> state_slot*;
+		) const -> state_slot&;
 
 		std::flat_map<id, std::unique_ptr<state_slot>> m_states;
-		std::shared_mutex m_states_mutex;
 	};
 }
 
+auto gse::task_graph::add_state(const id state_type, const bool ready) -> void {
+	m_states.try_emplace(state_type, std::make_unique<state_slot>(ready));
+}
+
 auto gse::task_graph::clear() -> void {
-	std::shared_lock _(m_states_mutex);
-	for (auto& slot : std::views::values(m_states)) {
+	for (const auto& slot : std::views::values(m_states)) {
 		slot->ready.store(false, std::memory_order_relaxed);
-		std::lock_guard waiter_lock(slot->waiter_lock);
-		slot->waiters.clear();
 	}
 }
 
-auto gse::task_graph::get_or_create_slot(const id state_type) -> state_slot* {
-	{
-		std::shared_lock _(m_states_mutex);
-		if (const auto it = m_states.find(state_type); it != m_states.end()) {
-			return it->second.get();
-		}
-	}
-
-	std::unique_lock _(m_states_mutex);
-	if (const auto it = m_states.find(state_type); it != m_states.end()) {
-		return it->second.get();
-	}
-	auto slot = std::make_unique<state_slot>();
-	auto* raw = slot.get();
-	m_states.try_emplace(state_type, std::move(slot));
-	return raw;
+auto gse::task_graph::slot_of(const id state_type) const -> state_slot& {
+	const auto it = m_states.find(state_type);
+	assert(it != m_states.end(), "task_graph has no slot for state {}; slots are added when a system node is registered", state_type);
+	return *it->second;
 }
 
 auto gse::task_graph::notify_state_ready(const id state_type) -> void {
-	auto* slot = get_or_create_slot(state_type);
-	slot->ready.store(true, std::memory_order_release);
+	auto& slot = slot_of(state_type);
+	slot.ready.store(true, std::memory_order_release);
 
 	std::vector<async::checked_handle> handles;
 	{
-		std::lock_guard _(slot->waiter_lock);
-		handles = std::move(slot->waiters);
+		std::lock_guard _(slot.waiter_lock);
+		handles = std::move(slot.waiters);
 	}
 
 	for (const async::checked_handle& h : handles) {
@@ -93,65 +101,30 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 }
 
 auto gse::task_graph::reset_state(const id state_type) -> void {
-	auto* slot = get_or_create_slot(state_type);
-	slot->ready.store(false, std::memory_order_release);
-
-	std::vector<async::checked_handle> stale;
-	{
-		std::lock_guard _(slot->waiter_lock);
-		stale = std::move(slot->waiters);
-	}
-
-	if (!stale.empty()) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"task_graph: reset state {} while {} waiter(s) were still parked; they belong to a finished dispatch and are being dropped",
-			state_type,
-			stale.size()
-		);
-	}
+	slot_of(state_type).ready.store(false, std::memory_order_release);
 }
 
-auto gse::task_graph::is_state_ready(const id state_type) -> bool {
-	auto* slot = get_or_create_slot(state_type);
+auto gse::task_graph::is_state_ready(const id state_type) const -> bool {
+	return slot_of(state_type).ready.load(std::memory_order_acquire);
+}
+
+auto gse::task_graph::wait_state_ready(const id state_type) -> ready_awaiter {
+	return {
+		.slot = &slot_of(state_type),
+	};
+}
+
+auto gse::task_graph::ready_awaiter::await_ready() const noexcept -> bool {
 	return slot->ready.load(std::memory_order_acquire);
 }
 
-auto gse::task_graph::wait_state_ready(const id state_type) -> async::task<> {
-	auto* slot = get_or_create_slot(state_type);
+auto gse::task_graph::ready_awaiter::await_suspend(const std::coroutine_handle<> h) const noexcept -> bool {
+	std::lock_guard _(slot->waiter_lock);
 	if (slot->ready.load(std::memory_order_acquire)) {
-		co_return;
+		return false;
 	}
-
-	struct state_awaiter {
-		state_slot* slot;
-
-		[[nodiscard]] auto await_ready() const noexcept -> bool {
-			return false;
-		}
-
-		auto await_suspend(std::coroutine_handle<> h) const noexcept -> void {
-			const async::checked_handle tracked = async::track_frame(h);
-			bool ready_now = false;
-			{
-				std::lock_guard _(slot->waiter_lock);
-				if (slot->ready.load(std::memory_order_acquire)) {
-					ready_now = true;
-				}
-				else {
-					slot->waiters.push_back(tracked);
-				}
-			}
-
-			if (ready_now) {
-				async::resume_checked(tracked);
-			}
-		}
-
-		auto await_resume() const noexcept -> void {
-		}
-	};
-
-	co_await state_awaiter{ slot };
+	slot->waiters.push_back(async::track_frame(h));
+	return true;
 }
+
+auto gse::task_graph::ready_awaiter::await_resume() const noexcept -> void {}

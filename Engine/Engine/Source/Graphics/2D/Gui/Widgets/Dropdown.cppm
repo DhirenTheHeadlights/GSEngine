@@ -346,22 +346,25 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 		max_option_width = std::max(max_option_width, fnt_view->width(get_option(i), ctx.style.font_size) + ctx.style.padding * 2.f);
 	}
 
-	const auto place_list = [&ctx, &header_rect](const float width, const float height) {
-		const rectf& bounds = ctx.current_menu->rect;
-		const bool fits_below = header_rect.bottom() - height >= bounds.bottom();
-		const bool fits_above = header_rect.top() + height <= bounds.top();
-		const float top = !fits_below && fits_above ? header_rect.top() + height : header_rect.bottom();
-		return rectf::from_position_size({ header_rect.left(), top }, { width, height });
-	};
-
-	const std::size_t visible_count_early = std::min(count, config.max_visible_items);
-	const float visible_height_early = static_cast<float>(visible_count_early) * row_height;
-	const bool needs_scroll_early = count > config.max_visible_items;
-	const float list_width_early = needs_scroll_early ? max_option_width + config.scrollbar_width : max_option_width;
-	const rectf list_rect_early = place_list(list_width_early, visible_height_early);
+	const rectf& frame = ctx.frame_rect;
+	const std::size_t wanted_count = std::min(count, config.max_visible_items);
+	const float wanted_height = static_cast<float>(wanted_count) * row_height;
+	const float room_below = header_rect.bottom() - frame.bottom();
+	const float room_above = frame.top() - header_rect.top();
+	const bool opens_below = wanted_height <= room_below || (wanted_height > room_above && room_below >= room_above);
+	const float room = opens_below ? room_below : room_above;
+	const std::size_t visible_count = std::clamp(static_cast<std::size_t>(std::max(room, 0.f) / row_height), std::size_t{ 1 }, std::max(wanted_count, std::size_t{ 1 }));
+	const float visible_height = static_cast<float>(visible_count) * row_height;
+	const bool needs_scroll = count > visible_count;
+	const float list_width = needs_scroll ? max_option_width + config.scrollbar_width : max_option_width;
+	const float list_left = std::clamp(header_rect.left(), frame.left(), std::max(frame.left(), frame.right() - list_width));
+	const float list_top = opens_below ? header_rect.bottom() : header_rect.top() + visible_height;
+	const rectf list_rect = rectf::from_position_size({ list_left, list_top }, { list_width, visible_height });
+	const std::uint32_t list_z = ctx.current_z_order + 1;
 
 	if (is_open && count > 0) {
-		ctx.register_hit_region(render_layer::modal, list_rect_early);
+		const auto _ = ctx.scoped_layer(render_layer::modal, list_z);
+		ctx.register_hit_region(render_layer::modal, list_rect);
 	}
 
 	const dropdown_skin& skin = ctx.style.dropdown;
@@ -402,16 +405,9 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 	});
 
 	if (is_open && count > 0) {
-		const auto _ = ctx.scoped_layer(render_layer::modal);
+		const auto _ = ctx.scoped_layer(render_layer::modal, list_z);
 
-		const std::size_t visible_count = std::min(count, config.max_visible_items);
-		const float visible_height = static_cast<float>(visible_count) * row_height;
 		const float total_content_height = static_cast<float>(count) * row_height;
-		const bool needs_scroll = count > config.max_visible_items;
-
-		const float list_width = needs_scroll ? max_option_width + config.scrollbar_width : max_option_width;
-
-		const rectf list_rect = place_list(list_width, visible_height);
 
 		const rectf content_area = needs_scroll
 			? rectf::from_position_size(
@@ -488,7 +484,7 @@ auto gse::gui::draw::dropdown_impl_in_rect(const draw_context& ctx, const id dro
 
 	const std::array<rectf, 1> keep_open = { header_rect };
 	if (state.open_dropdown_id == dropdown_id && interaction::dismissed_by_outside_press(ctx, {
-		.body = list_rect_early,
+		.body = list_rect,
 		.keep_open = keep_open,
 		.suppressed = state.scroll.y.held,
 	})) {

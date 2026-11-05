@@ -34,7 +34,7 @@ not GCC output, so a row there would read as GCC passing something it does not. 
 split also makes this cheap: hand-written .s needs no snapshot, no cc1plus and no
 `make all-gcc`, so this runs in seconds where that script runs in an hour.
 
-What it reuses from build_gcc_wasm.py and run_wasm.py is the part that would otherwise
+What it reuses from build_gcc_wasm.py and wasm_paths.py is the part that would otherwise
 be restated wrong: the node harness text and the three-way instantiate/trap/wrong-result exit
 taxonomy, so a result here and a result there mean the same thing.
 
@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from build_gcc_wasm import ASM_FEATURES, RUN_TOOLS, WASI_TARGET, stage_sysroot
-from run_wasm import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
+from wasm_paths import (ENTRY, HARNESS_MAX_PAGES, NO_INSTANCE_EXIT, PAGE_SIZE, TRAP_EXIT,
                       harness_text)
 from msys2 import DEFAULT_MSYS_ROOT, REPO_ROOT, bash, to_msys
 from repo_paths import GENERATED_ROOT

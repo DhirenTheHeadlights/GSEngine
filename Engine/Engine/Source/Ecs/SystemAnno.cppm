@@ -42,6 +42,11 @@ export namespace gse {
 	struct system_shutdown {};
 
 	struct deferred_system {};
+
+	template <std::meta::info Namespace>
+	struct written_by {
+		static constexpr std::meta::info owner = Namespace;
+	};
 }
 
 export namespace gse::settings {
@@ -96,6 +101,15 @@ export namespace gse::meta {
 	consteval auto qualified_name_of(
 		std::meta::info entity
 	) -> std::string_view;
+
+	consteval auto may_write(
+		std::meta::info component,
+		std::meta::info writer_state
+	) -> bool;
+
+	consteval auto has_written_by(
+		std::meta::info component
+	) -> bool;
 
 	template <typename State>
 	consteval auto has_system_state() -> bool;
@@ -177,6 +191,19 @@ consteval auto gse::meta::required_order_deps_of(const std::meta::info fn) -> st
 
 consteval auto gse::meta::optional_order_deps_of(const std::meta::info fn) -> std::vector<std::meta::info> {
 	return order_deps_of(fn, ^^runs_after_optional);
+}
+
+consteval auto gse::meta::has_written_by(const std::meta::info component) -> bool {
+	return find_class_template_annotation(std::meta::dealias(component), ^^written_by) != std::meta::info{};
+}
+
+consteval auto gse::meta::may_write(const std::meta::info component, const std::meta::info writer_state) -> bool {
+	if (!has_written_by(component)) {
+		return true;
+	}
+	const auto anno = find_class_template_annotation(std::meta::dealias(component), ^^written_by);
+	const auto owner = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(anno)[0]);
+	return std::meta::parent_of(std::meta::dealias(writer_state)) == owner;
 }
 
 template <typename State>

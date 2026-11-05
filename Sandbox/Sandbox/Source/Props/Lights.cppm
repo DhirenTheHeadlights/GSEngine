@@ -64,9 +64,8 @@ auto sandbox::spawn_light_field(gse::scene& s, const light_field_params& params)
 			++spawned;
 
 			if (drifting) {
-				s.registry().add_component<piston::component>(
-					light_id,
-					{
+				s.build(light_id)
+					.with<piston::component>({
 						.center = origin,
 						.amplitude = gse::vec3<gse::length>(
 							params.drift * gse::sin(local_theta),
@@ -75,14 +74,10 @@ auto sandbox::spawn_light_field(gse::scene& s, const light_field_params& params)
 						),
 						.omega = params.drift_rate,
 						.phase = gse::degrees(golden_angle * static_cast<float>(spawned)),
-					}
-				);
-				s.registry().add_component<gse::physics::kinematic_target_component>(
-					light_id,
-					{
+					})
+					.with<gse::physics::kinematic_target_component>({
 						.position = origin,
-					}
-				);
+					});
 			}
 		}
 	}

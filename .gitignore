@@ -57,3 +57,7 @@ __pycache__/
 
 # Windows `> nul` artifact
 /nul
+
+# WGSL baked by a native Graphics.backend=webgpu run, read by the wasm build
+/Engine/Resources/Shaders/Wgsl/
+

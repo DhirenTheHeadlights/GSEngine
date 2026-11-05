@@ -141,7 +141,6 @@ auto gse::renderer::world_text::ensure_vertex_capacity(data& d, gpu::device& dev
 			.size = cap * sizeof(world_text_vertex),
 			.stride = sizeof(world_text_vertex),
 			.usage = gpu::buffer_flag::storage,
-			.bindless = true
 		},
 		"world_text.vertex"
 	);
@@ -168,7 +167,6 @@ auto gse::renderer::world_text::init(context& ctx, const shared_view<gpu::contex
 				.size = camera_ubo_size,
 				.stride = sizeof(shaders::common::camera_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"world_text.camera_ubo"
 		);

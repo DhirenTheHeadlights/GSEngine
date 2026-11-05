@@ -6,6 +6,7 @@ import gse.gpu_backend;
 import gse.math;
 
 import :video_encoder;
+import :device_webgpu_backend;
 
 namespace gse::gpu {
 	struct video_encoder_backend {};
@@ -48,4 +49,8 @@ auto gse::gpu::video_encoder::extent() const -> vec2u {
 
 auto gse::gpu::video_encoder::valid() const -> bool {
 	return false;
+}
+
+auto gse::gpu::webgpu_device_backend::make_video_encoder_backend(const encode_desc&) -> std::unique_ptr<video_encoder_backend> {
+	return nullptr;
 }

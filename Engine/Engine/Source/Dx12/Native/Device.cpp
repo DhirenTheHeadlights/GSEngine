@@ -206,6 +206,11 @@ gse::dx12::device::device(const std::optional<shared_view<window::data>> win,con
 	}
 	log::println(log::category::dx12, "factory={} device={} nvidia_create_hr=0x{:08x}", static_cast<void*>(m_factory.get()), static_cast<void*>(m_device.get()), static_cast<std::uint32_t>(nvidia_hr));
 
+	m_draw_indexed_signature = directx::create_draw_indexed_command_signature(m_device.get(), sizeof(gpu::draw_indexed_indirect_command));
+	m_dispatch_mesh_signature = directx::create_dispatch_mesh_command_signature(m_device.get(), sizeof(gpu::draw_mesh_tasks_indirect_command));
+	m_dispatch_signature = directx::create_dispatch_command_signature(m_device.get());
+	assert(m_draw_indexed_signature.get() && m_dispatch_mesh_signature.get() && m_dispatch_signature.get(), "CreateCommandSignature failed for an indirect argument layout");
+
 	m_graphics_queue = directx::create_direct_queue(m_device.get());
 	m_compute_queue = directx::create_compute_queue(m_device.get());
 	constexpr std::string_view graphics_queue_name = "gse.graphics_queue";
@@ -248,7 +253,9 @@ gse::dx12::device::device(const std::optional<shared_view<window::data>> win,con
 
 auto gse::dx12::device::init_bindless() -> void {
 	m_gpu_upload_supported = directx::gpu_upload_heap_supported(m_device.get());
-	log::println(log::category::dx12, "gpu_upload_supported={} mesh_shader_tier={} adapter_vendor=0x{:04x}", m_gpu_upload_supported, directx::mesh_shader_tier(m_device.get()), directx::adapter_vendor_id(m_factory.get(), m_device.get()));
+	const auto mesh_tier = directx::mesh_shader_tier(m_device.get());
+	m_mesh_shaders_supported = mesh_tier != 0;
+	log::println(log::category::dx12, "gpu_upload_supported={} mesh_shader_tier={} adapter_vendor=0x{:04x}", m_gpu_upload_supported, mesh_tier,directx::adapter_vendor_id(m_factory.get(), m_device.get()));
 
 	m_video_support = directx::query_video_support(m_device.get());
 	log_video_support(m_video_support);
@@ -486,6 +493,14 @@ auto gse::dx12::device::timestamp_period() const -> float {
 
 auto gse::dx12::device::video_support() const -> const directx::video_support& {
 	return m_video_support;
+}
+
+gse::dx12::device::~device() {
+	log::println(log::category::dx12, "bindless high water: buffer {}/{} image {}/{} texture {}/{} sampler {}/{}", m_buffer_pool.high_water, m_buffer_pool.capacity, m_image_pool.high_water, m_image_pool.capacity, m_texture_pool.high_water, m_texture_pool.capacity, m_sampler_pool.high_water, m_sampler_pool.capacity);
+}
+
+auto gse::dx12::device::mesh_shaders_supported() const -> bool {
+	return m_mesh_shaders_supported;
 }
 
 auto gse::dx12::device::calibrated_timestamp(const gpu::queue_type queue) const -> std::optional<gpu::timestamp_calibration> {
@@ -829,8 +844,11 @@ auto gse::dx12::device::note_compute_push_size(const gpu::command_buffer_handle 
 	}
 	auto* pso = std::bit_cast<directx::ID3D12PipelineState*>(shader);
 	compute_pso_layout layout;
-	if (const auto it = m_compute_layouts.find(pso); it != m_compute_layouts.end()) {
-		layout = it->second;
+	{
+		const std::lock_guard _(m_mutex);
+		if (const auto it = m_compute_layouts.find(pso); it != m_compute_layouts.end()) {
+			layout = it->second;
+		}
 	}
 	auto& state = graphics_state(list);
 	state.push_size = layout.push_size;
@@ -934,16 +952,8 @@ auto gse::dx12::device::cmd_draw_indexed_indirect(const gpu::command_buffer_hand
 	if (!pso) {
 		return;
 	}
-	{
-		const std::lock_guard _(m_mutex);
-		if (!m_draw_indexed_signature) {
-			m_draw_indexed_signature = directx::create_draw_indexed_command_signature(m_device.get(), stride);
-		}
-	}
-	if (!m_draw_indexed_signature) {
-		return;
-	}
 	list->SetPipelineState(pso);
+	assert(stride == sizeof(gpu::draw_indexed_indirect_command), "draw_indexed_indirect stride {} does not match the command signature built at init", stride);
 	list->IASetPrimitiveTopology(primitive_topology_of(state.pending->state.topology));
 	directx::execute_indirect(list, m_draw_indexed_signature.get(), draw_count, resource, offset);
 }
@@ -973,15 +983,7 @@ auto gse::dx12::device::cmd_draw_mesh_tasks_indirect(const gpu::command_buffer_h
 	if (!pso) {
 		return;
 	}
-	{
-		const std::lock_guard _(m_mutex);
-		if (!m_dispatch_mesh_signature) {
-			m_dispatch_mesh_signature = directx::create_dispatch_mesh_command_signature(m_device.get(), stride);
-		}
-	}
-	if (!m_dispatch_mesh_signature) {
-		return;
-	}
+	assert(stride == sizeof(gpu::draw_mesh_tasks_indirect_command), "draw_mesh_tasks_indirect stride {} does not match the command signature built at init", stride);
 	list->SetPipelineState(pso);
 	directx::execute_indirect(list, m_dispatch_mesh_signature.get(), draw_count, resource, offset);
 }
@@ -995,15 +997,18 @@ auto gse::dx12::device::cmd_dispatch_indirect(const gpu::command_buffer_handle c
 	if (!compute_pso_bound(cmd)) {
 		return;
 	}
+	gpu::device_size size = 0;
+	bool live = false;
 	{
 		const std::lock_guard _(m_mutex);
-		if (!m_dispatch_signature) {
-			m_dispatch_signature = directx::create_dispatch_command_signature(m_device.get());
+		if (const auto it = m_live_buffers.find(buffer.value); it != m_live_buffers.end()) {
+			live = true;
+			size = it->second.size;
 		}
 	}
-	if (!m_dispatch_signature) {
-		return;
-	}
+	assert(live, "dispatch_indirect buffer {} is not a live buffer", buffer.value);
+	assert(offset % 4 == 0, "dispatch_indirect offset {} is not 4-byte aligned", offset);
+	assert(offset + 3 * sizeof(std::uint32_t) <= size, "dispatch_indirect offset {} reads past the end of a {}-byte buffer", offset, size);
 	directx::execute_indirect(list, m_dispatch_signature.get(), 1, resource, offset);
 }
 
@@ -1696,7 +1701,6 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 			{}
 		);
 	}
-	assert(!desc.readback || !desc.bindless, "a readback buffer lives on a readback heap and cannot carry a descriptor");
 	assert(!desc.device_local || (!desc.data && !desc.readback), "a device-local buffer cannot carry init data or readback semantics");
 
 	auto resource = [&] {
@@ -1734,7 +1738,7 @@ auto gse::dx12::device::create_buffer(const gpu::buffer_desc& desc, const std::s
 		.byte_address = desc.usage.test(gpu::buffer_flag::byte_address),
 	};
 	gpu::bindless_slot slot;
-	if (desc.bindless) {
+	if (gpu::takes_slot(desc)) {
 		slot = m_buffer_pool.allocate();
 		const directx::D3D12_CPU_DESCRIPTOR_HANDLE handle = {
 			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_buffer_pool.offset(slot)),
@@ -1817,31 +1821,29 @@ auto gse::dx12::device::create_image(const gpu::image_desc& desc, const std::str
 
 	gpu::bindless_slot storage_slot;
 	gpu::bindless_slot sampled_slot;
-	if (desc.bindless) {
-		const bool is_3d = desc.depth > 1;
-		if (desc.usage.test(gpu::image_flag::sampled)) {
-			sampled_slot = m_image_pool.allocate();
-			const directx::D3D12_CPU_DESCRIPTOR_HANDLE srv = {
-				.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(sampled_slot)),
-			};
-			if (is_3d) {
-				directx::create_texture_srv_3d(m_device.get(), raw, srv_format_of(desc.format), srv);
-			}
-			else {
-				directx::create_texture_srv(m_device.get(), raw, srv_format_of(desc.format), srv);
-			}
+	const bool is_3d = desc.depth > 1;
+	if (desc.usage.test(gpu::image_flag::sampled)) {
+		sampled_slot = m_image_pool.allocate();
+		const directx::D3D12_CPU_DESCRIPTOR_HANDLE srv = {
+			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(sampled_slot)),
+		};
+		if (is_3d) {
+			directx::create_texture_srv_3d(m_device.get(), raw, srv_format_of(desc.format), srv);
 		}
-		if (desc.usage.test(gpu::image_flag::storage)) {
-			storage_slot = m_image_pool.allocate();
-			const directx::D3D12_CPU_DESCRIPTOR_HANDLE uav = {
-				.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(storage_slot)),
-			};
-			if (is_3d) {
-				directx::create_texture_uav_3d(m_device.get(), raw, srv_format_of(desc.format), desc.depth, uav);
-			}
-			else {
-				directx::create_texture_uav(m_device.get(), raw, srv_format_of(desc.format), uav);
-			}
+		else {
+			directx::create_texture_srv(m_device.get(), raw, srv_format_of(desc.format), srv);
+		}
+	}
+	if (desc.usage.test(gpu::image_flag::storage)) {
+		storage_slot = m_image_pool.allocate();
+		const directx::D3D12_CPU_DESCRIPTOR_HANDLE uav = {
+			.ptr = directx::descriptor_heap_cpu_start(m_resource_heap.get()).ptr + static_cast<std::size_t>(m_image_pool.offset(storage_slot)),
+		};
+		if (is_3d) {
+			directx::create_texture_uav_3d(m_device.get(), raw, srv_format_of(desc.format), desc.depth, uav);
+		}
+		else {
+			directx::create_texture_uav(m_device.get(), raw, srv_format_of(desc.format), uav);
 		}
 	}
 

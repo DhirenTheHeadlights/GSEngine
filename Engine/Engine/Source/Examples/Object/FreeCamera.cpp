@@ -17,7 +17,7 @@ import gse.os;
 import gse.assets;
 import gse.gpu;
 
-auto gse::free_camera::system::attach(context& ctx, data& d, write<component> cameras, structural<camera::follow_component> follows) -> async::task<> {
+auto gse::free_camera::system::attach(context& ctx, data& d, write<component> cameras) -> async::task<> {
 	for (const auto owner_id : cameras.drain(component_event::added)) {
 		const auto* c = cameras.find(owner_id);
 		if (!c) {
@@ -28,7 +28,7 @@ auto gse::free_camera::system::attach(context& ctx, data& d, write<component> ca
 		const quat initial_orientation =
 			normalize(quat(vec3f(0.f, 1.f, 0.f), c->yaw) * quat(vec3f(1.f, 0.f, 0.f), c->pitch));
 
-		follows.add(
+		ctx.add_component<camera::follow_component>(
 			owner_id,
 			{
 				.offset = vec3<length>(meters(0.f)),

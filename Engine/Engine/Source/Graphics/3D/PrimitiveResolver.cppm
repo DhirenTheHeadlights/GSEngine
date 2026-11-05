@@ -14,12 +14,12 @@ export namespace gse::primitive_resolver {
 
 	[[= system_run<>{}]]
 	auto ensure_renders(
+		context& ctx,
 		write<primitive_box_spec> boxes,
 		write<primitive_sphere_spec> spheres,
 		write<primitive_cylinder_spec> cylinders,
 		write<primitive_mountain_ring_spec> mountain_rings,
-		write<primitive_hull_spec> hulls,
-		structural<render_component> renders
+		write<primitive_hull_spec> hulls
 	) -> async::task<>;
 
 	[[= system_run<1>{}]]

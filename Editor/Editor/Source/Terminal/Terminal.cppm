@@ -104,6 +104,7 @@ export namespace gse::ide::terminal {
 		gui::dropdown_state profile_dropdown;
 		gui::dropdown_state config_dropdown;
 		gui::text_input_state profile_name_state;
+		std::string profile_name_draft;
 		std::size_t editing_index = 0;
 		bool editing_profiles = false;
 	};

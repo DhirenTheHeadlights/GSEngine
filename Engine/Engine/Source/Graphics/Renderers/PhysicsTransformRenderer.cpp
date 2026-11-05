@@ -97,7 +97,6 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 						.stride = sizeof(geometry_collector::physics_mapping_entry),
 						.usage = gpu::buffer_flag::storage,
 						.data = data.physics_mappings.data(),
-						.bindless = true
 					}
 				);
 			}

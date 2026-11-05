@@ -48,19 +48,19 @@ target_link_libraries(SandboxLib PRIVATE Engine EngineServer)
 add_executable(Sandbox "${MAIN_CPP}")
 target_link_libraries(Sandbox PRIVATE SandboxLib Engine EngineServer)
 
-# A wasm32 module has no argv: the harness calls its exported `entry`, which hands main the
-# scenario this configuration was set up for plus whatever GSE_RUN_ARGS carries at run time.
+# A wasm32 module has no argv: the harness calls its exported `entry`, which hands main
+# whatever GSE_RUN_ARGS carries at run time, so a run with none boots like a bare native
+# launch and a scripted one names its scenario the way a native caller does.
 #
 # It calls main rather than assembling the bench configuration itself, because
 # apply_scenario turning a name into a scene, frame counts and pinned settings IS the world
 # the parity hash compares, and a second copy of it would drift. GCC's wasm backend names a
 # main(int, char**) definition __main_argc_argv, the wasi-libc entry name, which is the
-# symbol called. --no-engine-gpu is the engine's own headless flag: a wasm32 build compiles
-# no GPU backend, so without it the run dereferences the null device it was handed.
-# GSE_RUN_ARGS is split on spaces and read at run time, so a diagnostic flag costs no
+# symbol called. --no-engine-gpu, the engine's own headless flag, is the host's to add: node
+# has no WebGPU so its launcher always passes it, and the page passes it only when the
+# browser has no navigator.gpu. GSE_RUN_ARGS is split on spaces and read at run time, so a diagnostic flag costs no
 # relink.
 if(NOT WIN32)
-    set(GSE_WASM_SCENARIO "scene_reset_cpu" CACHE STRING "Scenario the wasm32 module's entry runs")
     configure_file("${SANDBOX_SRC}/Web/Entry.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/WebEntry.cpp" @ONLY)
     target_sources(Sandbox PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/WebEntry.cpp")
 
@@ -82,7 +82,7 @@ if(NOT WIN32)
     set(GSE_WASM_RUN_PROJECTS "/${_gse_run_dir}/projects")
     configure_file("${_gse_wasm_host}/wasm_run.json.in" "${CMAKE_CURRENT_BINARY_DIR}/wasm_run.json" @ONLY)
     configure_file("${_gse_wasm_host}/launcher.mjs" "${CMAKE_CURRENT_BINARY_DIR}/Sandbox.mjs" COPYONLY)
-    foreach(_gse_file node_host.mjs serve.mjs page/index.html page/page.mjs page/host.mjs page/guest.mjs page/protocol.mjs)
+    foreach(_gse_file node_host.mjs serve.mjs host_gate.mjs page/index.html page/page.mjs page/host.mjs page/guest.mjs page/gpu.mjs page/protocol.mjs)
         configure_file("${_gse_wasm_host}/${_gse_file}" "${CMAKE_CURRENT_BINARY_DIR}/${_gse_file}" COPYONLY)
     endforeach()
 endif()

@@ -133,7 +133,8 @@ export namespace gse::renderer::capture {
 		shared_view<asset::data> assets_s,
 		shared_view<actions::data> sys,
 		data& d,
-		channel_write<screenshot_request, save_clip_request, toggle_recording_request> capture_out
+		channel_write<save_clip_request, toggle_recording_request> capture_out,
+		channel_read<screenshot_request> screenshot_in
 	) -> async::task<>;
 
 	[[= system_frame{}]]
@@ -142,7 +143,7 @@ export namespace gse::renderer::capture {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
-		channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request, screenshot_request> capture_in
+		channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request> capture_in
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]

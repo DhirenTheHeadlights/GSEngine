@@ -663,6 +663,10 @@ auto gse::gpu::device::create_swapchain(const surface surface, const vec2i frame
 	return m_vt->create_swapchain(m_backend.get(), surface, framebuffer_size, mode, old_handle);
 }
 
+auto gse::gpu::device::resize_swapchain_in_place(const swap_chain_handle swapchain, const vec2i framebuffer_size) -> bool {
+	return m_vt->resize_swapchain_in_place(m_backend.get(), swapchain, framebuffer_size);
+}
+
 auto gse::gpu::device::boot_surface() const -> surface {
 	return m_vt->boot_surface(m_backend.get());
 }
@@ -721,7 +725,7 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
-	if (desc.bindless) {
+	if (gpu::takes_slot(desc)) {
 		assert(
 			buf.slot().valid() || m_device_lost_reported.load(std::memory_order_relaxed),
 			"'{}' ({} B) asked for a bindless slot and the backend had none left, so nothing can reach it: "
@@ -742,15 +746,13 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 
 auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
 	auto img = m_vt->create_image(m_backend.get(), desc, tag);
-	if (desc.bindless) {
-		const resource_ref ref{
-			.id = std::bit_cast<std::uint64_t>(img.handle()),
-			.type = resource_type::image,
-			.aspects = image_aspect_for(img.format()),
-		};
-		set_slot_resource(img.storage_slot().index, ref);
-		set_slot_resource(img.sampled_slot().index, ref);
-	}
+	const resource_ref ref{
+		.id = std::bit_cast<std::uint64_t>(img.handle()),
+		.type = resource_type::image,
+		.aspects = image_aspect_for(img.format()),
+	};
+	set_slot_resource(img.storage_slot().index, ref);
+	set_slot_resource(img.sampled_slot().index, ref);
 	return img;
 }
 
@@ -823,6 +825,10 @@ auto gse::gpu::device::bindless_sampler_heap_binding() const -> bindless_heap_bi
 
 auto gse::gpu::device::max_push_data_size() const -> std::uint32_t {
 	return m_vt->max_push_data_size(m_backend.get());
+}
+
+auto gse::gpu::device::capabilities() const -> backend_capabilities {
+	return m_vt->capabilities(m_backend.get());
 }
 
 auto gse::gpu::device::collect_garbage() -> void {

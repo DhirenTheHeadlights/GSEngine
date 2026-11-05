@@ -612,6 +612,8 @@ constexpr auto gse::gui::with_widget_skins(const palette& pal, style sty) -> sty
 		},
 	};
 
+	const vec4f opaque_menu_body{ vec3f(pal.color_menu_body), 1.f };
+
 	sty.dropdown = {
 		.label = {
 			.h = layout::halign::start,
@@ -656,7 +658,7 @@ constexpr auto gse::gui::with_widget_skins(const palette& pal, style sty) -> sty
 			},
 		},
 		.panel = {
-			.fill = pal.color_panel_alt,
+			.fill = opaque_menu_body,
 			.stroke = sty.color_border,
 			.stroke_width = sty.separator_thickness,
 		},
@@ -819,7 +821,6 @@ constexpr auto gse::gui::with_widget_skins(const palette& pal, style sty) -> sty
 	sty.graph_node = { .radii = row_radii };
 
 	const vec4f menu_radii = uniform_radii(sty.corner_radius_menu);
-	const vec4f opaque_menu_body{ vec3f(pal.color_menu_body), 1.f };
 
 	sty.menu = {
 		.floating = {

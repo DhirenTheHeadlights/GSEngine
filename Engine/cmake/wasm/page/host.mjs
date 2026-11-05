@@ -16,6 +16,44 @@ let next_fd = FIRST_FD;
 
 let wanted = [];
 let relaunch = null;
+let roots = [];
+
+function persisted (path) {
+  return roots.some (root => path === root || path.startsWith (root + "/"));
+}
+
+function persist (op, path, bytes) {
+  if (persisted (path)) postMessage ({ kind: "persist", op, path, bytes });
+}
+
+function flush (path) {
+  const file = files.get (path);
+  if (file === undefined || !file.dirty) return;
+  file.dirty = false;
+  persist ("write", path, file.bytes.slice (0, file.size));
+}
+
+function flush_all () {
+  for (const path of files.keys ()) flush (path);
+}
+
+function adopt (stored) {
+  for (const root of roots) {
+    if (!dirs.has (root) || dirs.get (root) === null) dirs.set (root, new Set ());
+  }
+  const enter = (path) => {
+    if (!dirs.has (path) || dirs.get (path) === null) dirs.set (path, new Set ());
+    dirs.get (parent_of (path))?.add (name_of (path));
+  };
+  for (const path of [...stored.dirs].sort ()) {
+    if (persisted (path) && !roots.includes (path)) enter (path);
+  }
+  for (const { path, bytes } of stored.files) {
+    if (!persisted (path)) continue;
+    files.set (path, { bytes, size: bytes.length, dirty: false });
+    dirs.get (parent_of (path))?.add (name_of (path));
+  }
+}
 
 function fetch_sync (url, binary) {
   const request = new XMLHttpRequest ();
@@ -135,6 +173,12 @@ function filestat (ptr, path) {
 function harvest () {
   const out = [];
   for (const path of wanted) {
+    if (path.endsWith ("/")) {
+      for (const [inside, file] of files) {
+        if (inside.startsWith (path) && file.bytes !== null) out.push ({ path: inside, bytes: file.bytes.slice (0, file.size) });
+      }
+      continue;
+    }
     const file = files.get (path);
     if (file === undefined || file.bytes === null) {
       say (`host: ${path} was asked for but the run never wrote it`);
@@ -167,6 +211,7 @@ const calls = {
         cursor += len;
       }
       file.size = Math.max (file.size, cursor);
+      file.dirty = true;
       held.pos = cursor;
     }
     view ().setUint32 (written, total, true);
@@ -209,7 +254,11 @@ const calls = {
   },
 
   fd_close (fd) {
-    return open.delete (fd) ? OK : EBADF;
+    const held = open.get (fd);
+    if (held === undefined) return EBADF;
+    if (!held.dir) flush (held.path);
+    open.delete (fd);
+    return OK;
   },
 
   fd_renumber (from, to) {
@@ -253,11 +302,20 @@ const calls = {
     const file = contents (files.get (held.path), held.path);
     grow (file, Number (size));
     file.size = Number (size);
+    file.dirty = true;
     return OK;
   },
 
-  fd_sync () { return OK; },
-  fd_datasync () { return OK; },
+  fd_sync (fd) {
+    const held = open.get (fd);
+    if (held === undefined) return EBADF;
+    if (!held.dir) flush (held.path);
+    return OK;
+  },
+
+  fd_datasync (fd) {
+    return calls.fd_sync (fd);
+  },
   fd_advise () { return OK; },
   fd_allocate () { return OK; },
 
@@ -310,14 +368,18 @@ const calls = {
     if (!directory && file === undefined) {
       if (!(oflags & OFLAG_CREAT)) return ENOENT;
       if (!is_dir (parent_of (path))) return ENOENT;
-      file = { bytes: new Uint8Array (0), size: 0 };
+      file = { bytes: new Uint8Array (0), size: 0, dirty: true };
       files.set (path, file);
       listed (parent_of (path)).add (name_of (path));
     } else if ((oflags & OFLAG_EXCL) && (oflags & OFLAG_CREAT)) {
       return EEXIST;
     }
     if (!directory && (oflags & OFLAG_DIRECTORY)) return ENOTDIR;
-    if (!directory && (oflags & OFLAG_TRUNC)) { file.bytes = new Uint8Array (0); file.size = 0; }
+    if (!directory && (oflags & OFLAG_TRUNC)) {
+      file.bytes = new Uint8Array (0);
+      file.size = 0;
+      file.dirty = true;
+    }
     const opened = next_fd++;
     open.set (opened, { path, pos: 0, dir: directory,
                         append: (fdflags & FDFLAG_APPEND) !== 0 });
@@ -339,6 +401,7 @@ const calls = {
     if (!is_dir (parent_of (path))) return ENOENT;
     listed (parent_of (path)).add (name_of (path));
     dirs.set (path, new Set ());
+    persist ("mkdir", path);
     return OK;
   },
 
@@ -349,6 +412,7 @@ const calls = {
     if (listed (path).size > 0) return ENOTEMPTY;
     dirs.delete (path);
     listed (parent_of (path)).delete (name_of (path));
+    persist ("remove", path);
     return OK;
   },
 
@@ -358,6 +422,7 @@ const calls = {
     if (is_dir (path)) return EISDIR;
     if (!files.delete (path)) return ENOENT;
     listed (parent_of (path)).delete (name_of (path));
+    persist ("remove", path);
     return OK;
   },
 
@@ -373,6 +438,9 @@ const calls = {
     files.delete (from);
     listed (parent_of (from)).delete (name_of (from));
     listed (parent_of (to)).add (name_of (to));
+    moving.dirty = false;
+    persist ("remove", from);
+    persist ("write", to, moving.bytes.slice (0, moving.size));
     return OK;
   },
 
@@ -403,11 +471,13 @@ const calls = {
 
   page_exit (code, len) {
     say (said (len));
+    flush_all ();
     postMessage ({ kind: "exit", code, files: harvest (), relaunch });
     return OK;
   },
 
   proc_exit (code) {
+    flush_all ();
     postMessage ({ kind: "exit", code: Number (code), files: harvest (), relaunch });
     return OK;
   },
@@ -476,6 +546,8 @@ onmessage = (e) => {
   ({ mem, names } = e.data);
   ctrl = control (e.data.ctrl, e.data.text);
   wanted = e.data.collect;
+  roots = e.data.writable;
+  adopt (e.data.stored);
   postMessage ({ kind: "ready" });
   serve ();
 };

@@ -80,6 +80,15 @@ if(WIN32)
     target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
     target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_EXCEPTIONS)
 
+    set(GSE_WGPU_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/wgpu-native" CACHE INTERNAL "Pinned wgpu-native prebuilt, see its VERSION file")
+    add_library(wgpu_native SHARED IMPORTED GLOBAL)
+    set_target_properties(wgpu_native PROPERTIES
+        IMPORTED_LOCATION "${GSE_WGPU_NATIVE_DIR}/lib/wgpu_native.dll"
+        IMPORTED_IMPLIB "${GSE_WGPU_NATIVE_DIR}/lib/libwgpu_native.dll.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${GSE_WGPU_NATIVE_DIR}/include"
+        INTERFACE_COMPILE_DEFINITIONS "WGPU_SHARED_LIBRARY"
+    )
+
     add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
     target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
 
@@ -123,6 +132,7 @@ if(WIN32)
         PNG::PNG
         JPEG::JPEG
         MiniaudioImpl
+        wgpu_native
     )
 
     target_compile_definitions(Engine PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
@@ -133,7 +143,7 @@ if(WIN32)
         target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 ole32 uuid dwmapi cabinet bcrypt gdi32 d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
 else()
-    target_include_directories(Engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/External)
+    target_include_directories(Engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/External ${CMAKE_CURRENT_SOURCE_DIR}/External/wgpu-native/include)
 endif()
 
 if(TARGET unofficial::nsight-aftermath::nsight-aftermath)

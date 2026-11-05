@@ -212,7 +212,7 @@ auto gse::compare_against_baseline(const bench_config& config, const std::filesy
 
 auto gse::begin_bench(const bench_config& config) -> void {
 	if (!config.real_time) {
-		system_clock::set_fixed_step_override(1);
+		system_clock::set_fixed_step_override(0);
 	}
 	profile::set_enabled(true);
 	profile::set_frame_recording(true);
@@ -254,6 +254,9 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 			if (bench_world_ready(config, e)) {
 				state.phase = bench_phase::warmup;
 				state.frames_in_phase = 0;
+				if (!config.real_time) {
+					system_clock::set_fixed_step_override(1);
+				}
 				log::println(log::category::general, "bench: world settled, warming up");
 				break;
 			}

@@ -17,6 +17,31 @@ export namespace gse {
 	template <typename T>
 	consteval auto has_bind_fields() -> bool;
 
+	enum class dep_kind : std::uint8_t {
+		declared,
+		lend,
+		pinned,
+		structural,
+		reordered_read,
+		output
+	};
+
+	struct dep_reason {
+		dep_kind kind = dep_kind::declared;
+		id via;
+
+		auto operator==(
+			const dep_reason& other
+		) const -> bool = default;
+	};
+
+	struct run_dep {
+		id state;
+		std::vector<dep_reason> reasons;
+
+		[[nodiscard]] auto kind() const -> dep_kind;
+	};
+
 	struct system_node : non_copyable {
 		~system_node() = default;
 
@@ -71,21 +96,17 @@ export namespace gse {
 			void*,
 			channel_registry&
 		) = nullptr;
-		void (
-			*invoke_ensure_storages_fn
-		)(
-			registry&
-		) = nullptr;
 
+		std::vector<void (registry::*)()> ensure_storage_fns;
 		std::vector<id> declared_run_state_deps;
-		std::vector<id> run_state_deps;
+		std::vector<id> run_order_deps;
+		std::vector<run_dep> run_deps;
 		std::vector<id> init_state_deps;
 		std::vector<id> frame_state_deps;
 		std::vector<id> optional_run_state_deps;
 		std::vector<id> optional_init_state_deps;
 		std::vector<id> component_reads;
 		std::vector<id> component_writes;
-		std::vector<id> component_structural;
 		std::vector<id> resource_reads;
 		std::vector<id> resource_writes;
 		std::vector<id> shared_view_reads;
@@ -96,7 +117,6 @@ export namespace gse {
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 
-		bool has_frame = false;
 		bool entity_structural = false;
 		bool deferred = false;
 		bool init_launched = false;
@@ -104,14 +124,11 @@ export namespace gse {
 		bool init_in_flight = false;
 		bool ran_once = false;
 
-		std::unique_ptr<async::manual_event> resume_event;
-		std::unique_ptr<async::manual_event> paused_event;
-		std::unique_ptr<channel_writer> init_writer;
+		std::unique_ptr<init_yield> yield;
 		std::unique_ptr<context> init_ctx;
 		async::task<> init_task;
 
 		id state_id;
-		id state_type_id;
 		id update_wall_id;
 		id frame_wall_id;
 		id frame_start_id;
@@ -126,6 +143,8 @@ export namespace gse {
 		std::string def_file;
 		std::uint32_t def_line = 0;
 		std::uint32_t def_column = 0;
+
+		[[nodiscard]] auto required_deps() const -> std::vector<id>;
 	};
 
 }
@@ -139,6 +158,17 @@ consteval auto gse::has_describe_fields() -> bool {
 		}
 	}
 	return found;
+}
+
+auto gse::run_dep::kind() const -> dep_kind {
+	return std::ranges::min(reasons, {}, &dep_reason::kind).kind;
+}
+
+auto gse::system_node::required_deps() const -> std::vector<id> {
+	std::vector<id> deps = declared_run_state_deps;
+	deps.insert(deps.end(), init_state_deps.begin(), init_state_deps.end());
+	deps.insert(deps.end(), frame_state_deps.begin(), frame_state_deps.end());
+	return deps;
 }
 
 template <typename T>

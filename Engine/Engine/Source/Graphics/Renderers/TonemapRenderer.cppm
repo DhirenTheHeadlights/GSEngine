@@ -4,6 +4,7 @@ import std;
 
 import :atmosphere_renderer;
 import :bloom_renderer;
+import :camera_system;
 
 import gse.gpu;
 import gse.core;
@@ -98,6 +99,7 @@ export namespace gse::renderer::tonemap {
 		gpu::bindless_handle sampler;
 		gpu::bindless_handle hdr_view;
 		gpu::bindless_handle velocity_view;
+		bool typed_atomics = false;
 	};
 
 	[[= system_init{}]]
@@ -115,6 +117,7 @@ export namespace gse::renderer::tonemap {
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
 		shared_view<bloom::data> bloom_state,
-		shared_view<atmosphere::data> atm_state
+		shared_view<atmosphere::data> atm_state,
+		channel_read<camera::temporal_reset_request> reset_in
 	) -> async::task<>;
 }

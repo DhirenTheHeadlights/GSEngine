@@ -1,6 +1,7 @@
 module gse.ide.build:inbox_impl;
 
 import gse;
+import gse.win32;
 import std;
 
 import :inbox;
@@ -85,6 +86,34 @@ auto gse::ide::build_inbox::publish_presence(const presence& active) -> void {
 auto gse::ide::build_inbox::clear_presence(const std::string_view agent) -> void {
 	std::error_code ec;
 	std::filesystem::remove(presence_dir() / (std::string(agent) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::step_gate_path(const std::uint32_t session) -> std::filesystem::path {
+	return directory() / "gates" / std::format("{}-{}.txt", win32::GetCurrentProcessId(), session);
+}
+
+auto gse::ide::build_inbox::publish_step_gate(const std::uint32_t session, const std::string_view refusal) -> void {
+	const std::filesystem::path final_path = step_gate_path(session);
+	std::error_code ec;
+	if (refusal.empty()) {
+		std::filesystem::remove(final_path, ec);
+		return;
+	}
+	std::filesystem::create_directories(final_path.parent_path(), ec);
+
+	std::filesystem::path staging = final_path;
+	staging.replace_extension(".partial");
+	{
+		std::ofstream out(staging, std::ios::binary | std::ios::trunc);
+		if (!out) {
+			return;
+		}
+		out << refusal;
+	}
+
+	std::filesystem::remove(final_path, ec);
+	ec.clear();
+	std::filesystem::rename(staging, final_path, ec);
 }
 
 auto gse::ide::build_inbox::take_presence() -> std::vector<presence> {
@@ -252,6 +281,9 @@ auto gse::ide::build_inbox::read_request(const std::filesystem::path& path) -> s
 		else if (key == "run_only") {
 			parsed.run_only = value == "1" || value == "true";
 		}
+		else if (key == "standalone") {
+			parsed.standalone = value == "1" || value == "true";
+		}
 		else if (key == "scenario") {
 			parsed.scenario.assign(value);
 		}
@@ -329,6 +361,7 @@ auto gse::ide::build_inbox::restore(const request& pending) -> void {
 		out << "target " << pending.target << '\n';
 		out << "run " << (pending.run ? '1' : '0') << '\n';
 		out << "run_only " << (pending.run_only ? '1' : '0') << '\n';
+		out << "standalone " << (pending.standalone ? '1' : '0') << '\n';
 		out << "tree " << pending.tree << '\n';
 		out << "profile " << pending.profile << '\n';
 		out << "config " << pending.config << '\n';
@@ -376,6 +409,48 @@ auto gse::ide::build_inbox::publish(const result& outcome) -> void {
 		}
 	}
 
+	std::filesystem::remove(final_path, ec);
+	ec.clear();
+	std::filesystem::rename(staging, final_path, ec);
+	if (ec) {
+		log::println(log::level::warning, log::category::task, "build inbox: could not publish '{}' ({})", final_path, ec.message());
+	}
+}
+
+auto gse::ide::build_inbox::exits_dir() -> std::filesystem::path {
+	return directory() / "exits";
+}
+
+auto gse::ide::build_inbox::publish_exit(const std::uint32_t pid, const std::uint32_t exit_code, const std::span<const std::string> tail) -> void {
+	const std::filesystem::path dir = exits_dir();
+	std::error_code ec;
+	std::filesystem::create_directories(dir, ec);
+
+	const auto kept = std::chrono::hours(1);
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > kept) {
+			std::filesystem::remove(entry.path(), stamp_ec);
+		}
+	}
+
+	const std::filesystem::path final_path = dir / std::format("{}.txt", pid);
+	const std::filesystem::path staging = dir / std::format("{}.partial", pid);
+	{
+		std::ofstream out(staging, std::ios::binary | std::ios::trunc);
+		if (!out) {
+			log::println(log::level::warning, log::category::task, "build inbox: could not open '{}' for writing", staging);
+			return;
+		}
+		out << "pid " << pid << '\n';
+		out << "exit_code " << exit_code << '\n';
+		for (const std::string& line : tail) {
+			out << "| " << sanitize(line) << '\n';
+		}
+	}
+
+	ec.clear();
 	std::filesystem::remove(final_path, ec);
 	ec.clear();
 	std::filesystem::rename(staging, final_path, ec);

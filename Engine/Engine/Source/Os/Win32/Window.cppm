@@ -187,6 +187,12 @@ export namespace gse::window {
 		[[nodiscard]] auto operator==(const composition_probe&) const -> bool = default;
 	};
 
+	struct resize_pump_stats {
+		time_t<double> idle{};
+		std::uint32_t wm_size = 0;
+		std::uint32_t throttled = 0;
+	};
+
 	struct window_surface {
 		void* small_icon = nullptr;
 		void* large_icon = nullptr;
@@ -309,6 +315,8 @@ export namespace gse::window {
 	auto install_resize_pump(
 		std::function<void()> pump
 	) -> void;
+
+	[[nodiscard]] auto take_resize_pump_stats() -> resize_pump_stats;
 
 	auto post_wake() -> void;
 

@@ -13,6 +13,7 @@ export namespace sandbox::character_controller {
 		gse::velocity run_speed = gse::meters_per_second(6.35f);
 		gse::velocity walk_speed = gse::meters_per_second(3.3f);
 		gse::time turn_response = gse::seconds(0.08f);
+		gse::angle facing_tolerance = gse::degrees(0.5f);
 	};
 
 	struct bindings {
@@ -56,12 +57,13 @@ export namespace sandbox::character_controller {
 		gse::read<gse::player_input> inputs,
 		gse::write<gse::clip_player_component> players,
 		gse::write<gse::physics::motor_component> motors,
-		gse::write<gse::physics::transform_component> transforms,
-		gse::channel_write<gse::network::send_request<gse::network::input_frame>> net_out
+		gse::read<gse::physics::transform_component> transforms,
+		gse::channel_write<gse::network::send_request<gse::network::input_frame>> net_out,
+		gse::channel_write<gse::physics::set_request<^^gse::physics::transform_component::orientation>> physics_out
 	) -> gse::async::task<>;
 }
 
-auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::player_controller> controllers, gse::read<gse::player_input> inputs, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms, const gse::channel_write<gse::network::send_request<gse::network::input_frame>> net_out) -> gse::async::task<> {
+auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, gse::read<component> characters, gse::read<orbit_camera::component> orbits, gse::read<gse::player_controller> controllers, gse::read<gse::player_input> inputs, gse::write<gse::clip_player_component> players, gse::write<gse::physics::motor_component> motors, gse::read<gse::physics::transform_component> transforms, const gse::channel_write<gse::network::send_request<gse::network::input_frame>> net_out, const gse::channel_write<gse::physics::set_request<^^gse::physics::transform_component::orientation>> physics_out) -> gse::async::task<> {
 	const auto& local_state = gse::actions::current_state(as);
 	const auto dt = gse::system_clock::dt();
 	const int steps = std::max(gse::system_clock::fixed_steps_this_frame(), 0);
@@ -85,7 +87,7 @@ auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::s
 		const auto& c = characters[i];
 
 		auto* motor = motors.find(c.proxy);
-		auto* transform = transforms.find(c.proxy);
+		const auto* transform = transforms.find(c.proxy);
 		if (!motor || !transform) {
 			continue;
 		}
@@ -115,8 +117,13 @@ auto sandbox::character_controller::run(gse::context& ctx, data& d, const gse::s
 		const auto v = wish_dir * wish_speed;
 		motor->velocity_drive_target = v;
 
-		const float blend = c.turn_response > gse::time{} ? std::min(dt / c.turn_response, 1.f) : 1.f;
-		transform->orientation = gse::normalize(gse::slerp(transform->orientation, facing, blend));
+		if (gse::magnitude(gse::difference_axis_angle(transform->orientation, facing)) > c.facing_tolerance) {
+			const float blend = c.turn_response > gse::time{} ? std::min(dt / c.turn_response, 1.f) : 1.f;
+			physics_out.push<gse::physics::set_request<^^gse::physics::transform_component::orientation>>({
+				.target = c.proxy,
+				.value = gse::normalize(gse::slerp(transform->orientation, facing, blend)),
+			});
+		}
 
 		if (c.possessed) {
 			for (int s = 0; d.has_stash && s < steps; ++s) {

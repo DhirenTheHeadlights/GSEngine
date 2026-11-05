@@ -144,7 +144,6 @@ export namespace gse::gpu::context {
 		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
 		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
 		std::vector<std::unique_ptr<window_presentation>> secondaries;
-		concurrency::frame_scheduler scheduler;
 
 		[[
 			= settings::describe<"Clear the swapchain to a dark neutral tone instead of black.">{},
@@ -153,9 +152,14 @@ export namespace gse::gpu::context {
 		bool dark_background = false;
 	};
 
+	auto create_device(
+		data& d,
+		std::optional<shared_view<window::data>> window_s,
+		save::registry* save_reg
+	) -> void;
+
 	[[= system_init{}]] auto init(
 		std::optional<shared_view<window::data>> window_s,
-		save::registry* save_reg,
 		data& d
 	) -> async::task<>;
 

@@ -3,6 +3,7 @@ export module gse.graphics:rt_shadow_renderer;
 import std;
 
 import :geometry_collector;
+import :lighting_source;
 import :mesh;
 
 import gse.os;
@@ -27,8 +28,6 @@ export namespace gse::renderer::rt_shadow {
 	};
 
 	struct [[= system_state<"RtShadow">{}]] data {
-		[[= shared]] per_frame_resource<const gpu::tlas*> tlas_ptrs{};
-
 		std::flat_map<blas_key, blas_entry> blas_cache;
 		per_frame_resource<gpu::buffer> blas_scratch;
 		per_frame_resource<gpu::tlas> tlas_per_frame;
@@ -39,6 +38,7 @@ export namespace gse::renderer::rt_shadow {
 		std::size_t mapping_buffer_capacity = 0;
 
 		per_frame_resource<gpu::bindless_handle> tlas_instance_views;
+		per_frame_resource<gpu::bindless_handle> tlas_slots;
 	};
 
 	[[= system_init{}]]
@@ -55,6 +55,7 @@ export namespace gse::renderer::rt_shadow {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
+		channel_write<lighting_source::ray_traced_scene> scene_out,
 		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<geometry_collector::data> gc_r
 	) -> async::task<>;

@@ -119,6 +119,10 @@ export namespace gse::gpu {
 		template <std::meta::info... Hooks>
 		auto after() && -> pass_builder&&;
 
+		auto after(
+			std::span<const id> passes
+		) && -> pass_builder&&;
+
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
@@ -141,6 +145,9 @@ export namespace gse::gpu {
 		channel_write<render_pass_request> channels
 	) -> pass_builder;
 
+	template <std::meta::info Hook>
+	[[nodiscard]] auto pass_id() -> id;
+
 	auto clear_color(
 		color_clear value
 	) -> color_attachment;
@@ -158,6 +165,11 @@ export namespace gse::gpu {
 
 	auto clear_depth(
 		depth_clear value
+	) -> depth_attachment;
+
+	auto clear_depth(
+		depth_clear value,
+		const image& target
 	) -> depth_attachment;
 
 	auto load_depth() -> depth_attachment;
@@ -229,4 +241,11 @@ auto gse::gpu::pass(const channel_write<render_pass_request> channels) -> pass_b
 	static const id hook_id = find_or_generate_id(name);
 	static const id record_id = find_or_generate_id(std::format("record<{}>", name));
 	return pass_builder{ channels, hook_id, name, record_id };
+}
+
+template <std::meta::info Hook>
+auto gse::gpu::pass_id() -> id {
+	constexpr auto name = hook_name<Hook>();
+	static const id hook_id = find_or_generate_id(name);
+	return hook_id;
 }

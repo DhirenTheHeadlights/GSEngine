@@ -124,7 +124,7 @@ Tests also cost build time on a tree that is already critical-path bound, so few
 
 **A scenario run can now fail.** `bench_state::failures` is the one authority for whether a run was sound; every site that used to only log — the settle-cap abort, a stale scenario coroutine, a `REGRESSED` baseline, zero measured frames, and the scenario's own expectations — pushes a reason into it. `bench_exit_code` prints `bench: PASSED` or `bench: FAILED` with every reason, `gse::start` returns that code, and `main` returns it. Deliberately not a failure: the frame budget expiring while a scenario body is still running, which several showcase bodies do today.
 
-**A scenario can read the world.** `scenario::context` holds the registry and exposes `owners<C>()`, `components<C>()` and `try_component<C>(id)` as const views, read after `frame_sync::end()` where `drive_scenario` already runs.
+**A scenario can read the world.** `scenario::context` holds the registry and exposes `owners<C>()`, `components<C>()` and `try_component<C>(id)` as const views, read after the frame's `engine::flip_channels()` where `drive_scenario` already runs.
 
 What remains:
 

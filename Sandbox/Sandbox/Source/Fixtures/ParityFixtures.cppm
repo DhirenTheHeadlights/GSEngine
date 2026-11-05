@@ -38,6 +38,10 @@ export namespace sandbox {
 	auto parity_domino_scene_setup(
 		gse::scene& s
 	) -> void;
+
+	auto parity_textured_scene_setup(
+		gse::scene& s
+	) -> void;
 }
 
 namespace sandbox {
@@ -261,4 +265,20 @@ auto sandbox::parity_domino_scene_setup(gse::scene& s) -> void {
 	parity_floor(s, gse::meters(20.f, 1.f, 20.f));
 
 	spawn_domino_chain(s, 0, gse::vec3<gse::position>(gse::meters(-5.f, 0.f, 0.f)));
+}
+
+auto sandbox::parity_textured_scene_setup(gse::scene& s) -> void {
+	parity_floor(s, gse::meters(20.f, 1.f, 20.f));
+
+	const auto size = gse::vec3<gse::length>(gse::meters(2.f), gse::meters(2.f), gse::meters(2.f));
+	for (int i = 0; i < 3; ++i) {
+		auto block = static_box(
+			gse::vec3<gse::position>(gse::meters(static_cast<float>(i - 1) * 3.f), gse::meters(1.f), gse::meters(0.f)),
+			size,
+			gse::quat(gse::axis_y, gse::degrees(static_cast<float>(i) * 25.f)),
+			gse::vec3f(1.f)
+		);
+		block.spec.material.diffuse_texture_name = "Textures/concrete_bricks_1";
+		s.spawn(std::format("ParityTextured_{}", i), block);
+	}
 }

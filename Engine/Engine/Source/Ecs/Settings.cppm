@@ -210,12 +210,28 @@ export namespace gse::settings {
 	auto collect_settings_keys() -> std::vector<settings_key_info>;
 
 	template <typename T>
-	consteval auto settings_key_exists(
-		std::string_view key
-	) -> bool;
+	consteval auto category_of() -> std::string_view;
 
 	template <typename T>
-	consteval auto category_of() -> std::string_view;
+	constexpr bool is_settings_group = std::is_class_v<T> && !is_scalar_settings_field<T>;
+
+	template <std::meta::info... Path>
+	consteval auto member_path_valid() -> bool;
+
+	template <std::meta::info... Path>
+	consteval auto member_path_key() -> std::string_view;
+
+	template <std::meta::info... Path>
+	struct member_path {
+		static_assert(sizeof...(Path) > 0, "a settings member path names at least one member");
+		static_assert(member_path_valid<Path...>(), "a settings member path must walk from a member of a settings::category struct through settings::describe members, each link a member of the previous link's type, down to a scalar setting");
+
+		using owner = typename [:std::meta::parent_of(Path...[0]):];
+		using value_type = typename [:std::meta::remove_cvref(std::meta::type_of(Path...[sizeof...(Path) - 1])):];
+
+		static constexpr std::string_view category = category_of<owner>();
+		static constexpr std::string_view key = member_path_key<Path...>();
+	};
 
 	template <typename T>
 	consteval auto scope_of() -> scope_kind;
@@ -455,26 +471,38 @@ auto gse::settings::collect_settings_keys() -> std::vector<settings_key_info> {
 	return out;
 }
 
-template <typename T>
-consteval auto gse::settings::settings_key_exists(const std::string_view key) -> bool {
-	bool found = false;
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
-		if constexpr (meta::find_describe(m) != std::meta::info{}) {
-			using F = [:std::meta::type_of(m):];
-			constexpr std::string_view name = meta::member_name(m);
-
-			if constexpr (std::is_class_v<F> && !is_scalar_settings_field<F>) {
-				if (key.size() > name.size() && key.starts_with(name) && key[name.size()] == '.' &&
-					settings_key_exists<F>(key.substr(name.size() + 1))) {
-					found = true;
-				}
-			}
-			else if (key == name) {
-				found = true;
-			}
+template <std::meta::info... Path>
+consteval auto gse::settings::member_path_valid() -> bool {
+	constexpr std::array<std::meta::info, sizeof...(Path)> path{ Path... };
+	if (meta::find_category(std::meta::parent_of(path[0])) == std::meta::info{}) {
+		return false;
+	}
+	for (std::size_t i = 0; i < path.size(); ++i) {
+		if (!std::meta::is_nonstatic_data_member(path[i]) || meta::find_describe(path[i]) == std::meta::info{}) {
+			return false;
+		}
+		const auto type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(path[i])));
+		const bool group = std::meta::extract<bool>(std::meta::substitute(^^is_settings_group, { type }));
+		if (group != (i + 1 < path.size())) {
+			return false;
+		}
+		if (i + 1 < path.size() && std::meta::dealias(std::meta::parent_of(path[i + 1])) != type) {
+			return false;
 		}
 	}
-	return found;
+	return true;
+}
+
+template <std::meta::info... Path>
+consteval auto gse::settings::member_path_key() -> std::string_view {
+	std::string key;
+	for (const auto name : { meta::member_name(Path)... }) {
+		if (!key.empty()) {
+			key += '.';
+		}
+		key += name;
+	}
+	return std::define_static_string(key);
 }
 
 template <typename T>

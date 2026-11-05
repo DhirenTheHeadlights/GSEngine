@@ -46,7 +46,7 @@ namespace gse::renderer::depth_prepass::meshlet {
 		gpu::body_path<"Graphics/meshlet_depth_only">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Standard3D/meshlet_common">,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -56,8 +56,32 @@ namespace gse::renderer::depth_prepass::meshlet {
 	>;
 }
 
+namespace gse::renderer::depth_prepass::vertex_pulled {
+	using shader_binding_types = type_pack<meshlet::camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::instance_data_buffer, meshlet::prev_vertices_buffer>;
+
+	struct [[= shaders::shader_struct]] push_constants {
+		std::uint32_t first_instance;
+		std::uint32_t use_prev_vertices;
+	};
+
+	using entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/vertex_depth_only">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
+		gpu::bindings<shader_binding_types>,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity">,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<push_constants>,
+		gpu::depth<true, true, gpu::compare_op::greater>,
+		gpu::color_targets<gpu::color_format::hdr>
+	>;
+}
+
 auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
-	d.meshlet_pipeline = gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
+	d.vertex_pulled = !gpu_s.device->capabilities().mesh_shaders;
+	d.pipeline = d.vertex_pulled
+		? gpu::build_graphics_program(*gpu_s.device, vertex_pulled::entry::pod)
+		: gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -67,7 +91,6 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 				.size = camera_ubo_size,
 				.stride = sizeof(shaders::common::camera_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"depth_prepass.camera_ubo"
 		);
@@ -107,7 +130,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 	const auto ext = gpu_s.render_graph->extent();
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out)
-		.pipeline(d.meshlet_pipeline)
+		.pipeline(d.pipeline)
 		.color(
 			gpu::clear_color(
 				gpu::color_clear{ 0.0f, 0.0f, 0.0f, 0.0f },
@@ -145,6 +168,25 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 			? batch.deformed_vertices
 			: ml.vertex_storage.slot();
 		const bool use_prev_vertices = batch.prev_deformed_vertices.valid();
+		const auto prev_vertices_slot = use_prev_vertices ? batch.prev_deformed_vertices : vertices_slot;
+
+		if (d.vertex_pulled) {
+			rec.push_bindings<vertex_pulled::entry>(
+				{
+					.first_instance = batch.first_instance,
+					.use_prev_vertices = use_prev_vertices ? 1u : 0u,
+				},
+				{
+					.camera_ubo = camera_slot,
+					.vertices_buffer = vertices_slot,
+					.instance_data_buffer = instance_slot,
+					.prev_vertices_buffer = prev_vertices_slot,
+				}
+			);
+			rec.bind_index(mesh.index_gpu_buffer());
+			rec.draw_indexed(static_cast<std::uint32_t>(mesh.indices().size()), batch.instance_count);
+			continue;
+		}
 
 		rec.push_bindings<meshlet::entry>(
 			{
@@ -162,7 +204,7 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 				.meshlet_triangles = ml.triangles.slot(),
 				.meshlet_bounds_buffer = ml.bounds.slot(),
 				.instance_data_buffer = instance_slot,
-				.prev_vertices_buffer = use_prev_vertices ? batch.prev_deformed_vertices : vertices_slot,
+				.prev_vertices_buffer = prev_vertices_slot,
 			}
 		);
 

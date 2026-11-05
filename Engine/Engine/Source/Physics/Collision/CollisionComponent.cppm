@@ -16,7 +16,7 @@ export namespace gse::physics {
 		std::uint32_t mask = 0;
 	};
 
-	struct collision_component {
+	struct [[= gse::written_by<^^gse::physics>{}]] collision_component {
 		[[= networked]] collision_shape shape;
 		[[= networked]] bool resolve_collisions = true;
 		[[= networked]] collision_filter filter;

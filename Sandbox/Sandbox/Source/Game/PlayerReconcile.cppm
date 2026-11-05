@@ -41,7 +41,7 @@ export namespace sandbox::player_reconcile {
 		gse::context& ctx,
 		data& d,
 		gse::channel_read<gse::network::received<player_state>> states_in,
-		gse::channel_write<gse::physics::rollback_request, gse::physics::impulse_request> physics_out,
+		gse::channel_write<gse::physics::rollback_request, gse::physics::set_request<^^gse::physics::transform_component::position>, gse::physics::set_request<^^gse::physics::transform_component::orientation>, gse::physics::set_request<^^gse::physics::motion_component::current_velocity>, gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>, gse::physics::set_request<^^gse::physics::motion_component::body>> physics_out,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::physics::data> phys_d,
 		gse::shared_view<character_controller::data> controller_d,
@@ -50,8 +50,8 @@ export namespace sandbox::player_reconcile {
 		gse::read<gse::physics::collision_component> collisions,
 		gse::read<gse::physics::collision_result_component> results,
 		gse::read<gse::physics::motor_component> motors,
-		gse::write<gse::physics::transform_component> transforms,
-		gse::write<gse::physics::motion_component> motions
+		gse::read<gse::physics::transform_component> transforms,
+		gse::read<gse::physics::motion_component> motions
 	) -> gse::async::task<>;
 }
 
@@ -60,7 +60,7 @@ namespace sandbox::player_reconcile {
 	constexpr std::uint64_t max_replay_steps = 24;
 }
 
-auto sandbox::player_reconcile::run(gse::context& ctx, data& d, const gse::channel_read<gse::network::received<player_state>> states_in, const gse::channel_write<gse::physics::rollback_request, gse::physics::impulse_request> physics_out, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::physics::data> phys_d, const gse::shared_view<character_controller::data> controller_d, const gse::shared_view<player_sync::data> sync_d, gse::read<gse::skeleton_instance_component> skeletons, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::collision_result_component> results, gse::read<gse::physics::motor_component> motors, gse::write<gse::physics::transform_component> transforms, gse::write<gse::physics::motion_component> motions) -> gse::async::task<> {
+auto sandbox::player_reconcile::run(gse::context& ctx, data& d, const gse::channel_read<gse::network::received<player_state>> states_in, const gse::channel_write<gse::physics::rollback_request, gse::physics::set_request<^^gse::physics::transform_component::position>, gse::physics::set_request<^^gse::physics::transform_component::orientation>, gse::physics::set_request<^^gse::physics::motion_component::current_velocity>, gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>, gse::physics::set_request<^^gse::physics::motion_component::body>> physics_out, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::physics::data> phys_d, const gse::shared_view<character_controller::data> controller_d, const gse::shared_view<player_sync::data> sync_d, gse::read<gse::skeleton_instance_component> skeletons, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::collision_result_component> results, gse::read<gse::physics::motor_component> motors, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
 	if (d.report_timer.tick()) {
 		const auto& s = d.stats;
 		const auto remote_starved = sync_d.remote_starved - d.reported_remote_starved;
@@ -153,8 +153,8 @@ auto sandbox::player_reconcile::run(gse::context& ctx, data& d, const gse::chann
 			continue;
 		}
 
-		auto* tc = transforms.find(state.entity);
-		auto* mc = motions.find(state.entity);
+		const auto* tc = transforms.find(state.entity);
+		const auto* mc = motions.find(state.entity);
 		if (!tc || !mc) {
 			continue;
 		}
@@ -176,10 +176,13 @@ auto sandbox::player_reconcile::run(gse::context& ctx, data& d, const gse::chann
 			body = it == entry->bodies.end() ? nullptr : &*it;
 		}
 		if (!body) {
-			tc->position = state.position;
-			mc->current_velocity = state.current_velocity;
-			physics_out.push<gse::physics::impulse_request>({
+			physics_out.push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
 				.target = state.entity,
+				.value = state.position,
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::current_velocity>>({
+				.target = state.entity,
+				.value = state.current_velocity,
 			});
 			++d.stats.snaps;
 			continue;
@@ -213,14 +216,25 @@ auto sandbox::player_reconcile::run(gse::context& ctx, data& d, const gse::chann
 	const auto steps = phys_d.step_index - oldest;
 	if (steps == 0 || steps >= history || steps > max_replay_steps) {
 		for (const auto& body : overrides) {
-			if (auto* tc = transforms.find(body.owner)) {
-				*tc = body.transform;
-			}
-			if (auto* mc = motions.find(body.owner)) {
-				*mc = body.motion;
-			}
-			physics_out.push<gse::physics::impulse_request>({
+			physics_out.push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
 				.target = body.owner,
+				.value = body.transform.position,
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::transform_component::orientation>>({
+				.target = body.owner,
+				.value = body.transform.orientation,
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::current_velocity>>({
+				.target = body.owner,
+				.value = body.motion.current_velocity,
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>>({
+				.target = body.owner,
+				.value = body.motion.angular_velocity,
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::body>>({
+				.target = body.owner,
+				.value = body.motion.body,
 			});
 			++d.stats.snaps;
 		}

@@ -83,6 +83,11 @@ auto gse::gpu::pass_builder::early_signal() && -> pass_builder&& {
 	return std::move(*this);
 }
 
+auto gse::gpu::pass_builder::after(const std::span<const id> passes) && -> pass_builder&& {
+	m_desc.after_deps.append_range(passes);
+	return std::move(*this);
+}
+
 auto gse::gpu::pass_builder::operator co_await() && -> request_pass_awaitable {
 	return request_pass_awaitable{ m_channels, std::move(m_desc) };
 }
@@ -123,6 +128,14 @@ auto gse::gpu::clear_depth(const depth_clear value) -> depth_attachment {
 	return {
 		.op = load_op::clear,
 		.clear = value,
+	};
+}
+
+auto gse::gpu::clear_depth(const depth_clear value, const image& target) -> depth_attachment {
+	return {
+		.op = load_op::clear,
+		.clear = value,
+		.target = std::addressof(target),
 	};
 }
 

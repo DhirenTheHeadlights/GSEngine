@@ -30,11 +30,20 @@ export namespace gse::gui {
 			vec2f from;
 			vec2f to;
 			vec4f color = { 0.45f, 0.48f, 0.55f, 1.f };
+			std::string_view label;
+		};
+
+		struct group {
+			std::uint64_t key = 0;
+			std::string_view label;
+			rectf rect;
+			vec4f color = { 0.20f, 0.22f, 0.26f, 1.f };
 		};
 
 		struct result {
 			std::optional<std::uint64_t> clicked;
 			std::optional<std::uint64_t> hovered;
+			std::optional<std::uint64_t> group_clicked;
 			bool background_clicked = false;
 		};
 
@@ -42,6 +51,7 @@ export namespace gse::gui {
 			rectf area;
 			std::span<const node> nodes;
 			std::span<const edge> edges;
+			std::span<const group> groups;
 			vec4f background = { 0.09f, 0.10f, 0.13f, 1.f };
 			float label_scale = 1.f;
 			resource::handle<font> font{};
@@ -89,6 +99,46 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 		});
 	};
 
+	result out;
+	const bool released = ctx.mouse_released();
+	const vec2f mouse = ctx.mouse_position();
+	const float label_font = ctx.style.font_size * p.label_scale;
+
+	for (const group& g : p.groups) {
+		const id gid = ids::make_from_key(g.key);
+		const float header_h = std::min(g.rect.height(), label_font + 8.f);
+		const rectf header = rectf::from_position_size({ g.rect.left(), g.rect.top() }, { g.rect.width(), header_h });
+		const bool hovered = p.area.contains(mouse) && ctx.hovers(header);
+		const bool pressed = hovered && ctx.mouse_pressed_for(header);
+		interaction::mark_hot(hot, gid, hovered);
+		if (interaction::activate_on_click(active, gid, hovered, pressed, released)) {
+			out.group_clicked = g.key;
+		}
+
+		ctx.queue_sprite({
+			.rect = g.rect,
+			.color = { g.color.x(), g.color.y(), g.color.z(), g.color.w() * 0.10f },
+			.texture = ctx.blank_texture,
+			.clip_rect = clip,
+			.corner_radius = 6.f,
+		});
+		ctx.queue_sprite({
+			.rect = header,
+			.color = { g.color.x(), g.color.y(), g.color.z(), g.color.w() * (hot == gid ? 0.45f : 0.28f) },
+			.texture = ctx.blank_texture,
+			.clip_rect = clip,
+			.corner_radius = 6.f,
+		});
+		ctx.queue_text({
+			.font = fnt,
+			.text = g.label,
+			.position = { header.left() + 8.f, header.center().y() + fnt_view->vertical_center_offset(label_font) },
+			.scale = label_font,
+			.color = { 0.94f, 0.95f, 0.98f, 1.f },
+			.clip_rect = clip,
+		});
+	}
+
 	for (const edge& e : p.edges) {
 		draw_seg(e.from, e.to, e.color, 1.0f);
 		const vec2f delta = e.to - e.from;
@@ -107,9 +157,31 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 		}
 	}
 
-	result out;
-	const bool released = ctx.mouse_released();
-	const vec2f mouse = ctx.mouse_position();
+	const float edge_font = ctx.style.font_size * 0.85f;
+	for (const edge& e : p.edges) {
+		if (e.label.empty()) {
+			continue;
+		}
+		const vec2f mid = (e.from + e.to) * 0.5f;
+		const float tw = fnt_view->width(e.label, edge_font);
+		const float th = fnt_view->line_height(edge_font);
+		const rectf pill = rectf::from_position_size({ mid.x() - tw * 0.5f - 4.f, mid.y() + th * 0.5f + 1.f }, { tw + 8.f, th + 2.f });
+		ctx.queue_sprite({
+			.rect = pill,
+			.color = { p.background.x(), p.background.y(), p.background.z(), 0.85f },
+			.texture = ctx.blank_texture,
+			.clip_rect = clip,
+			.corner_radius = 3.f,
+		});
+		ctx.queue_text({
+			.font = fnt,
+			.text = e.label,
+			.position = { mid.x() - tw * 0.5f, mid.y() + fnt_view->vertical_center_offset(edge_font) },
+			.scale = edge_font,
+			.color = { e.color.x(), e.color.y(), e.color.z(), 1.f },
+			.clip_rect = clip,
+		});
+	}
 
 	for (const node& n : p.nodes) {
 		const id nid = ids::make_from_key(n.key);
@@ -138,7 +210,6 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 			.clip_rect = clip,
 		});
 
-		const float label_font = ctx.style.font_size * p.label_scale;
 		const rectf label_clip = rectf({
 			.min = { std::max(n.rect.left(), clip.left()), std::max(n.rect.bottom(), clip.bottom()) },
 			.max = { std::min(n.rect.right(), clip.right()), std::min(n.rect.top(), clip.top()) },
@@ -161,7 +232,7 @@ auto gse::gui::graph_canvas::draw(const draw_context& ctx, params p, id& hot, id
 		});
 	}
 
-	if (released && ctx.hovers(p.area) && !out.clicked) {
+	if (released && ctx.hovers(p.area) && !out.clicked && !out.group_clicked) {
 		out.background_clicked = true;
 	}
 

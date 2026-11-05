@@ -39,11 +39,13 @@ export namespace gse::gpu {
 		device_size base_offset = 0;
 		device_size stride = 0;
 		device_size base_index = 0;
+		std::uint32_t capacity = 0;
+		std::uint32_t high_water = 0;
 		std::vector<std::uint32_t> free_list;
 		std::mutex mutex;
 
 		auto reset(
-			std::uint32_t capacity
+			std::uint32_t slot_count
 		) -> void;
 
 		[[nodiscard]] auto allocate() -> bindless_slot;
@@ -86,11 +88,13 @@ export namespace gse::gpu {
 	};
 }
 
-auto gse::gpu::bindless_slot_pool::reset(const std::uint32_t capacity) -> void {
+auto gse::gpu::bindless_slot_pool::reset(const std::uint32_t slot_count) -> void {
+	capacity = slot_count;
+	high_water = 0;
 	free_list.clear();
-	free_list.reserve(capacity);
-	for (std::uint32_t i = 0; i < capacity; ++i) {
-		free_list.push_back(capacity - 1 - i);
+	free_list.reserve(slot_count);
+	for (std::uint32_t i = 0; i < slot_count; ++i) {
+		free_list.push_back(slot_count - 1 - i);
 	}
 }
 
@@ -99,6 +103,7 @@ auto gse::gpu::bindless_slot_pool::allocate() -> bindless_slot {
 	assert(!free_list.empty(), "bindless_slot_pool exhausted");
 	const auto index = free_list.back();
 	free_list.pop_back();
+	high_water = std::max(high_water, capacity - static_cast<std::uint32_t>(free_list.size()));
 	return {
 		.index = static_cast<std::uint32_t>(base_index) + index
 	};

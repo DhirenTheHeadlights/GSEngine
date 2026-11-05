@@ -16,6 +16,10 @@ export namespace gse::vbd {
 		std::uint32_t adjacency_workgroup_size = 1024;
 		std::uint32_t coloring_rounds = 32;
 		std::uint32_t sleep_threshold = 60;
+		std::uint32_t active_count_word = 0;
+		std::uint32_t active_half_word = 1;
+		std::uint32_t active_pending_word = 2;
+		std::uint32_t active_state_words = 4;
 		std::uint32_t warm_start_preserve_accel_weight_bit = 1;
 		std::uint32_t warm_start_seeded_bit = 2;
 		std::uint32_t iteration_trace_slots = 64;
@@ -26,7 +30,10 @@ export namespace gse::vbd {
 		std::uint32_t state_joint_trace_base_index = 81 + 64 * 3;
 		std::uint32_t state_island_convergence_base_index = state_joint_trace_base_index + iteration_trace_slots * joint_trace_uints;
 		std::uint32_t island_convergence_count = iteration_trace_slots * island_convergence_uints;
-		std::uint32_t collision_state_header_uints = state_island_convergence_base_index + island_convergence_count;
+		std::uint32_t tick_hash_uints = 13;
+		std::uint32_t state_tick_hash_base_index = state_island_convergence_base_index + island_convergence_count;
+		std::uint32_t state_color_rounds_index = state_tick_hash_base_index + tick_hash_uints;
+		std::uint32_t collision_state_header_uints = state_color_rounds_index + 1;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;
@@ -46,7 +53,7 @@ export namespace gse::vbd {
 		std::uint32_t state_convergence_prev_angular_index = 16;
 		std::uint32_t state_pass_hash_base_index = 17;
 		std::uint32_t pass_hash_stage_count = 11;
-		std::uint32_t state_tick_hash_base_index = state_pass_hash_base_index + 2 * pass_hash_stage_count + 2;
+		std::uint32_t state_tick_scope_base_index = state_pass_hash_base_index + 2 * pass_hash_stage_count + 2;
 		std::uint32_t state_stale_read_count_index = 56;
 		std::uint32_t state_stale_check_count_index = 57;
 		std::uint32_t state_sweep_arrive_index = 3;

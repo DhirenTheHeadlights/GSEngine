@@ -15,6 +15,17 @@ export namespace gse::gpu {
 	enum class backend_kind : std::uint8_t {
 		vulkan,
 		dx12,
+		webgpu,
+	};
+
+	struct backend_capabilities {
+		bool ray_queries = false;
+		bool shader_target = false;
+		bool mesh_shaders = false;
+		bool bindless_texture_table = false;
+		bool shader_int64 = false;
+		bool untyped_atomics = false;
+		bool shared_surface_export = false;
 	};
 
 	enum class resource_type : std::uint8_t {

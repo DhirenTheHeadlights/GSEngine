@@ -318,25 +318,12 @@ export namespace gse::gpu {
 			pipeline_stage_flags stages
 		) -> void;
 
-		template <typename Args, typename T>
-		static consteval auto bindless_member_for() -> std::meta::info;
-
 		auto apply_dynamic_state(
 			const dynamic_pipeline_state& s
 		) -> void;
 
 		auto finalize_pass() -> void;
 	};
-}
-
-template <typename Args, typename T>
-consteval auto gse::gpu::recording_context::bindless_member_for() -> std::meta::info {
-	for (const auto m : std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked())) {
-		if (std::meta::identifier_of(m) == std::meta::identifier_of(^^T)) {
-			return m;
-		}
-	}
-	return std::meta::info{};
 }
 
 namespace gse::gpu {
@@ -388,7 +375,7 @@ auto gse::gpu::recording_context::register_one_bindless(const Args& args, const 
 		|| dtype == descriptor_type::storage_image;
 	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
 	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
-		constexpr std::meta::info member = bindless_member_for<Args, T>();
+		constexpr std::meta::info member = binding_args_member<Args, T>();
 		const resource_ref ref = m_device->resource_for_slot(args.[:member:].index);
 		if (ref.id) {
 			const auto access = (descriptor_access_v<T> == descriptor_access::read_write)

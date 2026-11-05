@@ -29,7 +29,7 @@ await run ({
   shared: true,
   root: config.root,
   mounts,
-  env: { GSE_RUN_ARGS: process.argv.slice (2).join (" "), ...config.environment },
+  env: { GSE_RUN_ARGS: ["--no-engine-gpu", ...process.argv.slice (2)].join (" "), ...config.environment },
   initial_pages: config.initial_pages,
   max_pages: config.max_pages,
   relaunch,

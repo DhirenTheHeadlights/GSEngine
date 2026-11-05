@@ -226,7 +226,8 @@ auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, 
 
 	const bool owns_active = active_widget_id == row_widget_id;
 	const bool released_by_me = (row_visible || owns_active)
-		&& interaction::activate_on_click(active_widget_id, row_widget_id, hovered, hovered && ctx.mouse_pressed_for(visible), released);
+		&& interaction::activate_on_click(active_widget_id, row_widget_id, hovered, hovered && ctx.mouse_pressed_for(visible), released)
+		&& ctx.within_click_slop();
 
 	if (active_widget_id == row_widget_id) {
 		self_is_active = true;

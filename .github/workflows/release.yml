@@ -95,6 +95,15 @@ jobs:
         shell: pwsh
         run: cmake --build $env:BUILD_DIR --target Sandbox Installer Setup Launcher Packer
 
+      # The baked tree under <build>/Engine/Resources is written by the engine at runtime,
+      # never by a build target, so a clean runner has none. Both packs stage it as
+      # Engine/Baked, which is the only asset tree an installed game reads.
+      - name: Bake the engine and game assets
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-bake-assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # The SDK verify builds and runs the shipped consumer through GSEEngineSdk.cmake,
       # which reads gse.link and gse.modules out of the image - so it is the step that
       # catches an image staged without them. It needs no window.

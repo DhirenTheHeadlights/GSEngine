@@ -15,14 +15,14 @@ auto run(
 	gse::shared_view<gse::world_system::data> world_d,
 	gse::read<character_controller::component> characters,
 	gse::write<component> sidearms,
-	gse::structural<gse::physics::transform_component> transforms,
 	gse::channel_read<gse::network::received<fire_request>> fire_in,
 	gse::channel_write<gse::network::send_request<fire_request>> fire_out
 ) -> gse::async::task<>;
 ```
 
 - `read<T>` / `write<T>`: component access. `write` is a conflict edge, so only take it when you mutate.
-- `structural<T>`: the right to add or remove `T`. Required for `scene->build(...).with<T>(...)` on that type.
+- Adding and removing need no declaration. `ctx.add_component<T>`, `ctx.remove_component<T>` and scene builds made inside a `gse::scene::mutation_scope` are applied in system order once every `run()` of the tick has finished, so the system that makes the change sees it the next tick.
+- `entities`: changes structure immediately, through its own `add_component<T>` / `remove_component<T>` and entity calls. Holding it orders the system against every system that touches components, so take it only when a change must be visible within the same tick.
 - `shared_view<data>`: a read of the fields another system marked `[[= shared]]`.
 - `channel_read<T>` / `channel_write<T>`: messages, delivered the next frame.
 - `[[= gse::runs_after<^^other::data>{}]]` pins an order when the data alone leaves a cycle.
@@ -40,7 +40,7 @@ Read it with `gse::actions::pressed(d.binds.fire, state, as)` or `held(...)`. On
 
 **Physics** is driven by requests, never by touching the solver: `impulse_request`, `rollback_request`, motor targets on `motor_component`, and `gse::physics::query_transform(phys_s, id)` for a body's current transform.
 
-**Entities** come from `scene->build(name).with<T>({...}).identify()`. The id is derived from the name, which is what makes client prediction work (below).
+**Entities** come from `scene->build(name).with<T>({...}).identify()`, called while a `gse::scene::mutation_scope` over the system's context is open. The id is derived from the name, so it is known straight away even though the entity only exists from the next tick, and that is what makes client prediction work (below).
 
 ## Where each role runs
 

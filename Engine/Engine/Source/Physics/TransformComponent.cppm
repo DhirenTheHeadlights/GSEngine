@@ -4,7 +4,7 @@ import gse.ecs;
 import gse.math;
 
 export namespace gse::physics {
-	struct transform_component {
+	struct [[= gse::written_by<^^gse::physics>{}]] transform_component {
 		[[= networked]] vec3<current_position> position;
 		[[= networked]] quat orientation = quat(1.f, 0.f, 0.f, 0.f);
 	};

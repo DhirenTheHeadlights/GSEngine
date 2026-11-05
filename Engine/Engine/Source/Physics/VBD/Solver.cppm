@@ -64,8 +64,8 @@ export namespace gse::vbd {
 		std::uint32_t trace_body = 0xFFFFFFFFu;
 		std::uint32_t trace_island_convergence = 0;
 		std::uint32_t island_colored_sweep = 0;
-		std::uint32_t island_pack = 0;
 		std::uint32_t islands_per_workgroup = 1;
+		std::uint32_t iterations_per_submit = 10;
 		std::uint32_t muscle_count = 0;
 		std::uint32_t convergence_probe_iterations = 0;
 		std::uint32_t convergence_probe_interval = 64;

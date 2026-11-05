@@ -14,8 +14,8 @@ void store_prediction(uint bi, body_state body) {
 }
 
 void vbd_predict(uint3 dispatch_id) {
-uint bi = dispatch_id.x;
-if (bi >= pc.body_count) return;
+if (dispatch_id.x >= active_data[active_count_word]) return;
+uint bi = active_list[active_data[active_half_word] * max_bodies() + dispatch_id.x];
 
 if (solver_config_data[0].muscle_count != 0) {
     solve_deltas[2 * max_bodies() + bi] = float4(muscle_body_floor(bi), 0, 0, 0);

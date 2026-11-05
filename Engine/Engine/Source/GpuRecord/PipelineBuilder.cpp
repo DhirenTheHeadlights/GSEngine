@@ -47,6 +47,7 @@ namespace gse::gpu {
 	) -> std::string;
 
 	auto inline_helpers(
+		std::string_view body_path,
 		const std::vector<std::string>& helper_paths
 	) -> std::string;
 
@@ -59,6 +60,21 @@ namespace gse::gpu {
 		const graphics_entry_pod& pod,
 		const parsed_body& parsed
 	) -> std::string;
+
+	auto append_wgsl_push_constant_block(
+		std::string& out,
+		std::string_view type,
+		std::string_view name
+	) -> void;
+}
+
+auto gse::gpu::append_wgsl_push_constant_block(std::string& out, const std::string_view type, const std::string_view name) -> void {
+	out.append(std::format(
+		"[[vk::binding(0, 1)]] StructuredBuffer<{0}> {1}_buffer;\n"
+		"property {0} {1} {{ get {{ return {1}_buffer[0]; }} }}\n\n",
+		type,
+		name
+	));
 }
 
 auto gse::gpu::parse_body_file(const std::string_view body_source) -> parsed_body {
@@ -127,7 +143,8 @@ auto gse::gpu::load_helper_file(const std::string_view helper_path) -> std::stri
 	return read_shader_source(config::resource_path() / "Shaders" / (std::string(helper_path) + ".slang"));
 }
 
-auto gse::gpu::inline_helpers(const std::vector<std::string>& helper_paths) -> std::string {
+auto gse::gpu::inline_helpers(const std::string_view body_path, const std::vector<std::string>& helper_paths) -> std::string {
+	log::println(log::category::render, "shader program {}: helpers {}", body_path, helper_paths);
 	std::string out;
 	for (const auto& path : helper_paths) {
 		const auto source = load_helper_file(path);
@@ -176,6 +193,10 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 		if (p.is_function_param) {
 			continue;
 		}
+		if (active_backend == backend_kind::webgpu) {
+			append_wgsl_push_constant_block(out, p.slang_type, p.name);
+			continue;
+		}
 		out.append("[[vk::push_constant]]\nConstantBuffer<");
 		out.append(p.slang_type);
 		out.push_back('>');
@@ -185,7 +206,7 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 	}
 
 	if (!inputs.helper_paths.empty()) {
-		out.append(inline_helpers(inputs.helper_paths));
+		out.append(inline_helpers(inputs.body_path, inputs.helper_paths));
 		out.push_back('\n');
 	}
 
@@ -259,7 +280,10 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		out.push_back('\n');
 	}
 
-	if (pod.push_constant_size > 0) {
+	if (pod.push_constant_size > 0 && active_backend == backend_kind::webgpu) {
+		append_wgsl_push_constant_block(out, pod.push_constant_type_name, "pc");
+	}
+	else if (pod.push_constant_size > 0) {
 		out.append("[[vk::push_constant]]\nConstantBuffer<");
 		out.append(pod.push_constant_type_name);
 		out.append("> pc;\n\n");
@@ -271,7 +295,7 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		for (std::size_t i = 0; i < pod.helper_count; ++i) {
 			helper_paths.emplace_back(pod.helper_paths[i]);
 		}
-		out.append(inline_helpers(helper_paths));
+		out.append(inline_helpers(pod.body_path, helper_paths));
 		out.push_back('\n');
 	}
 
@@ -370,6 +394,7 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 	inputs.emit_types = pod.emit_types;
 	inputs.emit_bindings = pod.emit_bindings;
 	inputs.emit_spec_decls = pod.emit_spec_decls;
+	inputs.struct_layouts_fn = pod.struct_layouts_fn;
 	inputs.helper_paths.reserve(pod.helper_count);
 
 	for (std::size_t i = 0; i < pod.helper_count; ++i) {
@@ -432,10 +457,13 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		.spec_data = spec_data,
 	};
 
+	const auto binding_layout = pod.binding_layout_fn ? pod.binding_layout_fn() : std::vector<binding_layout_entry>{};
 	const shader_program_create_info info{
+		.label = pod.body_path,
 		.stages = std::span(&stage_info, 1),
 		.push_offset_start = pod.push_constant_size,
 		.binding_args_size = pod.binding_args_size_fn(),
+		.bindings = binding_layout,
 		.push_constant_range = push_range,
 		.state = {},
 		.is_compute = true,
@@ -501,7 +529,7 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 		stage_infos.push_back({
 			.stage = s.flag,
 			.spirv = s.spirv,
-			.entry_point = "main",
+			.entry_point = active_backend == backend_kind::webgpu ? std::string_view(s.entry_point) : std::string_view("main"),
 			.next_stage = next_stage_for(s.flag, all_stages),
 			.spec_entries = vk_spec_entries,
 			.spec_data = spec_data,
@@ -533,10 +561,13 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	}
 	const depth_format depth_target = (pod.depth.test || pod.depth.write) ? pod.depth_fmt : depth_format::none;
 
+	const auto binding_layout = pod.binding_layout_fn ? pod.binding_layout_fn() : std::vector<binding_layout_entry>{};
 	const shader_program_create_info info{
+		.label = pod.body_path,
 		.stages = stage_infos,
 		.push_offset_start = pod.push_constant_size,
 		.binding_args_size = pod.binding_args_size_fn(),
+		.bindings = binding_layout,
 		.push_constant_range = push_range,
 		.state = std::move(state),
 		.color_targets = color_targets,

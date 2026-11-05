@@ -243,7 +243,6 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<asset_result>
 					.stride = sizeof(skin_influence),
 					.usage = gpu::buffer_flag::storage,
 					.data = mesh_influences.data(),
-					.bindless = true,
 				},
 				"skinned_model.influences"
 			)

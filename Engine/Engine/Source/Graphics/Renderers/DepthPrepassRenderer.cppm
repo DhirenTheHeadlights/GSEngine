@@ -11,7 +11,8 @@ import :geometry_collector;
 
 export namespace gse::renderer::depth_prepass {
 	struct [[= system_state<"DepthPrepass">{}]] data {
-		gpu::shader_program meshlet_pipeline;
+		gpu::shader_program pipeline;
+		bool vertex_pulled = false;
 
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
 	};

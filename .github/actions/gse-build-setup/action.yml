@@ -13,6 +13,12 @@ inputs:
     description: Toolchain release tag to build with (blank resolves the newest published one)
     required: false
     default: ""
+  toolchain-archive:
+    description: >
+      Path to a toolchain zip to install as `toolchain` instead of downloading the release.
+      For gating a candidate before it is published; such an install is never cached.
+    required: false
+    default: ""
   preset:
     description: CMake preset to configure
     required: false
@@ -61,8 +67,11 @@ runs:
           "$env:AGENT_TOOLSDIRECTORY\PyPy", "$env:AGENT_TOOLSDIRECTORY\CodeQL"
         Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
 
-    # The toolchain zip is large and never changes within a tag, so it is cached by tag.
+    # The toolchain zip is large and never changes within a tag, so it is cached by tag. A
+    # candidate archive is not: a failed candidate's tag is handed to the next candidate, so
+    # caching it would install the rejected compiler under the published name.
     - name: Cache the GCC toolchain
+      if: inputs.toolchain-archive == ''
       uses: actions/cache@v4
       with:
         path: ~/.gcc-trunk
@@ -89,12 +98,17 @@ runs:
       shell: pwsh
       env:
         VCPKG_DEFAULT_BINARY_CACHE: ${{ inputs.vcpkg-cache }}
+        TOOLCHAIN_ARCHIVE: ${{ inputs.toolchain-archive }}
       run: |
         New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
         "VCPKG_DEFAULT_BINARY_CACHE=$env:VCPKG_DEFAULT_BINARY_CACHE" >> $env:GITHUB_ENV
+        $source = @()
+        if ($env:TOOLCHAIN_ARCHIVE) {
+          $source = @("--url", ([System.Uri](Resolve-Path $env:TOOLCHAIN_ARCHIVE).Path).AbsoluteUri)
+        }
         python bootstrap.py `
           --skip-submodules --skip-cppref --skip-build `
-          --tag ${{ steps.resolve.outputs.toolchain }} --persist
+          --tag ${{ steps.resolve.outputs.toolchain }} @source --persist
 
     # Engine/CMakeLists.txt compiles the SDK's own vulkan.cppm out of Vulkan_INCLUDE_DIR,
     # so the headers alone are not enough and a missing SDK fails configure with a

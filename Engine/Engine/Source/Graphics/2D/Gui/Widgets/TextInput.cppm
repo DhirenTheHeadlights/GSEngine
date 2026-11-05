@@ -37,6 +37,12 @@ export namespace gse::gui {
 		bool selecting = false;
 		bool password = false;
 	};
+
+	enum class text_input_result : std::uint8_t {
+		editing,
+		submitted,
+		cancelled,
+	};
 }
 
 namespace gse::gui::draw {
@@ -49,7 +55,7 @@ namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id,
 		resource::handle<font> font = {}
-	) -> void;
+	) -> text_input_result;
 
 	auto text_input(
 		const draw_context& ctx,
@@ -59,12 +65,12 @@ namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id,
 		resource::handle<font> font = {}
-	) -> void;
+	) -> text_input_result;
 }
 
 export namespace gse::gui {
 	struct text_input {
-		using result = void;
+		using result = text_input_result;
 		struct params {
 			std::string_view name;
 			std::string& buffer;
@@ -73,12 +79,11 @@ export namespace gse::gui {
 			id widget_id{};
 			resource::handle<font> font{};
 		};
-		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> text_input_result {
 			if (p.rect) {
-				draw::text_input_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), p.buffer, p.state, *p.rect, hot, focus, p.font);
-				return;
+				return draw::text_input_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), p.buffer, p.state, *p.rect, hot, focus, p.font);
 			}
-			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
+			return draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
 		}
 	};
 }
@@ -107,9 +112,9 @@ auto gse::gui::draw::flatten_newlines(const std::string text) -> std::string {
 	return out;
 }
 
-auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
+auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> text_input_result {
 	if (!ctx.current_menu) {
-		return;
+		return text_input_result::editing;
 	}
 
 	const id widget_id = ids::make_from_key(hash_of(name, "##Input"));
@@ -141,12 +146,14 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		.clip_rect = label_rect,
 	});
 
-	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
+	const text_input_result result = text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+	return result;
 }
 
-auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
+auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> text_input_result {
+	text_input_result result = text_input_result::editing;
 	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
 	const input_skin& skin = ctx.style.input;
@@ -536,7 +543,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = !state.blink_on;
 		}
 
-		if (ctx.key_pressed_for(key::enter) || ctx.key_pressed_for(key::escape)) {
+		if (ctx.key_pressed_for(key::enter) || ctx.key_pressed_for(key::kp_enter)) {
+			result = text_input_result::submitted;
+			focus_widget_id = {};
+		}
+		else if (ctx.key_pressed_for(key::escape)) {
+			result = text_input_result::cancelled;
 			focus_widget_id = {};
 		}
 	}
@@ -583,4 +595,6 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			.clip_rect = clip_rect,
 		});
 	}
+
+	return result;
 }

@@ -137,32 +137,62 @@ auto gse::gpu::frame::recreate_resources(present_target& t, const recreate_cause
 		return {};
 	}
 
+	const auto begin = system_clock::now<time_t<double, seconds>>();
+
+	if (cause == recreate_cause::window_resize && current_mode == requested_mode && m_swapchain->resize_in_place(requested_size)) {
+		const auto resized = system_clock::now<time_t<double, seconds>>();
+		m_swapchain->notify_recreated();
+		const auto notified = system_clock::now<time_t<double, seconds>>();
+		log::println(
+			log::category::render,
+			"[swapchain] resize_in_place: {}x{} -> {}x{} resize={:.2f:ms} notify={:.2f:ms} frame={}",
+			current_extent.x(),
+			current_extent.y(),
+			requested_size.x(),
+			requested_size.y(),
+			resized - begin,
+			notified - resized,
+			m_frame_count
+		);
+		return {};
+	}
+
 	m_device->wait_idle();
+	const auto drained = system_clock::now<time_t<double, seconds>>();
 
 	if (const auto recreated = m_swapchain->recreate(requested_size, requested_mode); !recreated) {
 		log::println(log::level::error, log::category::render, "swapchain recreate failed ({}), retrying next frame", std::to_underlying(recreated.error()));
 		return std::unexpected(recreated.error());
 	}
+	const auto rebuilt = system_clock::now<time_t<double, seconds>>();
+
+	t.sync = create_sync_objects(*m_device, *m_swapchain);
+	const auto synced = system_clock::now<time_t<double, seconds>>();
+	m_swapchain->notify_recreated();
+	t.present_ids_in_flight.fill(0);
+	const auto notified = system_clock::now<time_t<double, seconds>>();
 
 	const auto granted_extent = m_swapchain->extent();
 	log::println(
 		log::category::render,
-		"[swapchain] recreate_resources: requested={}x{} previous={}x{} granted={}x{} minimized={} pos={},{} frame={}",
+		"[swapchain] recreate_resources: requested={}x{} previous={}x{} granted={}x{} allocated={}x{} minimized={} pos={},{} frame={} drain={:.2f:ms} swapchain={:.2f:ms} sync={:.2f:ms} notify={:.2f:ms}",
 		requested_size.x(),
 		requested_size.y(),
 		current_extent.x(),
 		current_extent.y(),
 		granted_extent.x(),
 		granted_extent.y(),
+		m_swapchain->allocated().x(),
+		m_swapchain->allocated().y(),
 		window::minimized(win.handle),
 		win.position.x(),
 		win.position.y(),
-		m_frame_count
+		m_frame_count,
+		drained - begin,
+		rebuilt - drained,
+		synced - rebuilt,
+		notified - synced
 	);
-
-	t.sync = create_sync_objects(*m_device, *m_swapchain);
-	m_swapchain->notify_recreated();
-	t.present_ids_in_flight.fill(0);
 	return {};
 }
 

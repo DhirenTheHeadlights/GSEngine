@@ -194,6 +194,14 @@ function(gse_copy_runtime_deps target)
         endforeach()
     endif()
 
+    if(GSE_WGPU_NATIVE_DIR)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${GSE_WGPU_NATIVE_DIR}/lib/wgpu_native.dll"
+                "$<TARGET_FILE_DIR:${target}>"
+        )
+    endif()
+
     # DirectX 12 Agility SDK runtime, fetched in Engine/CMakeLists.txt. The exe's exported
     # D3D12SDKPath points at this D3D12/ subfolder, so the OS loader uses this runtime instead
     # of the machine's.

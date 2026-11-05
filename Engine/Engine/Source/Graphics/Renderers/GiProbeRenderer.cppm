@@ -6,8 +6,8 @@ import :atmosphere_renderer;
 import :camera_system;
 import :directional_light;
 import :geometry_collector;
+import :lighting_source;
 import :point_light;
-import :rt_shadow_renderer;
 import :spot_light;
 
 import gse.gpu;
@@ -24,6 +24,10 @@ export namespace gse::renderer::gi_probe {
 	constexpr vec3u max_grid_dim{ 32, 8, 32 };
 	constexpr std::uint32_t rays_per_probe = 64;
 	constexpr std::uint32_t probe_tile_size = 8;
+	constexpr std::uint32_t capture_resolution = 16;
+	constexpr std::uint32_t probes_per_capture = 16;
+
+	struct capture_pass {};
 
 	struct probe_grid_info {
 		vec3u dim{ 16, 6, 16 };
@@ -73,12 +77,18 @@ export namespace gse::renderer::gi_probe {
 		length trace_t_max = meters(50.0f);
 
 		gpu::shader_program update_pipeline;
+		gpu::shader_program capture_pipeline;
+		bool vertex_pulled = false;
+		gpu::image capture_radiance;
+		gpu::image capture_depth;
+		gpu::bindless_handle capture_view;
+		std::uint32_t capture_cursor = 0;
 		gpu::bindless_handle sky_view_sampler;
 		[[= shared]] vec3u atlas_grid_dim{};
-		per_frame_resource<gpu::bindless_handle> tlas_views;
-		per_frame_resource<gpu::device_address> tlas_addresses;
+		std::optional<lighting_source::ray_traced_scene> ray_traced_scene;
 		per_frame_resource<gpu::buffer> light_buffers;
 		std::uint32_t frame_counter = 0;
+		bool history_reset = false;
 
 		[[= shared]] gpu::image irradiance_atlas;
 		[[= shared]] vec3<position> origin_world{};
@@ -88,7 +98,7 @@ export namespace gse::renderer::gi_probe {
 	auto init(
 		context& ctx,
 		shared_view<gpu::context::data> gpu_s,
-		shared_view<rt_shadow::data> rt_state,
+		shared_view<lighting::data> lighting_s,
 		shared_view<geometry_collector::data> gc_state,
 		data& d
 	) -> async::task<>;
@@ -106,6 +116,9 @@ export namespace gse::renderer::gi_probe {
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,
 		read<point_light_component> point_lights,
-		read<physics::transform_component> transforms
+		read<physics::transform_component> transforms,
+		channel_read<camera::temporal_reset_request> reset_in,
+		shared_view<lighting::data> lighting_s,
+		channel_read<lighting_source::ray_traced_scene> scene_in
 	) -> async::task<>;
 }

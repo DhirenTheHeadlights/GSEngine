@@ -47,6 +47,119 @@ auto gse::physics::copy_joints_with_inputs(const shared_view<data> phys, read<jo
 	);
 }
 
+auto gse::physics::gpu_upload::cache_matches(const body_cache& cache, const body_build_view& view, const std::uint64_t shape_generation, const std::size_t hull_count) -> bool {
+	return cache.valid &&
+		cache.shape_generation == shape_generation &&
+		cache.hull_count == hull_count &&
+		std::ranges::equal(cache.motion_owners, view.motion_owners) &&
+		std::ranges::equal(cache.transform_owners, view.transform_owners) &&
+		std::ranges::equal(cache.collision_owners, view.collision_owners);
+}
+
+auto gse::physics::gpu_upload::refresh_body_cache(body_cache& cache, const body_build_view& view, const std::span<const vbd::body_scan_entry> scan, const std::span<const std::uint8_t> has_transform, const std::uint64_t shape_generation) -> void {
+	constexpr auto no_slot = std::numeric_limits<std::uint32_t>::max();
+	const auto count = view.motions.size();
+	const auto slots_of = [&view, count, no_slot](const std::span<const id> owners) {
+		std::vector<std::uint32_t> slots(count, no_slot);
+		if (std::ranges::equal(view.motion_owners, owners)) {
+			std::ranges::iota(slots, 0u);
+			return slots;
+		}
+		std::flat_map<id, std::uint32_t> by_owner;
+		for (std::size_t i = 0; i < owners.size(); ++i) {
+			by_owner.emplace(owners[i], static_cast<std::uint32_t>(i));
+		}
+		for (std::size_t i = 0; i < count; ++i) {
+			if (const auto it = by_owner.find(view.motion_owners[i]); it != by_owner.end()) {
+				slots[i] = it->second;
+			}
+		}
+		return slots;
+	};
+
+	cache.motion_owners.assign(view.motion_owners.begin(), view.motion_owners.end());
+	cache.transform_owners.assign(view.transform_owners.begin(), view.transform_owners.end());
+	cache.collision_owners.assign(view.collision_owners.begin(), view.collision_owners.end());
+	cache.shape_generation = shape_generation;
+	cache.hull_count = view.hulls.size();
+	cache.props.assign(view.mass_props.begin(), view.mass_props.end());
+	cache.has_transform.assign(has_transform.begin(), has_transform.end());
+	cache.transform_slot = slots_of(view.transform_owners);
+	cache.collision_slot = slots_of(view.collision_owners);
+	cache.rest_scan.assign(count, {});
+	cache.locked.clear();
+	for (std::uint32_t i = 0; i < count; ++i) {
+		cache.rest_scan[i].locked = scan[i].locked;
+		if (const auto c = cache.collision_slot[i]; c != no_slot && view.collisions[c].resolve_collisions && has_transform[i] != 0) {
+			cache.rest_scan[i].max_half_extent = rest_max_half_extent(view.collisions[c], view.hulls, view.hull_offsets);
+		}
+		if (scan[i].locked != 0) {
+			cache.locked.push_back(i);
+		}
+	}
+	cache.valid = true;
+}
+
+auto gse::physics::gpu_upload::fill_cached_bodies(body_cache& cache, const body_build_view& view, const std::flat_map<id, std::uint32_t>& body_index, const std::span<const id> reset_bodies, const sleep_counter_table& sleep_counters, std::vector<vbd::body_state>& bodies, std::vector<vbd::body_scan_entry>& scan, std::vector<std::uint8_t>& has_transform) -> void {
+	constexpr auto no_slot = std::numeric_limits<std::uint32_t>::max();
+	bodies.resize(view.motions.size());
+	std::ranges::copy(cache.rest_scan, scan.begin());
+	has_transform.assign(cache.has_transform.begin(), cache.has_transform.end());
+
+	std::vector<std::uint32_t> fill = cache.locked;
+	for (const auto owner : reset_bodies) {
+		if (const auto it = body_index.find(owner); it != body_index.end()) {
+			fill.push_back(it->second);
+		}
+	}
+	std::ranges::sort(fill);
+	const auto duplicates = std::ranges::unique(fill);
+	fill.erase(duplicates.begin(), duplicates.end());
+
+	bool locked_changed = false;
+	for (const auto i : fill) {
+		auto& b = bodies[i];
+		const auto ts = cache.transform_slot[i];
+		if (ts == no_slot) {
+			b = {
+				.locked = 1u,
+				.update_orientation = 0u,
+				.affected_by_gravity = 0u,
+			};
+			b.aabb_min = vec3<position>(meters(1e30f));
+			b.aabb_max = vec3<position>(meters(-1e30f));
+			continue;
+		}
+		const auto& mc = view.motions[i];
+		const auto cs = cache.collision_slot[i];
+		const auto* cc = cs != no_slot ? std::addressof(view.collisions[cs]) : nullptr;
+		if (mc.reset_pending != 0) {
+			cache.props[i] = body_mass_properties(mc, cc ? std::addressof(cc->shape) : nullptr, cc ? resolve_hull(cc->shape, view.hulls) : nullptr);
+			const std::uint32_t locked = std::holds_alternative<dynamic_body>(mc.body) ? 0u : 1u;
+			locked_changed = locked_changed || cache.rest_scan[i].locked != locked;
+			cache.rest_scan[i].locked = locked;
+			cache.rest_scan[i].max_half_extent = cc && cc->resolve_collisions ? rest_max_half_extent(*cc, view.hulls, view.hull_offsets) : displacement{};
+			scan[i].locked = locked;
+		}
+		b = body_state_of(mc, view.transforms[ts], cache.props[i], sleep_counters.get(view.motion_owners[i]));
+		b.aabb_min = vec3<position>(meters(1e30f));
+		b.aabb_max = vec3<position>(meters(-1e30f));
+		scan[i].reset_pending = mc.reset_pending;
+		if (cc && cc->resolve_collisions) {
+			scan[i].max_half_extent = write_body_bounds(b, *cc, view.hulls, view.hull_offsets);
+		}
+	}
+
+	if (locked_changed) {
+		cache.locked.clear();
+		for (std::uint32_t i = 0; i < cache.rest_scan.size(); ++i) {
+			if (cache.rest_scan[i].locked != 0) {
+				cache.locked.push_back(i);
+			}
+		}
+	}
+}
+
 auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phys, const channel_write<gpu_upload_report, gpu_upload_payload, vbd::solver_upload> out, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives) -> async::task<> {
 	const auto& plan = phys.gpu_plan;
 	if (!gpu_solver_driving(phys) || !plan.active || plan.generation == d.built_generation) {
@@ -87,27 +200,45 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 			.hull_offsets = d.hull_offsets,
 		};
 
-		auto& body_props = slot.body_props;
-		{
-			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::mass_props">() };
-			build_mass_properties(view, body_props);
-		}
-		view.mass_props = body_props;
-
-		{
-			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::states">() };
-			build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
-			refresh_joints = plan.reset || d.force_full_joints || phys.joints_generation != d.uploaded_joints_generation || d.uploaded_body_count != bodies.size() ||
+		const auto joints_stale = [&] {
+			return plan.reset || d.force_full_joints || phys.joints_generation != d.uploaded_joints_generation || d.uploaded_body_count != motion.size() ||
 				d.joint_slots.size() != phys.joints.size() || d.joint_body_index_entries != d.body_index_entries ||
 				phys.muscles_generation != d.uploaded_muscles_generation || d.muscle_slots.size() != phys.muscles.size();
-			if (refresh_joints && scan_fill.sparse) {
-				scan_fill.sparse = false;
-				build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
-			}
+		};
+
+		if (scan_fill.sparse && cache_matches(d.cached_bodies, view, phys.shape_generation, phys.hulls.size()) && !joints_stale()) {
+			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::cached">() };
+			view.mass_props = d.cached_bodies.props;
+			fill_cached_bodies(d.cached_bodies, view, d.body_index, phys.reset_bodies, phys.sleep_counters, bodies, slot.body_scan, has_transform);
 		}
-		{
-			trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::bounds">() };
-			build_body_bounds(view, d.body_index, has_transform, bodies, scan_fill);
+		else {
+			auto& body_props = slot.body_props;
+			{
+				trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::mass_props">() };
+				build_mass_properties(view, body_props);
+			}
+			view.mass_props = body_props;
+
+			{
+				trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::states">() };
+				build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
+				refresh_joints = joints_stale();
+				if (refresh_joints && scan_fill.sparse) {
+					scan_fill.sparse = false;
+					build_body_states(view, phys.sleep_counters, bodies, d.body_index, d.body_index_entries, has_transform, scan_fill);
+				}
+			}
+			{
+				trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::bounds">() };
+				build_body_bounds(view, d.body_index, has_transform, bodies, scan_fill);
+			}
+			if (scan_fill.sparse) {
+				trace::scope_guard _{ trace_id<"vbd_gpu::build_bodies::refresh_cache">() };
+				refresh_body_cache(d.cached_bodies, view, slot.body_scan, has_transform, phys.shape_generation);
+			}
+			else {
+				d.cached_bodies.valid = false;
+			}
 		}
 	}
 
@@ -524,8 +655,12 @@ auto gse::physics::gpu_upload::run(data& d, const shared_view<physics::data> phy
 		}
 	}
 
+	const bool body_index_changed = d.reported_body_index_entries != d.body_index_entries;
+	if (body_index_changed) {
+		d.reported_body_index_entries = d.body_index_entries;
+	}
 	auto report = gpu_upload_report{
-		.body_index = d.body_index,
+		.body_index = body_index_changed ? std::optional(d.body_index) : std::nullopt,
 		.rest_orientations = std::move(rest_orientations),
 		.recorded = {},
 	};

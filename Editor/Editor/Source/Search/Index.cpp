@@ -737,13 +737,15 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 	};
 
 	begin_index_phase(idx, index_phase::checking_modules, list.size());
-	run_parallel([&](const std::size_t i) {
+	std::unordered_set<id> validated;
+	for (std::size_t i = 0; i < list.size() && !index_cancelled(idx); ++i) {
 		out[i].tu = list[i]->file;
-		if (const std::expected<void, std::string> module_graph = analysis::validate_module_graph(*list[i]); !module_graph) {
+		if (const std::expected<void, std::string> module_graph = analysis::validate_module_graph(*list[i], validated); !module_graph) {
 			out[i].failure = analysis::symbol_index_failure::module_unavailable;
 			out[i].failure_detail = module_graph.error();
 		}
-	});
+		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
+	}
 	if (index_cancelled(idx)) {
 		return out;
 	}

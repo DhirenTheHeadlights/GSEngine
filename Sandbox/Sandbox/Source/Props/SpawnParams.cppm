@@ -33,6 +33,14 @@ export namespace sandbox {
 		int box_grid_layers = 3;
 	};
 
+	struct grass_field_params {
+		int blades_per_side = 100;
+		int segments = 3;
+		gse::length spacing = gse::meters(0.15f);
+		gse::length segment_length = gse::meters(0.12f);
+		gse::angular_stiffness bend_stiffness = gse::newton_meters_per_radian(0.05f);
+	};
+
 	struct character_spawn_params {
 		[[
 			= gse::settings::describe<"Characters built by one spawn request, whether it came from F7 or the locomotion "

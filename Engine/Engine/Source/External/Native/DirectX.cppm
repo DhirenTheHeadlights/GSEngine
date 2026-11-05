@@ -379,6 +379,21 @@ export namespace gse::directx {
 		bool allow_tearing
 	) -> bool;
 
+	[[nodiscard]] auto set_swapchain_source_size(
+		IDXGISwapChain3* swapchain,
+		std::uint32_t width,
+		std::uint32_t height
+	) -> bool;
+
+	struct monitor_extent {
+		std::uint32_t width = 0;
+		std::uint32_t height = 0;
+	};
+
+	[[nodiscard]] auto monitor_extent_of(
+		void* hwnd
+	) -> monitor_extent;
+
 	[[nodiscard]] auto swapchain_buffer(
 		IDXGISwapChain3* swapchain,
 		std::uint32_t index
@@ -1447,6 +1462,23 @@ auto gse::directx::create_swapchain(IDXGIFactory4* factory, ID3D12CommandQueue* 
 auto gse::directx::resize_swapchain_buffers(IDXGISwapChain3* swapchain, const std::uint32_t width, const std::uint32_t height, const std::uint32_t buffer_count, const DXGI_FORMAT format, const bool allow_tearing) -> bool {
 	const UINT flags = allow_tearing ? static_cast<UINT>(DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) : 0u;
 	return SUCCEEDED(swapchain->ResizeBuffers(buffer_count, width, height, format, flags));
+}
+
+auto gse::directx::set_swapchain_source_size(IDXGISwapChain3* swapchain, const std::uint32_t width, const std::uint32_t height) -> bool {
+	return SUCCEEDED(swapchain->SetSourceSize(width, height));
+}
+
+auto gse::directx::monitor_extent_of(void* hwnd) -> monitor_extent {
+	const HMONITOR monitor = MonitorFromWindow(static_cast<HWND>(hwnd), MONITOR_DEFAULTTONEAREST);
+	MONITORINFO info{};
+	info.cbSize = sizeof(info);
+	if (!GetMonitorInfoW(monitor, &info)) {
+		return {};
+	}
+	return {
+		.width = static_cast<std::uint32_t>(info.rcMonitor.right - info.rcMonitor.left),
+		.height = static_cast<std::uint32_t>(info.rcMonitor.bottom - info.rcMonitor.top),
+	};
 }
 
 auto gse::directx::swapchain_buffer(IDXGISwapChain3* swapchain, const std::uint32_t index) -> com_ptr<ID3D12Resource> {
@@ -2662,7 +2694,8 @@ auto gse::directx::write_buffer_immediate(ID3D12GraphicsCommandList* list, const
 		.Dest = gpu_address,
 		.Value = value,
 	};
-	list6->WriteBufferImmediate(1, &parameter, nullptr);
+	constexpr D3D12_WRITEBUFFERIMMEDIATE_MODE mode = D3D12_WRITEBUFFERIMMEDIATE_MODE_MARKER_OUT;
+	list6->WriteBufferImmediate(1, &parameter, &mode);
 }
 
 auto gse::directx::resource_byte_width(ID3D12Resource* resource) -> std::uint64_t {

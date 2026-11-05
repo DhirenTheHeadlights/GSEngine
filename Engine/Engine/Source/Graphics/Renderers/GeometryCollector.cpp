@@ -387,7 +387,6 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 				.size = instance_buffer_size,
 				.stride = sizeof(shaders::common::instance_data),
 				.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src, gpu::buffer_flag::transfer_dst },
-				.bindless = true
 			},
 			"gc_instance_buffer"
 		);
@@ -399,7 +398,6 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 				.size = normal_indirect_buffer_size,
 				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
 				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst, gpu::buffer_flag::byte_address },
-				.bindless = true,
 				.writable = true
 			},
 			"gc_indirect_commands"
@@ -410,7 +408,6 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 				.size = normal_indirect_buffer_size,
 				.stride = sizeof(gpu::draw_mesh_tasks_indirect_command),
 				.usage = { gpu::buffer_flag::indirect, gpu::buffer_flag::storage, gpu::buffer_flag::transfer_dst },
-				.bindless = true
 			},
 			"gc_transparent_indirect_commands"
 		);
@@ -420,7 +417,6 @@ auto gse::renderer::geometry_collector::initialize(context& ctx, const shared_vi
 				.size = material_buffer_size,
 				.stride = sizeof(shaders::forward::material_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"gc_material_palette"
 		);
@@ -538,7 +534,6 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 						.stride = sizeof(shaders::common::instance_data),
 						.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src, gpu::buffer_flag::transfer_dst },
 						.data = data.instance_staging.data(),
-						.bindless = true
 					},
 					"gc_instance_buffer"
 				);

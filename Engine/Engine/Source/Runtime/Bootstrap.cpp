@@ -49,6 +49,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 		fatal_exit(3);
 	});
 
+	if (config.bake_assets) {
+		return bake_game_assets();
+	}
+
 	should_shutdown.store(false, std::memory_order_relaxed);
 
 	if (config.bench.enabled) {
@@ -107,8 +111,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 		const auto pace_id = trace_id<"frame::pace">();
 		const auto poll_id = trace_id<"frame::poll_events">();
 		const auto wait_id = trace_id<"frame::wait_events">();
-		const auto sync_begin_id = trace_id<"frame::sync_begin">();
-		const auto sync_end_id = trace_id<"frame::sync_end">();
+		const auto flip_channels_id = trace_id<"frame::flip_channels">();
 		const auto finalize_id = trace_id<"frame::finalize_trace">();
 		const auto ingest_id = trace_id<"frame::ingest_profile">();
 		const auto update_id = trace_id<"engine::update">();
@@ -133,20 +136,23 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 				const auto step_begin = system_clock::now<time_t<double, seconds>>();
 				e.apply_pending_resizes();
 				const auto recreate_end = system_clock::now<time_t<double, seconds>>();
-				frame_sync::begin();
 				e.update();
 				const auto update_end = system_clock::now<time_t<double, seconds>>();
 				e.render();
-				frame_sync::end();
+				e.flip_channels();
 				const auto step_end = system_clock::now<time_t<double, seconds>>();
+				const auto pump = window::take_resize_pump_stats();
 
 				log::println(
 					log::category::render,
-					"[resize] step recreate={:.2f:ms} update={:.2f:ms} render={:.2f:ms} total={:.2f:ms} presented={}",
-					time_t<double, seconds>(recreate_end - step_begin),
-					time_t<double, seconds>(update_end - recreate_end),
-					time_t<double, seconds>(step_end - update_end),
-					time_t<double, seconds>(step_end - step_begin),
+					"[resize] step idle={:.2f:ms} wm_size={} throttled={} recreate={:.2f:ms} update={:.2f:ms} render={:.2f:ms} total={:.2f:ms} presented={}",
+					pump.idle,
+					pump.wm_size,
+					pump.throttled,
+					recreate_end - step_begin,
+					update_end - recreate_end,
+					step_end - update_end,
+					step_end - step_begin,
 					e.frame_presented()
 				);
 			});
@@ -189,11 +195,6 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 				}
 
 				{
-					trace::scope_guard _{ sync_begin_id };
-					frame_sync::begin();
-				}
-
-				{
 					trace::scope_guard _{ e.id() };
 					const auto update_begin = system_clock::now<time_t<double, seconds>>();
 					{
@@ -213,10 +214,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 
 					if (const auto render_end = system_clock::now<time_t<double, seconds>>(); render_end - update_begin > milliseconds(100.0)) {
 						++slow_frames;
-						if (const auto frame_time = time_t<double, seconds>(render_end - update_begin); frame_time > slow_frame_worst) {
+						if (const auto frame_time = render_end - update_begin; frame_time > slow_frame_worst) {
 							slow_frame_worst = frame_time;
-							slow_frame_worst_update = time_t<double, seconds>(update_end - update_begin);
-							slow_frame_worst_render = time_t<double, seconds>(render_end - update_end);
+							slow_frame_worst_update = update_end - update_begin;
+							slow_frame_worst_render = render_end - update_end;
 						}
 					}
 				}
@@ -258,8 +259,8 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 				}
 
 				{
-					trace::scope_guard _{ sync_end_id };
-					frame_sync::end();
+					trace::scope_guard _{ flip_channels_id };
+					e.flip_channels();
 				}
 			}
 

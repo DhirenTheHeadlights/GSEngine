@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -31,6 +32,9 @@ concept is_double = std::same_as<double, std::remove_cvref_t<T>>;
 
 template <typename T>
 concept simd_val = is_int32<T> || is_float<T> || is_double<T>;
+
+template <typename T, std::size_t Size>
+concept x86_lanes = ((is_float<T> || is_int32<T>) && (Size == 4 || Size == 8)) || (is_double<T> && (Size == 2 || Size == 4));
 
 template <typename T>
 concept span = requires {
@@ -339,7 +343,25 @@ auto gse::simd::dot(const span auto& lhs, const span auto& rhs, simd_val auto& r
 	}
 	else
 #endif
-	{
+	if constexpr (x86_lanes<type, size> && !is_int32<type>) {
+		std::array<type, size> product{};
+		for (std::size_t i = 0; i < size; ++i) {
+			product[i] = lhs[i] * rhs[i];
+		}
+		if constexpr (is_float<type> && size == 8) {
+			result = ((product[0] + product[4]) + (product[1] + product[5])) + ((product[2] + product[6]) + (product[3] + product[7]));
+		}
+		else if constexpr (is_float<type>) {
+			result = (product[0] + product[1]) + (product[2] + product[3]);
+		}
+		else if constexpr (size == 4) {
+			result = (product[0] + product[2]) + (product[1] + product[3]);
+		}
+		else {
+			result = product[0] + product[1];
+		}
+	}
+	else {
 		result = 0;
 		for (std::size_t i = 0; i < size; ++i) {
 			result += lhs[i] * rhs[i];
@@ -428,7 +450,12 @@ auto gse::simd::min(const span auto& lhs, const span auto& rhs, span auto result
 #endif
 	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::min(lhs[i], rhs[i]);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] < rhs[i] ? lhs[i] : rhs[i];
+			}
+			else {
+				result[i] = std::min(lhs[i], rhs[i]);
+			}
 		}
 	}
 }
@@ -472,7 +499,12 @@ auto gse::simd::max(const span auto& lhs, const span auto& rhs, span auto result
 #endif
 	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::max(lhs[i], rhs[i]);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] > rhs[i] ? lhs[i] : rhs[i];
+			}
+			else {
+				result[i] = std::max(lhs[i], rhs[i]);
+			}
 		}
 	}
 }
@@ -522,7 +554,13 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 #endif
 	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::clamp(v[i], min_v[i], max_v[i]);
+			if constexpr (x86_lanes<type, size>) {
+				const type upper = v[i] < max_v[i] ? v[i] : max_v[i];
+				result[i] = upper > min_v[i] ? upper : min_v[i];
+			}
+			else {
+				result[i] = std::clamp(v[i], min_v[i], max_v[i]);
+			}
 		}
 	}
 }
@@ -756,7 +794,12 @@ auto gse::simd::min_s(const span auto& lhs, const simd_val auto& scalar, span au
 #endif
 	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::min(lhs[i], scalar);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] < scalar ? lhs[i] : scalar;
+			}
+			else {
+				result[i] = std::min(lhs[i], scalar);
+			}
 		}
 	}
 }
@@ -800,7 +843,12 @@ auto gse::simd::max_s(const span auto& lhs, const simd_val auto& scalar, span au
 #endif
 	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::max(lhs[i], scalar);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] > scalar ? lhs[i] : scalar;
+			}
+			else {
+				result[i] = std::max(lhs[i], scalar);
+			}
 		}
 	}
 }

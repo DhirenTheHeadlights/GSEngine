@@ -123,7 +123,7 @@ auto gse::ide::agent::chat_title(const std::string_view summary) -> std::string 
 	return head.empty() ? std::string("Restored chat") : std::string(head);
 }
 
-auto gse::ide::agent::past_chats(const std::filesystem::path& cwd) -> std::vector<past_chat> {
+auto gse::ide::agent::past_chats(const data& d, const std::filesystem::path& cwd) -> std::vector<past_chat> {
 	std::vector<past_chat> out;
 
 	const std::filesystem::path dir = transcript_dir(cwd);
@@ -145,11 +145,58 @@ auto gse::ide::agent::past_chats(const std::filesystem::path& cwd) -> std::vecto
 	}
 
 	std::ranges::sort(out, std::ranges::greater{}, &past_chat::modified);
+
+	std::unordered_set<const session*> listed;
+	std::erase_if(out, [&](const past_chat& chat) {
+		const auto owns = [&](const session& s) {
+			return owns_transcript(s, chat.agent_id);
+		};
+		const session* owner = nullptr;
+		if (const auto open = std::ranges::find_if(d.sessions, owns); open != d.sessions.end()) {
+			owner = &*open;
+		}
+		else if (const auto closed = std::ranges::find_if(d.closed, owns); closed != d.closed.end()) {
+			owner = &*closed;
+		}
+		return owner && !listed.insert(owner).second;
+	});
 	return out;
 }
 
-auto gse::ide::agent::restore_rows(session& s) -> bool {
-	const std::filesystem::path file = transcript_path(s.info.agent_id);
+auto gse::ide::agent::transcript_ids(const session& s) -> std::vector<std::string> {
+	std::vector<std::string> transcripts;
+	for (const phase_run& run : s.runs) {
+		if (!run.agent_id.empty() && !std::ranges::contains(transcripts, run.agent_id)) {
+			transcripts.push_back(run.agent_id);
+		}
+	}
+	if (!s.info.agent_id.empty() && !std::ranges::contains(transcripts, s.info.agent_id)) {
+		transcripts.push_back(s.info.agent_id);
+	}
+	return transcripts;
+}
+
+auto gse::ide::agent::restore_history(const std::vector<std::string>& agent_ids, session_info info) -> restored_history {
+	restored_history out;
+	for (const std::string& agent_id : agent_ids) {
+		out.found = restore_transcript(agent_id, info, out.rows) || out.found;
+	}
+	std::ranges::stable_sort(out.rows, {}, &transcript_row::stamped);
+	out.info = std::move(info);
+	return out;
+}
+
+auto gse::ide::agent::start_history(session& s) -> void {
+	s.history_at = static_cast<std::uint32_t>(s.rows.size());
+	s.history_runs = static_cast<std::uint32_t>(s.runs.size());
+	s.history_gate = s.gate;
+	s.history.start([ids = transcript_ids(s), info = s.info] {
+		return restore_history(ids, info);
+	}, trace_id<"agent::history">(), task::lane::background);
+}
+
+auto gse::ide::agent::restore_transcript(const std::string& agent_id, session_info& info, std::vector<transcript_row>& out) -> bool {
+	const std::filesystem::path file = transcript_path(agent_id);
 	if (file.empty()) {
 		return false;
 	}
@@ -173,8 +220,8 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		if (kind == "user") {
 			for (transcript_row& row : user_rows(*event)) {
 				row.stamped = stamped;
-				row.agent = s.info.agent_id;
-				s.rows.push_back(std::move(row));
+				row.agent = agent_id;
+				out.push_back(std::move(row));
 			}
 			continue;
 		}
@@ -186,11 +233,11 @@ auto gse::ide::agent::restore_rows(session& s) -> bool {
 		}
 
 		const std::string_view uuid = anchorable(*event) ? string_at(*event, "uuid") : std::string_view{};
-		for (transcript_row& row : summarize(*event, s.info)) {
+		for (transcript_row& row : summarize(*event, info)) {
 			row.uuid = uuid;
 			row.stamped = stamped;
-			row.agent = s.info.agent_id;
-			s.rows.push_back(std::move(row));
+			row.agent = agent_id;
+			out.push_back(std::move(row));
 		}
 	}
 
@@ -266,28 +313,124 @@ auto gse::ide::agent::hydrate_session(session& s) -> void {
 	}
 
 	for (transcript_row& edit : read_changes(s)) {
-		if (edit.agent != s.info.agent_id) {
+		if (!owns_transcript(s, edit.agent)) {
 			s.rows.push_back(std::move(edit));
 		}
 	}
 
-	if (!restore_rows(s)) {
+	std::ranges::stable_sort(s.rows, {}, &transcript_row::stamped);
+	start_history(s);
+}
+
+auto gse::ide::agent::finish_hydration(session& s) -> void {
+	std::optional<restored_history> restored = s.history.take();
+	if (!restored) {
+		return;
+	}
+
+	const std::uint32_t at = std::min(s.history_at, static_cast<std::uint32_t>(s.rows.size()));
+	const auto live = static_cast<std::uint32_t>(s.rows.size());
+	const auto count = static_cast<std::uint32_t>(restored->rows.size());
+
+	std::vector<std::uint32_t> order(at + count);
+	std::ranges::iota(order, 0u);
+	const auto stamp_of = [&](const std::uint32_t k) {
+		return k < at ? s.rows[k].stamped : restored->rows[k - at].stamped;
+	};
+	std::ranges::stable_sort(order, {}, stamp_of);
+
+	std::vector<std::uint32_t> moved_to(live + 1, live + count);
+	std::vector<transcript_row> merged;
+	merged.reserve(live + count);
+	for (const std::uint32_t k : order) {
+		if (k < at) {
+			moved_to[k] = static_cast<std::uint32_t>(merged.size());
+			merged.push_back(std::move(s.rows[k]));
+		}
+		else {
+			merged.push_back(std::move(restored->rows[k - at]));
+		}
+	}
+	for (std::uint32_t k = at; k < live; ++k) {
+		moved_to[k] = k + count;
+		merged.push_back(std::move(s.rows[k]));
+	}
+	s.rows = std::move(merged);
+
+	const auto shifted = [&moved_to](std::uint32_t& row) {
+		if (row < moved_to.size()) {
+			row = moved_to[row];
+		}
+	};
+	for (phase_run& run : s.runs | std::views::drop(s.history_runs)) {
+		shifted(run.first_row);
+	}
+	const bool gate_persisted = s.gate && s.history_gate
+		&& s.gate->from == s.history_gate->from
+		&& s.gate->summary == s.history_gate->summary
+		&& s.gate->first_row == s.history_gate->first_row;
+	if (s.gate && !gate_persisted) {
+		shifted(s.gate->first_row);
+	}
+	s.history_gate.reset();
+	for (std::uint32_t& group : s.expanded_groups) {
+		shifted(group);
+	}
+	if (s.changes_focus) {
+		shifted(*s.changes_focus);
+	}
+	for (transcript_view* v : views_of(s)) {
+		for (diff_view& view : v->diffs) {
+			shifted(view.row);
+		}
+		for (canvas_view& view : v->canvases) {
+			shifted(view.row);
+		}
+		if (v->viewing_canvas) {
+			shifted(*v->viewing_canvas);
+		}
+		reset_view(*v);
+		v->wrap_width = 0.f;
+	}
+	s.counted_rows = 0;
+	s.message_chars = 0;
+
+	if (s.info.model.empty()) {
+		s.info.model = std::move(restored->info.model);
+	}
+	if (s.info.context_used == 0) {
+		s.info.context_used = restored->info.context_used;
+		s.info.context_base = restored->info.context_base;
+	}
+
+	if (!restored->found) {
 		append_row(s, {
 			.kind = row_kind::note,
 			.text = std::format("no transcript on disk for {}", s.info.agent_id),
 		});
 	}
-
-	std::ranges::stable_sort(s.rows, {}, &transcript_row::stamped);
 	recover_met_goal(s);
 }
 
 auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {
 	const auto open = std::ranges::find_if(d.sessions, [&](const session& s) {
-		return s.info.agent_id == chat.agent_id;
+		return owns_transcript(s, chat.agent_id);
 	});
 	if (open != d.sessions.end()) {
 		d.active = open->id;
+		return;
+	}
+
+	if (const auto closed = std::ranges::find_if(d.closed, [&](const session& s) {
+		return owns_transcript(s, chat.agent_id);
+	}); closed != d.closed.end()) {
+		session revived = std::move(*closed);
+		d.closed.erase(closed);
+		revived.id = ++d.next_id;
+		revived.hydrated = false;
+		d.sessions.push_back(std::move(revived));
+		attach_runtime(d.sessions.back());
+		d.active = d.sessions.back().id;
 		return;
 	}
 
@@ -299,10 +442,7 @@ auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {
 		: chat_title(chat.summary);
 	restored.info.agent_id = chat.agent_id;
 	restored.hydrated = true;
-
-	if (!restore_rows(restored)) {
-		log::println(log::level::warning, log::category::task, "agent: could not read '{}' - the tab resumes without its scrollback", chat.path.generic_display_string());
-	}
+	start_history(restored);
 }
 
 auto gse::ide::agent::entry_uuid(const std::string_view line) -> std::string_view {
@@ -463,7 +603,7 @@ auto gse::ide::agent::rewind_anchor(const session& s, const std::uint32_t row) -
 }
 
 auto gse::ide::agent::rewind_session(session& s, const std::uint32_t row) -> bool {
-	if (row >= s.rows.size() || s.rows[row].kind != row_kind::user) {
+	if (s.history.active() || row >= s.rows.size() || s.rows[row].kind != row_kind::user) {
 		return false;
 	}
 

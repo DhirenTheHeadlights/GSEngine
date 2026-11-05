@@ -32,6 +32,18 @@ auto gse::ide::agent::approved_steps(const session& s) -> std::span<const build_
 	return scoped.empty() ? std::span<const build_inbox::plan_step>{} : std::span<const build_inbox::plan_step>(scoped.front().steps);
 }
 
+auto gse::ide::agent::refresh_step_gate(const session& s) -> void {
+	const std::span<const build_inbox::plan_step> steps = approved_steps(s);
+	if (current_phase(s) != task_phase::apply || steps.empty() || std::ranges::contains(s.runs.back().progress, step_state::current)) {
+		build_inbox::publish_step_gate(s.id, {});
+		return;
+	}
+	build_inbox::publish_step_gate(s.id, std::format(
+		"No step is begun, so this edit was refused - edits are attributed to the begun step. Call gse_step(index, 'begun') for the step this edit belongs to, then edit again. The approved scope has {} step(s), numbered from 0.",
+		steps.size()
+	));
+}
+
 auto gse::ide::agent::run_section_of(const session& s, const std::uint32_t row) -> std::optional<std::string> {
 	const std::span<const phase_run> runs = task_runs(s);
 	const auto owner = std::ranges::find_last_if(runs, [&](const phase_run& run) {
@@ -579,6 +591,13 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 
 auto gse::ide::agent::restart_task(session& s) -> void {
 	s.met_goal.reset();
+	if (!s.runs.empty()) {
+		const auto begun = std::ranges::count(s.runs, task_phase::scope, &phase_run::phase) + (s.runs.front().phase == task_phase::scope ? 0 : 1);
+		append_row(s, {
+			.kind = row_kind::phase,
+			.text = std::format("follow-up \xC2\xB7 cycle {}", begun + 1),
+		});
+	}
 	begin_phase(s, task_phase::scope, {});
 }
 
@@ -645,6 +664,11 @@ auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget
 		return true;
 	}
 
+	hydrate_session(s);
+	if (s.history.active()) {
+		return false;
+	}
+
 	const phase_gate& reported = *s.pending_transition;
 	if (reported.from == task_phase::review && reported.findings > 0 && next_phase(s, reported) == task_phase::summarize) {
 		log::println(log::level::warning, log::category::task, "agent: chat '{}' hit the {}-review limit with {} finding(s) still open", s.name, max_review_cycles, reported.findings);
@@ -654,8 +678,6 @@ auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget
 			.detail = reported.summary,
 		});
 	}
-
-	hydrate_session(s);
 
 	s.handoff.start([planned = plan_handoff(s, reported.from, reported.summary)](const std::stop_token& cancel) {
 		return capture_handoff(planned, cancel);
@@ -681,11 +703,12 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 				.detail = incoming.summary,
 			});
 			found->sync_report = incoming.summary;
+			found->sync_announced = false;
 			recorded = true;
 			build_inbox::publish({
 				.id = incoming.id,
 				.outcome = build_inbox::status::ok,
-				.lines = { "recorded - END YOUR TURN NOW; the editor closes this conversation and hands the panel back" },
+				.lines = { "recorded - END YOUR TURN NOW; the conversation stays open, and the owner may ask a follow-up" },
 			});
 			continue;
 		}
@@ -750,6 +773,17 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 		if (unknown != incoming.criteria.end()) {
 			refuse(std::format("criteria[{}]: expected an id and a state of met, owner or open, got '{} {}' - nothing was recorded, report again", unknown - incoming.criteria.begin(), unknown->id, unknown->state));
 			continue;
+		}
+
+		if (const std::span<const build_inbox::plan_step> plan = approved_steps(*found); from == task_phase::apply && !plan.empty()) {
+			const std::span<const step_state> progress = found->runs.back().progress;
+			const std::size_t done = std::ranges::distance(progress | std::views::take_while([](const step_state state) {
+				return state == step_state::done;
+			}));
+			if (done < plan.size()) {
+				refuse(std::format("step {} ('{}') is not done - finish it and call gse_step({}, 'done'), then report again; a step you are deliberately leaving undone still gets marked, with the reason in your summary", done, plan[done].text, done));
+				continue;
+			}
 		}
 
 		if (!incoming.next.empty()) {
@@ -830,7 +864,6 @@ auto gse::ide::agent::accept_phase_reports(data& d) -> bool {
 				: static_cast<std::uint32_t>(found->rows.size());
 			found->gate = std::move(reported);
 			found->plan_selected.reset();
-			found->plan_page = 0;
 			found->plan_summary = {};
 			build_inbox::publish({
 				.id = incoming.id,
@@ -1199,6 +1232,7 @@ auto gse::ide::agent::accept_step_reports(data& d) -> bool {
 		else {
 			run.progress[incoming.index] = step_state::done;
 		}
+		refresh_step_gate(*found);
 
 		const auto done = std::ranges::count(run.progress, step_state::done);
 		log::println(log::level::info, log::category::task, "agent: chat '{}' {} step {} of {}", found->name, incoming.state, incoming.index + 1, steps.size());

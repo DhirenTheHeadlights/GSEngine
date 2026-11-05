@@ -7,6 +7,7 @@ import gse.gpu;
 import gse.gpu_backend;
 import gse.log;
 import gse.math;
+import gse.meta;
 import gse.slang;
 import gse.time;
 import std;
@@ -31,6 +32,132 @@ namespace gse::gpu {
 	auto strip_unused_ray_tracing_extension(
 		std::vector<std::uint32_t>& spirv
 	) -> void;
+
+	auto code_words(
+		ISlangBlob* blob
+	) -> std::vector<std::uint32_t>;
+
+	auto store_wgsl(
+		ISlangBlob* blob,
+		std::string_view body_path,
+		std::string_view entry_point,
+		std::string_view wrapper_source
+	) -> void;
+
+	auto assert_wgsl_struct_layouts(
+		slang::IComponentType* program,
+		std::vector<shaders::struct_layout> (*struct_layouts_fn)(),
+		std::string_view body_path
+	) -> void;
+}
+
+auto gse::gpu::assert_wgsl_struct_layouts(slang::IComponentType* program, std::vector<shaders::struct_layout> (*struct_layouts_fn)(), const std::string_view body_path) -> void {
+	if (active_backend != backend_kind::webgpu || !struct_layouts_fn) {
+		return;
+	}
+	const auto expected = struct_layouts_fn();
+	std::unordered_set<std::string> checked;
+	auto check = [&](this auto&& self, slang::TypeLayoutReflection* type) -> void {
+		if (!type) {
+			return;
+		}
+		switch (type->getKind()) {
+			case slang::TypeReflection::Kind::Struct: {
+				const char* raw_name = type->getName();
+				const std::string name = raw_name ? raw_name : "";
+				if (checked.insert(name).second) {
+					if (const auto it = std::ranges::find(expected, name, &shaders::struct_layout::name); it != expected.end()) {
+						assert(type->getSize() == it->size, "{}: WGSL struct {} is {} bytes, the C++ struct is {}", body_path, name, type->getSize(), it->size);
+						assert(type->getFieldCount() == it->fields.size(), "{}: WGSL struct {} has {} fields, the planned layout has {}", body_path, name, type->getFieldCount(), it->fields.size());
+						for (unsigned f = 0; f < type->getFieldCount(); ++f) {
+							auto* field = type->getFieldByIndex(f);
+							const auto& want = it->fields[f];
+							assert(field->getName() == want.name, "{}: WGSL struct {} field {} is {}, the planned layout has {}", body_path, name, f, field->getName(), want.name);
+							assert(field->getOffset() == want.offset, "{}: WGSL struct {} field {} sits at offset {}, the C++ offset is {}", body_path, name, want.name, field->getOffset(), want.offset);
+						}
+					}
+				}
+				for (unsigned f = 0; f < type->getFieldCount(); ++f) {
+					self(type->getFieldByIndex(f)->getTypeLayout());
+				}
+				break;
+			}
+			case slang::TypeReflection::Kind::Array:
+			case slang::TypeReflection::Kind::Resource:
+			case slang::TypeReflection::Kind::ConstantBuffer:
+			case slang::TypeReflection::Kind::ParameterBlock:
+				self(type->getElementTypeLayout());
+				break;
+			default:
+				break;
+		}
+	};
+	auto* layout = program->getLayout();
+	for (unsigned i = 0; i < layout->getParameterCount(); ++i) {
+		check(layout->getParameterByIndex(i)->getTypeLayout());
+	}
+}
+
+auto gse::gpu::code_words(ISlangBlob* blob) -> std::vector<std::uint32_t> {
+	const auto byte_size = blob->getBufferSize();
+	std::vector<std::uint32_t> words((byte_size + sizeof(std::uint32_t) - 1) / sizeof(std::uint32_t), 0u);
+	std::memcpy(words.data(), blob->getBufferPointer(), byte_size);
+	return words;
+}
+
+auto gse::gpu::shader_source_digest() -> std::uint64_t {
+	static const std::uint64_t digest = [] {
+		const clock digest_clock;
+		const auto root = config::resource_path() / "Shaders";
+		const auto pack = wgsl_pack_dir();
+		std::vector<std::filesystem::path> files;
+		for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
+			if (entry.is_regular_file() && !entry.path().native().starts_with(pack.native())) {
+				files.push_back(entry.path());
+			}
+		}
+		std::ranges::sort(files);
+		std::uint64_t h = 0;
+		for (const auto& file : files) {
+			std::ifstream in(file, std::ios::binary);
+			const std::string bytes((std::istreambuf_iterator(in)), std::istreambuf_iterator<char>());
+			h = hash_combine(h, hash_of(file.lexically_relative(root).generic_string(), bytes));
+		}
+		log::println(log::category::assets, "shader source digest: {} files in {:.1f:ms}", files.size(), digest_clock.elapsed());
+		return h;
+	}();
+	return digest;
+}
+
+auto gse::gpu::store_wgsl(ISlangBlob* blob, const std::string_view body_path, const std::string_view entry_point, const std::string_view wrapper_source) -> void {
+	if (active_backend != backend_kind::webgpu) {
+		return;
+	}
+	static std::once_flag refreshed;
+	std::call_once(refreshed, [] {
+		const auto dir = wgsl_pack_dir();
+		const auto stamp = dir / "digest";
+		const auto current = std::format("{:016x}", shader_source_digest());
+		std::ifstream in(stamp);
+		std::string recorded;
+		in >> recorded;
+		if (recorded == current) {
+			return;
+		}
+		std::error_code ec;
+		std::filesystem::remove_all(dir, ec);
+		std::filesystem::create_directories(dir, ec);
+		std::ofstream(stamp, std::ios::trunc) << current;
+		log::println(log::category::assets, "wgsl pack: shader sources changed ({} -> {}), cleared {}", recorded.empty() ? "none" : recorded, current, dir.native_encoded_string());
+	});
+	const auto file = wgsl_pack_file(body_path, entry_point, wrapper_source);
+	std::error_code ec;
+	std::filesystem::create_directories(file.parent_path(), ec);
+	std::ofstream out(file, std::ios::binary | std::ios::trunc);
+	out.write(static_cast<const char*>(blob->getBufferPointer()), static_cast<std::streamsize>(blob->getBufferSize()));
+	if (!out) {
+		log::println(log::level::warning, log::category::assets, "wgsl pack: could not write {} for {}", file.native_encoded_string(), body_path);
+	}
 }
 
 auto gse::gpu::make_slang_session() -> owned_slang_session {
@@ -59,15 +186,16 @@ auto gse::gpu::make_slang_session() -> owned_slang_session {
 	}
 
 	const bool use_dxil = active_backend == backend_kind::dx12;
+	const bool use_wgsl = active_backend == backend_kind::webgpu;
 	slang::TargetDesc target{
-		.format = use_dxil ? slang_dxil : slang_spirv,
-		.profile = global->findProfile(use_dxil ? "sm_6_6" : "spirv_1_5"),
+		.format = use_dxil ? slang_dxil : use_wgsl ? slang_wgsl : slang_spirv,
+		.profile = global->findProfile(use_dxil ? "sm_6_6" : use_wgsl ? "wgsl" : "spirv_1_5"),
 		.floatingPointMode = use_dxil ? slang_floating_point_mode_precise : slang_floating_point_mode_default,
-		.forceGLSLScalarBufferLayout = !use_dxil,
+		.forceGLSLScalarBufferLayout = !use_dxil && !use_wgsl,
 	};
 
 	std::vector<slang::CompilerOptionEntry> compiler_options;
-	if (!use_dxil) {
+	if (!use_dxil && !use_wgsl) {
 		compiler_options.push_back(slang::CompilerOptionEntry{
 			.name = slang::CompilerOptionName::DebugInformation,
 			.value = {
@@ -281,6 +409,7 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 		dump_wrapper_source();
 		assert(false, "Failed to link compute shader module: {}", sanitized);
 	}
+	assert_wgsl_struct_layouts(program.get(), inputs.struct_layouts_fn, inputs.body_path);
 
 	Slang::ComPtr<ISlangBlob> blob;
 	if (slang_failed(program->getEntryPointCode(0, 0, blob.writeRef(), diags.writeRef())) || !blob) {
@@ -289,9 +418,8 @@ auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const 
 		assert(false, "Failed to get SPIR-V for compute shader: {}", sanitized);
 	}
 
-	const auto byte_size = blob->getBufferSize();
-	std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
-	std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+	store_wgsl(blob.get(), inputs.body_path, "main", wrapper_source);
+	auto spirv = code_words(blob.get());
 	strip_unused_ray_tracing_extension(spirv);
 	log::println(
 		log::level::info,
@@ -388,6 +516,7 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 		dump_wrapper_source();
 		assert(false, "Failed to link graphics program in {}", sanitized);
 	}
+	assert_wgsl_struct_layouts(program.get(), pod.struct_layouts_fn, pod.body_path);
 
 	for (std::size_t i = 0; i < pod.stage_count; ++i) {
 		const auto& stage_pod = pod.stages[i];
@@ -399,9 +528,8 @@ auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std
 			assert(false, "Failed to get SPIR-V for graphics entry point '{}' in {}", stage_pod.entry_point, sanitized);
 		}
 
-		const auto byte_size = blob->getBufferSize();
-		std::vector<std::uint32_t> spirv(byte_size / sizeof(std::uint32_t));
-		std::memcpy(spirv.data(), blob->getBufferPointer(), byte_size);
+		store_wgsl(blob.get(), pod.body_path, stage_pod.entry_point, wrapper_source);
+		auto spirv = code_words(blob.get());
 		strip_unused_ray_tracing_extension(spirv);
 
 		result.stages.push_back({

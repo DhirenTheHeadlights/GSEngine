@@ -53,15 +53,14 @@ export namespace gse::server {
 		) -> void;
 
 		auto update(
-			const structural<player_controller>& controller_auth,
-			const structural<player_input>& input_auth,
 			const entities& ents,
 			channel_write<activate_scene_request> channels,
 			const network::inbound_channel_t<MessagePack>& messages_out,
 			shared_view<actions::data> actions_s,
 			shared_view<physics::data> phys_s,
 			write<player_input>& inputs,
-			write<Components>&... comps
+			const network::owner_events_read<Components...>& owner_events,
+			network::replicated_access_t<Components>&... comps
 		) -> void;
 
 		template <network::is_network_message T>
@@ -91,8 +90,6 @@ export namespace gse::server {
 
 	private:
 		auto accept_connection(
-			const structural<player_controller>& controller_auth,
-			const structural<player_input>& input_auth,
 			const entities& ents,
 			const network::address& addr
 		) -> void;
@@ -236,7 +233,7 @@ auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_sy
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::update(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, const shared_view<physics::data> phys_s, write<player_input>& inputs, write<Components>&... comps) -> void {
+auto gse::server::host<MessagePack, Components...>::update(const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, const shared_view<physics::data> phys_s, write<player_input>& inputs, const network::owner_events_read<Components...>& owner_events, network::replicated_access_t<Components>&... comps) -> void {
 	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
 	const bool has_active_scene = m_active_scene.has_value();
 
@@ -313,7 +310,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 					}
 
 					m_endpoint.ensure_peer(msg.from);
-					accept_connection(controller_auth, input_auth, ents, msg.from);
+					accept_connection(ents, msg.from);
 					log::println(
 						log::category::network,
 						"Client [{}:{}] connected ({}/{})",
@@ -334,7 +331,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				drop_client(controllers, ents, msg.from);
 			}
 
-			accept_connection(controller_auth, input_auth, ents, msg.from);
+			accept_connection(ents, msg.from);
 		})) {
 			return;
 		}
@@ -462,7 +459,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 			m_pending_snapshots.clear();
 		}
 
-		network::replicate_deltas(send_all, m_endpoint.peers(), comps...);
+		network::replicate_deltas(send_all, m_endpoint.peers(), owner_events, comps...);
 
 		const int stepped = phys_s.interpolation.steps;
 
@@ -540,7 +537,7 @@ auto gse::server::host<MessagePack, Components...>::drop_client(write<player_con
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const network::address& addr) -> void {
+auto gse::server::host<MessagePack, Components...>::accept_connection(const entities& ents, const network::address& addr) -> void {
 	if (!m_active_scene.has_value()) {
 		return;
 	}
@@ -548,8 +545,8 @@ auto gse::server::host<MessagePack, Components...>::accept_connection(const stru
 	const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
 	const auto controller_id = generate_id(controller_name);
 	ents.ensure_active(controller_id);
-	controller_auth.add(controller_id);
-	input_auth.add(controller_id);
+	ents.add_component<player_controller>(controller_id);
+	ents.add_component<player_input>(controller_id);
 	m_clients.emplace(
 		addr,
 		client_data{

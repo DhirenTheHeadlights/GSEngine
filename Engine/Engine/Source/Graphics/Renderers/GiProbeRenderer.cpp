@@ -8,8 +8,8 @@ import :camera_system;
 import :directional_light;
 import :geometry_collector;
 import :light_packing;
+import :lighting_source;
 import :point_light;
-import :rt_shadow_renderer;
 import :shared_shaders;
 import :spot_light;
 
@@ -35,11 +35,33 @@ namespace gse::renderer::gi_probe {
 		std::uint32_t frame_counter;
 		length trace_t_max;
 		std::uint32_t light_count;
+		std::uint32_t history_valid;
+		std::uint32_t first_probe;
 	};
 
 	struct [[= shaders::shader_constant_block]] gi_probe_limits {
 		float surface_sky_response = 0.1f;
 		float temporal_blend = 0.0625f;
+		std::uint32_t capture_resolution = gi_probe::capture_resolution;
+	};
+
+	struct [[= shaders::shader_struct]]
+	capture_push_constants {
+		vec3<position> origin_world;
+		length spacing;
+		vec3u grid_dim;
+		std::uint32_t first_probe;
+		length trace_t_max;
+		length near_plane;
+		std::uint32_t probe_count;
+		std::uint32_t light_count;
+		std::uint32_t meshlet_offset;
+		std::uint32_t meshlet_count;
+		std::uint32_t first_instance;
+	};
+
+	struct [[= shaders::texture2d]] capture_in {
+		using element = vec4f;
 	};
 
 	struct [[= shaders::tlas]] scene_tlas {};
@@ -62,16 +84,78 @@ namespace gse::renderer::gi_probe {
 		using element = shaders::forward::light;
 	};
 
-	using shader_binding_types = type_pack<scene_tlas, irradiance_atlas_out, material_palette, sky_view_in, sky_view_sampler, lights, atmosphere::atmosphere_ubo>;
+	using common_bindings = type_pack<irradiance_atlas_out, material_palette, sky_view_in, sky_view_sampler, lights, atmosphere::atmosphere_ubo>;
 
-	using entry = gpu::compute_entry<
-		gpu::body_path<"Compute/gi_probe_update">,
+	template <typename TechniqueBindings, typename TechniqueHelpers, fixed_string Body = "Compute/gi_probe_update">
+	using update_entry = gpu::compute_entry<
+		gpu::body_path<Body>,
 		gpu::types<shaders::forward::shader_types, type_pack<gi_probe_limits>>,
-		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Atmosphere/atmosphere_common", "Standard3D/light_eval">,
+		gpu::bindings<typename type_pack_concat<TechniqueBindings, common_bindings>::type>,
+		gpu::helpers<"Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/probe_radiance">,
+		TechniqueHelpers,
+		gpu::helpers<"Standard3D/probe_irradiance_project">,
 		gpu::threads<rays_per_probe>,
 		gpu::push_constant<push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_id, gpu::group_thread_id>
+	>;
+
+	using ray_traced_entry = update_entry<type_pack<scene_tlas>, gpu::helpers<"Standard3D/probe_radiance_ray_traced">>;
+
+	using raster_helpers = gpu::helpers<"Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_radiance_raster">;
+
+	using raster_entry = update_entry<type_pack<capture_in>, raster_helpers>;
+
+	using raster_overwrite_entry = update_entry<type_pack<capture_in>, raster_helpers, "Compute/gi_probe_update_overwrite">;
+
+	using capture_bindings = type_pack<
+		material_palette,
+		lights,
+		sky_view_in,
+		sky_view_sampler,
+		atmosphere::atmosphere_ubo,
+		shaders::meshlet::vertices_buffer,
+		shaders::meshlet::meshlets_buffer,
+		shaders::meshlet::meshlet_vertex_indices,
+		shaders::meshlet::meshlet_triangles,
+		shaders::meshlet::meshlet_bounds_buffer,
+		shaders::meshlet::instance_data_buffer
+	>;
+
+	using capture_vertex_bindings = type_pack<
+		material_palette,
+		lights,
+		sky_view_in,
+		sky_view_sampler,
+		atmosphere::atmosphere_ubo,
+		shaders::meshlet::vertices_buffer,
+		shaders::meshlet::instance_data_buffer
+	>;
+
+	using capture_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/gi_probe_capture">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, type_pack<gi_probe_limits>>,
+		gpu::bindings<capture_bindings>,
+		gpu::helpers<"Standard3D/meshlet_common", "Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_capture_shading">,
+		gpu::amplification_stage<"as_main">,
+		gpu::mesh_stage<"ms_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<capture_push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::color_targets<gpu::color_format::hdr>,
+		gpu::depth<true, true, gpu::compare_op::greater_or_equal>
+	>;
+
+	using capture_vertex_entry = gpu::graphics_entry<
+		gpu::body_path<"Graphics/gi_probe_capture_vertex">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, type_pack<gi_probe_limits>>,
+		gpu::bindings<capture_vertex_bindings>,
+		gpu::helpers<"Standard3D/meshlet_common", "Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_capture_shading">,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<capture_push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::color_targets<gpu::color_format::hdr>,
+		gpu::depth<true, true, gpu::compare_op::greater_or_equal>
 	>;
 
 	auto atlas_extent(
@@ -83,11 +167,87 @@ namespace gse::renderer::gi_probe {
 		data& d
 	) -> void;
 
-	auto rebind_tlas_views(
+	auto create_capture_targets(
 		shared_view<gpu::context::data> gpu_s,
-		shared_view<rt_shadow::data> rt_state,
 		data& d
 	) -> void;
+
+	auto record_capture(
+		gpu::recording_context& rec,
+		const geometry_collector::render_data& geometry,
+		const capture_push_constants& base,
+		const gpu::binding_args<capture_bindings>& bindings,
+		bool vertex_pulled
+	) -> void;
+}
+
+auto gse::renderer::gi_probe::create_capture_targets(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+	const vec2u extent{ 6 * capture_resolution, probes_per_capture * capture_resolution };
+	d.capture_radiance = gpu_s.device->create_image(
+		{
+			.size = extent,
+			.format = gpu::image_format::r16g16b16a16_sfloat,
+			.usage = { gpu::image_flag::color_attachment, gpu::image_flag::sampled },
+		},
+		"gi_probe.capture_radiance"
+	);
+	gpu::transition_image_to(*gpu_s.device, d.capture_radiance);
+	d.capture_depth = gpu_s.device->create_image(
+		{
+			.size = extent,
+			.format = gpu::image_format::d32_sfloat,
+			.usage = { gpu::image_flag::depth_attachment },
+		},
+		"gi_probe.capture_depth"
+	);
+	gpu::transition_image_to(*gpu_s.device, d.capture_depth);
+}
+
+auto gse::renderer::gi_probe::record_capture(gpu::recording_context& rec, const geometry_collector::render_data& geometry, const capture_push_constants& base, const gpu::binding_args<capture_bindings>& bindings, const bool vertex_pulled) -> void {
+	for (const auto& batch : geometry.normal_batches) {
+		const auto& mesh = batch.key.resolve_mesh();
+		if (!mesh.has_meshlets() || !mesh.upload_token().ready() || batch.instance_count == 0) {
+			continue;
+		}
+
+		const auto& ml = mesh.meshlet_gpu();
+		const auto vertices_slot = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot();
+
+		if (vertex_pulled) {
+			auto pc = base;
+			pc.first_instance = batch.first_instance;
+			rec.push_bindings<capture_vertex_entry>(
+				pc,
+				{
+					.material_palette = bindings.material_palette,
+					.lights = bindings.lights,
+					.sky_view_in = bindings.sky_view_in,
+					.sky_view_sampler = bindings.sky_view_sampler,
+					.atmosphere_ubo = bindings.atmosphere_ubo,
+					.vertices_buffer = vertices_slot,
+					.instance_data_buffer = bindings.instance_data_buffer,
+				}
+			);
+			rec.bind_index(mesh.index_gpu_buffer());
+			rec.draw_indexed(static_cast<std::uint32_t>(mesh.indices().size()), batch.instance_count * base.probe_count * 6);
+			continue;
+		}
+
+		auto pc = base;
+		pc.meshlet_offset = 0;
+		pc.meshlet_count = mesh.meshlet_count();
+		pc.first_instance = batch.first_instance;
+
+		auto args = bindings;
+		args.vertices_buffer = vertices_slot;
+		args.meshlets_buffer = ml.descriptors.slot();
+		args.meshlet_vertex_indices = ml.vertices.slot();
+		args.meshlet_triangles = ml.triangles.slot();
+		args.meshlet_bounds_buffer = ml.bounds.slot();
+
+		rec.push_bindings<capture_entry>(pc, args);
+		rec.draw_mesh_tasks((pc.meshlet_count + 31) / 32, batch.instance_count, pc.probe_count * 6);
+	}
 }
 
 auto gse::renderer::gi_probe::grid_dim_for(const quality_level quality) -> vec3u {
@@ -108,27 +268,27 @@ auto gse::renderer::gi_probe::recreate_atlas(const shared_view<gpu::context::dat
 			.size = ext,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"gi_irradiance_atlas"
 	);
 	gpu::transition_image_to(*gpu_s.device, d.irradiance_atlas);
 }
 
-auto gse::renderer::gi_probe::rebind_tlas_views(const shared_view<gpu::context::data> gpu_s, const shared_view<rt_shadow::data> rt_state, data& d) -> void {
-	for (std::size_t i = 0; i < per_frame_resource<gpu::bindless_handle>::frames_in_flight; ++i) {
-		const auto fi = static_cast<std::uint32_t>(i);
-		if (!d.tlas_views[i].valid()) {
-			d.tlas_views[i] = gpu_s.device->allocate_acceleration_structure_slot();
-		}
-		const auto tlas_address = (*rt_state.tlas_ptrs[fi]).device_address();
-		d.tlas_addresses[i] = tlas_address;
-		gpu_s.device->write_acceleration_structure(d.tlas_views[i].slot(), tlas_address);
+auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<lighting::data> lighting_s, const shared_view<geometry_collector::data> gc_state, data& d) -> async::task<> {
+	if (lighting_s.lighting_technique == lighting::technique::ray_traced) {
+		d.update_pipeline = gpu::build_compute_program(*gpu_s.device, ray_traced_entry::pod);
 	}
-}
-
-auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<rt_shadow::data> rt_state, const shared_view<geometry_collector::data> gc_state, data& d) -> async::task<> {
-	d.update_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+	else {
+		d.vertex_pulled = !gpu_s.device->capabilities().mesh_shaders;
+		d.update_pipeline = d.vertex_pulled
+			? gpu::build_compute_program(*gpu_s.device, raster_overwrite_entry::pod)
+			: gpu::build_compute_program(*gpu_s.device, raster_entry::pod);
+		d.capture_pipeline = d.vertex_pulled
+			? gpu::build_graphics_program(*gpu_s.device, capture_vertex_entry::pod)
+			: gpu::build_graphics_program(*gpu_s.device, capture_entry::pod);
+		create_capture_targets(gpu_s, d);
+	}
+	log::println(log::category::render, "gi_probe: capture path {}", lighting_s.lighting_technique == lighting::technique::ray_traced ? "ray_traced" : d.vertex_pulled ? "vertex_pulled" : "mesh");
 	d.atlas_grid_dim = grid_dim_for(d.quality);
 
 	d.sky_view_sampler = gpu_s.device->register_sampler(
@@ -142,7 +302,6 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 	);
 
 	recreate_atlas(gpu_s, d);
-	rebind_tlas_views(gpu_s, rt_state, d);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.light_buffers[i] = gpu_s.device->create_buffer(
@@ -150,21 +309,24 @@ auto gse::renderer::gi_probe::init(context& ctx, const shared_view<gpu::context:
 				.size = sizeof(shaders::forward::light) * max_lights,
 				.stride = sizeof(shaders::forward::light),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			}
 		);
 	}
 
-	gpu_s.render_graph->on_resize(
-		[gpu_s, rt_state, &d]() {
-			rebind_tlas_views(gpu_s, rt_state, d);
-		}
-	);
-
 	return {};
 }
 
-auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<geometry_collector::data> gc_r, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
+auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<geometry_collector::data> gc_r, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const channel_read<camera::temporal_reset_request> reset_in, const shared_view<lighting::data> lighting_s, const channel_read<lighting_source::ray_traced_scene> scene_in) -> async::task<> {
+	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
+		d.frame_counter = 0;
+		d.history_reset = true;
+		d.capture_cursor = 0;
+	}
+
+	if (const auto& published = scene_in.of<lighting_source::ray_traced_scene>(); !published.empty()) {
+		d.ray_traced_scene = published[published.size() - 1];
+	}
+
 	if (d.quality == quality_level::off) {
 		co_return;
 	}
@@ -204,9 +366,91 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 		d.light_buffers[frame_index].host_write(packed_lights.data(), light_count * sizeof(shaders::forward::light));
 	}
 
-	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.update_pipeline).after<^^rt_shadow::frame, ^^atmosphere::sky_view_pass>();
+	if (lighting_s.lighting_technique == lighting::technique::raster) {
+		const length near_plane = meters(0.05f);
+		const std::uint32_t total_probes = active_grid_dim.x() * active_grid_dim.y() * active_grid_dim.z();
+		const auto first_probe = d.capture_cursor;
+		d.capture_cursor = (d.capture_cursor + probes_per_capture) % total_probes;
 
-	rec.dispatch<entry>(
+		{
+			auto capture_rec = co_await gpu::pass<^^capture_pass>(pass_out)
+				.pipeline(d.capture_pipeline)
+				.color(gpu::clear_color(gpu::color_clear{ 0.0f, 0.0f, 0.0f, 0.0f }, d.capture_radiance))
+				.depth(gpu::clear_depth(gpu::depth_clear{ 0.0f }, d.capture_depth))
+				.after<^^atmosphere::sky_view_pass>();
+			const auto capture_extent = d.capture_radiance.extent();
+			capture_rec.set_viewport(vec2u{ capture_extent.x(), capture_extent.y() });
+			capture_rec.set_scissor(vec2u{ capture_extent.x(), capture_extent.y() });
+			record_capture(
+				capture_rec,
+				rt_render_items[0],
+				{
+					.origin_world = d.origin_world,
+					.spacing = d.spacing,
+					.grid_dim = active_grid_dim,
+					.first_probe = first_probe,
+					.trace_t_max = d.trace_t_max,
+					.near_plane = near_plane,
+					.probe_count = probes_per_capture,
+					.light_count = static_cast<std::uint32_t>(light_count),
+				},
+				{
+					.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
+					.lights = d.light_buffers[frame_index].slot(),
+					.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
+					.sky_view_sampler = d.sky_view_sampler.slot(),
+					.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
+					.instance_data_buffer = gc_r.instance_buffer[frame_index].slot(),
+				},
+				d.vertex_pulled
+			);
+		}
+
+		auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.update_pipeline).after<^^capture_pass>();
+		const auto dispatch_update = [&]<typename Entry>() {
+			rec.dispatch<Entry>(
+				{
+					.origin_world = d.origin_world,
+					.spacing = d.spacing,
+					.grid_dim_uniform = active_grid_dim,
+					.frame_counter = d.frame_counter,
+					.trace_t_max = d.trace_t_max,
+					.light_count = static_cast<std::uint32_t>(light_count),
+					.history_valid = 0u,
+					.first_probe = first_probe,
+				},
+				{
+					.capture_in = d.capture_radiance.sampled_slot(),
+					.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
+					.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
+					.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
+					.sky_view_sampler = d.sky_view_sampler.slot(),
+					.lights = d.light_buffers[frame_index].slot(),
+					.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
+				},
+				vec3u{ probes_per_capture, 1u, 1u }
+			);
+		};
+		if (d.vertex_pulled) {
+			dispatch_update.template operator()<raster_overwrite_entry>();
+		}
+		else {
+			dispatch_update.template operator()<raster_entry>();
+		}
+
+		++d.frame_counter;
+		d.history_reset = false;
+		co_return;
+	}
+
+	if (!d.ray_traced_scene) {
+		co_return;
+	}
+	const auto& scene = *d.ray_traced_scene;
+
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.update_pipeline).after(std::span(&scene.pass, 1)).after<^^atmosphere::sky_view_pass>();
+
+	rec.dispatch<ray_traced_entry>(
 		{
 			.origin_world = d.origin_world,
 			.spacing = d.spacing,
@@ -214,9 +458,11 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 			.frame_counter = d.frame_counter,
 			.trace_t_max = d.trace_t_max,
 			.light_count = static_cast<std::uint32_t>(light_count),
+			.history_valid = d.history_reset ? 0u : 1u,
+			.first_probe = 0,
 		},
 		{
-			.scene_tlas = gpu::make_acceleration_structure_arg(d.tlas_addresses[frame_index], d.tlas_views[frame_index].slot()),
+			.scene_tlas = gpu::make_acceleration_structure_arg(scene.tlas_addresses[frame_index], scene.tlas_slots[frame_index]),
 			.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
 			.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
 			.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
@@ -228,4 +474,5 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 	);
 
 	++d.frame_counter;
+	d.history_reset = false;
 }

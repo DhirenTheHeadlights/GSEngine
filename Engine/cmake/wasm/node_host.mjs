@@ -292,6 +292,14 @@ function host_env (imports, memory, requests) {
     requests.text.set (line);
     Atomics.store (requests.length, 0, line.length);
   };
+  imports.env.gse_host_surface = (out) => {
+    new Int32Array (memory ().buffer, out, 6).fill (0);
+  };
+  imports.env.gse_host_input = () => 0;
+  imports.env.gse_host_capture = () => {};
+  const idle = new Int32Array (new SharedArrayBuffer (4));
+  imports.env.gse_host_wait = (ms) => { Atomics.wait (idle, 0, 0, ms); };
+  imports.env.gse_host_wake = () => {};
   imports.env.gse_host_open_url = (ptr, len) => {
     trace_thread (`open_url: ${new TextDecoder ().decode (bytes (ptr, len))} (no browser under node)`);
   };

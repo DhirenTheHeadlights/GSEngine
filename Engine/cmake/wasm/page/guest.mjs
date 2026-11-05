@@ -1,5 +1,9 @@
 import {
   call, control, LOCAL_CALLS, REPORT, EXIT, SPAWN, RELAUNCH, OPEN_URL, OK,
+  SURFACE_SIZE, SURFACE_VISIBLE, SURFACE_CAPTURE, SURFACE_LOCKED, SURFACE_RESIZE_SEQ, SURFACE_MARK,
+  SURFACE_OUT_SLOTS,
+  INPUT_HEAD, INPUT_TAIL, INPUT_HEADER_BYTES, INPUT_RECORD_BYTES, INPUT_CAPACITY, bump,
+  ring, ring_write, ring_drain,
 } from "./protocol.mjs";
 
 let ctrl, names, self_tid;
@@ -118,10 +122,52 @@ function wasi_imports (module, mem, env) {
   return wasi;
 }
 
-function host_env (mem) {
+function host_env (mem, surface, input, wake, gpu, events) {
+  let seen = Atomics.load (wake, 0);
+  const commands = gpu ? ring (gpu) : null;
+  const replies = events ? ring (events) : null;
   const text = (ptr, len) =>
     new TextDecoder ().decode (new Uint8Array (mem ().buffer, ptr, len).slice ());
+  const header = new Int32Array (input, 0, INPUT_HEADER_BYTES / 4);
+  const records = new Uint8Array (input, INPUT_HEADER_BYTES);
   return {
+    gse_host_surface: (out) => {
+      const size = Atomics.load (surface, SURFACE_SIZE);
+      const slots = new Int32Array (mem ().buffer, out, SURFACE_OUT_SLOTS);
+      slots[0] = Number (size >> 32n);
+      slots[1] = Number (size & 0xffffffffn);
+      slots[2] = Number (Atomics.load (surface, SURFACE_VISIBLE));
+      slots[3] = Number (Atomics.load (surface, SURFACE_LOCKED));
+      slots[4] = Number (Atomics.load (surface, SURFACE_RESIZE_SEQ));
+      slots[5] = Number (Atomics.load (surface, SURFACE_MARK));
+    },
+    gse_host_capture: (want) => {
+      Atomics.store (surface, SURFACE_CAPTURE, BigInt (want));
+      Atomics.notify (surface, SURFACE_CAPTURE);
+    },
+    gse_host_input: (out, max) => {
+      const tail = Atomics.load (header, INPUT_TAIL);
+      const count = Math.min ((Atomics.load (header, INPUT_HEAD) - tail) | 0, max);
+      const into = new Uint8Array (mem ().buffer, out, count * INPUT_RECORD_BYTES);
+      for (let i = 0; i < count; ++i) {
+        const at = ((tail + i) & (INPUT_CAPACITY - 1)) * INPUT_RECORD_BYTES;
+        into.set (records.subarray (at, at + INPUT_RECORD_BYTES), i * INPUT_RECORD_BYTES);
+      }
+      Atomics.store (header, INPUT_TAIL, (tail + count) | 0);
+      return count;
+    },
+    gse_host_wait: (ms) => {
+      Atomics.wait (wake, 0, seen, ms);
+      seen = Atomics.load (wake, 0);
+    },
+    gse_host_wake: () => bump (wake),
+    gse_host_gpu: (ptr, count, tail, tail_bytes) => {
+      if (commands === null) throw new Error ("gpu wire: this page has no WebGPU worker");
+      ring_write (commands, new Uint32Array (mem ().buffer, ptr, count),
+                  tail_bytes > 0 ? new Uint8Array (mem ().buffer, tail, tail_bytes) : undefined);
+    },
+    gse_host_gpu_poll: (out, max) =>
+      replies === null ? 0 : ring_drain (replies, new Uint32Array (mem ().buffer, out, max), max),
     gse_host_relaunch: (ptr, len) => { call (ctrl, names, RELAUNCH, [], text (ptr, len)); },
     gse_host_open_url: (ptr, len) => { call (ctrl, names, OPEN_URL, [], text (ptr, len)); },
   };
@@ -137,7 +183,7 @@ function spawner (ids) {
 }
 
 onmessage = async (e) => {
-  const { kind, module, mem, text, env, ids, tid, arg } = e.data;
+  const { kind, module, mem, text, env, ids, tid, arg, surface, input, wake, gpu, events } = e.data;
   self_tid = tid ?? 1;
   ctrl = control (e.data.ctrl, text, self_tid);
   names = e.data.names;
@@ -149,7 +195,7 @@ onmessage = async (e) => {
   const imports = supply (module, mem, {
     wasi_snapshot_preview1: wasi_imports (module, memory, env),
     wasi: { "thread-spawn": spawner (ids) },
-    env: host_env (memory),
+    env: host_env (memory, surface, input, wake, gpu, events),
   });
   try {
     instance = await WebAssembly.instantiate (module, imports);

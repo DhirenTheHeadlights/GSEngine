@@ -38,11 +38,11 @@ export namespace sandbox::player_sync {
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d,
 		gse::read<gse::skeleton_instance_component> skeletons,
-		gse::write<gse::physics::motion_component> motions,
+		gse::channel_write<gse::physics::set_request<^^gse::physics::motion_component::body>, gse::physics::set_request<^^gse::physics::motion_component::current_velocity>, gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>> physics_out,
+		gse::read<gse::physics::motion_component> motions,
 		gse::write<gse::physics::motor_component> motors,
 		gse::write<gse::physics::kinematic_target_component> kinematic_targets,
-		gse::write<gse::clip_player_component> players,
-		gse::structural<gse::physics::kinematic_target_component>
+		gse::write<gse::clip_player_component> players
 	) -> gse::async::task<>;
 }
 
@@ -53,7 +53,7 @@ namespace sandbox::player_sync {
 	constexpr std::size_t max_remote_samples = 32;
 }
 
-auto sandbox::player_sync::run(gse::context& ctx, data& d, const gse::channel_read<gse::network::received<player_state>> states_in, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d, gse::read<gse::skeleton_instance_component> skeletons, gse::write<gse::physics::motion_component> motions, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::kinematic_target_component> kinematic_targets, gse::write<gse::clip_player_component> players, gse::structural<gse::physics::kinematic_target_component>) -> gse::async::task<> {
+auto sandbox::player_sync::run(gse::context& ctx, data& d, const gse::channel_read<gse::network::received<player_state>> states_in, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d, gse::read<gse::skeleton_instance_component> skeletons, const gse::channel_write<gse::physics::set_request<^^gse::physics::motion_component::body>, gse::physics::set_request<^^gse::physics::motion_component::current_velocity>, gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>> physics_out, gse::read<gse::physics::motion_component> motions, gse::write<gse::physics::motor_component> motors, gse::write<gse::physics::kinematic_target_component> kinematic_targets, gse::write<gse::clip_player_component> players) -> gse::async::task<> {
 	const auto local_character = world_d.local_controlled_entity;
 	const auto* local_skeleton = local_character.exists() ? skeletons.find(local_character) : nullptr;
 	const auto local_proxy = local_skeleton ? local_skeleton->proxy : gse::id{};
@@ -123,7 +123,7 @@ auto sandbox::player_sync::run(gse::context& ctx, data& d, const gse::channel_re
 		}
 
 		if (!track.previous_motion) {
-			auto* mc = motions.find(entity);
+			const auto* mc = motions.find(entity);
 			if (!mc) {
 				continue;
 			}
@@ -139,9 +139,18 @@ auto sandbox::player_sync::run(gse::context& ctx, data& d, const gse::channel_re
 				continue;
 			}
 			track.previous_motion = *mc;
-			mc->body = gse::physics::kinematic_body{};
-			mc->current_velocity = {};
-			mc->angular_velocity = {};
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::body>>({
+				.target = entity,
+				.value = gse::physics::kinematic_body{},
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::current_velocity>>({
+				.target = entity,
+				.value = {},
+			});
+			physics_out.push<gse::physics::set_request<^^gse::physics::motion_component::angular_velocity>>({
+				.target = entity,
+				.value = {},
+			});
 			if (auto* motor = motors.find(entity)) {
 				motor->velocity_drive_target = {};
 			}

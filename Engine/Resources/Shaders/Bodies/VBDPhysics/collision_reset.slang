@@ -10,7 +10,7 @@ void collision_reset(uint3 dispatch_id) {
                 || i == state_coloring_fallback_index
                 || i == state_coloring_conflict_index;
             bool hash_field = i >= state_pass_hash_base_index;
-            bool tick_scope_field = i >= state_tick_hash_base_index;
+            bool tick_scope_field = i >= state_tick_scope_base_index;
             if (tick_scope_field || (pc.substep != 0 && (coloring_field || hash_field))) {
                 continue;
             }

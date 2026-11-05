@@ -3,18 +3,35 @@ export module sandbox:scenarios;
 import std;
 
 import gse;
+import gse.gpu_backend;
 import gse.scenario;
+
+import :dev_spawn_system;
+import :spawn_params;
+
+namespace sandbox::scenario_settings {
+	using window = gse::window::data;
+	using physics_debug = gse::renderer::physics_debug::data;
+	using forward = gse::renderer::forward::data;
+	using tonemap = gse::renderer::tonemap::data;
+	using clouds = gse::renderer::cloud::data;
+	using grid = gse::renderer::sdf_grid::data;
+	using atmosphere = gse::renderer::atmosphere::data;
+	using physics = gse::physics::data;
+	using dev_spawn = sandbox::dev_spawn::data;
+}
+
+namespace ss = sandbox::scenario_settings;
 
 export namespace sandbox::scenarios {
 	[[= gse::scenario::info{
 		.name = "physics_stress",
 		.scene = "Sandbox",
 		.headless = true,
-		.settings = {
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
 	auto physics_stress(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -23,24 +40,48 @@ export namespace sandbox::scenarios {
 		.name = "physics_stress_via_input",
 		.scene = "Sandbox",
 		.headless = true,
-		.settings = {
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
 	auto physics_stress_via_input(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "physics_grow",
+		.scene = "Sandbox",
+		.headless = true,
+		.gpu_solver = true,
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 8 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 16 },
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 70 }
+	]]
+	auto physics_grow(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_sleep_bench",
+		.scene = "Grass",
+		.headless = true,
+		.gpu_solver = true,
+		.warmup_frames = 300,
+		.frames = 600,
+	}]]
+	auto grass_sleep_bench(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
 	[[= gse::scenario::info{
 		.name = "render_stress",
 		.scene = "Sandbox",
-		.settings = {
-			"Window.present_mode=immediate",
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
 	auto render_stress(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -50,16 +91,15 @@ export namespace sandbox::scenarios {
 		.scene = "Sky",
 		.warmup_frames = 0,
 		.frames = 700,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.45",
-			"Grid.fade_distance=14000 m",
-			"Grid.show_labels=false",
-			"Grid.minor_spacing=50 m",
-			"Grid.major_spacing=500 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.45f },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(14000.f) },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::minor_spacing>{ gse::meters(50.f) },
+		= gse::scenario::pin<^^ss::grid::major_spacing>{ gse::meters(500.f) }
+	]]
 	auto sky_render_bench(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -69,20 +109,19 @@ export namespace sandbox::scenarios {
 		.scene = "LightHall",
 		.warmup_frames = 0,
 		.frames = 700,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Grid.enabled=false",
-			"Dev Spawn.lights.clusters=26",
-			"Dev Spawn.lights.lights_per_cluster=14",
-			"Dev Spawn.lights.cluster_radius=4 m",
-			"Dev Spawn.lights.field_radius=52 m",
-			"Dev Spawn.lights.field_height=9 m",
-			"Dev Spawn.lights.intensity=16 W/m^2",
-			"Dev Spawn.lights.falloff_radius=36 m",
-			"Dev Spawn.lights.drift=0 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::enabled>{ false },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::clusters>{ 26 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::lights_per_cluster>{ 14 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::cluster_radius>{ gse::meters(4.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_radius>{ gse::meters(52.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_height>{ gse::meters(9.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::intensity>{ gse::watts_per_square_meter(16.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::falloff_radius>{ gse::meters(36.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::drift>{ gse::meters(0.f) }
+	]]
 	auto light_hall_bench(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -137,11 +176,10 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 420,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false }
+	]]
 	auto record_clip(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -152,13 +190,12 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 780,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Dev Spawn.pyramid.base_count=60",
-			"Physics.velocity_sleep_threshold=0 m/s",
-			"Graphics.enabled=false",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 60 },
+		= gse::scenario::pin<^^ss::physics::velocity_sleep_threshold>{ gse::meters_per_second(0.f) },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false }
+	]]
 	auto solver_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -169,16 +206,15 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 700,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.45",
-			"Grid.fade_distance=14000 m",
-			"Grid.show_labels=false",
-			"Grid.minor_spacing=50 m",
-			"Grid.major_spacing=500 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.45f },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(14000.f) },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::minor_spacing>{ gse::meters(50.f) },
+		= gse::scenario::pin<^^ss::grid::major_spacing>{ gse::meters(500.f) }
+	]]
 	auto atmosphere_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -189,17 +225,16 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 1150,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.50",
-			"Clouds.weather_contrast=2.6",
-			"Clouds.cloud_type=0.90",
-			"Clouds.shadow_strength=1.0",
-			"Grid.show_labels=false",
-			"Grid.fade_distance=1200 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.50f },
+		= gse::scenario::pin<^^ss::clouds::weather_contrast>{ 2.6f },
+		= gse::scenario::pin<^^ss::clouds::cloud_type>{ 0.90f },
+		= gse::scenario::pin<^^ss::clouds::shadow_strength>{ 1.0f },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(1200.f) }
+	]]
 	auto cloud_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -211,16 +246,15 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 1150,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.40",
-			"Clouds.weather_contrast=3.0",
-			"Clouds.shadow_strength=1.0",
-			"Grid.show_labels=false",
-			"Grid.fade_distance=400 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.40f },
+		= gse::scenario::pin<^^ss::clouds::weather_contrast>{ 3.0f },
+		= gse::scenario::pin<^^ss::clouds::shadow_strength>{ 1.0f },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(400.f) }
+	]]
 	auto tumbler_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -231,17 +265,16 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 1700,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.40",
-			"Clouds.weather_contrast=3.0",
-			"Clouds.cloud_type=0.85",
-			"Clouds.shadow_strength=1.0",
-			"Grid.fade_distance=2000 m",
-			"Grid.show_labels=false",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.40f },
+		= gse::scenario::pin<^^ss::clouds::weather_contrast>{ 3.0f },
+		= gse::scenario::pin<^^ss::clouds::cloud_type>{ 0.85f },
+		= gse::scenario::pin<^^ss::clouds::shadow_strength>{ 1.0f },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(2000.f) },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false }
+	]]
 	auto sunset_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -252,14 +285,42 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 660,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Dev Spawn.pyramid.base_count=34",
-			"Graphics.enabled=false",
-			"Atmosphere.sun_elevation=-8 deg",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 34 },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::atmosphere::sun_elevation>{ gse::degrees(-8.f) }
+	]]
 	auto lighting_showcase(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "lighting_parity",
+		.scene = "Pyramid",
+		.warmup_frames = 0,
+		.frames = 480,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 34 },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::atmosphere::sun_elevation>{ gse::degrees(25.f) }
+	]]
+	auto lighting_parity(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "textured_parity",
+		.scene = "ParityTextured",
+		.warmup_frames = 0,
+		.frames = 480,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::atmosphere::sun_elevation>{ gse::degrees(25.f) }
+	]]
+	auto textured_parity(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
@@ -269,20 +330,19 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 900,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Grid.enabled=false",
-			"Dev Spawn.lights.clusters=26",
-			"Dev Spawn.lights.lights_per_cluster=14",
-			"Dev Spawn.lights.cluster_radius=4 m",
-			"Dev Spawn.lights.field_radius=52 m",
-			"Dev Spawn.lights.field_height=9 m",
-			"Dev Spawn.lights.intensity=16 W/m^2",
-			"Dev Spawn.lights.falloff_radius=36 m",
-			"Dev Spawn.lights.drift=5 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::enabled>{ false },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::clusters>{ 26 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::lights_per_cluster>{ 14 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::cluster_radius>{ gse::meters(4.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_radius>{ gse::meters(52.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_height>{ gse::meters(9.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::intensity>{ gse::watts_per_square_meter(16.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::falloff_radius>{ gse::meters(36.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::drift>{ gse::meters(5.f) }
+	]]
 	auto light_hall_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -294,14 +354,13 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 1020,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Clouds.cloud_coverage=0.40",
-			"Grid.show_labels=false",
-			"Grid.fade_distance=400 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.40f },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(400.f) }
+	]]
 	auto carousel_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -312,13 +371,12 @@ export namespace sandbox::scenarios {
 		.video_encode = true,
 		.warmup_frames = 0,
 		.frames = 520,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Grid.show_labels=false",
-			"Grid.fade_distance=400 m",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::show_labels>{ false },
+		= gse::scenario::pin<^^ss::grid::fade_distance>{ gse::meters(400.f) }
+	]]
 	auto dominoes_showcase(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -328,16 +386,15 @@ export namespace sandbox::scenarios {
 		.scene = "Sky",
 		.warmup_frames = 0,
 		.frames = 1080,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Grid.enabled=false",
-			"Clouds.cloud_coverage=0.45",
-			"Graphics.reflection_quality=high",
-			"Graphics.adaptation_time_bright=0.05 s",
-			"Graphics.adaptation_time_dark=0.05 s",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.45f },
+		= gse::scenario::pin<^^ss::forward::reflection_quality>{ gse::renderer::forward::reflection_quality_level::high },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_bright>{ gse::seconds(0.05f) },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_dark>{ gse::seconds(0.05f) }
+	]]
 	auto sky_horizon_probe(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -347,22 +404,21 @@ export namespace sandbox::scenarios {
 		.scene = "LightHall",
 		.warmup_frames = 0,
 		.frames = 1080,
-		.settings = {
-			"Window.present_mode=immediate",
-			"Graphics.enabled=false",
-			"Grid.enabled=false",
-			"Dev Spawn.lights.clusters=26",
-			"Dev Spawn.lights.lights_per_cluster=14",
-			"Dev Spawn.lights.cluster_radius=4 m",
-			"Dev Spawn.lights.field_radius=52 m",
-			"Dev Spawn.lights.field_height=9 m",
-			"Dev Spawn.lights.intensity=16 W/m^2",
-			"Dev Spawn.lights.falloff_radius=36 m",
-			"Dev Spawn.lights.drift=0 m",
-			"Graphics.adaptation_time_bright=0.05 s",
-			"Graphics.adaptation_time_dark=0.05 s",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::enabled>{ false },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::clusters>{ 26 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::lights_per_cluster>{ 14 },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::cluster_radius>{ gse::meters(4.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_radius>{ gse::meters(52.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::field_height>{ gse::meters(9.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::intensity>{ gse::watts_per_square_meter(16.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::falloff_radius>{ gse::meters(36.f) },
+		= gse::scenario::pin<^^ss::dev_spawn::lights, ^^light_field_params::drift>{ gse::meters(0.f) },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_bright>{ gse::seconds(0.05f) },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_dark>{ gse::seconds(0.05f) }
+	]]
 	auto hall_horizon_probe(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -374,12 +430,11 @@ export namespace sandbox::scenarios {
 		.gpu_solver = true,
 		.warmup_frames = 0,
 		.frames = 240,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=12",
-			"Dev Spawn.strike.row_begin=4",
-			"Dev Spawn.strike.rows=3",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 12 },
+		= gse::scenario::pin<^^ss::dev_spawn::strike, ^^pyramid_strike_params::row_begin>{ 4 },
+		= gse::scenario::pin<^^ss::dev_spawn::strike, ^^pyramid_strike_params::rows>{ 3 }
+	]]
 	auto scene_reset(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -390,12 +445,11 @@ export namespace sandbox::scenarios {
 		.headless = true,
 		.warmup_frames = 0,
 		.frames = 240,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=12",
-			"Dev Spawn.strike.row_begin=4",
-			"Dev Spawn.strike.rows=3",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 12 },
+		= gse::scenario::pin<^^ss::dev_spawn::strike, ^^pyramid_strike_params::row_begin>{ 4 },
+		= gse::scenario::pin<^^ss::dev_spawn::strike, ^^pyramid_strike_params::rows>{ 3 }
+	]]
 	auto scene_reset_cpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -411,13 +465,62 @@ export namespace sandbox::scenarios {
 	) -> gse::async::task<>;
 
 	[[= gse::scenario::info{
+		.name = "web_host_probe",
+		.real_time = true,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto web_host_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "web_idle_probe",
+		.real_time = true,
+		.warmup_frames = 0,
+		.frames = 80,
+	}]]
+	auto web_idle_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "web_pointer_probe",
+		.real_time = true,
+		.warmup_frames = 0,
+		.frames = 300,
+	}]]
+	auto web_pointer_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "web_persist_write",
+		.headless = true,
+		.warmup_frames = 0,
+		.frames = 10,
+	}]]
+	auto web_persist_write(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "web_persist_read",
+		.headless = true,
+		.warmup_frames = 0,
+		.frames = 10,
+	}]]
+	auto web_persist_read(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
 		.name = "locomotion",
 		.scene = "Sandbox",
 		.headless = true,
-		.settings = {
-			"Dev Spawn.characters.count=8",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::count>{ 8 }
+	]]
 	auto locomotion(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -438,11 +541,10 @@ export namespace sandbox::scenarios {
 		.scene = "Pyramid",
 		.headless = true,
 		.warmup_frames = 0,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=180",
-			"Physics.solver_iterations=40",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 180 },
+		= gse::scenario::pin<^^ss::physics::solver_iterations>{ 40 }
+	]]
 	auto pyramid16k_cpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -466,11 +568,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_reference(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -482,11 +583,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_replay(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -498,11 +598,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = true,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=30",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 30 }
+	]]
 	auto rollback_reference_gpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -514,11 +613,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = true,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=30",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 30 }
+	]]
 	auto rollback_replay_gpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -530,11 +628,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_impulse_reference(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -546,11 +643,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_impulse_replay(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -562,11 +658,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = true,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=30",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 30 }
+	]]
 	auto rollback_impulse_reference_gpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -578,11 +673,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = true,
 		.warmup_frames = 0,
 		.frames = 120,
-		.settings = {
-			"Dev Spawn.pyramid.base_count=20",
-			"Physics.rollback_history_steps=30",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::pyramid, ^^pyramid_scene_params::base_count>{ 20 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 30 }
+	]]
 	auto rollback_impulse_replay_gpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -594,11 +688,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 600,
-		.settings = {
-			"Dev Spawn.characters.count=2",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::count>{ 2 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_reference_character(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -610,11 +703,10 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 600,
-		.settings = {
-			"Dev Spawn.characters.count=2",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::count>{ 2 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_replay_character(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -626,12 +718,11 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 240,
-		.settings = {
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_reference_stress(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -643,12 +734,11 @@ export namespace sandbox::scenarios {
 		.gpu_solver = false,
 		.warmup_frames = 0,
 		.frames = 240,
-		.settings = {
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-			"Physics.rollback_history_steps=90",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 },
+		= gse::scenario::pin<^^ss::physics::rollback_history_steps>{ 90 }
+	]]
 	auto rollback_replay_stress(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
@@ -667,11 +757,10 @@ export namespace sandbox::scenarios {
 		.scene = "Sandbox",
 		.headless = true,
 		.gpu_solver = true,
-		.settings = {
-			"Dev Spawn.stress.tumbler_radial_cubes=6",
-			"Dev Spawn.stress.tumbler_axial_cubes=12",
-		},
-	}]]
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
 	auto parity_stress_gpu(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;

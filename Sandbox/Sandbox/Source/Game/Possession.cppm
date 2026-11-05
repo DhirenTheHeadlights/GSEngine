@@ -2,11 +2,8 @@ export module sandbox:possession;
 
 import gse;
 
-import :character_controller;
 import :characters;
-import :orbit_camera;
 import :role;
-import :sidearm;
 
 export namespace sandbox::player {
 	struct [[= gse::system_state<"Player">{}]]
@@ -21,19 +18,14 @@ export namespace sandbox::player {
 		gse::channel_read<gse::world_system::possess_player_request> possess_in,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d,
-		gse::read<gse::skeleton_instance_component> skeletons,
-		gse::entities ents,
-		gse::structural<character_controller::component>,
-		gse::structural<orbit_camera::component>,
-		gse::structural<sidearm::component>,
-		gse::structural<gse::free_camera::component> cameras
+		gse::read<gse::skeleton_instance_component> skeletons
 	) -> gse::async::task<>;
 }
 
-auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d, gse::read<gse::skeleton_instance_component> skeletons, gse::entities, gse::structural<character_controller::component>, gse::structural<orbit_camera::component>, gse::structural<sidearm::component>, gse::structural<gse::free_camera::component> cameras) -> gse::async::task<> {
+auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gse::world_system::possess_player_request> possess_in, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d, gse::read<gse::skeleton_instance_component> skeletons) -> gse::async::task<> {
 	if (!is_client(world_d)) {
 		for (const auto& request : possess_in.of<gse::world_system::possess_player_request>()) {
-			cameras.add(
+			ctx.add_component<gse::free_camera::component>(
 				request.entity,
 				{
 					.initial_position = gse::vec3<gse::position>(gse::meters(0.f, 2.f, 0.f)),
@@ -60,7 +52,7 @@ auto sandbox::player::run(gse::context& ctx, data& d, const gse::channel_read<gs
 		return {};
 	}
 
-	const gse::scene::mutation_scope _(*scene, ctx);
+	const gse::scene::mutation_scope _(ctx);
 	possess_character(
 		*scene,
 		{

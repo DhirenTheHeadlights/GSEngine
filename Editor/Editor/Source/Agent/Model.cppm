@@ -584,6 +584,8 @@ export namespace gse::ide::agent {
 		await [[= tool_flavor{ .match = "mcp__gse__gse_await", .verb = "settling in to wait" }]],
 		draw [[= tool_flavor{ .match = "mcp__gse__gse_draw", .verb = "sketching" }]],
 		step [[= tool_flavor{ .match = "mcp__gse__gse_step", .verb = "ticking off a step" }]],
+		symbolize [[= tool_flavor{ .match = "mcp__gse__gse_symbolize", .verb = "decoding the wreckage" }]],
+		git [[= tool_flavor{ .match = "mcp__gse__gse_git", .verb = "digging through history" }]],
 	};
 
 	struct step_style {
@@ -699,6 +701,7 @@ export namespace gse::ide::agent {
 		build_runner::build_target target = build_runner::build_target::game;
 		bool run = false;
 		bool run_only = false;
+		bool standalone = false;
 		bool forced = false;
 		const config::worktree* tree = nullptr;
 		time requested;
@@ -741,6 +744,12 @@ export namespace gse::ide::agent {
 		transcript_view answer;
 	};
 
+	struct restored_history {
+		std::vector<transcript_row> rows;
+		session_info info;
+		bool found = false;
+	};
+
 	struct session {
 		std::uint32_t id = 0;
 		std::string name;
@@ -756,10 +765,16 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::int64_t message_chars = 0;
 		[[= archive_skip{}]] std::size_t counted_rows = 0;
 		[[= archive_skip{}]] bool hydrated = false;
+		[[= archive_skip{}]]
+		task::pending<restored_history> history;
+		[[= archive_skip{}]] std::uint32_t history_at = 0;
+		[[= archive_skip{}]] std::uint32_t history_runs = 0;
+		[[= archive_skip{}]] std::optional<phase_gate> history_gate;
 		[[= archive_skip{}]] transcript_view full;
 		[[= archive_skip{}]] transcript_view changes;
 		[[= archive_skip{}]] transcript_view everything;
 		[[= archive_skip{}]] transcript_view followup;
+		[[= archive_skip{}]] transcript_view live_scope;
 		[[= archive_skip{}]] transcript_mode mode = transcript_mode::summary;
 		bool changes_open = false;
 		float changes_ratio = 0.55f;
@@ -776,6 +791,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::string woke_by;
 		std::optional<sync_request> sync;
 		std::optional<std::string> sync_report;
+		bool sync_announced = false;
 		std::vector<phase_run> runs;
 		std::optional<phase_gate> gate;
 		std::optional<phase_gate> pending_transition;
@@ -783,13 +799,13 @@ export namespace gse::ide::agent {
 		std::optional<goal_state> met_goal;
 		std::optional<pending_question> question;
 		[[= archive_skip{}]] std::optional<std::uint32_t> plan_selected;
-		[[= archive_skip{}]] std::uint32_t plan_page = 0;
 		[[= archive_skip{}]] std::uint32_t lifecycle_page = 0;
 		[[= archive_skip{}]] std::optional<std::uint32_t> lifecycle_cycle;
 		[[= archive_skip{}]] std::string wait_shown;
 		std::int64_t seen = 0;
 		[[= archive_skip{}]] bool visiting = false;
 		[[= archive_skip{}]] bool arriving = false;
+		[[= archive_skip{}]] bool sent_transcript = false;
 		[[= archive_skip{}]] std::int64_t arrived = 0;
 		[[= archive_skip{}]] std::int64_t entered = 0;
 		[[= archive_skip{}]] phase_fork fork;
@@ -873,7 +889,11 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] rectf history_anchor;
 		[[= archive_skip{}]] bool history_open = false;
 		[[= archive_skip{}]] std::vector<past_chat> history;
+		[[= shared]] std::uint32_t sync_open = 0;
+		[[= archive_skip{}]] rectf sync_history_anchor;
+		[[= archive_skip{}]] bool sync_history_open = false;
 		std::unordered_map<std::string, std::string> chat_names;
+		std::vector<session> closed;
 		bool initialized = false;
 		std::vector<blamed_error> unclaimed;
 		id unclaimed_build;

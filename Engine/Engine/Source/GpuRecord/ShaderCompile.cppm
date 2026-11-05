@@ -2,7 +2,10 @@ module gse.gpu_record:shader_compile;
 
 import std;
 
+import gse.config;
+import gse.gpu;
 import gse.gpu_backend;
+import gse.meta;
 
 import :pipeline_builder;
 
@@ -37,6 +40,9 @@ namespace gse::gpu {
 		std::string (
 			*emit_spec_decls
 		)() = nullptr;
+		std::vector<shaders::struct_layout> (
+			*struct_layouts_fn
+		)() = nullptr;
 	};
 
 	struct parsed_body {
@@ -66,4 +72,25 @@ namespace gse::gpu {
 		const graphics_entry_pod& pod,
 		std::string_view wrapper_source
 	) -> compiled_graphics_program;
+
+	[[nodiscard]]
+	auto wgsl_pack_file(
+		std::string_view body_path,
+		std::string_view entry_point,
+		std::string_view wrapper_source
+	) -> std::filesystem::path;
+
+	[[nodiscard]]
+	auto wgsl_pack_dir() -> std::filesystem::path;
+
+	[[nodiscard]]
+	auto shader_source_digest() -> std::uint64_t;
+}
+
+auto gse::gpu::wgsl_pack_dir() -> std::filesystem::path {
+	return config::resource_path() / "Shaders" / "Wgsl";
+}
+
+auto gse::gpu::wgsl_pack_file(const std::string_view body_path, const std::string_view entry_point, const std::string_view wrapper_source) -> std::filesystem::path {
+	return wgsl_pack_dir() / std::format("{:016x}.wgsl", hash_of(shader_source_digest(), body_path, entry_point, wrapper_source));
 }

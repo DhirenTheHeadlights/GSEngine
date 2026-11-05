@@ -5,6 +5,7 @@ import std;
 import gse.vulkan;
 import :video_encoder;
 import :video_backend;
+import :device_webgpu_backend;
 
 gse::gpu::video_encoder::video_encoder() noexcept = default;
 
@@ -47,4 +48,8 @@ auto gse::gpu::video_encoder::extent() const -> vec2u {
 
 auto gse::gpu::video_encoder::valid() const -> bool {
 	return m_impl && m_impl->enc.valid();
+}
+
+auto gse::gpu::webgpu_device_backend::make_video_encoder_backend(const encode_desc&) -> std::unique_ptr<video_encoder_backend> {
+	return nullptr;
 }

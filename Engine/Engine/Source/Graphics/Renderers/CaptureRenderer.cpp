@@ -21,6 +21,7 @@ import :mp4_muxer;
 import :shared_shaders;
 import :ui_renderer;
 import :settings;
+import :tonemap_renderer;
 
 namespace gse::renderer::capture {
 	struct [[= shaders::shader_struct]] push_constants {
@@ -97,11 +98,11 @@ auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<actions::data> sys, data& d, const channel_write<screenshot_request, save_clip_request, toggle_recording_request> capture_out) -> async::task<> {
+auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<actions::data> sys, data& d, const channel_write<save_clip_request, toggle_recording_request> capture_out, const channel_read<screenshot_request> screenshot_in) -> async::task<> {
 	const auto& action_state = actions::current_state(sys);
 
-	if (actions::pressed(action_state, sys, d.screenshot_action)) {
-		capture_out.push<screenshot_request>({});
+	if (actions::pressed(action_state, sys, d.screenshot_action) || !screenshot_in.of<screenshot_request>().empty()) {
+		d.screenshot_requested = true;
 	}
 	if (actions::pressed(action_state, sys, d.save_clip_action)) {
 		capture_out.push<save_clip_request>({});
@@ -114,7 +115,7 @@ auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::d
 	return {};
 }
 
-auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request, screenshot_request> capture_in) -> async::task<> {
+auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request> capture_in) -> async::task<> {
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	auto& [staging, width, height, row_pitch, pending] = d.screenshots[frame_index];
@@ -325,7 +326,13 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		}
 	}
 
-	if (!capture_in.of<screenshot_request>().empty() && !d.write_in_progress->load()) {
+	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
+		co_return;
+	}
+
+	const bool do_screenshot = d.screenshot_requested && !pending && !d.write_in_progress->load();
+
+	if (do_screenshot) {
 		const auto target = gpu_s.render_graph->current_target();
 		const auto layout = gpu_s.device->readback_layout(target.format, target.extent);
 
@@ -342,14 +349,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		width = target.extent.x();
 		height = target.extent.y();
 		row_pitch = layout.row_pitch;
-		d.screenshot_requested = true;
 	}
-
-	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
-		co_return;
-	}
-
-	const bool do_screenshot = d.screenshot_requested;
 	const bool do_encode = d.encode_target.valid;
 
 	if (!do_screenshot && !do_encode) {
@@ -363,7 +363,7 @@ auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context:
 		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].slot().index : shaders::bindless::invalid_index,
 	};
 
-	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^ui::frame>();
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^tonemap::frame, ^^ui::frame>();
 
 	if (do_screenshot) {
 		rec.copy_target_to_buffer(gpu_s.render_graph->current_target(), staging);

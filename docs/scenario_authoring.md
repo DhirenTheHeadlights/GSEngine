@@ -41,17 +41,35 @@ The body **must** live in the `.cpp`. A coroutine body in the partition interfac
 | `warmup_frames` | Discarded frames before measurement. Default 120. |
 | `frames` | Measured frames. Default 600. Also sizes the profiler's recording ring. |
 
+### Pinning settings
+
+A scenario that needs a non-default setting pins it with a `gse::scenario::pin` annotation beside its `info`, naming the settings member itself rather than spelling its key:
+
+```cpp
+[[= gse::scenario::info{
+	.name = "render_stress",
+	.scene = "Sandbox",
+},
+	= gse::scenario::pin<^^gse::window::data::present_mode>{ gse::gpu::present_mode::immediate },
+	= gse::scenario::pin<^^sandbox::dev_spawn::data::stress, ^^sandbox::stress_scene_params::tumbler_radial_cubes>{ 6 }
+]]
+```
+
+The template arguments are the member path, from a member of a `settings::category` struct down to the scalar setting, one reflection per nested level. The value has the member's own type, so a length is `gse::meters(4.f)` and an enum is its enumerator. Renaming, retyping or un-describing a pinned member is a compile error in the scenario file, not a scenario that silently runs on the code default. Each pin is lowered to the same `Section.key=value` text an `--engine-setting` carries, written by the ini's own field writer. The engine's own pins and app defaults take the same member path, as `registry::pin<^^window::data::title>(...)` and `registry::default_for<...>(...)`, so `settings::member_path` is the one validator for both.
+
+`--engine-setting` stays text, because it is runtime input. It is checked when settings register: an assignment that is not `Section.key=value`, a key its section does not declare, or a dimensioned value without a valid unit suffix stops the run with exit code 2. A section no system registered in this run mode, such as `Window` in a headless run, is only a warning.
+
 Every field is overridable on the command line. `apply_scenario` writes the annotation's value only where the parsed config still holds `bench_config`'s default, so an explicit `--engine-bench-frames 900` survives.
 
 ## Scenario runs are hermetic
 
-A scenario run sets `load_settings = false`, so **neither ini is read** — not `%APPDATA%/GSE/<Exe>.ini`, not `<Project>/Config/settings.ini`. The run is code defaults plus the annotation's `settings` list plus any `--engine-setting` you pass. It also never writes an ini (`persist_settings = false`).
+A scenario run sets `load_settings = false`, so **neither ini is read** — not `%APPDATA%/GSE/<Exe>.ini`, not `<Project>/Config/settings.ini`. The run is code defaults plus the annotation's pins plus any `--engine-setting` you pass. It also never writes an ini (`persist_settings = false`).
 
-This is not tidiness. A scenario is a measurement instrument, and a bench whose result depends on whatever the developer last tuned locally is not a baseline. The rule that follows: **whatever a scenario depends on, it must declare.** If a scenario needs a non-default value, it goes in `settings`, where it is visible in the file and in `--engine-dump-settings`.
+This is not tidiness. A scenario is a measurement instrument, and a bench whose result depends on whatever the developer last tuned locally is not a baseline. The rule that follows: **whatever a scenario depends on, it must declare.** If a scenario needs a non-default value, it goes in a `pin`, where it is visible in the file and in `--engine-dump-settings`.
 
 The failure this prevents, which cost a real debugging session: `parity_*_cpu` carried no `use_gpu_solver` setting and relied on the code default `false`. When scenarios briefly did read the ini, `Sandbox.ini`'s `use_gpu_solver = true` won, every CPU scenario silently ran on the GPU, and the CPU and GPU halves of the parity ladder returned the same hash — which the gate reads as agreement. A pairing that collapses looks exactly like a pairing that passes.
 
-To run a scenario against your local tuning, pass `--engine-load-settings`. The annotation's `settings` still outrank the ini, so the CPU/GPU pairing survives even then; you get your tuning for everything the scenario has not pinned.
+To run a scenario against your local tuning, pass `--engine-load-settings`. The annotation's pins still outrank the ini, so the CPU/GPU pairing survives even then; you get your tuning for everything the scenario has not pinned.
 
 ## What a body may do
 

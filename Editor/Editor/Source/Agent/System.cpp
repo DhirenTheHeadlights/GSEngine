@@ -43,6 +43,9 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	if (session* shown = active_session(d)) {
 		hydrate_session(*shown);
 	}
+	for (session& s : d.sessions) {
+		finish_hydration(s);
+	}
 
 	if (std::exchange(d.token_requests_cancelled, false)) {
 		for (const sync_request& request : d.token_pending_syncs) {
@@ -75,7 +78,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	for (const sync_request& request : syncs) {
-		if (session* running = sync_session(d)) {
+		if (const auto running = std::ranges::find_if(d.sessions, [](const session& s) { return s.sync && is_busy(s); }); running != d.sessions.end()) {
 			log::println(log::level::warning, log::category::task, "agent: a sync chat for {} is already open, so the one asked for {} was refused", running->sync->root, request.root);
 			events_out.push<sync_finished>({
 				.root = request.root,
@@ -98,12 +101,14 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		send_to_session(started, sync_opening, {}, true);
 	}
 
-	if (session* reported = sync_session(d); reported && reported->sync_report && !is_busy(*reported)) {
-		events_out.push<sync_finished>({
-			.root = reported->sync->root,
-			.summary = *reported->sync_report,
-		});
-		erase_session(d, reported->id);
+	for (session& reported : d.sessions) {
+		if (reported.sync && reported.sync_report && !reported.sync_announced && !is_busy(reported)) {
+			events_out.push<sync_finished>({
+				.root = reported.sync->root,
+				.summary = *reported.sync_report,
+			});
+			reported.sync_announced = true;
+		}
 	}
 
 	for (const gui::context_menu_result& result : requests_in.of<gui::context_menu_result>()) {
@@ -185,7 +190,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		},
 	});
 
-	if (sync_session(d)) {
+	if (std::ranges::any_of(d.sessions, std::not_fn(is_chat))) {
 		events_out.push<gui::menu_content>({
 			.menu = std::string(source_control_panel_name),
 			.layer = render_layer::content,

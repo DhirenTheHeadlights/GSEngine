@@ -216,7 +216,6 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 					.stride = sizeof(rig_bone_binding),
 					.usage = gpu::buffer_flag::storage,
 					.data = d.bone_bindings.data(),
-					.bindless = true,
 				}
 			);
 		}
@@ -234,7 +233,6 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 					.size = palette_required,
 					.stride = sizeof(skin_matrix),
 					.usage = gpu::buffer_flag::storage,
-					.bindless = true,
 					.writable = true,
 				},
 				"skin.palette"
@@ -276,7 +274,6 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 						.size = bytes,
 						.stride = sizeof(vertex),
 						.usage = gpu::buffer_flag::storage,
-						.bindless = true,
 						.writable = true,
 					},
 					"skin.deformed"

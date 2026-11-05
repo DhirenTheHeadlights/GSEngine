@@ -28,25 +28,55 @@ namespace gse::ide {
 		return kinds;
 	}();
 
-	auto category_color(
-		std::string_view category
-	) -> vec4f;
-
-	auto edge_color(
-		introspection::edge_kind kind
-	) -> vec4f;
-
 	auto short_label(
 		std::string_view name
 	) -> std::string_view;
 
-	auto pretty_name(
-		std::string_view name
+	auto via_label(
+		std::span<const std::string> via
 	) -> std::string;
 
-	auto node_label(
-		const introspection::graph_node& node
-	) -> std::string_view;
+	auto build_groups(
+		graph_data& gd
+	) -> void;
+
+	auto build_units(
+		graph_data& gd
+	) -> void;
+
+	auto layout_units(
+		graph_data& gd,
+		float font_size
+	) -> void;
+
+	auto unit_label(
+		const graph_data& gd,
+		const graph_unit& unit
+	) -> std::string;
+
+	auto draw_group_tooltip(
+		const gui::draw_context& ctx,
+		const rectf& area,
+		const graph_data& gd,
+		std::uint32_t group,
+		vec2f anchor
+	) -> void;
+
+	auto to_mermaid(
+		const graph_data& gd
+	) -> std::string;
+
+	struct toolbar_hit {
+		rectf rect;
+		bool clicked = false;
+		bool hovered = false;
+	};
+
+	auto toolbar_button(
+		gui::builder& ui,
+		vec2f top_left,
+		std::string_view label
+	) -> toolbar_hit;
 
 	auto find_node(
 		const graph_data& gd,
@@ -95,6 +125,15 @@ namespace gse::ide {
 	auto prepare_presentation(
 		graph_data& gd,
 		const gui::draw_context& ctx
+	) -> void;
+
+	auto draw_graph_view(
+		gui::builder& ui,
+		const rectf& area,
+		graph_data& gd,
+		const search::index_state* index,
+		channel_write<jump_to_request, set_cursor_shape_request> channels,
+		const rectf& toolbar
 	) -> void;
 
 	auto legend_bounds(
@@ -418,16 +457,259 @@ auto gse::ide::build_graph_from_snapshot(introspection::system_graph snapshot) -
 		if (ai == gd.index_of.end() || bi == gd.index_of.end()) {
 			continue;
 		}
-		gd.edges_draw.push_back({
-			.a = ai->second,
-			.b = bi->second,
-			.kind = e.kind,
-		});
 		pairs.emplace_back(ai->second, bi->second);
 	}
 	gd.layout = graph::layered_layout(n, pairs);
+	build_groups(gd);
+	build_lifetime(gd);
 	gd.built = true;
 	return gd;
+}
+
+auto gse::ide::build_groups(graph_data& gd) -> void {
+	std::map<std::string, std::vector<std::uint32_t>> by_category;
+	for (std::uint32_t i = 0; i < gd.snapshot.nodes.size(); ++i) {
+		by_category[gd.snapshot.nodes[i].category].push_back(i);
+	}
+	gd.groups.clear();
+	gd.group_of.assign(gd.snapshot.nodes.size(), 0);
+	for (auto& [name, members] : by_category) {
+		const auto g = static_cast<std::uint32_t>(gd.groups.size());
+		for (const std::uint32_t m : members) {
+			gd.group_of[m] = g;
+		}
+		gd.groups.push_back({
+			.name = name,
+			.key = hash_of(std::string_view("graph_group"), name),
+			.members = std::move(members),
+			.color = category_color(name),
+			.expanded = by_category.size() == 1,
+		});
+	}
+	gd.lifetime_group_visible.assign(gd.groups.size(), true);
+}
+
+auto gse::ide::build_units(graph_data& gd) -> void {
+	gd.units.clear();
+	gd.unit_of.assign(gd.snapshot.nodes.size(), 0);
+	gd.unit_index_of.clear();
+	for (std::uint32_t g = 0; g < gd.groups.size(); ++g) {
+		const graph_group& group = gd.groups[g];
+		if (!group.expanded) {
+			const auto u = static_cast<std::uint32_t>(gd.units.size());
+			for (const std::uint32_t m : group.members) {
+				gd.unit_of[m] = u;
+			}
+			gd.units.push_back({
+				.key = group.key,
+				.group = g,
+			});
+			continue;
+		}
+		for (const std::uint32_t m : group.members) {
+			gd.unit_of[m] = static_cast<std::uint32_t>(gd.units.size());
+			gd.units.push_back({
+				.key = gd.snapshot.nodes[m].id,
+				.system = m,
+				.group = g,
+			});
+		}
+	}
+	for (std::uint32_t u = 0; u < gd.units.size(); ++u) {
+		gd.unit_index_of.emplace(gd.units[u].key, u);
+	}
+
+	using edge_key = std::tuple<std::uint32_t, std::uint32_t, introspection::edge_kind>;
+	std::map<edge_key, std::vector<std::string>> aggregated;
+	for (const introspection::graph_edge& e : gd.snapshot.edges) {
+		const auto ai = gd.index_of.find(e.from);
+		const auto bi = gd.index_of.find(e.to);
+		if (ai == gd.index_of.end() || bi == gd.index_of.end()) {
+			continue;
+		}
+		const std::uint32_t ua = gd.unit_of[ai->second];
+		const std::uint32_t ub = gd.unit_of[bi->second];
+		if (ua == ub) {
+			continue;
+		}
+		std::vector<std::string>& via = aggregated[{ ua, ub, e.kind }];
+		via.insert(via.end(), e.via.begin(), e.via.end());
+	}
+	gd.unit_edges.clear();
+	for (auto& [key, via] : aggregated) {
+		std::ranges::sort(via);
+		via.erase(std::ranges::unique(via).begin(), via.end());
+		gd.unit_edges.push_back({
+			.a = std::get<0>(key),
+			.b = std::get<1>(key),
+			.kind = std::get<2>(key),
+			.label = via_label(via),
+		});
+	}
+
+	std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::string>> channels;
+	for (const channel_link_draw& e : gd.channel_edges) {
+		const std::uint32_t ua = gd.unit_of[e.a];
+		const std::uint32_t ub = gd.unit_of[e.b];
+		if (ua == ub) {
+			continue;
+		}
+		std::vector<std::string>& via = channels[{ ua, ub }];
+		if (std::ranges::find(via, e.qualified) == via.end()) {
+			via.push_back(e.qualified);
+		}
+	}
+	gd.unit_channel_edges.clear();
+	for (auto& [key, via] : channels) {
+		std::ranges::sort(via);
+		gd.unit_channel_edges.push_back({
+			.a = key.first,
+			.b = key.second,
+			.kind = introspection::edge_kind::channel,
+			.label = via_label(via),
+		});
+	}
+}
+
+auto gse::ide::layout_units(graph_data& gd, const float font_size) -> void {
+	const float pill_h = font_size + 14.f;
+	const float gap_x = 24.f;
+	const float row_step = pill_h + 56.f;
+	const float group_pad = 14.f;
+	const float header_h = font_size + 12.f;
+	const float band_gap = 36.f;
+
+	const std::size_t group_count = gd.groups.size();
+	std::vector<std::pair<std::uint32_t, std::uint32_t>> group_pairs;
+	for (const unit_edge_draw& e : gd.unit_edges) {
+		group_pairs.emplace_back(gd.units[e.a].group, gd.units[e.b].group);
+	}
+	const graph::layout group_layout = graph::layered_layout(group_count, group_pairs);
+
+	std::vector<std::vector<std::vector<std::uint32_t>>> rows_of(group_count);
+	for (std::uint32_t g = 0; g < group_count; ++g) {
+		const graph_group& group = gd.groups[g];
+		if (!group.expanded) {
+			rows_of[g].push_back({ gd.unit_of[group.members.front()] });
+			continue;
+		}
+		std::unordered_map<std::uint32_t, std::uint32_t> local;
+		for (std::uint32_t i = 0; i < group.members.size(); ++i) {
+			local.emplace(gd.unit_of[group.members[i]], i);
+		}
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> inner;
+		for (const unit_edge_draw& e : gd.unit_edges) {
+			const auto a = local.find(e.a);
+			const auto b = local.find(e.b);
+			if (a != local.end() && b != local.end()) {
+				inner.emplace_back(a->second, b->second);
+			}
+		}
+		const graph::layout sub = graph::layered_layout(group.members.size(), inner);
+		rows_of[g].assign(sub.layer_count, {});
+		for (std::uint32_t l = 0; l < sub.layer_count; ++l) {
+			rows_of[g][l].resize(sub.layer_sizes[l]);
+		}
+		for (std::uint32_t i = 0; i < group.members.size(); ++i) {
+			const graph::placement p = sub.placements[i];
+			rows_of[g][p.layer][p.order] = gd.unit_of[group.members[i]];
+		}
+	}
+
+	const auto row_width = [&](const std::vector<std::uint32_t>& row) {
+		float total = 0.f;
+		for (const std::uint32_t u : row) {
+			total += gd.widths[u] + gap_x;
+		}
+		return row.empty() ? 0.f : total - gap_x;
+	};
+
+	std::vector<std::vector<std::uint32_t>> band(group_layout.layer_count);
+	for (std::uint32_t g = 0; g < group_count; ++g) {
+		band[group_layout.placements[g].layer].push_back(g);
+	}
+	for (std::vector<std::uint32_t>& groups_in_band : band) {
+		std::ranges::sort(groups_in_band, [&](const std::uint32_t a, const std::uint32_t b) {
+			return group_layout.placements[a].order < group_layout.placements[b].order;
+		});
+	}
+
+	gd.world.resize(gd.units.size());
+	gd.group_world.assign(group_count, {});
+	gd.world_min = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+	gd.world_max = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
+	const auto grow = [&](const vec2f lo, const vec2f hi) {
+		gd.world_min = { std::min(gd.world_min.x(), lo.x()), std::min(gd.world_min.y(), lo.y()) };
+		gd.world_max = { std::max(gd.world_max.x(), hi.x()), std::max(gd.world_max.y(), hi.y()) };
+	};
+
+	float band_top = 0.f;
+	for (const std::vector<std::uint32_t>& groups_in_band : band) {
+		std::vector<float> widths(groups_in_band.size());
+		float band_width = 0.f;
+		float band_height = pill_h;
+		for (std::size_t i = 0; i < groups_in_band.size(); ++i) {
+			const std::uint32_t g = groups_in_band[i];
+			float w = 0.f;
+			for (const std::vector<std::uint32_t>& row : rows_of[g]) {
+				w = std::max(w, row_width(row));
+			}
+			const bool boxed = gd.groups[g].expanded;
+			widths[i] = boxed ? w + group_pad * 2.f : w;
+			band_width += widths[i] + gap_x;
+			const float content = static_cast<float>(rows_of[g].size() - 1) * row_step + pill_h;
+			band_height = std::max(band_height, boxed ? content + header_h + group_pad * 2.f : content);
+		}
+		band_width -= groups_in_band.empty() ? 0.f : gap_x;
+
+		float x = -band_width * 0.5f;
+		for (std::size_t i = 0; i < groups_in_band.size(); ++i) {
+			const std::uint32_t g = groups_in_band[i];
+			const bool boxed = gd.groups[g].expanded;
+			const float first_row = band_top + (boxed ? header_h + group_pad : 0.f) + pill_h * 0.5f;
+			const float center_x = x + widths[i] * 0.5f;
+			for (std::size_t r = 0; r < rows_of[g].size(); ++r) {
+				const std::vector<std::uint32_t>& row = rows_of[g][r];
+				float ux = center_x - row_width(row) * 0.5f;
+				const float y = first_row + static_cast<float>(r) * row_step;
+				for (const std::uint32_t u : row) {
+					gd.world[u] = { ux + gd.widths[u] * 0.5f, y };
+					grow({ ux, y - pill_h * 0.5f }, { ux + gd.widths[u], y + pill_h * 0.5f });
+					ux += gd.widths[u] + gap_x;
+				}
+			}
+			if (boxed) {
+				const float last_row = first_row + static_cast<float>(rows_of[g].size() - 1) * row_step;
+				gd.group_world[g] = { { x, band_top }, { x + widths[i], last_row + pill_h * 0.5f + group_pad } };
+				grow(gd.group_world[g].first, gd.group_world[g].second);
+			}
+			x += widths[i] + gap_x;
+		}
+		band_top += band_height + band_gap;
+	}
+}
+
+auto gse::ide::via_label(const std::span<const std::string> via) -> std::string {
+	constexpr std::size_t shown = 2;
+	std::string out;
+	for (std::size_t i = 0; i < std::min(shown, via.size()); ++i) {
+		if (!out.empty()) {
+			out += ", ";
+		}
+		out += pretty_name(via[i]);
+	}
+	if (via.size() > shown) {
+		out += std::format(" +{}", via.size() - shown);
+	}
+	return out;
+}
+
+auto gse::ide::unit_label(const graph_data& gd, const graph_unit& unit) -> std::string {
+	if (unit.system) {
+		return std::string(node_label(gd.snapshot.nodes[*unit.system]));
+	}
+	const graph_group& group = gd.groups[unit.group];
+	return std::format("{}  ({})", group.name, group.members.size());
 }
 
 auto gse::ide::prepare_presentation(graph_data& gd, const gui::draw_context& ctx) -> void {
@@ -439,70 +721,32 @@ auto gse::ide::prepare_presentation(graph_data& gd, const gui::draw_context& ctx
 		return;
 	}
 
-	const std::size_t n = gd.snapshot.nodes.size();
 	const float pill_pad_x = 14.f;
-	const float pill_h = font_size + 14.f;
-	const float gap_x = 24.f;
-	const float step_y = pill_h + 56.f;
 
+	build_units(gd);
+	const std::size_t n = gd.units.size();
 	gd.labels.clear();
 	gd.labels.reserve(n);
 	gd.widths.resize(n);
 	gd.base_colors.resize(n);
-	for (std::uint32_t i = 0; i < n; ++i) {
-		const introspection::graph_node& node = gd.snapshot.nodes[i];
-		gd.labels.emplace_back(node_label(node));
-		gd.widths[i] = std::max(72.f, text_view->width(gd.labels.back(), font_size) + pill_pad_x * 2.f);
-		gd.base_colors[i] = category_color(node.category);
+	for (std::uint32_t u = 0; u < n; ++u) {
+		gd.labels.push_back(unit_label(gd, gd.units[u]));
+		gd.widths[u] = std::max(72.f, text_view->width(gd.labels.back(), font_size) + pill_pad_x * 2.f);
+		gd.base_colors[u] = gd.groups[gd.units[u].group].color;
 	}
-
-	std::vector<std::vector<std::uint32_t>> by_layer(gd.layout.layer_count);
-	for (std::uint32_t i = 0; i < n; ++i) {
-		const graph::placement placement = gd.layout.placements[i];
-		if (placement.layer < gd.layout.layer_count) {
-			by_layer[placement.layer].push_back(i);
-		}
-	}
-	for (std::vector<std::uint32_t>& row : by_layer) {
-		std::ranges::sort(row, [&](const std::uint32_t a, const std::uint32_t b) {
-			return gd.layout.placements[a].order < gd.layout.placements[b].order;
-		});
-	}
-
-	gd.world.resize(n);
-	gd.world_min = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
-	gd.world_max = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
-	for (std::uint32_t layer = 0; layer < gd.layout.layer_count; ++layer) {
-		float total = 0.f;
-		for (const std::uint32_t index : by_layer[layer]) {
-			total += gd.widths[index] + gap_x;
-		}
-		total -= by_layer[layer].empty() ? 0.f : gap_x;
-		float x = -total * 0.5f;
-		const float y = static_cast<float>(layer) * step_y;
-		for (const std::uint32_t index : by_layer[layer]) {
-			const float center_x = x + gd.widths[index] * 0.5f;
-			gd.world[index] = { center_x, y };
-			gd.world_min = {
-				std::min(gd.world_min.x(), center_x - gd.widths[index] * 0.5f),
-				std::min(gd.world_min.y(), y - pill_h * 0.5f),
-			};
-			gd.world_max = {
-				std::max(gd.world_max.x(), center_x + gd.widths[index] * 0.5f),
-				std::max(gd.world_max.y(), y + pill_h * 0.5f),
-			};
-			x += gd.widths[index] + gap_x;
-		}
-	}
+	layout_units(gd, font_size);
 
 	gd.centers.resize(n);
 	gd.nodes.clear();
 	gd.nodes.reserve(n);
 	gd.edges.clear();
-	gd.edges.reserve(gd.edges_draw.size() + gd.channel_edges.size());
+	gd.edges.reserve(gd.unit_edges.size() + gd.unit_channel_edges.size());
 	gd.highlighted.assign(n, false);
 	gd.isolate_set.assign(n, false);
-	gd.edge_lit.assign(gd.edges_draw.size(), false);
+	gd.edge_lit.assign(gd.unit_edges.size(), false);
+	if (gd.isolated && !gd.unit_index_of.contains(*gd.isolated)) {
+		gd.isolated = std::nullopt;
+	}
 	gd.presentation_font = font_id;
 	gd.presentation_font_version = font_version;
 	gd.presentation_font_size = font_size;
@@ -547,6 +791,7 @@ auto gse::ide::merge_channels(graph_data& gd) -> void {
 					gd.channel_edges.push_back({
 						.a = p,
 						.b = consumer,
+						.qualified = message,
 					});
 				}
 			}
@@ -556,14 +801,40 @@ auto gse::ide::merge_channels(graph_data& gd) -> void {
 	gd.detail_for = std::nullopt;
 	gd.detail_generation = std::nullopt;
 	gd.tooltip_for = std::nullopt;
-	gd.edges.reserve(gd.edges_draw.size() + gd.channel_edges.size());
+}
+
+auto gse::ide::toolbar_button(gui::builder& ui, const vec2f top_left, const std::string_view label) -> toolbar_hit {
+	const gui::draw_context& ctx = ui.ctx;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float h = text_view->line_height(ctx.style.font_size) + 8.f;
+	const float w = text_view->width(label, ctx.style.font_size) + 24.f;
+	const rectf rect = rectf::from_position_size(top_left, { w, h });
+	const bool hovered = ctx.hovers(rect);
+	ui.draw<gui::panel_backdrop>({
+		.rect = rect,
+		.background = hovered ? vec4f{ 0.18f, 0.20f, 0.26f, 0.95f } : vec4f{ 0.09f, 0.10f, 0.13f, 0.9f },
+		.clip = rect,
+		.layer = render_layer::overlay,
+	});
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = label,
+		.position = { rect.left() + 12.f, rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
+		.scale = ctx.style.font_size,
+		.color = ctx.style.color_text,
+		.layer = render_layer::overlay,
+	});
+	return {
+		.rect = rect,
+		.clicked = ctx.clicked_in_rect(rect),
+		.hovered = hovered,
+	};
 }
 
 auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels) -> void {
 	const gui::draw_context& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
-	const std::size_t n = gd.snapshot.nodes.size();
-	if (n == 0) {
+	if (gd.snapshot.nodes.empty()) {
 		ctx.queue_sprite({
 			.rect = area,
 			.color = { 0.09f, 0.10f, 0.13f, 1.f },
@@ -573,6 +844,58 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 	}
 
 	prepare_presentation(gd, ctx);
+
+	const bool lifetime = gd.view == graph_view::lifetime;
+	const std::array<std::string_view, 3> labels = {
+		"reset view",
+		lifetime ? std::string_view("graph view") : std::string_view("lifetime view"),
+		"copy mermaid",
+	};
+	const float button_h = text_view->line_height(ctx.style.font_size) + 8.f;
+	const float gap = 6.f;
+	float toolbar_w = 0.f;
+	for (const std::string_view label : labels) {
+		toolbar_w += text_view->width(label, ctx.style.font_size) + 24.f + gap;
+	}
+	const vec2f origin = { area.left() + 10.f, area.bottom() + 10.f + button_h };
+	const rectf toolbar = rectf::from_position_size(origin, { toolbar_w, button_h });
+
+	if (lifetime) {
+		const rectf content = rectf({
+			.min = { area.left(), area.bottom() + button_h + 20.f },
+			.max = { area.right(), area.top() },
+		});
+		draw_lifetime(ui, content, gd, channels);
+	}
+	else {
+		draw_graph_view(ui, area, gd, index, channels, toolbar);
+	}
+
+	vec2f cursor = origin;
+	std::array<bool, 3> clicked{};
+	for (std::size_t i = 0; i < labels.size(); ++i) {
+		const toolbar_hit hit = toolbar_button(ui, cursor, labels[i]);
+		clicked[i] = hit.clicked;
+		cursor = { hit.rect.right() + gap, cursor.y() };
+	}
+	if (clicked[0]) {
+		gd.pan = { 0.f, 0.f };
+		gd.zoom = 1.f;
+		gd.isolated = std::nullopt;
+		gd.selected = std::nullopt;
+		gd.lifetime_selected_row = std::nullopt;
+	}
+	if (clicked[1]) {
+		gd.view = lifetime ? graph_view::graph : graph_view::lifetime;
+	}
+	if (clicked[2]) {
+		clipboard::set_text(to_mermaid(gd));
+	}
+}
+
+auto gse::ide::draw_graph_view(gui::builder& ui, const rectf& area, graph_data& gd, const search::index_state* index, channel_write<jump_to_request, set_cursor_shape_request> channels, const rectf& toolbar) -> void {
+	const gui::draw_context& ctx = ui.ctx;
+	const std::size_t n = gd.units.size();
 
 	const vec2f mouse = ctx.mouse_position();
 
@@ -606,10 +929,7 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 	const bool over_panel = panel_area && ctx.hovers(*panel_area);
 	const bool over_divider = panel_divider && ctx.hovers(*panel_divider);
 	const bool over_legend = ctx.hovers(legend_bounds(ctx, canvas));
-	const float reset_h = text_view->line_height(ctx.style.font_size) + 8.f;
-	const float reset_w = text_view->width(std::string_view("reset view"), ctx.style.font_size) + 24.f;
-	const rectf reset_rect = rectf::from_position_size({ canvas.left() + 10.f, canvas.bottom() + 10.f + reset_h }, { reset_w, reset_h });
-	const bool over_reset = ctx.hovers(reset_rect);
+	const bool over_reset = ctx.hovers(toolbar);
 	const bool over_area = ctx.hovers(canvas) && !over_panel && !over_divider && !over_legend && !over_reset;
 
 	if (gd.panning && ctx.mouse_held(mouse_button::button_1)) {
@@ -629,30 +949,26 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		const auto found = std::ranges::find(edge_kinds, kind);
 		return found != edge_kinds.end() && gd.kind_visible[static_cast<std::size_t>(found - edge_kinds.begin())];
 	};
+	const auto touches = [&](const unit_edge_draw& edge, const std::uint64_t key) {
+		return gd.units[edge.a].key == key || gd.units[edge.b].key == key;
+	};
 	std::ranges::fill(gd.isolate_set, false);
 	if (gd.isolated) {
-		const auto isolated = gd.index_of.find(*gd.isolated);
-		if (isolated != gd.index_of.end()) {
-			gd.isolate_set[isolated->second] = true;
-		}
-		const auto add_neighbors = [&](const std::uint32_t ai, const std::uint32_t bi) {
-			const std::uint64_t a_id = gd.snapshot.nodes[ai].id;
-			const std::uint64_t b_id = gd.snapshot.nodes[bi].id;
-			if (a_id == *gd.isolated) {
-				gd.isolate_set[bi] = true;
-			}
-			if (b_id == *gd.isolated) {
-				gd.isolate_set[ai] = true;
+		gd.isolate_set[gd.unit_index_of.at(*gd.isolated)] = true;
+		const auto add_neighbors = [&](const unit_edge_draw& edge) {
+			if (touches(edge, *gd.isolated)) {
+				gd.isolate_set[edge.a] = true;
+				gd.isolate_set[edge.b] = true;
 			}
 		};
-		for (const edge_draw& edge : gd.edges_draw) {
+		for (const unit_edge_draw& edge : gd.unit_edges) {
 			if (edge_visible(edge.kind)) {
-				add_neighbors(edge.a, edge.b);
+				add_neighbors(edge);
 			}
 		}
 		if (edge_visible(introspection::edge_kind::channel)) {
-			for (const channel_link_draw& edge : gd.channel_edges) {
-				add_neighbors(edge.a, edge.b);
+			for (const unit_edge_draw& edge : gd.unit_channel_edges) {
+				add_neighbors(edge);
 			}
 		}
 	}
@@ -676,21 +992,48 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 	}
 	const float scale = std::clamp(fit * gd.zoom, min_scale, max_scale);
 
+	const auto to_screen = [&](const vec2f world) -> vec2f {
+		return {
+			area.center().x() + gd.pan.x() + (world.x() - world_center.x()) * scale,
+			area.center().y() + gd.pan.y() - (world.y() - world_center.y()) * scale,
+		};
+	};
+
+	gd.canvas_groups.clear();
+	for (std::uint32_t g = 0; g < gd.groups.size(); ++g) {
+		const graph_group& group = gd.groups[g];
+		if (!group.expanded) {
+			continue;
+		}
+		const vec2f lo = to_screen(gd.group_world[g].first);
+		const vec2f hi = to_screen(gd.group_world[g].second);
+		gd.canvas_groups.push_back({
+			.key = group.key,
+			.label = group.name,
+			.rect = rectf({
+				.min = { lo.x(), hi.y() },
+				.max = { hi.x(), lo.y() },
+			}),
+			.color = gd.isolated ? vec4f{ group.color.x(), group.color.y(), group.color.z(), 0.3f } : group.color,
+		});
+	}
+
 	gd.nodes.clear();
 	std::optional<std::uint64_t> hovered;
 	for (std::uint32_t i = 0; i < n; ++i) {
-		const float sx = area.center().x() + gd.pan.x() + (gd.world[i].x() - world_center.x()) * scale;
-		const float sy = area.center().y() + gd.pan.y() - (gd.world[i].y() - world_center.y()) * scale;
+		const vec2f screen = to_screen(gd.world[i]);
+		const float sx = screen.x();
+		const float sy = screen.y();
 		const float nw = gd.widths[i] * scale;
 		const float nh = pill_h * scale;
-		gd.centers[i] = { sx, sy };
+		gd.centers[i] = screen;
 		const bool ghosted = gd.isolated && !gd.isolate_set[i];
 		const rectf node_rect = rectf::from_position_size({ sx - nw * 0.5f, sy + nh * 0.5f }, { nw, nh });
 		if (!ghosted && over_area && ctx.hovers(node_rect)) {
-			hovered = gd.snapshot.nodes[i].id;
+			hovered = gd.units[i].key;
 		}
 		gd.nodes.push_back({
-			.key = gd.snapshot.nodes[i].id,
+			.key = gd.units[i].key,
 			.label = ghosted ? std::string_view{} : std::string_view(gd.labels[i]),
 			.rect = node_rect,
 			.color = gd.base_colors[i],
@@ -702,28 +1045,20 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 	std::ranges::fill(gd.highlighted, false);
 	std::ranges::fill(gd.edge_lit, false);
 	if (focus) {
-		const auto focused = gd.index_of.find(*focus);
-		if (focused != gd.index_of.end()) {
+		if (const auto focused = gd.unit_index_of.find(*focus); focused != gd.unit_index_of.end()) {
 			gd.highlighted[focused->second] = true;
 		}
-		for (std::size_t edge_index = 0; edge_index < gd.edges_draw.size(); ++edge_index) {
-			const edge_draw& edge = gd.edges_draw[edge_index];
-			if (!edge_visible(edge.kind)) {
-				continue;
-			}
-			const std::uint64_t a_id = gd.snapshot.nodes[edge.a].id;
-			const std::uint64_t b_id = gd.snapshot.nodes[edge.b].id;
-			if (a_id == *focus || b_id == *focus) {
+		for (std::size_t edge_index = 0; edge_index < gd.unit_edges.size(); ++edge_index) {
+			const unit_edge_draw& edge = gd.unit_edges[edge_index];
+			if (edge_visible(edge.kind) && touches(edge, *focus)) {
 				gd.edge_lit[edge_index] = true;
 				gd.highlighted[edge.a] = true;
 				gd.highlighted[edge.b] = true;
 			}
 		}
 		if (edge_visible(introspection::edge_kind::channel)) {
-			for (const channel_link_draw& edge : gd.channel_edges) {
-				const std::uint64_t a_id = gd.snapshot.nodes[edge.a].id;
-				const std::uint64_t b_id = gd.snapshot.nodes[edge.b].id;
-				if (a_id == *focus || b_id == *focus) {
+			for (const unit_edge_draw& edge : gd.unit_channel_edges) {
+				if (touches(edge, *focus)) {
 					gd.highlighted[edge.a] = true;
 					gd.highlighted[edge.b] = true;
 				}
@@ -738,7 +1073,7 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 			color = { color.x() * 0.16f, color.y() * 0.16f, color.z() * 0.18f, 0.07f };
 		}
 		else if (focus) {
-			if (gd.snapshot.nodes[i].id == *focus) {
+			if (gd.units[i].key == *focus) {
 				color = { std::min(1.f, color.x() + 0.22f), std::min(1.f, color.y() + 0.22f), std::min(1.f, color.z() + 0.22f), 1.f };
 			}
 			else if (!gd.highlighted[i]) {
@@ -761,9 +1096,25 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		return center + dir * t;
 	};
 
+	const float label_zoom = 0.9f;
+	const auto push_edge = [&](const unit_edge_draw& edge, const vec4f color, const bool lit) {
+		const vec2f delta = gd.centers[edge.b] - gd.centers[edge.a];
+		const float dist = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
+		if (dist < 1.f) {
+			return;
+		}
+		const vec2f dir = delta * (1.f / dist);
+		gd.edges.push_back({
+			.from = border_point(gd.centers[edge.a], dir, gd.nodes[edge.a].rect),
+			.to = border_point(gd.centers[edge.b], dir * -1.f, gd.nodes[edge.b].rect),
+			.color = color,
+			.label = lit || (!focus && scale >= label_zoom) ? std::string_view(edge.label) : std::string_view{},
+		});
+	};
+
 	gd.edges.clear();
-	for (std::size_t edge_index = 0; edge_index < gd.edges_draw.size(); ++edge_index) {
-		const edge_draw& edge = gd.edges_draw[edge_index];
+	for (std::size_t edge_index = 0; edge_index < gd.unit_edges.size(); ++edge_index) {
+		const unit_edge_draw& edge = gd.unit_edges[edge_index];
 		if (!edge_visible(edge.kind)) {
 			continue;
 		}
@@ -774,38 +1125,18 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		if (focus && !gd.edge_lit[edge_index]) {
 			color = { color.x() * 0.4f, color.y() * 0.4f, color.z() * 0.4f, 0.22f };
 		}
-		const vec2f delta = gd.centers[edge.b] - gd.centers[edge.a];
-		const float dist = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
-		if (dist < 1.f) {
-			continue;
-		}
-		const vec2f dir = delta * (1.f / dist);
-		gd.edges.push_back({
-			.from = border_point(gd.centers[edge.a], dir, gd.nodes[edge.a].rect),
-			.to = border_point(gd.centers[edge.b], dir * -1.f, gd.nodes[edge.b].rect),
-			.color = color,
-		});
+		push_edge(edge, color, gd.edge_lit[edge_index]);
 	}
 
 	if (focus && edge_visible(introspection::edge_kind::channel)) {
-		for (const channel_link_draw& edge : gd.channel_edges) {
-			if (gd.snapshot.nodes[edge.a].id != *focus && gd.snapshot.nodes[edge.b].id != *focus) {
+		for (const unit_edge_draw& edge : gd.unit_channel_edges) {
+			if (!touches(edge, *focus)) {
 				continue;
 			}
 			if (gd.isolated && (!gd.isolate_set[edge.a] || !gd.isolate_set[edge.b])) {
 				continue;
 			}
-			const vec2f delta = gd.centers[edge.b] - gd.centers[edge.a];
-			const float dist = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
-			if (dist < 1.f) {
-				continue;
-			}
-			const vec2f dir = delta * (1.f / dist);
-			gd.edges.push_back({
-				.from = border_point(gd.centers[edge.a], dir, gd.nodes[edge.a].rect),
-				.to = border_point(gd.centers[edge.b], dir * -1.f, gd.nodes[edge.b].rect),
-				.color = edge_color(introspection::edge_kind::channel),
-			});
+			push_edge(edge, edge_color(introspection::edge_kind::channel), true);
 		}
 	}
 
@@ -813,31 +1144,11 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		.area = area,
 		.nodes = gd.nodes,
 		.edges = gd.edges,
+		.groups = gd.canvas_groups,
 		.label_scale = scale,
 	});
 
 	draw_legend(ui, canvas, gd);
-
-	ui.draw<gui::panel_backdrop>({
-		.rect = reset_rect,
-		.background = over_reset ? vec4f{ 0.18f, 0.20f, 0.26f, 0.95f } : vec4f{ 0.09f, 0.10f, 0.13f, 0.9f },
-		.clip = reset_rect,
-		.layer = render_layer::overlay,
-	});
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = "reset view",
-		.position = { reset_rect.left() + 12.f, reset_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.layer = render_layer::overlay,
-	});
-	if (ctx.clicked_in_rect(reset_rect)) {
-		gd.pan = { 0.f, 0.f };
-		gd.zoom = 1.f;
-		gd.isolated = std::nullopt;
-		gd.selected = std::nullopt;
-	}
 
 	if (ctx.hit_regions) {
 		ctx.hit_regions->block_text_selection(canvas);
@@ -854,7 +1165,13 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 		draw_detail_panel(ui, *panel_area, gd, index, channels);
 	}
 	else if (picked.hovered) {
-		draw_node_tooltip(ctx, canvas, gd, index, *picked.hovered, mouse);
+		const graph_unit& unit = gd.units[gd.unit_index_of.at(*picked.hovered)];
+		if (unit.system) {
+			draw_node_tooltip(ctx, canvas, gd, index, *picked.hovered, mouse);
+		}
+		else {
+			draw_group_tooltip(ctx, canvas, gd, unit.group, mouse);
+		}
 	}
 
 	if (panel_divider && (over_divider || gd.resizing_panel.dragging)) {
@@ -874,7 +1191,23 @@ auto gse::ide::draw_graph(gui::builder& ui, const rectf& area, graph_data& gd, c
 			gd.selected = std::nullopt;
 		}
 	}
+	const auto set_expanded = [&](const std::uint64_t key, const bool expanded) {
+		for (graph_group& group : gd.groups) {
+			if (group.key == key) {
+				group.expanded = expanded;
+				gd.presentation_ready = false;
+			}
+		}
+	};
+	if (picked.group_clicked) {
+		set_expanded(*picked.group_clicked, false);
+		return;
+	}
 	if (!picked.clicked) {
+		return;
+	}
+	if (!gd.units[gd.unit_index_of.at(*picked.clicked)].system) {
+		set_expanded(*picked.clicked, true);
 		return;
 	}
 	if (gui::interaction::register_click(gd.click, mouse) >= 2) {
@@ -1140,7 +1473,6 @@ auto gse::ide::draw_node_tooltip(const gui::draw_context& ctx, const rectf& area
 	if (!node) {
 		return;
 	}
-	const auto text_view = ctx.fonts.text.resolve();
 
 	const float fs = ctx.style.font_size;
 	const float wrap_width = std::clamp(area.width() * 0.4f, 200.f, 380.f);
@@ -1213,15 +1545,42 @@ auto gse::ide::draw_node_tooltip(const gui::draw_context& ctx, const rectf& area
 		gd.tooltip_accent_color = ctx.style.color_accent;
 	}
 
+	draw_text_tooltip(ctx, area, gd.tooltip_lines, anchor);
+}
+
+auto gse::ide::draw_group_tooltip(const gui::draw_context& ctx, const rectf& area, const graph_data& gd, const std::uint32_t group, const vec2f anchor) -> void {
+	const graph_group& g = gd.groups[group];
+	std::vector<graph_text_line> lines;
+	lines.push_back({
+		.text = g.name,
+		.color = ctx.style.color_text,
+	});
+	lines.push_back({
+		.text = std::format("{} systems  -  click to expand", g.members.size()),
+		.color = ctx.style.color_text_secondary,
+	});
+	for (const std::uint32_t m : g.members) {
+		lines.push_back({
+			.text = std::string(node_label(gd.snapshot.nodes[m])),
+			.color = ctx.style.color_text_secondary,
+			.indent = 10.f,
+		});
+	}
+	draw_text_tooltip(ctx, area, lines, anchor);
+}
+
+auto gse::ide::draw_text_tooltip(const gui::draw_context& ctx, const rectf& area, const std::span<const graph_text_line> lines, const vec2f anchor) -> void {
+	const auto text_view = ctx.fonts.text.resolve();
+	const float fs = ctx.style.font_size;
 	const float pad = 8.f;
 	const float line_h = fs + 4.f;
 	float max_w = 0.f;
-	for (const graph_text_line& line : gd.tooltip_lines) {
+	for (const graph_text_line& line : lines) {
 		max_w = std::max(max_w, text_view->width(line.text, fs) + line.indent);
 	}
 
 	const float pw = max_w + pad * 2.f;
-	const float ph = line_h * static_cast<float>(gd.tooltip_lines.size()) + pad * 2.f;
+	const float ph = line_h * static_cast<float>(lines.size()) + pad * 2.f;
 	float px = anchor.x() + 16.f;
 	float py = anchor.y() - 16.f;
 	if (px + pw > area.right()) {
@@ -1251,15 +1610,70 @@ auto gse::ide::draw_node_tooltip(const gui::draw_context& ctx, const rectf& area
 		.layer = render_layer::popup,
 		.corner_radius = 4.f,
 	});
-	for (std::size_t i = 0; i < gd.tooltip_lines.size(); ++i) {
+	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float ly = panel.top() - pad - static_cast<float>(i) * line_h - line_h * 0.5f;
 		ctx.queue_text({
 			.font = ctx.fonts.text,
-			.text = gd.tooltip_lines[i].text,
-			.position = { panel.left() + pad + gd.tooltip_lines[i].indent, ly + text_view->vertical_center_offset(fs) },
+			.text = lines[i].text,
+			.position = { panel.left() + pad + lines[i].indent, ly + text_view->vertical_center_offset(fs) },
 			.scale = fs,
-			.color = gd.tooltip_lines[i].color,
+			.color = lines[i].color,
 			.layer = render_layer::popup,
 		});
 	}
+}
+auto gse::ide::to_mermaid(const graph_data& gd) -> std::string {
+	const auto quoted = [](const std::string_view text) {
+		std::string out;
+		for (const char c : text) {
+			if (c == '"') {
+				out += "#quot;";
+			}
+			else {
+				out.push_back(c);
+			}
+		}
+		return out;
+	};
+	const auto visible = [&](const introspection::edge_kind kind) {
+		const auto found = std::ranges::find(edge_kinds, kind);
+		return found != edge_kinds.end() && gd.kind_visible[static_cast<std::size_t>(found - edge_kinds.begin())];
+	};
+
+	std::string out = "flowchart TD\n";
+	for (std::uint32_t g = 0; g < gd.groups.size(); ++g) {
+		const graph_group& group = gd.groups[g];
+		if (!group.expanded) {
+			continue;
+		}
+		out += std::format("  subgraph g{}[\"{}\"]\n", g, quoted(group.name));
+		for (const std::uint32_t m : group.members) {
+			out += std::format("    n{}[\"{}\"]\n", gd.unit_of[m], quoted(gd.labels[gd.unit_of[m]]));
+		}
+		out += "  end\n";
+	}
+	for (std::uint32_t u = 0; u < gd.units.size(); ++u) {
+		if (!gd.units[u].system) {
+			out += std::format("  n{}[\"{}\"]\n", u, quoted(gd.labels[u]));
+		}
+	}
+	const auto emit = [&](const unit_edge_draw& edge, const std::string_view arrow) {
+		if (edge.label.empty()) {
+			out += std::format("  n{} {} n{}\n", edge.a, arrow, edge.b);
+		}
+		else {
+			out += std::format("  n{} {}|\"{}\"| n{}\n", edge.a, arrow, quoted(edge.label), edge.b);
+		}
+	};
+	for (const unit_edge_draw& edge : gd.unit_edges) {
+		if (visible(edge.kind)) {
+			emit(edge, "-->");
+		}
+	}
+	if (visible(introspection::edge_kind::channel)) {
+		for (const unit_edge_draw& edge : gd.unit_channel_edges) {
+			emit(edge, "-.->");
+		}
+	}
+	return out;
 }

@@ -21,6 +21,7 @@ import gse.time;
 import gse.concurrency;
 import gse.diag;
 import gse.ecs;
+import gse.meta;
 
 namespace gse::renderer::light_culling {
 	struct [[= shaders::shader_struct]] culling_params_data {
@@ -58,14 +59,19 @@ namespace gse::renderer::light_culling {
 
 	using shader_types = type_pack<culling_params_data, light_culling_limits>;
 
-	using entry = gpu::compute_entry<
-		gpu::body_path<"Compute/light_culling">,
+	template <fixed_string BodyPath>
+	using culling_entry = gpu::compute_entry<
+		gpu::body_path<BodyPath>,
 		gpu::types<shaders::forward::shader_types, shader_types>,
 		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Screen/screen_target">,
+		gpu::helpers<"Screen/screen_target", "Standard3D/light_culling_common">,
 		gpu::threads<16, 16, 1>,
 		gpu::system_values<gpu::group_id, gpu::group_thread_id, gpu::group_index>
 	>;
+
+	using entry = culling_entry<"Compute/light_culling">;
+
+	using atomic_entry = culling_entry<"Compute/light_culling_atomic">;
 }
 
 namespace gse::renderer::light_culling {
@@ -90,7 +96,6 @@ namespace gse::renderer::light_culling {
 					.size = index_list_size,
 					.stride = sizeof(std::uint32_t),
 					.usage = gpu::buffer_flag::storage,
-					.bindless = true,
 					.writable = true
 			}
 			).handle();
@@ -100,7 +105,6 @@ namespace gse::renderer::light_culling {
 					.size = tile_table_size,
 					.stride = sizeof(std::uint32_t),
 					.usage = gpu::buffer_flag::storage,
-					.bindless = true,
 					.writable = true
 			}
 			).handle();
@@ -115,7 +119,9 @@ auto gse::renderer::light_culling::tile_count(const std::uint32_t width, const s
 }
 
 auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
-	d.pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+	d.pipeline = gpu_s.device->capabilities().untyped_atomics
+		? gpu::build_compute_program(*gpu_s.device, entry::pod)
+		: gpu::build_compute_program(*gpu_s.device, atomic_entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.culling_params_buffers[i] = gpu_s.device->create_buffer(
@@ -123,7 +129,6 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 				.size = sizeof(culling_params_data),
 				.stride = sizeof(culling_params_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			}
 		);
 
@@ -132,7 +137,6 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 				.size = sizeof(shaders::forward::light) * max_lights,
 				.stride = sizeof(shaders::forward::light),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			}
 		);
 	}

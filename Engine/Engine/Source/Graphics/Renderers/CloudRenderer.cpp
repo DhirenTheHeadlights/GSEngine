@@ -315,7 +315,6 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context:
 			.size = d.cloud_target_allocated_extent,
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"cloud_target"
 	);
@@ -332,10 +331,6 @@ auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context:
 			std::format("cloud_resolve_{}", i)
 		);
 		gpu::transition_image_to(*gpu_s.device, d.cloud_resolve[i]);
-		if (!d.cloud_resolve_views[i].valid()) {
-			d.cloud_resolve_views[i] = gpu_s.device->allocate_image_slot();
-		}
-		gpu_s.device->write_sampled_image(d.cloud_resolve_views[i].slot(), d.cloud_resolve[i]);
 	}
 
 	update_depth_descriptor(gpu_s, d);
@@ -349,7 +344,6 @@ auto gse::renderer::cloud::recreate_shadow_map(const shared_view<gpu::context::d
 			.size = vec2u{ edge, edge },
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"cloud_shadow_map"
 	);
@@ -411,7 +405,6 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"cloud_shape_noise"
 	);
@@ -422,7 +415,6 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"cloud_detail_noise"
 	);
@@ -433,7 +425,6 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.format = gpu::image_format::r16g16b16a16_sfloat,
 			.view = gpu::image_view_type::e3d,
 			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-			.bindless = true,
 		},
 		"cloud_weather_map"
 	);
@@ -450,7 +441,6 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.size = sizeof(cloud_data),
 			.stride = sizeof(cloud_data),
 			.usage = gpu::buffer_flag::storage,
-			.bindless = true,
 		},
 		"cloud_ubo"
 	);
@@ -460,7 +450,6 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 			.size = sizeof(cloud_shadow_data),
 			.stride = sizeof(cloud_shadow_data),
 			.usage = gpu::buffer_flag::storage,
-			.bindless = true,
 		},
 		"cloud_shadow_ubo"
 	);
@@ -482,7 +471,12 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	return {};
 }
 
-auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<weather_request> weather_in, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<weather_request> weather_in, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state, const channel_read<camera::temporal_reset_request> reset_in) -> async::task<> {
+	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
+		d.frame_counter = 0;
+		d.frames_since_history_invalid = 0;
+	}
+
 	for (const auto& [phase] : weather_in.of<weather_request>()) {
 		d.weather_phase = phase;
 	}
@@ -697,7 +691,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		},
 		{
 			.resolve_low_in = d.cloud_target.sampled_slot(),
-			.resolve_history_in = d.cloud_resolve_views[previous_index].slot(),
+			.resolve_history_in = d.cloud_resolve[previous_index].sampled_slot(),
 			.resolve_sampler_binding = d.resolve_sampler.slot(),
 		}
 	);
@@ -720,7 +714,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.screen_uv_max = gpu::screen_uv_max_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
 		},
 		{
-			.cloud_in = d.cloud_resolve_views[history_index].slot(),
+			.cloud_in = d.cloud_resolve[history_index].sampled_slot(),
 			.cloud_composite_sampler = d.composite_sampler.slot(),
 		}
 	);

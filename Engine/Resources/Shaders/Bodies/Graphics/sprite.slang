@@ -52,12 +52,12 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     float4 col;
     if (pc.snapshot_tex_idx != INVALID_INDEX) {
         float2 screen_uv = input.clip_pos.xy * pc.inv_screen_size;
-        float4 bg = textures[NonUniformResourceIndex(pc.snapshot_tex_idx)].Sample(textures_sampler, screen_uv);
+        float4 bg = ui_sample(pc.snapshot_tex_idx, screen_uv);
         float a = input.color.a;
         col.rgb = input.color.rgb * a + bg.rgb * (1.0 - a);
         col.a = 1.0;
     } else {
-        col = textures[NonUniformResourceIndex(pc.tex_idx)].Sample(textures_sampler, input.tex_coord) * input.color;
+        col = ui_sample(pc.tex_idx, input.tex_coord) * input.color;
     }
 
     if (input.shape_kind == SHAPE_ARC) {

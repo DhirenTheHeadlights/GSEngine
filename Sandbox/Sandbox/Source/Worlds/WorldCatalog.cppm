@@ -34,7 +34,7 @@ export namespace sandbox {
 }
 
 auto sandbox::world_catalog() -> std::span<const world_entry> {
-	static const std::array<world_entry, 20> entries{
+	static const std::array<world_entry, 22> entries{
 		world_entry{
 			.name = "Sandbox",
 			.label = "Sandbox",
@@ -89,6 +89,13 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 			.blurb = "Hanging chains and springs for the joint solver",
 			.setup = &swings_scene_setup,
 			.diagram = &diagram::swings,
+			.group = world_group::world,
+		},
+		world_entry{
+			.name = "Grass",
+			.label = "Grass",
+			.blurb = "A field of ball-jointed grass blades for the sleeping-body path",
+			.setup = &grass_scene_setup,
 			.group = world_group::world,
 		},
 		world_entry{
@@ -224,6 +231,13 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 			.blurb = "A leaning row that propagates one contact at a time",
 			.setup = &parity_domino_scene_setup,
 			.diagram = &diagram::domino,
+			.group = world_group::parity,
+		},
+		world_entry{
+			.name = "ParityTextured",
+			.label = "Textured",
+			.blurb = "Static brick-textured boxes for texture parity across backends",
+			.setup = &parity_textured_scene_setup,
 			.group = world_group::parity,
 		},
 	};

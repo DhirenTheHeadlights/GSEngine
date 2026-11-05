@@ -8,6 +8,7 @@ import :types;
 import :physical_device;
 
 import gse.core;
+import gse.math;
 import gse.assert;
 import gse.log;
 import gse.ecs;
@@ -48,11 +49,15 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto create_owned_surface(
 			native_window_handle handle
-		) const -> gpu::surface;
+		) -> gpu::surface;
 
 		auto destroy_owned_surface(
 			gpu::surface surface
-		) const -> void;
+		) -> void;
+
+		[[nodiscard]] auto monitor_extent_of(
+			gpu::surface surface
+		) const -> vec2u;
 
 		[[nodiscard]] auto enumerate_physical_devices() const -> std::vector<physical_device>;
 
@@ -67,6 +72,8 @@ export namespace gse::vulkan {
 		vk::raii::Instance m_instance;
 		vk::raii::SurfaceKHR m_surface;
 		vk::raii::DebugUtilsMessengerEXT m_debug_messenger;
+		native_window_handle m_surface_window;
+		std::vector<std::pair<gpu::surface, native_window_handle>> m_owned_surface_windows;
 	};
 }
 
@@ -168,10 +175,12 @@ auto gse::vulkan::create_window_surface(const vk::Instance instance, const nativ
 auto gse::vulkan::instance::create_surface(const native_window_handle handle) -> void {
 	const auto raw_surface = create_window_surface(*m_instance, handle);
 	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
+	m_surface_window = handle;
 }
 
 auto gse::vulkan::instance::destroy_surface() -> void {
 	m_surface = nullptr;
+	m_surface_window = {};
 }
 
 auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<physical_device> {
@@ -188,15 +197,40 @@ auto gse::vulkan::instance::surface() const -> gpu::surface {
 	return std::bit_cast<gpu::surface>(*m_surface);
 }
 
-auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) const -> gpu::surface {
-	return std::bit_cast<gpu::surface>(create_window_surface(*m_instance, handle));
+auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) -> gpu::surface {
+	const auto surface = std::bit_cast<gpu::surface>(create_window_surface(*m_instance, handle));
+	m_owned_surface_windows.emplace_back(surface, handle);
+	return surface;
 }
 
-auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) const -> void {
+auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) -> void {
 	if (!surface) {
 		return;
 	}
+	std::erase_if(m_owned_surface_windows, [surface](const auto& entry) {
+		return entry.first == surface;
+	});
 	vk::Instance(*m_instance).destroySurfaceKHR(std::bit_cast<vk::SurfaceKHR>(surface));
+}
+
+auto gse::vulkan::instance::monitor_extent_of(const gpu::surface surface) const -> vec2u {
+	native_window_handle window = surface == this->surface() ? m_surface_window : native_window_handle{};
+	if (const auto it = std::ranges::find(m_owned_surface_windows, surface, &std::pair<gpu::surface, native_window_handle>::first); it != m_owned_surface_windows.end()) {
+		window = it->second;
+	}
+	if (!window) {
+		return {};
+	}
+	const win32::HMONITOR monitor = win32::MonitorFromWindow(static_cast<win32::HWND>(window.value), win32::monitor_default_to_nearest);
+	win32::MONITORINFO info{};
+	info.cbSize = sizeof(info);
+	if (!win32::GetMonitorInfoW(monitor, &info)) {
+		return {};
+	}
+	return vec2u{
+		static_cast<std::uint32_t>(info.rcMonitor.right - info.rcMonitor.left),
+		static_cast<std::uint32_t>(info.rcMonitor.bottom - info.rcMonitor.top),
+	};
 }
 
 auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {

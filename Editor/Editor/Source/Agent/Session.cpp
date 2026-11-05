@@ -62,7 +62,7 @@ auto gse::ide::agent::sessions_path() -> std::filesystem::path {
 auto gse::ide::agent::save_sessions(const data& d) -> void {
 	std::ostringstream out(std::ios::binary);
 	binary_writer writer(out, sessions_magic, sessions_version);
-	writer & d.sessions & d.active & d.chat_names & d.overview_active;
+	writer & d.sessions & d.active & d.chat_names & d.overview_active & d.closed;
 	layout_store::replace(sessions_path(), std::move(out).str());
 }
 
@@ -95,12 +95,16 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 	std::uint32_t active = 0;
 	std::unordered_map<std::string, std::string> names;
 	bool overview = true;
+	std::vector<session> closed;
 	reader & restored & active;
 	if (version >= chat_names_sessions_version) {
 		reader & names;
 	}
 	if (version >= overview_sessions_version) {
 		reader & overview;
+	}
+	if (version >= closed_sessions_version) {
+		reader & closed;
 	}
 	if (!reader.valid()) {
 		log::println(log::level::error, log::category::task, "agent: could not read '{}' - previous sessions were dropped", path.generic_display_string());
@@ -115,6 +119,7 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 	d.active = active;
 	d.chat_names = std::move(names);
 	d.overview_active = overview;
+	d.closed = std::move(closed);
 	for (session& s : d.sessions) {
 		std::erase_if(s.unbuilt, [](const auto& entry) {
 			return entry.second == 0;
@@ -171,11 +176,13 @@ auto gse::ide::agent::attach_runtime(session& s) -> void {
 	s.changes.filter = row_filter::changes;
 	s.everything.filter = row_filter::all;
 	s.followup.filter = row_filter::conversation;
+	s.live_scope.filter = row_filter::conversation;
 
 	for (transcript_view* v : views_of(s)) {
 		v->log_id = generate_temp_id(hash_of("agent_log", s.id, v->filter));
 	}
 	s.followup.log_id = generate_temp_id(hash_of("agent_followup", s.id));
+	s.live_scope.log_id = generate_temp_id(hash_of("agent_live_scope", s.id));
 }
 
 auto gse::ide::agent::inherited_handoffs() -> std::vector<handoff> {
@@ -312,7 +319,9 @@ auto gse::ide::agent::create_sync_session(data& d, sync_request request) -> sess
 		.requested_effort = d.default_effort,
 	});
 	attach_runtime(d.sessions.back());
-	return d.sessions.back();
+	d.sync_open = session_id;
+	trim_sync_history(d);
+	return *std::ranges::find(d.sessions, session_id, &session::id);
 }
 
 auto gse::ide::agent::is_chat(const session& s) -> bool {
@@ -320,8 +329,22 @@ auto gse::ide::agent::is_chat(const session& s) -> bool {
 }
 
 auto gse::ide::agent::sync_session(data& d) -> session* {
-	const auto found = std::ranges::find_if_not(d.sessions, is_chat);
+	const auto found = std::ranges::find_if(d.sessions, [&](const session& s) {
+		return !is_chat(s) && s.id == d.sync_open;
+	});
 	return found != d.sessions.end() ? &*found : nullptr;
+}
+
+auto gse::ide::agent::trim_sync_history(data& d) -> void {
+	while (std::ranges::count_if(d.sessions, std::not_fn(is_chat)) > max_sync_history) {
+		const auto oldest = std::ranges::find_if(d.sessions, [&](const session& s) {
+			return !is_chat(s) && s.id != d.sync_open;
+		});
+		if (oldest == d.sessions.end()) {
+			return;
+		}
+		erase_session(d, oldest->id);
+	}
 }
 
 auto gse::ide::agent::session_command(const session& s, const std::filesystem::path& prompt) -> std::wstring {
@@ -354,6 +377,12 @@ auto gse::ide::agent::session_command(const session& s, const std::filesystem::p
 	const std::string mcp = std::format(mcp_config_format, server.generic_display_string());
 	command.append(mcp.begin(), mcp.end());
 
+	if (!s.sync && current_phase(s) == task_phase::apply) {
+		const std::filesystem::path gate = config::worktree_for(s.cwd).engine_root / "Tools" / "gse-mcp" / "step-gate.mjs";
+		const std::string hook = std::format(step_gate_hook_format, gate.generic_display_string(), build_inbox::step_gate_path(s.id).generic_display_string());
+		command.append(hook.begin(), hook.end());
+	}
+
 	if (s.info.agent_id.empty()) {
 		return command;
 	}
@@ -370,6 +399,7 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 		return false;
 	}
 
+	refresh_step_gate(s);
 	const spawn::launched child = spawn::launch_streamed(session_command(s, write_phase_prompt(s)), s.cwd.wstring(), creds.environment);
 	if (!win32::valid_handle(child.process)) {
 		s.info.failure = "Could not launch Claude. Check that claude is on PATH.";
@@ -625,6 +655,35 @@ auto gse::ide::agent::close_session(session& s) -> void {
 	}
 }
 
+auto gse::ide::agent::owns_transcript(const session& s, const std::string_view agent_id) -> bool {
+	return s.info.agent_id == agent_id || std::ranges::contains(s.runs, agent_id, &phase_run::agent_id);
+}
+
+auto gse::ide::agent::remember_name(data& d, const session& s) -> void {
+	if (s.name.empty()) {
+		return;
+	}
+	if (!s.info.agent_id.empty()) {
+		d.chat_names[s.info.agent_id] = s.name;
+	}
+	for (const phase_run& run : s.runs) {
+		if (!run.agent_id.empty()) {
+			d.chat_names[run.agent_id] = s.name;
+		}
+	}
+}
+
+auto gse::ide::agent::persisted(const session& s) -> session {
+	std::stringstream buffer(std::ios::in | std::ios::out | std::ios::binary);
+	binary_writer writer(buffer);
+	writer & s;
+
+	session out;
+	binary_reader reader(buffer);
+	reader & out;
+	return out;
+}
+
 auto gse::ide::agent::erase_session(data& d, const std::uint32_t session_id) -> void {
 	const auto found = std::ranges::find(d.sessions, session_id, &session::id);
 	if (found == d.sessions.end()) {
@@ -637,14 +696,18 @@ auto gse::ide::agent::erase_session(data& d, const std::uint32_t session_id) -> 
 	}
 	close_session(*found);
 
-	if (!found->info.agent_id.empty() && !found->name.empty()) {
-		d.chat_names[found->info.agent_id] = found->name;
-	}
+	remember_name(d, *found);
 
 	const auto index = static_cast<std::size_t>(std::distance(d.sessions.begin(), found));
 	const bool was_active = d.active == session_id;
+	if (!found->info.agent_id.empty() && !found->sync) {
+		d.closed.push_back(persisted(*found));
+	}
 	d.sessions.erase(found);
 
+	if (d.sync_open == session_id) {
+		d.sync_open = 0;
+	}
 	if (d.renaming == session_id) {
 		d.renaming = 0;
 	}

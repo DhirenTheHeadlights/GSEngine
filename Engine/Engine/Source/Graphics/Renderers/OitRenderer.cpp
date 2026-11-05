@@ -139,7 +139,6 @@ auto gse::renderer::oit::init(context& ctx, const shared_view<gpu::context::data
 				.size = camera_ubo_size,
 				.stride = sizeof(shaders::common::camera_data),
 				.usage = gpu::buffer_flag::storage,
-				.bindless = true
 			},
 			"oit.camera_ubo"
 		);

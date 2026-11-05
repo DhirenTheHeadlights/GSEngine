@@ -88,7 +88,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -160,6 +162,28 @@ jobs:
           path: .generated/dist/gcc-trunk-windows-x64.zip
           include-hidden-files: true
 
+  # A toolchain that cannot build and pass the engine suite is never published: CI builds
+  # with the newest published release, so publishing a broken one breaks every later run.
+  gate:
+    needs: [resolve, build]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      toolchain: ${{ needs.resolve.outputs.tag }}
+      toolchain-artifact: gcc-trunk-windows-x64
+
+  publish:
+    needs: [resolve, build, gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gcc-trunk-windows-x64
+          path: .generated/dist
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -173,12 +197,12 @@ jobs:
             runtime + libstdc++ std module.
 
             - Snapshot: `${{ needs.resolve.outputs.snapshot }}` (gcc.gnu.org weekly trunk)
-            - SHA256: `${{ steps.hash.outputs.sha256 }}`
+            - SHA256: `${{ needs.build.outputs.sha256 }}`
 
             ## Install
 
             ```
-            python Tools/install_gcc_trunk.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ steps.hash.outputs.sha256 }} --persist
+            python Tools/install_gcc_trunk.py --tag ${{ needs.resolve.outputs.tag }} --sha256 ${{ needs.build.outputs.sha256 }} --persist
             ```
 
             Then configure as usual — `MINGW_ROOT` is set to the extracted toolchain:

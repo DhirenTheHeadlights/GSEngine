@@ -108,7 +108,7 @@ export namespace gse::network {
 		id accepted_controller{};
 		id announced_scene{};
 		std::vector<std::shared_ptr<discovery_provider>> providers;
-		std::vector<std::move_only_function<void(context&)>> deferred;
+		std::vector<std::move_only_function<void(const entities&)>> deferred;
 		bool auto_connect_pending = true;
 		bool auto_connect_rejected = false;
 		interval_timer<> auto_connect_timer{ seconds(2.f) };
@@ -122,15 +122,13 @@ export namespace gse::network {
 	template <typename MessagePack, typename... Components>
 	[[= system_run<>{}]]
 	auto run(
-		context& ctx,
 		shared_view<asset::data> assets_d,
 		data& d,
 		const config& net_cfg,
 		outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in,
 		channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out,
 		inbound_channel_t<MessagePack> messages_out,
-		entities ents,
-		structural<Components>... auths
+		entities ents
 	) -> async::task<>;
 
 	[[= system_shutdown{}]]
@@ -182,9 +180,8 @@ auto gse::network::join_saved_servers(const std::span<const std::string> entries
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents, structural<Components>... auths) -> async::task<> {
-	((void)auths, ...);
-	(ctx.template ensure_storage<Components>(), ...);
+auto gse::network::run(const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents) -> async::task<> {
+	(ents.template ensure_storage<Components>(), ...);
 
 	if (!net_cfg.connect.empty() && !d.auto_connect_rejected) {
 		const bool retry_due = d.auto_connect_timer.tick();
@@ -362,7 +359,7 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 		}
 	);
 
-	d.client_ptr->poll([&ctx, &d, &assets_d, &ents, requests_out, messages_out](inbound_message& msg) {
+	d.client_ptr->poll([&d, &assets_d, requests_out, messages_out](inbound_message& msg) {
 		read_bitstream stream(msg.payload);
 		++d.stat_messages;
 
@@ -372,9 +369,9 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 			[&]<typename T>(const component_upsert<T>& m) {
 				++d.stat_upserts;
 				++d.stat_upserts_by_type[type_tag<T>()];
-				d.deferred.push_back([entity = m.owner_id, payload = m.data, assets_d, ents](context& ctx) {
+				d.deferred.push_back([entity = m.owner_id, payload = m.data, assets_d](const entities& ents) {
 					ents.ensure_active(entity);
-					auto* c = ctx.add_component<T>(entity);
+					auto* c = ents.add_component<T>(entity);
 					apply_networked(*c, payload);
 					asset::resolve_handles(*c, assets_d);
 				});
@@ -384,14 +381,14 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 				if (!m.owner_id.exists()) {
 					return;
 				}
-				d.deferred.push_back([entity = m.owner_id, ents](context& ctx) {
+				d.deferred.push_back([entity = m.owner_id](const entities& ents) {
 					if constexpr (std::is_same_v<T, player_controller>) {
 						if (ents.exists(entity)) {
 							ents.remove(entity);
 						}
 					}
 					else {
-						ctx.remove_component<T>(entity);
+						ents.remove_component<T>(entity);
 						if (ents.exists(entity) && !ents.has_components(entity)) {
 							ents.remove(entity);
 						}
@@ -468,7 +465,7 @@ auto gse::network::run(context& ctx, const shared_view<asset::data> assets_d, da
 	});
 
 	for (auto& def : d.deferred) {
-		def(ctx);
+		def(ents);
 	}
 	d.deferred.clear();
 

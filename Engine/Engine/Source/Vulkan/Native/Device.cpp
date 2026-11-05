@@ -137,7 +137,7 @@ auto gse::vulkan::device::acquire_next_image(const gpu::swap_chain_handle swapch
 	};
 }
 
-auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const gpu::swap_chain_handle old_swapchain) -> gpu::expected<gpu::swap_chain_info> {
+auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, const vec2u monitor, const gpu::swap_chain_handle old_swapchain) -> gpu::expected<gpu::swap_chain_info> {
 	const auto vk_surface = std::bit_cast<vk::SurfaceKHR>(surface);
 	const auto vk_phys = std::bit_cast<vk::PhysicalDevice>(m_physical_device.handle());
 	auto [caps_result, vk_capabilities] = vk_phys.getSurfaceCapabilitiesKHR(vk_surface);
@@ -285,9 +285,69 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 		.presentModeCount = static_cast<std::uint32_t>(compatible_present_modes.size()),
 		.pPresentModes = compatible_present_modes.data(),
 	};
+	const std::span<const vk::PresentModeKHR> scaling_modes = compatible_present_modes.empty()
+		? std::span<const vk::PresentModeKHR>(&present_mode, 1)
+		: std::span<const vk::PresentModeKHR>(compatible_present_modes);
+	vk::PresentScalingFlagsEXT scaling_support = vk::PresentScalingFlagBitsEXT::eOneToOne;
+	vk::PresentGravityFlagsEXT gravity_x_support = vk::PresentGravityFlagBitsEXT::eMin;
+	vk::PresentGravityFlagsEXT gravity_y_support = vk::PresentGravityFlagBitsEXT::eMin;
+	vk::Extent2D scaled_min{ 0, 0 };
+	vk::Extent2D scaled_max{ std::numeric_limits<std::uint32_t>::max(), std::numeric_limits<std::uint32_t>::max() };
+	for (const auto mode : scaling_modes) {
+		const vk::SurfacePresentModeKHR scaling_present_mode{
+			.presentMode = mode,
+		};
+		const vk::PhysicalDeviceSurfaceInfo2KHR scaling_surface_info{
+			.pNext = &scaling_present_mode,
+			.surface = vk_surface,
+		};
+		vk::SurfacePresentScalingCapabilitiesEXT scaling_caps{};
+		vk::SurfaceCapabilities2KHR scaling_caps_chain{
+			.pNext = &scaling_caps,
+		};
+		(void)vk_phys.getSurfaceCapabilities2KHR(&scaling_surface_info, &scaling_caps_chain);
+		scaling_support &= scaling_caps.supportedPresentScaling;
+		gravity_x_support &= scaling_caps.supportedPresentGravityX;
+		gravity_y_support &= scaling_caps.supportedPresentGravityY;
+		scaled_min = vk::Extent2D{ std::max(scaled_min.width, scaling_caps.minScaledImageExtent.width), std::max(scaled_min.height, scaling_caps.minScaledImageExtent.height) };
+		scaled_max = vk::Extent2D{ std::min(scaled_max.width, scaling_caps.maxScaledImageExtent.width), std::min(scaled_max.height, scaling_caps.maxScaledImageExtent.height) };
+	}
+
+	const auto target_allocation = gpu::swapchain_allocation_for(vec2u{ extent.width, extent.height }, monitor);
+	const vk::Extent2D scaled_extent{
+		std::clamp(target_allocation.x(), scaled_min.width, std::max(scaled_min.width, scaled_max.width)),
+		std::clamp(target_allocation.y(), scaled_min.height, std::max(scaled_min.height, scaled_max.height)),
+	};
+	const bool one_to_one_scaling = scaling_support && gravity_x_support && gravity_y_support
+		&& scaled_extent.width >= extent.width && scaled_extent.height >= extent.height;
+
+	static std::atomic<int> last_scaling{ -1 };
+	if (last_scaling.exchange(one_to_one_scaling ? 1 : 0, std::memory_order_relaxed) != (one_to_one_scaling ? 1 : 0)) {
+		log::println(
+			log::category::vulkan,
+			"Swapchain one-to-one present scaling: {}, scaled image range {}x{}..{}x{}",
+			one_to_one_scaling,
+			scaled_min.width,
+			scaled_min.height,
+			scaled_max.width,
+			scaled_max.height
+		);
+	}
+
+	vk::SwapchainPresentScalingCreateInfoEXT scaling_create_info{
+		.scalingBehavior = vk::PresentScalingFlagBitsEXT::eOneToOne,
+		.presentGravityX = vk::PresentGravityFlagBitsEXT::eMin,
+		.presentGravityY = vk::PresentGravityFlagBitsEXT::eMin,
+	};
 	if (!compatible_present_modes.empty()) {
 		create_info.pNext = &present_modes_create_info;
 	}
+	if (one_to_one_scaling) {
+		scaling_create_info.pNext = create_info.pNext;
+		create_info.pNext = &scaling_create_info;
+		create_info.imageExtent = scaled_extent;
+	}
+	const vk::Extent2D allocated = create_info.imageExtent;
 
 	if (old_swapchain) {
 		create_info.oldSwapchain = std::bit_cast<vk::SwapchainKHR>(old_swapchain);
@@ -401,6 +461,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	gpu::swap_chain_info info{
 		.handle = handle,
 		.extent = { extent.width, extent.height },
+		.allocated = { allocated.width, allocated.height },
 		.format = from_vk(format),
 		.present_mode = from_vk(present_mode),
 		.present_timing_supported = present_timing_supported,
@@ -423,6 +484,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 			handle.value,
 			swap_chain_resources{
 				.swapchain = std::move(vk_swap_chain),
+				.scaled_allocation = one_to_one_scaling ? vec2u{ allocated.width, allocated.height } : vec2u{},
 				.image_views = std::move(image_views),
 				.release_fences = std::move(release_fences),
 			}
@@ -433,6 +495,12 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 	}
 
 	return info;
+}
+
+auto gse::vulkan::device::resize_swapchain_in_place(const gpu::swap_chain_handle swapchain, const vec2u extent) const -> bool {
+	std::lock_guard _(m_mutex);
+	const auto* resources = m_owned.find(swapchain);
+	return resources && extent.x() <= resources->scaled_allocation.x() && extent.y() <= resources->scaled_allocation.y();
 }
 
 auto gse::vulkan::device::destroy_swapchain(const gpu::swap_chain_handle swapchain) -> void {
@@ -1295,7 +1363,7 @@ auto gse::vulkan::device::create_buffer(const gpu::buffer_desc& desc, const std:
 		.usage = to_vk(desc.usage),
 	};
 	auto buf = create_buffer(vk_info, desc, tag, loc);
-	if (!desc.bindless) {
+	if (!gpu::takes_slot(desc)) {
 		return buf;
 	}
 	const auto slot = m_bindless->buffer_pool.allocate();
@@ -1500,9 +1568,6 @@ auto gse::vulkan::device::create_image(const gpu::image_desc& desc, const std::s
 	};
 
 	auto img = create_image(create_info, gpu::memory_property_flag::device_local, view_info, nullptr, tag, loc);
-	if (!desc.bindless) {
-		return img;
-	}
 	gpu::bindless_slot storage_slot;
 	gpu::bindless_slot sampled_slot;
 	if (usage.test(gpu::image_flag::storage)) {
@@ -2359,6 +2424,10 @@ auto gse::vulkan::device::clean_up() -> void {
 
 	if (!*m_device) {
 		return;
+	}
+
+	if (m_bindless) {
+		log::println(log::category::vulkan, "bindless high water: buffer {}/{} image {}/{} texture {}/{} sampler {}/{} acceleration_structure {}/{}", m_bindless->buffer_pool.high_water, m_bindless->buffer_pool.capacity, m_bindless->image_pool.high_water, m_bindless->image_pool.capacity, m_bindless->texture_pool.high_water, m_bindless->texture_pool.capacity, m_bindless->sampler_pool.high_water, m_bindless->sampler_pool.capacity, m_bindless->acceleration_structure_pool.high_water, m_bindless->acceleration_structure_pool.capacity);
 	}
 
 	m_owned.clear();
@@ -3271,7 +3340,7 @@ auto gse::vulkan::device::create_tlas(const std::uint32_t max_instances) -> gpu:
 		gpu::buffer_desc{
 			.size = std::max(sizes.build_scratch_size, sizes.update_scratch_size) +
 				alignment,
-			.usage = gpu::buffer_flag::storage,
+			.usage = gpu::buffer_flag::acceleration_structure_scratch,
 		}
 	);
 
