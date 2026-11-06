@@ -27,6 +27,8 @@ __pycache__/
 !/Engine/External/moodycamel/
 !/Engine/External/moodycamel/concurrentqueue.h
 !/Engine/External/pinned-ports/
+!/Engine/External/wgpu-native/
+/Engine/External/wgpu-native/lib/
 !/Engine/External/coremath/
 
 # Generated resources / configs

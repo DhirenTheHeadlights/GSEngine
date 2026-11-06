@@ -194,10 +194,10 @@ function(gse_copy_runtime_deps target)
         endforeach()
     endif()
 
-    if(GSE_WGPU_NATIVE_DIR)
+    if(GSE_WGPU_NATIVE_LIB_DIR)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${GSE_WGPU_NATIVE_DIR}/lib/wgpu_native.dll"
+                "${GSE_WGPU_NATIVE_LIB_DIR}/wgpu_native.dll"
                 "$<TARGET_FILE_DIR:${target}>"
         )
     endif()

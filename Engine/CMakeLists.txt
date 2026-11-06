@@ -80,11 +80,28 @@ if(WIN32)
     target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
     target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_EXCEPTIONS)
 
+    # The headers and VERSION are tracked under External/wgpu-native; the binaries come from the
+    # pinned release zip, verified against the sha256 in VERSION. Bump the tag and hash together.
     set(GSE_WGPU_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/wgpu-native" CACHE INTERNAL "Pinned wgpu-native prebuilt, see its VERSION file")
+    set(GSE_WGPU_NATIVE_TAG "v29.0.1.1")
+    set(GSE_WGPU_NATIVE_SHA256 "d471e3614733c1d4ddd61bfd19868356477d0d37bf531bf8c6cb64a7f579bd2a")
+    set(_wgpu_root "${CMAKE_BINARY_DIR}/_wgpu-native/${GSE_WGPU_NATIVE_TAG}")
+    if(NOT EXISTS "${_wgpu_root}/lib/wgpu_native.dll")
+        set(_wgpu_zip "${CMAKE_BINARY_DIR}/_wgpu-native/wgpu-${GSE_WGPU_NATIVE_TAG}.zip")
+        message(STATUS "Fetching wgpu-native ${GSE_WGPU_NATIVE_TAG} ...")
+        file(DOWNLOAD
+            "https://github.com/gfx-rs/wgpu-native/releases/download/${GSE_WGPU_NATIVE_TAG}/wgpu-windows-x86_64-gnu-release.zip"
+            "${_wgpu_zip}"
+            EXPECTED_HASH SHA256=${GSE_WGPU_NATIVE_SHA256}
+            TLS_VERIFY ON
+        )
+        file(ARCHIVE_EXTRACT INPUT "${_wgpu_zip}" DESTINATION "${_wgpu_root}" PATTERNS "lib/wgpu_native.dll" "lib/libwgpu_native.dll.a")
+    endif()
+    set(GSE_WGPU_NATIVE_LIB_DIR "${_wgpu_root}/lib" CACHE INTERNAL "Fetched wgpu-native binaries")
     add_library(wgpu_native SHARED IMPORTED GLOBAL)
     set_target_properties(wgpu_native PROPERTIES
-        IMPORTED_LOCATION "${GSE_WGPU_NATIVE_DIR}/lib/wgpu_native.dll"
-        IMPORTED_IMPLIB "${GSE_WGPU_NATIVE_DIR}/lib/libwgpu_native.dll.a"
+        IMPORTED_LOCATION "${GSE_WGPU_NATIVE_LIB_DIR}/wgpu_native.dll"
+        IMPORTED_IMPLIB "${GSE_WGPU_NATIVE_LIB_DIR}/libwgpu_native.dll.a"
         INTERFACE_INCLUDE_DIRECTORIES "${GSE_WGPU_NATIVE_DIR}/include"
         INTERFACE_COMPILE_DEFINITIONS "WGPU_SHARED_LIBRARY"
     )
