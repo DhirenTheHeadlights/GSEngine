@@ -212,6 +212,18 @@ auto gse::profile::ingest_gpu_sample(const id pass_id, const sample_time duratio
 	update_entry(storage_for(domain::gpu), pass_id, duration, 0, frame_index, false);
 }
 
+auto gse::profile::ingest_gpu_queue_frame(const std::size_t queue, const sample_time busy, const sample_time span) -> void {
+	if (!is_enabled.load(std::memory_order_relaxed) || warming_up()) {
+		return;
+	}
+
+	std::unique_lock _(state_mutex);
+	auto& target = gpu_queue_frames[queue];
+	target.busy += busy;
+	target.span += span;
+	++target.frames;
+}
+
 auto gse::profile::set_gpu_metric_names(const std::span<const std::string> names) -> void {
 	std::unique_lock _(state_mutex);
 	if (std::ranges::equal(gpu_metric_names, names)) {
@@ -322,6 +334,7 @@ auto gse::profile::reset() -> void {
 			map.clear();
 		}
 		gpu_metric_entries.clear();
+		gpu_queue_frames = {};
 		frame_count.store(0, std::memory_order_relaxed);
 		frame_total = {};
 		warmup_remaining.store(0, std::memory_order_relaxed);
@@ -610,7 +623,7 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 
 	out << std::format("=== Profile dump ({}) ===\n", system_clock::timestamp_filename());
 	out << std::format(
-		"measured mean frame: {:.2f:ms} ({:.2f} fps)    main-thread scoped self: {:.2f:ms}    main-thread top: {:.2f:ms}    GPU top: {:.2f:ms}    "
+		"measured mean frame: {:.2f:ms} ({:.2f} fps)    main-thread scoped self: {:.2f:ms}    main-thread top: {:.2f:ms}    GPU top pass: {:.2f:ms}    "
 		"{} frames profiled    EMA alpha: {:.3f}\n",
 		frame_time,
 		fps,
@@ -620,6 +633,19 @@ auto gse::profile::dump(const std::filesystem::path& path) -> void {
 		frames,
 		alpha()
 	);
+	{
+		std::shared_lock _(state_mutex);
+		out << "GPU per frame (busy = union of pass intervals, span = first pass start to last pass end):";
+		for (std::size_t q = 0; q < gpu_queue_frames.size(); ++q) {
+			const auto& queue = gpu_queue_frames[q];
+			if (queue.frames == 0) {
+				continue;
+			}
+			const auto n = static_cast<double>(queue.frames);
+			out << std::format("    {}: busy {:.2f:ms} / span {:.2f:ms}", gpu_queue_names[q], queue.busy / n, queue.span / n);
+		}
+		out << "\n";
+	}
 	out << std::format(
 		"dropped trace events: {}    abandoned spans: {}    warmup frames discarded: {}{}\n",
 		trace::dropped_events(),

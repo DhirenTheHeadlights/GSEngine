@@ -128,16 +128,29 @@ runs:
     # std` ("Experimental `import std` support not enabled when detecting toolchain"). The
     # runner image ships whatever is current, so the version is pinned here to match the
     # UUID in the tree. Bumping one means bumping the other.
+    # The release CDN answers 504 often enough to fail whole runs, so the zip is cached by
+    # version and a cold download retries. The key's version must match CMAKE_VERSION below.
+    - name: Cache the pinned CMake
+      id: cmake-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cmake-pinned
+        key: cmake-4.3.3-windows-x86_64
+
     - name: Pin CMake to the version the import-std UUID targets
       shell: pwsh
       env:
         CMAKE_VERSION: "4.3.3"
+        CMAKE_CACHED: ${{ steps.cmake-cache.outputs.cache-hit }}
       run: |
         $name = "cmake-$env:CMAKE_VERSION-windows-x86_64"
-        Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$env:CMAKE_VERSION/$name.zip" `
-          -OutFile "$env:RUNNER_TEMP/cmake.zip"
-        Expand-Archive "$env:RUNNER_TEMP/cmake.zip" -DestinationPath "$env:RUNNER_TEMP/cmake" -Force
-        "$env:RUNNER_TEMP/cmake/$name/bin" >> $env:GITHUB_PATH
+        $root = Join-Path $HOME ".cmake-pinned"
+        if ($env:CMAKE_CACHED -ne 'true') {
+          Invoke-WebRequest -Uri "https://github.com/Kitware/CMake/releases/download/v$env:CMAKE_VERSION/$name.zip" `
+            -OutFile "$env:RUNNER_TEMP/cmake.zip" -MaximumRetryCount 5 -RetryIntervalSec 15
+          Expand-Archive "$env:RUNNER_TEMP/cmake.zip" -DestinationPath $root -Force
+        }
+        "$root/$name/bin" >> $env:GITHUB_PATH
 
     - name: Configure
       shell: pwsh

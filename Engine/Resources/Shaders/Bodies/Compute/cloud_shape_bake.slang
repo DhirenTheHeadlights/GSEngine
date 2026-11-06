@@ -9,12 +9,10 @@ void cloud_shape_bake(uint3 dispatch_id) {
     float tiling = 4.0;
     float3 p = uvw * tiling;
 
-    float low_freq = perlin_worley(p, tiling);
-    float mid_freq = worley_fbm(p * 2.0, tiling * 2.0);
-    float high_freq = worley_fbm(p * 4.0, tiling * 4.0);
+    float base = perlin_worley(p, tiling);
+    float worley_low = worley_3d(p * 2.0, tiling * 2.0);
+    float worley_mid = worley_3d(p * 4.0, tiling * 4.0);
+    float worley_high = worley_3d(p * 8.0, tiling * 8.0);
 
-    float fbm = mid_freq * 0.625 + high_freq * 0.25;
-    float shape = remap(low_freq, fbm - 1.0, 1.0, 0.0, 1.0);
-
-    cloud_shape_out[dispatch_id] = float4(shape, 0.0, 0.0, 1.0);
+    cloud_shape_out[dispatch_id] = float4(base, worley_low, worley_mid, worley_high);
 }

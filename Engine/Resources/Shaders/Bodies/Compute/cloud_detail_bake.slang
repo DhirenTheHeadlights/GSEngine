@@ -6,14 +6,12 @@ void cloud_detail_bake(uint3 dispatch_id) {
     }
 
     float3 uvw = (float3(dispatch_id) + 0.5) / float3(size);
-    float tiling = 8.0;
-    float3 p = uvw * tiling;
+    float3 tiling = cloud_detail_tiling * cloud_detail_octave_frequencies;
 
-    float octave_a = worley_3d(p, tiling);
-    float octave_b = worley_3d(p * 2.0, tiling * 2.0);
-    float octave_c = worley_3d(p * 4.0, tiling * 4.0);
-
-    float detail = octave_a * 0.625 + octave_b * 0.25 + octave_c * 0.125;
-
-    cloud_detail_out[dispatch_id] = float4(detail, 0.0, 0.0, 1.0);
+    cloud_detail_out[dispatch_id] = float4(
+        worley_3d(uvw * tiling.x, tiling.x),
+        worley_3d(uvw * tiling.y, tiling.y),
+        worley_3d(uvw * tiling.z, tiling.z),
+        1.0
+    );
 }

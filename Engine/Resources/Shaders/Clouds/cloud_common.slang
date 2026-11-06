@@ -20,10 +20,6 @@ public float3 hash33(float3 p) {
     return float3(pcg3d(uint3(int3(floor(p))))) * (1.0 / 4294967296.0);
 }
 
-public float hash13(float3 p) {
-    return hash33(p).x;
-}
-
 public float worley_3d(float3 p, float tiling) {
     float3 id = floor(p);
     float3 f = frac(p);
@@ -79,33 +75,45 @@ public float perlin_worley(float3 p, float tiling) {
     return saturate(remap(perlin, worley - 1.0, 1.0, 0.0, 1.0));
 }
 
-public float cloud_altitude_gradient(float height_fraction, float cloud_type) {
-    float cumulus_lo = 0.05;
-    float cumulus_hi = 0.45;
-    float stratus_lo = 0.0;
-    float stratus_hi = 0.15;
+public static const float3 cloud_octave_weights = float3(0.625, 0.25, 0.125);
 
-    float type_lo = lerp(stratus_lo, cumulus_lo, cloud_type);
-    float type_hi = lerp(stratus_hi, cumulus_hi, cloud_type);
-
-    float bottom = smoothstep(0.0, type_lo, height_fraction);
-    float top = 1.0 - smoothstep(type_hi, 1.0, height_fraction);
-    return bottom * top;
+public float cloud_height_profile(float height_fraction, float cloud_type) {
+    float base_ramp = smoothstep(0.0, lerp(0.03, 0.12, cloud_type), height_fraction);
+    float top_height = lerp(0.2, 1.0, cloud_type);
+    float top_falloff = saturate(remap(height_fraction, top_height * lerp(0.5, 0.65, cloud_type), top_height, 1.0, 0.0));
+    return base_ramp * top_falloff;
 }
 
-public float cloud_weather_coverage(float weather, float global_coverage, float contrast) {
-    float gate = saturate((weather - 0.5) * max(contrast, 1e-3) + 0.5);
+public float cloud_height_density(float height_fraction, float cloud_type) {
+    return lerp(1.0, saturate(remap(height_fraction, 0.0, 0.5, 0.35, 1.0)), cloud_type);
+}
+
+public float cloud_weather_coverage_gate(float weather_coverage, float global_coverage, float contrast) {
+    float gate = saturate((weather_coverage - 0.5) * max(contrast, 1e-3) + 0.5);
     return saturate(global_coverage * 2.0 * gate);
 }
 
-public float cloud_coverage_from_shape(float shape, float height_fraction, float cloud_type, float coverage) {
-    float gradient = cloud_altitude_gradient(height_fraction, cloud_type);
-    return saturate(remap(shape * gradient, 1.0 - coverage, 1.0, 0.0, 1.0));
+public float cloud_base_density(float4 shape, float coverage, float cloud_type, float core, float height_fraction) {
+    float fbm = dot(shape.gba, cloud_octave_weights);
+    float billows = saturate(remap(shape.r, fbm - 1.0, 1.0, 0.0, 1.0));
+    float profiled = billows * cloud_height_profile(height_fraction, cloud_type);
+    float base = saturate(remap(profiled, 1.0 - coverage, 1.0, 0.0, 1.0)) * coverage;
+    return base * cloud_height_density(height_fraction, cloud_type) * (1.0 + core);
 }
 
-public float cloud_carve_density(float base, float erosion, float detail_strength, float density_multiplier) {
-    float carved = base - erosion * detail_strength * (1.0 - base);
-    return saturate(carved) * density_multiplier;
+public static const float cloud_detail_tiling = 4.0;
+public static const float3 cloud_detail_octave_frequencies = float3(1.0, 2.0, 4.0);
+
+public float3 cloud_detail_resolvable(float3 detail, float detail_scale, float step_length) {
+    float3 cell = 1.0 / (detail_scale * cloud_detail_tiling * cloud_detail_octave_frequencies);
+    float3 weight = saturate(cell / max(step_length, 1e-6) - 1.0);
+    return lerp(float3(0.5, 0.5, 0.5), detail, weight);
+}
+
+public float cloud_erode(float base, float3 detail, float height_fraction, float erosion) {
+    float fbm = dot(detail, cloud_octave_weights);
+    float shaped = lerp(fbm, 1.0 - fbm, saturate(height_fraction * 4.0));
+    return max(remap(base, shaped * erosion, 1.0, 0.0, 1.0), 0.0);
 }
 
 public float henyey_greenstein(float cos_theta, float g) {
@@ -116,16 +124,34 @@ public float henyey_greenstein(float cos_theta, float g) {
 
 public float dual_henyey_greenstein(float cos_theta, float g_forward, float g_back, float blend) {
     return lerp(
-        henyey_greenstein(cos_theta, g_forward),
         henyey_greenstein(cos_theta, g_back),
+        henyey_greenstein(cos_theta, g_forward),
         blend
     );
 }
 
-public float beer_powder(float density, float step_length) {
-    float beer = exp(-density * step_length);
-    float powder = 1.0 - exp(-density * step_length * 2.0);
-    return beer * powder * 2.0;
+public float cloud_multi_scatter(float light_optical_depth, float cos_theta, float g_forward, float g_back, float blend, float strength, float extinction_falloff, int octaves) {
+    float result = 0.0;
+    float scatter = 1.0;
+    float extinction = 1.0;
+    float eccentricity = 1.0;
+    for (int i = 0; i < octaves; ++i) {
+        float phase = dual_henyey_greenstein(cos_theta, g_forward * eccentricity, g_back * eccentricity, blend);
+        result += scatter * phase * exp(-light_optical_depth * extinction);
+        scatter *= strength;
+        extinction *= extinction_falloff;
+        eccentricity *= 0.5;
+    }
+    return result;
+}
+
+public float cloud_powder(float optical_depth, float strength) {
+    return lerp(1.0, 1.0 - exp(-2.0 * optical_depth), strength);
+}
+
+public float interleaved_gradient_noise(float2 pixel, float frame) {
+    float2 p = pixel + 5.588238 * frac(frame * 0.0618034) * 64.0;
+    return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
 }
 
 public float2 ray_layer_intersect(float3 origin, float3 dir, float layer_radius) {

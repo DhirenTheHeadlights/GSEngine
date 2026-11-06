@@ -20,7 +20,9 @@ When a choice would change the plan itself rather than decorate it — so that w
 
 Say plainly what you could not determine without editing or running something, and what you would do if the assumption turns out wrong.
 
-End by calling `gse_phase_done` with the plan as `summary`. The owner approves it before anything is written, so the summary is the thing being agreed to: state the design, the files it will touch, and the assumptions it rests on. Do not call it until the plan is settled and nothing material is left to decide.
+End by calling `gse_phase_done` with the plan as `summary`. The owner approves it before anything is written, so the summary is the thing being agreed to: state the design, the files it will touch, and the assumptions it rests on. Do not call it until the plan is settled and nothing material is left to decide. The summary is the plan itself, with its full reasoning — never a digest of something you already wrote in your reply, because once you report, the editor shows the owner the summary in place of the transcript.
+
+A question is not a plan. When the owner asks something you can answer by reading or observing — why a thing behaves as it does, where a cost comes from, what a log shows — and you are not proposing a change, answer in your reply and end your turn without calling `gse_phase_done`. Reporting opens an approval gate offering to start applying, which is meaningless when there is nothing to apply. The chat stays in scoping with your answer in view; if the owner then asks for a fix, scope that fix and report it as above.
 
 ## Drafting A Goal
 

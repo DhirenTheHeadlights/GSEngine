@@ -509,6 +509,42 @@ auto gse::gpu::render_graph::read_profile_slot(gpu_profile_slot& slot, const per
 		ingest_perf_metrics(perf, gpu_id, start, end);
 	}
 
+	static_assert(queue_type_count == profile::gpu_queue_names.size());
+	const auto since_reference = [&](const std::uint64_t ticks) {
+		return profile::sample_time(static_cast<double>(((ticks & mask) - (timestamps[0] & mask)) & mask) * period);
+	};
+	std::array<std::pair<profile::sample_time, profile::sample_time>, max_profiled_passes> intervals;
+	for (std::uint32_t q = 0; q < queue_type_count; ++q) {
+		std::size_t count = 0;
+		for (std::uint32_t i = 0; i < slot.pass_count; ++i) {
+			if (static_cast<std::uint32_t>(slot.pass_queues[i]) != q) {
+				continue;
+			}
+			const auto begin = since_reference(timestamps[1 + i * 2]);
+			const auto finish = since_reference(timestamps[2 + i * 2]);
+			if (finish < begin) {
+				continue;
+			}
+			intervals[count++] = { begin, finish };
+		}
+		if (count == 0) {
+			continue;
+		}
+		const auto used = std::span(intervals).first(count);
+		std::ranges::sort(used, {}, &std::pair<profile::sample_time, profile::sample_time>::first);
+		auto busy = profile::sample_time{};
+		auto [run_begin, run_end] = used.front();
+		for (const auto& [begin, finish] : used.subspan(1)) {
+			if (begin > run_end) {
+				busy += run_end - run_begin;
+				run_begin = begin;
+			}
+			run_end = std::max(run_end, finish);
+		}
+		busy += run_end - run_begin;
+		profile::ingest_gpu_queue_frame(q, busy, run_end - used.front().first);
+	}
+
 	if (slot.mark_count > 0) {
 		const auto [mark_status, mark_times] =
 			m_device->query_pool_results(slot.timestamp_pool, mark_query_base, slot.mark_count, sizeof(std::uint64_t));

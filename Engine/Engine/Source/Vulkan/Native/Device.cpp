@@ -201,8 +201,7 @@ auto gse::vulkan::device::create_swap_chain(const gpu::surface surface, const ve
 		extent = vk_capabilities.currentExtent;
 	}
 	else {
-		vk::Extent2D actual_extent = { static_cast<std::uint32_t>(framebuffer_size.x()),
-			static_cast<std::uint32_t>(framebuffer_size.y()) };
+		vk::Extent2D actual_extent = { static_cast<std::uint32_t>(framebuffer_size.x()), static_cast<std::uint32_t>(framebuffer_size.y()) };
 
 		extent.width =
 			std::clamp(

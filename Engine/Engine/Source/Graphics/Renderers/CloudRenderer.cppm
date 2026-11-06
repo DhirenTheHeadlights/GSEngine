@@ -16,7 +16,7 @@ import gse.gpu_record;
 
 export namespace gse::renderer::cloud {
 	constexpr vec3u shape_noise_size{ 128, 128, 128 };
-	constexpr vec3u detail_noise_size{ 32, 32, 32 };
+	constexpr vec3u detail_noise_size{ 64, 64, 64 };
 	constexpr vec3u weather_map_size{ 128, 128, 32 };
 
 	struct weather_request {
@@ -37,25 +37,27 @@ export namespace gse::renderer::cloud {
 		float cloud_coverage;
 		float cloud_type;
 
-		float density_multiplier;
-		atmosphere_inverse_length view_extinction;
-		atmosphere_inverse_length light_extinction;
+		atmosphere_inverse_length extinction;
+		float albedo;
+		float multi_scatter_strength;
+		float powder_strength;
+
 		atmosphere_inverse_length shape_scale;
-
 		atmosphere_inverse_length detail_scale;
-		float detail_strength;
+		float detail_erosion;
 		float phase_g_forward;
-		float phase_g_back;
 
+		float phase_g_back;
 		float phase_blend;
 		float ambient_strength;
 		atmosphere_length max_distance;
-		atmosphere_inverse_length weather_scale;
 
+		atmosphere_inverse_length weather_scale;
 		float weather_phase;
 		float weather_contrast;
 		float weather_type_influence;
-		atmosphere_inverse_length shadow_extinction;
+
+		float multi_scatter_extinction;
 
 		auto operator==(
 			const cloud_data&
@@ -105,6 +107,18 @@ export namespace gse::renderer::cloud {
 		int target_divisor = 4;
 
 		[[
+			= settings::describe<"Screen divisor for the temporal resolve that accumulates the jittered raymarch. "
+									  "1 resolves at full resolution; 2 costs a quarter of that and converges in a "
+									  "quarter of the frames; equal to the raymarch divisor skips the jitter cycle "
+									  "entirely. The composite upsamples the result bilinearly. Applied as its "
+									  "greatest common divisor with the raymarch divisor. Changing it stalls the "
+									  "device once to rebuild the targets.">{},
+			= settings::range<1, 8>{},
+			= settings::hot_reloadable
+		]]
+		int resolve_divisor = 2;
+
+		[[
 			= settings::describe<"Cloud layer bottom altitude (km)">{},
 			= settings::hot_reloadable
 		]]
@@ -122,7 +136,7 @@ export namespace gse::renderer::cloud {
 			= shared,
 			= settings::hot_reloadable
 		]]
-		float cloud_coverage = 0.55f;
+		float cloud_coverage = 0.5f;
 
 		[[
 			= settings::describe<"Cloud type bias (0 = stratus, 1 = cumulus)">{},
@@ -130,49 +144,68 @@ export namespace gse::renderer::cloud {
 			= shared,
 			= settings::hot_reloadable
 		]]
-		float cloud_type = 0.7f;
+		float cloud_type = 0.8f;
 
 		[[
-			= settings::describe<"Cloud density multiplier">{},
-			= settings::range<0.f, 5.f>{},
+			= settings::describe<"Extinction of fully dense cloud. One coefficient serves the view march, the "
+									  "sun march and the ground shadow map, since all three integrate the same "
+									  "medium. Real cumulus sits in the tens per kilometre; low values give haze.">{},
+			= settings::range<per_kilometer(0.f), per_kilometer(120.f)>{},
 			= settings::hot_reloadable
 		]]
-		float density_multiplier = 1.0f;
+		atmosphere_inverse_length extinction = per_kilometer(40.f);
 
 		[[
-			= settings::describe<"View-ray Beer's law extinction coefficient">{},
-			= settings::range<per_kilometer(0.f), per_kilometer(1.f)>{},
+			= settings::describe<"Single-scattering albedo: the fraction of extinction that scatters rather "
+									  "than absorbs. Water cloud is very close to 1.">{},
+			= settings::range<0.f, 1.f>{},
 			= settings::hot_reloadable
 		]]
-		atmosphere_inverse_length view_extinction = per_kilometer(0.15f);
+		float albedo = 0.99f;
 
 		[[
-			= settings::describe<"Light-ray Beer's law extinction coefficient. The sun march covers only "
-									  "6 x 5% of the layer thickness, so this needs to be far larger than the "
-									  "view coefficient to produce visible self-shadowing.">{},
-			= settings::range<per_kilometer(0.f), per_kilometer(8.f)>{},
+			= settings::describe<"Weight carried into each successive multiple-scattering octave. Higher "
+									  "values brighten the dense interior and soften the sun-side contrast.">{},
+			= settings::range<0.f, 1.f>{},
 			= settings::hot_reloadable
 		]]
-		atmosphere_inverse_length light_extinction = per_kilometer(3.0f);
+		float multi_scatter_strength = 0.5f;
 
 		[[
-			= settings::describe<"Shape noise sampling scale (1/km)">{},
+			= settings::describe<"Fraction of optical depth each successive multiple-scattering octave still sees. "
+								  "Lower values let deep octaves carry light into thick cloud, whitening dense interiors.">{},
+			= settings::range<0.f, 1.f>{},
 			= settings::hot_reloadable
 		]]
-		atmosphere_inverse_length shape_scale = per_kilometer(0.4f);
+		float multi_scatter_extinction = 0.25f;
+
+		[[
+			= settings::describe<"Darkening of thin cloud edges facing the sun, which gives the bright rims "
+									  "and dark creases of piled cumulus. 0 disables it.">{},
+			= settings::range<0.f, 1.f>{},
+			= settings::hot_reloadable
+		]]
+		float powder_strength = 0.5f;
+
+		[[
+			= settings::describe<"Shape noise sampling scale (1/km). Sets the size of individual billows.">{},
+			= settings::hot_reloadable
+		]]
+		atmosphere_inverse_length shape_scale = per_kilometer(0.3f);
 
 		[[
 			= settings::describe<"Detail noise sampling scale (1/km)">{},
 			= settings::hot_reloadable
 		]]
-		atmosphere_inverse_length detail_scale = per_kilometer(3.5f);
+		atmosphere_inverse_length detail_scale = per_kilometer(0.6f);
 
 		[[
-			= settings::describe<"Detail erosion strength">{},
+			= settings::describe<"How far detail noise eats into billow edges: wispy at the base, "
+									  "billowy at the top.">{},
 			= settings::range<0.f, 1.f>{},
 			= settings::hot_reloadable
 		]]
-		float detail_strength = 0.35f;
+		float detail_erosion = 0.35f;
 
 		[[
 			= settings::describe<"Henyey-Greenstein forward asymmetry">{},
@@ -240,7 +273,7 @@ export namespace gse::renderer::cloud {
 			= settings::range<0.5f, 6.f>{},
 			= settings::hot_reloadable
 		]]
-		float weather_contrast = 1.6f;
+		float weather_contrast = 2.2f;
 
 		[[
 			= settings::describe<"How far the weather field is allowed to override the global cloud type, so "
@@ -250,17 +283,6 @@ export namespace gse::renderer::cloud {
 			= settings::hot_reloadable
 		]]
 		float weather_type_influence = 0.6f;
-
-		[[
-			= settings::describe<"Beer's law extinction for the cloud shadow march. Deliberately separate from "
-									  "light_extinction: that one is inflated to compensate for a sun march covering "
-									  "only 30 percent of the layer, while the shadow map integrates the full "
-									  "thickness along the sun ray, so the same number means a very different "
-									  "optical depth.">{},
-			= settings::range<per_kilometer(0.f), per_kilometer(12.f)>{},
-			= settings::hot_reloadable
-		]]
-		atmosphere_inverse_length shadow_extinction = per_kilometer(3.0f);
 
 		[[
 			= settings::describe<"How strongly the cloud layer darkens direct sunlight on scene geometry. "
@@ -273,11 +295,12 @@ export namespace gse::renderer::cloud {
 		[[
 			= settings::describe<"Edge resolution of the square cloud shadow map. Cost scales with the square "
 									  "of this. Cloud shadows are soft and low frequency, so 512 over the default "
-									  "extent is usually indistinguishable from 1024.">{},
+									  "extent puts a texel at about 78 m, far finer than any shadow edge. The map "
+									  "is refreshed a quarter at a time, one texel of every 2x2 block per frame.">{},
 			= settings::range<128, 2048>{},
 			= settings::hot_reloadable
 		]]
-		int shadow_map_resolution = 1024;
+		int shadow_map_resolution = 512;
 
 		[[
 			= settings::describe<"World size covered by the cloud shadow map, centred on the camera. A cloud at "
@@ -298,7 +321,7 @@ export namespace gse::renderer::cloud {
 		gpu::image shape_noise;
 		gpu::image detail_noise;
 		gpu::image weather_map;
-		gpu::image cloud_target;
+		per_frame_resource<gpu::image> cloud_target;
 		per_frame_resource<gpu::image> cloud_resolve;
 
 		[[= shared]] gpu::image shadow_map;
@@ -314,6 +337,7 @@ export namespace gse::renderer::cloud {
 		[[= shared]] gpu::bindless_handle shadow_sampler;
 
 		gpu::buffer cloud_ubo_buffer;
+		per_frame_resource<gpu::buffer> view_ubo_buffer;
 
 		[[= shared]] gpu::buffer shadow_ubo_buffer;
 
@@ -322,15 +346,19 @@ export namespace gse::renderer::cloud {
 		vec2u cloud_resolve_extent{ 0, 0 };
 		vec2u cloud_resolve_allocated_extent{ 0, 0 };
 		mat4f prev_view_proj{};
+		vec2f prev_subpixel_offset{ 0.5f, 0.5f };
 		std::uint32_t frames_since_history_invalid = 0;
 		std::uint32_t frame_counter = 0;
 		int applied_target_divisor = 0;
+		int applied_resolve_divisor = 0;
 		int applied_shadow_resolution = 0;
 		bool noises_ready = false;
 
 		cloud_data shadow_cloud_inputs{};
 		cloud_shadow_data shadow_plane_inputs{};
-		bool shadow_map_written = false;
+		std::uint32_t shadow_bake_counter = 0;
+		std::uint32_t shadow_phases_pending = 0;
+		bool shadow_map_filled = false;
 	};
 
 	[[= system_init{}]]

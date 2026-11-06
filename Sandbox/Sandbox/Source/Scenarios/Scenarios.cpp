@@ -990,6 +990,15 @@ auto sandbox::scenarios::locomotion(gse::scenario::context& ctx) -> gse::async::
 	});
 }
 
+auto sandbox::scenarios::character_gpu_bench(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_character_request>({});
+}
+
+auto sandbox::scenarios::character_gpu_bench_headless(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await character_gpu_bench(ctx);
+}
+
 auto sandbox::scenarios::parity_overlap(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
 }

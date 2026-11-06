@@ -26,22 +26,43 @@ namespace gse::renderer::cloud {
 	struct weather_bake_pass {};
 
 	struct [[= shaders::shader_constant_block]] cloud_limits {
-		int max_view_steps = 40;
-		int min_view_steps = 8;
-		int light_steps = 6;
+		int max_iterations = 128;
+		int empty_steps_to_coarse = 6;
+		int light_cone_samples = 5;
+		int light_far_cone_samples = 2;
+		int multi_scatter_octaves = 6;
 		int shadow_march_steps = 16;
 
-		atmosphere_length target_step = kilometers(0.2f);
+		atmosphere_length coarse_step = kilometers(0.4f);
+		atmosphere_length fine_step = kilometers(0.1f);
+		atmosphere_length step_growth_distance = kilometers(8.f);
+		atmosphere_length ambient_depth = kilometers(0.15f);
+		atmosphere_length powder_depth = kilometers(0.1f);
+		atmosphere_length detail_fade_start = kilometers(15.f);
+		atmosphere_length detail_fade_end = kilometers(40.f);
+		atmosphere_length light_lod_distance = kilometers(20.f);
 		angle shadow_min_sun_elevation = degrees(1.15f);
 
-		float light_march_layer_fraction = 0.05f;
+		float light_cone_spread = 0.15f;
+		float light_long_sample_scale = 3.f;
 		float light_march_min_transmittance = 0.1f;
-		float light_march_opaque_optical_depth = 3.f;
-		float mean_detail_erosion = 0.5f;
+		float view_march_min_transmittance = 0.02f;
+		float thin_step_scale = 2.f;
+		float thin_density = 0.25f;
 		float scene_background_depth = 1e-5f;
 	};
 
-	using cloud_types = type_pack<cloud_limits, cloud_data, atmosphere::atmosphere_data>;
+	struct [[= shaders::shader_struct]] cloud_view_data {
+		mat4f inv_view_proj;
+		mat4f prev_view_proj;
+		vec2f history_subpixel_offset;
+	};
+
+	struct [[= shaders::uniform_block]] cloud_view_ubo {
+		using element = cloud_view_data;
+	};
+
+	using cloud_types = type_pack<cloud_limits, cloud_data, atmosphere::atmosphere_data, cloud_view_data>;
 	using shadow_types = type_pack<cloud_limits, cloud_data, cloud_shadow_data, atmosphere::atmosphere_data>;
 
 	struct [[= shaders::storage_image_3d]] cloud_shape_out {
@@ -100,6 +121,12 @@ namespace gse::renderer::cloud {
 		using element = vec4f;
 	};
 
+	struct [[= shaders::texture2d]] cloud_history_in {
+		using element = vec4f;
+	};
+
+	struct [[= shaders::sampler_state]] cloud_history_sampler {};
+
 	struct [[= shaders::sampler_state]] cloud_composite_sampler {};
 
 	struct [[= shaders::texture2d]] resolve_low_in {
@@ -113,7 +140,6 @@ namespace gse::renderer::cloud {
 	struct [[= shaders::sampler_state]] resolve_sampler_binding {};
 
 	struct [[= shaders::shader_struct]] cloud_push_constants {
-		mat4f inv_view_proj;
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 		vec3<irradiance> sun_irradiance;
@@ -124,6 +150,10 @@ namespace gse::renderer::cloud {
 		std::uint32_t target_divisor;
 		vec2f depth_uv_scale;
 		vec2f depth_uv_max;
+		vec2u interleave_offset;
+		vec2f low_uv_scale;
+		vec2f low_uv_max;
+		std::uint32_t interleave_stride;
 	};
 
 	struct [[= shaders::shader_struct]] cloud_resolve_push_constants {
@@ -131,13 +161,23 @@ namespace gse::renderer::cloud {
 		mat4f prev_view_proj;
 		vec2u full_extent;
 		vec2u block_offset;
+		vec2u interleave_offset;
 		std::int32_t divisor;
 		std::int32_t history_valid;
 		vec2f low_uv_scale;
 		vec2f low_uv_max;
 		vec2f history_uv_scale;
 		vec2f history_uv_max;
+		std::uint32_t interleave_stride;
 	};
+
+	struct [[= shaders::shader_struct]] cloud_shadow_push_constants {
+		vec2u block_offset;
+		std::uint32_t stride;
+	};
+
+	constexpr std::uint32_t shadow_interleave_divisor = 2;
+	constexpr std::uint32_t raymarch_interleave_divisor = 2;
 
 	struct [[= shaders::shader_struct]] cloud_composite_push_constants {
 		vec2f screen_uv_scale;
@@ -147,7 +187,7 @@ namespace gse::renderer::cloud {
 	using shape_bake_bindings = type_pack<cloud_shape_out>;
 	using detail_bake_bindings = type_pack<cloud_detail_out>;
 	using weather_bake_bindings = type_pack<cloud_weather_out>;
-	using raymarch_bindings = type_pack<transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, cloud_ubo, sky_view_sampler_binding, atmosphere::atmosphere_ubo, transmittance_sampler, noise_sampler_binding, cloud_weather_in, scene_depth_in, scene_depth_sampler>;
+	using raymarch_bindings = type_pack<transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, cloud_ubo, sky_view_sampler_binding, atmosphere::atmosphere_ubo, transmittance_sampler, noise_sampler_binding, cloud_weather_in, scene_depth_in, scene_depth_sampler, cloud_history_in, cloud_history_sampler, cloud_view_ubo>;
 	using composite_bindings = type_pack<cloud_in, cloud_composite_sampler>;
 	using resolve_bindings = type_pack<resolve_low_in, resolve_history_in, resolve_sampler_binding>;
 	using shadow_bindings = type_pack<cloud_shape_in, cloud_ubo, atmosphere::atmosphere_ubo, noise_sampler_binding, cloud_shadow_out, cloud_shadow_ubo, cloud_weather_in>;
@@ -162,7 +202,7 @@ namespace gse::renderer::cloud {
 		gpu::body_path<"Compute/cloud_raymarch">,
 		gpu::types<cloud_types>,
 		gpu::bindings<raymarch_bindings>,
-		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common", "Screen/screen_target">,
+		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common", "Clouds/cloud_density", "Screen/screen_target">,
 		gpu::push_constant<cloud_push_constants>,
 		gpu::threads<8, 8, 1>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -185,7 +225,8 @@ namespace gse::renderer::cloud {
 		gpu::body_path<"Compute/cloud_shadow_map">,
 		gpu::types<shadow_types>,
 		gpu::bindings<shadow_bindings>,
-		gpu::helpers<"Clouds/cloud_common">,
+		gpu::helpers<"Clouds/cloud_common", "Clouds/cloud_density">,
+		gpu::push_constant<cloud_shadow_push_constants>,
 		gpu::threads<8, 8, 1>,
 		gpu::system_values<gpu::dispatch_thread_id>
 	>;
@@ -255,6 +296,10 @@ namespace gse::renderer::cloud {
 		int divisor
 	) -> vec2u;
 
+	auto effective_resolve_divisor(
+		const data& d
+	) -> int;
+
 	auto recreate_cloud_target(
 		shared_view<gpu::context::data> gpu_s,
 		data& d
@@ -291,37 +336,42 @@ auto gse::renderer::cloud::compute_cloud_target_extent(const vec2u screen_extent
 	return vec2u{ w, h };
 }
 
+auto gse::renderer::cloud::effective_resolve_divisor(const data& d) -> int {
+	return std::gcd(std::max(d.target_divisor, 1), std::max(d.resolve_divisor, 1));
+}
+
 auto gse::renderer::cloud::recreate_cloud_target(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
 	const auto previous_target_allocated = d.cloud_target_allocated_extent;
 	const auto previous_resolve_allocated = d.cloud_resolve_allocated_extent;
 	const auto previous_resolve_active = d.cloud_resolve_extent;
 	d.applied_target_divisor = std::max(d.target_divisor, 1);
+	d.applied_resolve_divisor = effective_resolve_divisor(d);
 	d.cloud_target_extent = compute_cloud_target_extent(gpu_s.render_graph->extent(), d.applied_target_divisor);
 	d.cloud_target_allocated_extent = compute_cloud_target_extent(gpu_s.render_graph->allocated_extent(), d.applied_target_divisor);
-	d.cloud_resolve_extent = gpu_s.render_graph->extent();
-	d.cloud_resolve_allocated_extent = gpu_s.render_graph->allocated_extent();
+	d.cloud_resolve_extent = compute_cloud_target_extent(gpu_s.render_graph->extent(), d.applied_resolve_divisor);
+	d.cloud_resolve_allocated_extent = compute_cloud_target_extent(gpu_s.render_graph->allocated_extent(), d.applied_resolve_divisor);
 
 	if (d.cloud_resolve_extent != previous_resolve_active) {
 		d.frames_since_history_invalid = 0;
 	}
 
-	if (d.cloud_target.handle() && d.cloud_target_allocated_extent == previous_target_allocated && d.cloud_resolve_allocated_extent == previous_resolve_allocated) {
+	if (d.cloud_target[0].handle() && d.cloud_target_allocated_extent == previous_target_allocated && d.cloud_resolve_allocated_extent == previous_resolve_allocated) {
 		update_depth_descriptor(gpu_s, d);
 		return;
 	}
 
-	d.cloud_target = gpu_s.device->create_image(
-		{
-			.size = d.cloud_target_allocated_extent,
-			.format = gpu::image_format::r16g16b16a16_sfloat,
-			.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
-		},
-		"cloud_target"
-	);
-	gpu::transition_image_to(*gpu_s.device, d.cloud_target);
-
 	d.frames_since_history_invalid = 0;
 	for (std::size_t i = 0; i < d.cloud_resolve.frames_in_flight; ++i) {
+		d.cloud_target[i] = gpu_s.device->create_image(
+			{
+				.size = d.cloud_target_allocated_extent,
+				.format = gpu::image_format::r16g16b16a16_sfloat,
+				.usage = { gpu::image_flag::storage, gpu::image_flag::sampled },
+			},
+			std::format("cloud_target_{}", i)
+		);
+		gpu::transition_image_to(*gpu_s.device, d.cloud_target[i]);
+
 		d.cloud_resolve[i] = gpu_s.device->create_image(
 			{
 				.size = d.cloud_resolve_allocated_extent,
@@ -348,7 +398,8 @@ auto gse::renderer::cloud::recreate_shadow_map(const shared_view<gpu::context::d
 		"cloud_shadow_map"
 	);
 	gpu::transition_image_to(*gpu_s.device, d.shadow_map);
-	d.shadow_map_written = false;
+	d.shadow_phases_pending = shadow_interleave_divisor * shadow_interleave_divisor;
+	d.shadow_map_filled = false;
 }
 
 auto gse::renderer::cloud::build_cloud_shadow_data(const data& d, const vec3f& sun_direction, const atmosphere_length camera_altitude, const bool active) -> cloud_shadow_data {
@@ -370,12 +421,13 @@ auto gse::renderer::cloud::build_cloud_data(const data& d) -> cloud_data {
 		.cloud_top = d.cloud_top,
 		.cloud_coverage = d.cloud_coverage,
 		.cloud_type = d.cloud_type,
-		.density_multiplier = d.density_multiplier,
-		.view_extinction = d.view_extinction,
-		.light_extinction = d.light_extinction,
+		.extinction = d.extinction,
+		.albedo = d.albedo,
+		.multi_scatter_strength = d.multi_scatter_strength,
+		.powder_strength = d.powder_strength,
 		.shape_scale = d.shape_scale,
 		.detail_scale = d.detail_scale,
-		.detail_strength = d.detail_strength,
+		.detail_erosion = d.detail_erosion,
 		.phase_g_forward = d.phase_g_forward,
 		.phase_g_back = d.phase_g_back,
 		.phase_blend = d.phase_blend,
@@ -385,7 +437,7 @@ auto gse::renderer::cloud::build_cloud_data(const data& d) -> cloud_data {
 		.weather_phase = d.weather_phase,
 		.weather_contrast = d.weather_contrast,
 		.weather_type_influence = d.weather_type_influence,
-		.shadow_extinction = d.shadow_extinction,
+		.multi_scatter_extinction = d.multi_scatter_extinction,
 	};
 }
 
@@ -454,6 +506,17 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 		"cloud_shadow_ubo"
 	);
 
+	for (std::size_t i = 0; i < d.view_ubo_buffer.frames_in_flight; ++i) {
+		d.view_ubo_buffer[i] = gpu_s.device->create_buffer(
+			{
+				.size = sizeof(cloud_view_data),
+				.stride = sizeof(cloud_view_data),
+				.usage = gpu::buffer_flag::storage,
+			},
+			std::format("cloud_view_ubo_{}", i)
+		);
+	}
+
 	d.shadow_sampler = gpu_s.device->register_sampler(atmosphere_lut_sampler_desc);
 	d.noise_sampler = gpu_s.device->register_sampler(noise_sampler_desc);
 	d.atmosphere_lut_sampler = gpu_s.device->register_sampler(atmosphere_lut_sampler_desc);
@@ -485,7 +548,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		co_return;
 	}
 
-	if (std::max(d.target_divisor, 1) != d.applied_target_divisor) {
+	if (std::max(d.target_divisor, 1) != d.applied_target_divisor || effective_resolve_divisor(d) != d.applied_resolve_divisor) {
 		gpu_s.device->wait_idle();
 		recreate_cloud_target(gpu_s, d);
 	}
@@ -508,7 +571,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		d.shadow_ubo_buffer.host_write(shadow_payload);
 	}
 
-	if (!d.cloud_target.valid()) {
+	if (!d.cloud_target[0].valid()) {
 		co_return;
 	}
 
@@ -568,22 +631,39 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		d.noises_ready = true;
 	}
 
-	const bool shadow_inputs_changed = !d.shadow_map_written
-		|| d.shadow_plane_inputs != shadow_payload
-		|| d.shadow_cloud_inputs != shader_payload;
+	constexpr auto shadow_cycle = shadow_interleave_divisor * shadow_interleave_divisor;
 
-	if (shadows_active && shadow_inputs_changed) {
+	if (d.shadow_plane_inputs != shadow_payload || d.shadow_cloud_inputs != shader_payload) {
 		d.shadow_plane_inputs = shadow_payload;
 		d.shadow_cloud_inputs = shader_payload;
-		d.shadow_map_written = true;
+		d.shadow_phases_pending = shadow_cycle;
+	}
 
-		const auto shadow_groups = (static_cast<std::uint32_t>(d.applied_shadow_resolution) + 7) / 8;
+	if (shadows_active && d.shadow_phases_pending > 0) {
+		const auto stride = d.shadow_map_filled ? shadow_interleave_divisor : 1u;
+		const auto shadow_slot = (d.shadow_bake_counter * 7u) % shadow_cycle;
+
+		if (d.shadow_map_filled) {
+			--d.shadow_phases_pending;
+			++d.shadow_bake_counter;
+		}
+		else {
+			d.shadow_phases_pending = 0;
+			d.shadow_map_filled = true;
+		}
+
+		const auto edge = static_cast<std::uint32_t>(d.applied_shadow_resolution);
+		const auto shadow_groups = ((edge + stride - 1) / stride + 7) / 8;
 
 		auto shadow_rec = co_await gpu::pass<^^cloud_shadow_pass>(pass_out)
 			.pipeline(d.shadow_pipeline)
 			.after<^^weather_bake_pass>();
 
 		shadow_rec.dispatch<shadow_entry>(
+			{
+				.block_offset = stride == 1u ? vec2u{ 0, 0 } : vec2u{ shadow_slot % stride, shadow_slot / stride },
+				.stride = stride,
+			},
 			{
 				.cloud_shape_in = d.shape_noise.sampled_slot(),
 				.cloud_ubo = d.cloud_ubo_buffer.slot(),
@@ -607,22 +687,44 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 		atm_state.sun_intensity * atm_state.sun_color.z(),
 	};
 
-	const auto raymarch_groups = vec2u{
-		(d.cloud_target_extent.x() + 7) / 8,
-		(d.cloud_target_extent.y() + 7) / 8,
-	};
-
 	d.frame_counter += 1;
 
-	const auto divisor = static_cast<std::uint32_t>(std::max(d.applied_target_divisor, 1));
-	const auto cycle = divisor * divisor;
-	const auto slot = (d.frame_counter * 7u) % cycle;
-	const auto block_offset = vec2u{ slot % divisor, slot / divisor };
-	const auto resolve_extent = d.cloud_resolve_extent;
 	const auto history_index = gpu_s.render_graph->current_frame();
 	const auto previous_index = 1u - history_index;
 	const bool history_ready = d.frames_since_history_invalid >= 2;
 	++d.frames_since_history_invalid;
+
+	constexpr auto interleave_cycle = raymarch_interleave_divisor * raymarch_interleave_divisor;
+	const auto interleave_stride = history_ready ? raymarch_interleave_divisor : 1u;
+	const auto interleave_slot = (d.frame_counter * 7u) % interleave_cycle;
+	const auto interleave_offset = vec2u{ interleave_slot % interleave_stride, interleave_slot / interleave_stride % interleave_stride };
+	const auto raymarch_groups = vec3u{
+		((d.cloud_target_extent.x() + interleave_stride - 1) / interleave_stride + 7) / 8,
+		((d.cloud_target_extent.y() + interleave_stride - 1) / interleave_stride + 7) / 8,
+		interleave_stride * interleave_stride,
+	};
+
+	const auto divisor = static_cast<std::uint32_t>(d.applied_target_divisor);
+	const auto jitter = divisor / static_cast<std::uint32_t>(d.applied_resolve_divisor);
+	const auto cycle = jitter * jitter;
+	const auto slot = (d.frame_counter / interleave_cycle * 7u) % cycle;
+	const auto block_offset = vec2u{ slot % jitter, slot / jitter };
+	const auto resolve_extent = d.cloud_resolve_extent;
+	const auto screen_extent = gpu_s.render_graph->extent();
+	const auto low_uv_scale = gpu::screen_uv_scale_for(d.cloud_target_extent, d.cloud_target_allocated_extent);
+	const auto low_uv_max = gpu::screen_uv_max_for(d.cloud_target_extent, d.cloud_target_allocated_extent);
+
+	const auto subpixel_offset = vec2f{
+		(static_cast<float>(block_offset.x()) + 0.5f) / static_cast<float>(jitter),
+		(static_cast<float>(block_offset.y()) + 0.5f) / static_cast<float>(jitter),
+	};
+
+	d.view_ubo_buffer[history_index].host_write(cloud_view_data{
+		.inv_view_proj = inv_view_proj,
+		.prev_view_proj = history_ready ? d.prev_view_proj : proj * view,
+		.history_subpixel_offset = history_ready ? d.prev_subpixel_offset : subpixel_offset,
+	});
+	d.prev_subpixel_offset = subpixel_offset;
 
 	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(pass_out)
 		.pipeline(d.raymarch_pipeline)
@@ -630,30 +732,30 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 
 	rec.dispatch<raymarch_entry>(
 		{
-			.inv_view_proj = inv_view_proj,
 			.sun_direction = atm_state.sun_direction,
 			.camera_altitude = atm_state.camera_altitude,
 			.sun_irradiance = sun_irradiance,
 			.frame_index = static_cast<float>(d.frame_counter),
-			.subpixel_offset = vec2f{
-				(static_cast<float>(block_offset.x()) + 0.5f) / static_cast<float>(divisor),
-				(static_cast<float>(block_offset.y()) + 0.5f) / static_cast<float>(divisor),
-			},
+			.subpixel_offset = subpixel_offset,
 			.full_extent = vec2f{
-				static_cast<float>(resolve_extent.x()),
-				static_cast<float>(resolve_extent.y()),
+				static_cast<float>(screen_extent.x()),
+				static_cast<float>(screen_extent.y()),
 			},
 			.wind_offset = d.wind_offset,
 			.target_divisor = divisor,
 			.depth_uv_scale = gpu_s.render_graph->screen_uv_scale(),
 			.depth_uv_max = gpu_s.render_graph->screen_uv_max(),
+			.interleave_offset = interleave_offset,
+			.low_uv_scale = low_uv_scale,
+			.low_uv_max = low_uv_max,
+			.interleave_stride = interleave_stride,
 		},
 		{
 			.transmittance_in = atm_state.transmittance_lut.sampled_slot(),
 			.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
 			.cloud_shape_in = d.shape_noise.sampled_slot(),
 			.cloud_detail_in = d.detail_noise.sampled_slot(),
-			.cloud_out = d.cloud_target.storage_slot(),
+			.cloud_out = d.cloud_target[history_index].storage_slot(),
 			.cloud_ubo = d.cloud_ubo_buffer.slot(),
 			.sky_view_sampler_binding = d.sky_view_sampler.slot(),
 			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
@@ -662,8 +764,11 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.cloud_weather_in = d.weather_map.sampled_slot(),
 			.scene_depth_in = d.depth_view.slot(),
 			.scene_depth_sampler = d.depth_sampler.slot(),
+			.cloud_history_in = d.cloud_target[previous_index].sampled_slot(),
+			.cloud_history_sampler = d.resolve_sampler.slot(),
+			.cloud_view_ubo = d.view_ubo_buffer[history_index].slot(),
 		},
-		vec3u{ raymarch_groups.x(), raymarch_groups.y(), 1 }
+		raymarch_groups
 	);
 
 	auto resolve_rec = co_await gpu::pass<^^cloud_resolve_pass>(pass_out)
@@ -682,15 +787,17 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.prev_view_proj = history_ready ? d.prev_view_proj : proj * view,
 			.full_extent = resolve_extent,
 			.block_offset = block_offset,
-			.divisor = static_cast<std::int32_t>(divisor),
+			.interleave_offset = interleave_offset,
+			.divisor = static_cast<std::int32_t>(jitter),
 			.history_valid = history_ready ? 1 : 0,
-			.low_uv_scale = gpu::screen_uv_scale_for(d.cloud_target_extent, d.cloud_target_allocated_extent),
-			.low_uv_max = gpu::screen_uv_max_for(d.cloud_target_extent, d.cloud_target_allocated_extent),
+			.low_uv_scale = low_uv_scale,
+			.low_uv_max = low_uv_max,
 			.history_uv_scale = gpu::screen_uv_scale_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
 			.history_uv_max = gpu::screen_uv_max_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),
+			.interleave_stride = interleave_stride,
 		},
 		{
-			.resolve_low_in = d.cloud_target.sampled_slot(),
+			.resolve_low_in = d.cloud_target[history_index].sampled_slot(),
 			.resolve_history_in = d.cloud_resolve[previous_index].sampled_slot(),
 			.resolve_sampler_binding = d.resolve_sampler.slot(),
 		}
@@ -699,15 +806,14 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 
 	d.prev_view_proj = proj * view;
 
-	const auto ext = gpu_s.render_graph->extent();
 	auto composite_rec = co_await gpu::pass<^^cloud_composite_pass>(pass_out)
 		.pipeline(d.composite_pipeline)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
 		.depth(gpu::load_depth())
 		.after<^^atmosphere::sky_raster_pass, ^^cloud_resolve_pass, ^^sdf_grid::frame, ^^world_text::frame>();
 
-	composite_rec.set_viewport(ext);
-	composite_rec.set_scissor(ext);
+	composite_rec.set_viewport(screen_extent);
+	composite_rec.set_scissor(screen_extent);
 	composite_rec.push_bindings<composite_entry>(
 		{
 			.screen_uv_scale = gpu::screen_uv_scale_for(d.cloud_resolve_extent, d.cloud_resolve_allocated_extent),

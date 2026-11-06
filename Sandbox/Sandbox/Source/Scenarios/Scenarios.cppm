@@ -526,6 +526,31 @@ export namespace sandbox::scenarios {
 	) -> gse::async::task<>;
 
 	[[= gse::scenario::info{
+		.name = "character_gpu_bench",
+		.scene = "Sandbox",
+		.gpu_solver = true,
+		.warmup_frames = 300,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate }
+	]]
+	auto character_gpu_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "character_gpu_bench_headless",
+		.scene = "Sandbox",
+		.headless = true,
+		.gpu_solver = true,
+		.warmup_frames = 300,
+		.frames = 600,
+	}]]
+	auto character_gpu_bench_headless(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
 		.name = "pyramid",
 		.scene = "Pyramid",
 		.headless = true,

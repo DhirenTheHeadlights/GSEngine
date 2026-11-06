@@ -11,4 +11,4 @@ game = Sandbox
 [engine]
 name = GSEngine
 source = C:/Users/Dhire/source/repos/DhirenTheHeadlights/GSEngine
-commit = ff955ff7f4ccc6a63d00b9ab89e570cc2ecc2144
+commit = 0279e570f7b204eaa79876978ac5b3721fa46081
