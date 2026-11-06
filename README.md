@@ -49,7 +49,7 @@ GSEngine is a game engine written in modern C++ with C++26 reflection. It began 
 
 ### Atmosphere, volumetric clouds & terrain
 
-<video src="https://github.com/user-attachments/assets/ea9750f8-6a56-477f-a37a-fd9d70db80dd" autoplay muted loop playsinline width="100%"></video>
+[<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/ea9750f8-6a56-477f-a37a-fd9d70db80dd)
 
 Everything in the clip above is generated at load and driven by live settings — no baked lighting, no authored heightmap, no skybox.
 
@@ -65,7 +65,7 @@ R16G16B16A16 scene target end-to-end; AgX with input matrix → log-EV remap →
 
 ### VBD physics solver
 
-<video src="https://github.com/user-attachments/assets/4ce56270-eaab-4d76-990e-6f52bfb4a710" autoplay muted loop playsinline width="100%"></video>
+[<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/4ce56270-eaab-4d76-990e-6f52bfb4a710)
 
 GPU Vertex Block Descent with reflection-emitted shader constants and a custom narrow phase. Joints, contacts, and ragdolls converge in a fraction of the iterations of Gauss-Seidel.
 
@@ -73,7 +73,7 @@ Above: four counter-rotating drums tumbling 13,824 dynamic bodies, solved entire
 
 ### Forward+ light culling
 
-<video src="https://github.com/user-attachments/assets/2a7f8db8-5f31-4b46-a73b-e875408d9608" autoplay muted loop playsinline width="100%"></video>
+[<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/2a7f8db8-5f31-4b46-a73b-e875408d9608)
 
 Above: 364 physically scaled point lights drifting through the light hall at night, tile-culled per 16 px tile with ray-traced shadows, probe GI accumulated across frames, and histogram auto exposure metering the lamps.
 
