@@ -348,6 +348,7 @@ auto gse::physics::clear_runtime_state(data& d) -> void {
 	++d.muscles_generation;
 	d.id_to_body_index.clear();
 	d.id_to_body_index_entries.clear();
+	++d.body_index_generation;
 	d.kinematic_step_start.clear();
 	d.gpu_pending_impulses.clear();
 	d.gpu_reset_ticks.clear();
@@ -372,6 +373,7 @@ auto gse::physics::absorb_upload_report(data& d, const gpu_upload_report& report
 	if (report.body_index) {
 		d.id_to_body_index = *report.body_index;
 		d.id_to_body_index_entries.clear();
+		++d.body_index_generation;
 		d.gpu_body_owners.assign(d.id_to_body_index.size(), id{});
 		for (const auto& [owner, index] : d.id_to_body_index) {
 			if (index >= d.gpu_body_owners.size()) {
@@ -520,6 +522,12 @@ auto gse::physics::apply_set_requests(data& d, const set_request_read& requests,
 					flag_body_reset(d, *mc, request.target, reset_pose_keep_solver_state);
 				}
 			}
+			d.sleep_counters.set(request.target, 0);
+		}
+	}
+	for (const auto& request : requests.of<reset_request>()) {
+		if (auto* mc = motion.find(request.target); mc != nullptr) {
+			flag_body_reset(d, *mc, request.target, reset_pose);
 			d.sleep_counters.set(request.target, 0);
 		}
 	}
@@ -812,12 +820,17 @@ auto gse::physics::gpu_solver_driving(const shared_view<data> d) -> bool {
 }
 
 auto gse::physics::gpu_solver_frame_info_of(const data& d) -> gpu_solver_frame_info {
-	return {
+	gpu_solver_frame_info info{
 		.snapshot = d.gpu_solver.render_body_buffer().handle(),
 		.body_count = d.gpu_solver.body_count(),
 		.body_stride = sizeof(vbd::body_state),
 		.position_offset = static_cast<std::uint32_t>(std::meta::offset_of(^^vbd::body_state::position).bytes),
+		.external_force_stamp_word = d.gpu_solver.external_force_stamp_word(),
 	};
+	for (std::uint32_t frame_index = 0; frame_index < gpu::max_frames_in_flight; ++frame_index) {
+		info.external_force[frame_index] = d.gpu_solver.external_force_accumulator(frame_index).handle();
+	}
+	return info;
 }
 
 auto gse::physics::resolve_hull(const collision_shape& shape, const std::span<const convex_hull> hulls) -> const convex_hull* {
@@ -926,7 +939,7 @@ auto gse::physics::body_state_of(const motion_component& mc, const transform_com
 	};
 }
 
-auto gse::physics::build_body_states(const body_build_view& view, const sleep_counter_table& sleep_counters, std::vector<vbd::body_state>& bodies, std::flat_map<id, std::uint32_t>& id_to_body_index, std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries, std::vector<std::uint8_t>& has_transform, const body_scan_fill& scan) -> void {
+auto gse::physics::build_body_states(const body_build_view& view, const sleep_counter_table& sleep_counters, std::vector<vbd::body_state>& bodies, std::flat_map<id, std::uint32_t>& id_to_body_index, std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries, std::vector<std::uint8_t>& has_transform, const body_scan_fill& scan) -> bool {
 	const auto body_count = view.motions.size();
 	const bool write_scan = scan.active(body_count);
 	const bool sparse = write_scan && scan.sparse;
@@ -1008,7 +1021,7 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 	);
 
 	if (!index_differs.load(std::memory_order_relaxed) && id_to_body_index_entries.size() == body_count && id_to_body_index.size() == body_count) {
-		return;
+		return false;
 	}
 
 	std::size_t kept = 0;
@@ -1021,7 +1034,7 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 		++kept;
 	}
 	if (unchanged && kept == id_to_body_index_entries.size()) {
-		return;
+		return false;
 	}
 
 	trace::scope_guard _{ trace_id<"physics::body_index_rebuild">() };
@@ -1035,6 +1048,7 @@ auto gse::physics::build_body_states(const body_build_view& view, const sleep_co
 	id_to_body_index.clear();
 	id_to_body_index.insert(entries.begin(), entries.end());
 	id_to_body_index_entries = std::move(entries);
+	return true;
 }
 
 auto gse::physics::shape_bounds_of(const collision_component& cc, const transform_component& tc, const std::span<const convex_hull> hulls, const std::span<const std::uint32_t> hull_offsets, vec3<displacement>& shape_params, std::uint32_t& hull_offset) -> bounding_box {
@@ -3117,7 +3131,9 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 			}
 		}
 
-		build_body_states(view, d.sleep_counters, bodies, d.id_to_body_index, d.id_to_body_index_entries, has_transform);
+		if (build_body_states(view, d.sleep_counters, bodies, d.id_to_body_index, d.id_to_body_index_entries, has_transform)) {
+			++d.body_index_generation;
+		}
 
 		std::ranges::fill(
 			d.body_airborne,

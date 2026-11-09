@@ -34,7 +34,7 @@ export namespace gse::renderer::physics_debug {
 		[[
 			= settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
 		]]
-		bool enabled = true;
+		bool enabled = false;
 
 		gpu::shader_program pipeline_instanced;
 		gpu::shader_program pipeline_lines;
@@ -61,12 +61,21 @@ export namespace gse::renderer::physics_debug {
 		std::vector<shape_instance> box_instances;
 		std::vector<shape_instance> sphere_instances;
 		std::vector<shape_instance> capsule_instances;
+		std::vector<id> instance_owners;
+		std::vector<id> instance_motion_owners;
+		bool instance_solver_indices = false;
+		std::uint64_t instance_shape_generation = 0;
+		std::uint64_t instance_body_index_generation = 0;
+		std::uint64_t instances_version = 0;
+		per_frame_resource<std::uint64_t> uploaded_instances_version;
+		std::uint32_t instance_body_span = 0;
+
+		bool draw_solver_bodies = false;
+		per_frame_resource<gpu::bindless_handle> solver_body_views;
 
 		per_frame_resource<gpu::buffer> line_vertex_buffers;
 		per_frame_resource<std::size_t> line_vertex_capacity;
 		std::vector<debug_vertex> line_vertices;
-
-		std::unordered_map<id, std::uint32_t> body_index_map;
 	};
 
 	[[= system_init{}]]
@@ -75,17 +84,11 @@ export namespace gse::renderer::physics_debug {
 		data& d
 	) -> async::task<>;
 
-	[[= system_run<>{}]]
-	auto prepare(
-		context& ctx,
-		data& d,
-		shared_view<physics::data> ps
-	) -> async::task<>;
-
 	[[= system_run<1>{}]]
 	auto build(
 		context& ctx,
 		data& d,
+		shared_view<physics::data> ps,
 		read<physics::transform_component> transforms,
 		read<physics::motion_component> motions,
 		read<physics::collision_component> collisions,
@@ -98,6 +101,7 @@ export namespace gse::renderer::physics_debug {
 		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<physics::gpu_solver_frame_info> solver_in,
 		shared_view<camera::data> cam_state
 	) -> async::task<>;
 }

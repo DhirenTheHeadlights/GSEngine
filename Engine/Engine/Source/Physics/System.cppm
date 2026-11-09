@@ -269,6 +269,8 @@ export namespace gse::physics {
 		std::uint32_t body_count = 0;
 		std::uint32_t body_stride = 0;
 		std::uint32_t position_offset = 0;
+		std::array<gpu::handle<gpu::buffer>, gpu::max_frames_in_flight> external_force{};
+		std::uint32_t external_force_stamp_word = 0;
 	};
 
 	struct interpolation_state {
@@ -815,6 +817,7 @@ export namespace gse::physics {
 		[[= shared]] sleep_counter_table sleep_counters;
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
+		[[= shared]] std::uint64_t body_index_generation = 1;
 		std::vector<id> gpu_body_owners;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
@@ -1024,7 +1027,7 @@ export namespace gse::physics {
 		std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries,
 		std::vector<std::uint8_t>& has_transform,
 		const body_scan_fill& scan = {}
-	) -> void;
+	) -> bool;
 
 	auto shape_bounds_of(
 		const collision_component& cc,

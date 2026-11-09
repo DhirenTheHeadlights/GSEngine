@@ -64,13 +64,87 @@ export namespace sandbox::scenarios {
 
 	[[= gse::scenario::info{
 		.name = "grass_sleep_bench",
-		.scene = "Grass",
+		.scene = "Grass Rigid",
 		.headless = true,
 		.gpu_solver = true,
 		.warmup_frames = 300,
 		.frames = 600,
 	}]]
 	auto grass_sleep_bench(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_render",
+		.scene = "Grass",
+		.gpu_solver = true,
+		.pacing = gse::scenario::pacing::unpaced,
+		.warmup_frames = 300,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate }
+	]]
+	auto grass_render(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_walk",
+		.scene = "Grass",
+		.gpu_solver = true,
+		.pacing = gse::scenario::pacing::unpaced,
+		.warmup_frames = 300,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::origin_x>{ gse::meters(0.3f) },
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::origin_z>{ gse::meters(51.5f) }
+	]]
+	auto grass_walk(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_rigid_render",
+		.scene = "Grass Rigid",
+		.gpu_solver = true,
+		.pacing = gse::scenario::pacing::unpaced,
+		.warmup_frames = 300,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate }
+	]]
+	auto grass_rigid_render(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_look",
+		.scene = "Grass",
+		.gpu_solver = true,
+	}]]
+	auto grass_look(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_pan",
+		.scene = "Grass",
+		.gpu_solver = true,
+	}]]
+	auto grass_pan(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "grass_stride_look",
+		.scene = "Grass",
+		.gpu_solver = true,
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::origin_x>{ gse::meters(0.3f) },
+		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::origin_z>{ gse::meters(51.5f) }
+	]]
+	auto grass_stride_look(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
@@ -466,7 +540,7 @@ export namespace sandbox::scenarios {
 
 	[[= gse::scenario::info{
 		.name = "web_host_probe",
-		.real_time = true,
+		.pacing = gse::scenario::pacing::wall_clock,
 		.warmup_frames = 0,
 		.frames = 600,
 	}]]
@@ -476,7 +550,7 @@ export namespace sandbox::scenarios {
 
 	[[= gse::scenario::info{
 		.name = "web_idle_probe",
-		.real_time = true,
+		.pacing = gse::scenario::pacing::wall_clock,
 		.warmup_frames = 0,
 		.frames = 80,
 	}]]
@@ -486,7 +560,7 @@ export namespace sandbox::scenarios {
 
 	[[= gse::scenario::info{
 		.name = "web_pointer_probe",
-		.real_time = true,
+		.pacing = gse::scenario::pacing::wall_clock,
 		.warmup_frames = 0,
 		.frames = 300,
 	}]]
@@ -578,7 +652,7 @@ export namespace sandbox::scenarios {
 		.name = "net_walk",
 		.headless = false,
 		.backend_variants = true,
-		.real_time = true,
+		.pacing = gse::scenario::pacing::wall_clock,
 		.warmup_frames = 0,
 		.frames = 2400,
 	}]]

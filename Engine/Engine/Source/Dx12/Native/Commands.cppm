@@ -7,6 +7,7 @@ import gse.gpu_backend;
 import gse.math;
 import gse.directx;
 
+import :conversions;
 import :device;
 
 export namespace gse::dx12 {
@@ -769,7 +770,7 @@ auto gse::dx12::commands::build_acceleration_structures(const gpu::acceleration_
 			.index_address = geometry.triangles.index_data,
 			.prim_count = range_infos[0]->primitive_count,
 		};
-		directx::build_blas(list, dst, scratch, triangles);
+		directx::build_blas(list, dst, geometry_info.src.value, scratch, triangles, acceleration_structure_build_flags_of(geometry_info.flags, geometry_info.mode));
 	}
 	else {
 		const bool allow_update = geometry_info.flags.test(gpu::build_acceleration_structure_flag::allow_update);

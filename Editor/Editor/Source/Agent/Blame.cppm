@@ -33,6 +33,10 @@ namespace gse::ide::agent {
 		const session& s
 	) -> bool;
 
+	auto parked(
+		const session& s
+	) -> bool;
+
 	auto edit_settle() -> time;
 
 	auto editing_tree(
@@ -350,10 +354,6 @@ namespace gse::ide::agent {
 	auto describe_errors(
 		std::span<const blamed_error> errors
 	) -> std::string;
-
-	auto arm_retry(
-		session& s
-	) -> void;
 
 	auto link_delay(
 		const data& d

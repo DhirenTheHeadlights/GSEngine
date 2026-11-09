@@ -34,8 +34,10 @@ void loco_muscle_observe(uint3 dispatch_id) {
         for (uint k = 0; k < loco_muscle_count * loco_muscle_obs_per; ++k) {
             loco_obs_data[base + k] = 0.0;
         }
-        for (uint k = 0; k < loco_muscle_count; ++k) {
-            loco_obs_data[base + k * loco_muscle_obs_per + 2] = loco_muscle_constants_data[k].rest_activation;
+        if (loco_muscle_obs_masked == 0) {
+            for (uint k = 0; k < loco_muscle_count; ++k) {
+                loco_obs_data[base + k * loco_muscle_obs_per + 2] = loco_muscle_constants_data[k].rest_activation;
+            }
         }
         loco_muscle_prev_data[prev + loco_muscle_count] = 0.0;
         return;
@@ -68,6 +70,11 @@ void loco_muscle_observe(uint3 dispatch_id) {
         }
     }
     loco_muscle_prev_data[prev + loco_muscle_count] = 1.0;
+    if (loco_muscle_obs_masked != 0) {
+        for (uint k = 0; k < loco_muscle_count * loco_muscle_obs_per; ++k) {
+            loco_obs_data[base + k] = 0.0;
+        }
+    }
 
     if (pc.write_reward == 0) return;
     uint rbase = pc.env_count * pc.obs_stride + e * loco_reward_stride;

@@ -24,29 +24,18 @@ import gse.log;
 import gse.time;
 
 namespace gse::renderer::bloom {
-	struct [[= shaders::texture2d]] bloom_in {
-		using element = vec4f;
+	struct downsample_bindings {
+		shaders::texture2d<vec4f> bloom_in;
+		shaders::storage_image<vec4f> bloom_out;
+		shaders::sampler_state bloom_sampler;
 	};
 
-	struct [[= shaders::storage_image]] bloom_out {
-		using element = vec4f;
+	struct upsample_bindings {
+		shaders::texture2d<vec4f> bloom_up_in;
+		shaders::texture2d<vec4f> bloom_up_dn;
+		shaders::storage_image<vec4f> bloom_up_out;
+		shaders::sampler_state bloom_up_sampler;
 	};
-
-	struct [[= shaders::sampler_state]] bloom_sampler {};
-
-	struct [[= shaders::texture2d]] bloom_up_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] bloom_up_dn {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::storage_image]] bloom_up_out {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] bloom_up_sampler {};
 
 	struct [[= shaders::shader_struct]] downsample_push_constants {
 		vec2u dst_active_extent;
@@ -65,9 +54,6 @@ namespace gse::renderer::bloom {
 		vec2f dn_uv_max;
 		float radius;
 	};
-
-	using downsample_bindings = type_pack<bloom_in, bloom_out, bloom_sampler>;
-	using upsample_bindings = type_pack<bloom_up_in, bloom_up_dn, bloom_up_out, bloom_up_sampler>;
 
 	using downsample_entry = gpu::compute_entry<gpu::body_path<"Compute/bloom_downsample">, gpu::bindings<downsample_bindings>, gpu::helpers<"Screen/screen_target">, gpu::push_constant<downsample_push_constants>, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 

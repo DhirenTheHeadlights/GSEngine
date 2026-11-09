@@ -33,29 +33,13 @@ namespace gse::renderer::light_culling {
 		std::uint32_t num_lights;
 	};
 
-	struct [[= shaders::texture2d]] depth_texture {
-		using element = vec4f;
+	struct culling_bindings {
+		shaders::texture2d<vec4f> depth_texture;
+		shaders::uniform_block<culling_params_data> culling_params;
+		shaders::ssbo_readwrite<std::uint32_t> light_index_list;
+		shaders::ssbo_readwrite<vec2u> tile_light_table;
+		shaders::sampler_state depth_sampler;
 	};
-
-	struct [[= shaders::uniform_block]] culling_params {
-		using element = culling_params_data;
-	};
-
-	struct [[= shaders::ssbo_readonly]] lights {
-		using element = shaders::forward::light;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] light_index_list {
-		using element = std::uint32_t;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] tile_light_table {
-		using element = vec2u;
-	};
-
-	struct [[= shaders::sampler_state]] depth_sampler {};
-
-	using shader_binding_types = type_pack<depth_texture, culling_params, lights, light_index_list, tile_light_table, depth_sampler>;
 
 	using shader_types = type_pack<culling_params_data, light_culling_limits>;
 
@@ -63,7 +47,7 @@ namespace gse::renderer::light_culling {
 	using culling_entry = gpu::compute_entry<
 		gpu::body_path<BodyPath>,
 		gpu::types<shaders::forward::shader_types, shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<shaders::standard_3d::scene_lights, culling_bindings>,
 		gpu::helpers<"Screen/screen_target", "Standard3D/light_culling_common">,
 		gpu::threads<16, 16, 1>,
 		gpu::system_values<gpu::group_id, gpu::group_thread_id, gpu::group_index>
@@ -208,9 +192,9 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 
 	rec.dispatch<entry>(
 		{
+			.lights = d.light_buffers[frame_index].slot(),
 			.depth_texture = d.depth_view.slot(),
 			.culling_params = d.culling_params_buffers[frame_index].slot(),
-			.lights = d.light_buffers[frame_index].slot(),
 			.light_index_list = gpu_s.device->buffer_slot(d.light_index_list_buffers[frame_index]),
 			.tile_light_table = gpu_s.device->buffer_slot(d.tile_light_table_buffers[frame_index]),
 			.depth_sampler = d.depth_sampler.slot(),

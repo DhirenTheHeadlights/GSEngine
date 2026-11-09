@@ -67,191 +67,59 @@ namespace gse::vbd {
 		std::uint32_t lambda_bits;
 	};
 
-	struct [[= shaders::ssbo_readwrite]] body_data {
-		using element = body_state;
+	struct solver_bindings {
+		shaders::ssbo_readwrite<body_state> body_data;
+		shaders::ssbo_readwrite<contact_constraint> contact_data;
+		shaders::ssbo_readonly<velocity_motor_constraint> motor_data;
+		shaders::ssbo_readwrite<std::uint32_t> color_data;
+		shaders::ssbo_readwrite<std::uint32_t> contact_offsets;
+		shaders::ssbo_readwrite<vec4f> solve_state;
+		shaders::ssbo_readwrite<std::uint32_t> collision_pairs;
+		shaders::ssbo_readwrite<std::uint32_t> collision_state;
+		shaders::ssbo_readwrite<contact_constraint> warm_starts;
+		shaders::ssbo_readwrite<joint_constraint> joint_data;
+		shaders::ssbo_readwrite<std::uint32_t> contact_counts;
+		shaders::ssbo_readwrite<std::uint32_t> contact_adjacency;
+		shaders::ssbo_readwrite<std::uint32_t> motor_map;
+		shaders::ssbo_readwrite<std::uint32_t> joint_offsets;
+		shaders::ssbo_readwrite<std::uint32_t> joint_counts;
+		shaders::ssbo_readwrite<std::uint32_t> joint_adjacency;
+		shaders::ssbo_readwrite<std::uint32_t> grid_data;
+		shaders::ssbo_readwrite<dispatch_args> indirect_args;
+		shaders::ssbo_readwrite<frozen_jacobian> frozen_jacobians;
+		shaders::ssbo_readwrite<vec4f> solve_deltas;
+		shaders::ssbo_readwrite<std::uint32_t> grounded_bits;
+		shaders::ssbo_readonly<impulse_constraint> impulse_data;
+		shaders::ssbo_readonly<solver_config> solver_config_data;
+		shaders::ssbo_readonly<std::uint32_t> jointed_pairs_data;
+		shaders::ssbo_readonly<body_state> body_input_data;
+		shaders::ssbo_readwrite<std::uint32_t> jointless_color_data;
+		shaders::ssbo_readwrite<dispatch_args> jointless_indirect_args;
+		shaders::ssbo_readonly<std::uint32_t> island_data;
+		shaders::ssbo_readonly<std::uint32_t> body_env_data;
+		shaders::ssbo_readonly<std::uint32_t> static_bodies_data;
+		shaders::ssbo_readwrite<std::uint32_t> coloring_scratch;
+		shaders::ssbo_readonly<joint_constraint> joint_input_data;
+		shaders::ssbo_readonly<joint_drive_input> joint_drive_input_data;
+		shaders::ssbo_readwrite<std::uint32_t> unowned_contacts;
+		shaders::ssbo_readonly<std::uint32_t> body_input_index_data;
+		shaders::ssbo_readonly<std::uint32_t> joint_drive_input_index_data;
+		shaders::ssbo_readwrite<muscle_constraint> muscle_data;
+		shaders::ssbo_readonly<muscle_path_point> muscle_path_data;
+		shaders::ssbo_readwrite<float> muscle_excitation_data;
+		shaders::ssbo_readonly<std::uint32_t> hull_data;
+		shaders::ssbo_readonly<body_collision_filter> body_filter_data;
+		shaders::ssbo_readwrite<std::uint32_t> active_list;
+		shaders::ssbo_readwrite<std::uint32_t> active_data;
+		shaders::ssbo_readwrite<dispatch_args> active_args;
+		shaders::ssbo_readonly<std::uint32_t> external_force_data;
 	};
-	struct [[= shaders::ssbo_readwrite]] contact_data {
-		using element = contact_constraint;
-	};
-	struct [[= shaders::ssbo_readonly]] motor_data {
-		using element = velocity_motor_constraint;
-	};
-	struct [[= shaders::ssbo_readwrite]] color_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] contact_offsets {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] solve_state {
-		using element = vec4f;
-	};
-	struct [[= shaders::ssbo_readwrite]] collision_pairs {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] collision_state {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] warm_starts {
-		using element = contact_constraint;
-	};
-	struct [[= shaders::ssbo_readwrite]] joint_data {
-		using element = joint_constraint;
-	};
-	struct [[= shaders::ssbo_readwrite]] contact_counts {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] contact_adjacency {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] motor_map {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] joint_offsets {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] joint_counts {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] joint_adjacency {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] grid_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] indirect_args {
-		using element = dispatch_args;
-	};
-	struct [[= shaders::ssbo_readwrite]] frozen_jacobians {
-		using element = frozen_jacobian;
-	};
-	struct [[= shaders::ssbo_readwrite]] solve_deltas {
-		using element = vec4f;
-	};
-	struct [[= shaders::ssbo_readwrite]] grounded_bits {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] unowned_contacts {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] impulse_data {
-		using element = impulse_constraint;
-	};
-	struct [[= shaders::ssbo_readonly]] solver_config_data {
-		using element = solver_config;
-	};
-	struct [[= shaders::ssbo_readonly]] jointed_pairs_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] body_input_data {
-		using element = body_state;
-	};
-	struct [[= shaders::ssbo_readwrite]] jointless_color_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] jointless_indirect_args {
-		using element = dispatch_args;
-	};
-	struct [[= shaders::ssbo_readonly]] island_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] body_env_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] static_bodies_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] coloring_scratch {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] joint_input_data {
-		using element = joint_constraint;
-	};
-	struct [[= shaders::ssbo_readonly]] joint_drive_input_data {
-		using element = joint_drive_input;
-	};
-	struct [[= shaders::ssbo_readonly]] body_input_index_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] joint_drive_input_index_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] muscle_data {
-		using element = muscle_constraint;
-	};
-	struct [[= shaders::ssbo_readonly]] muscle_path_data {
-		using element = muscle_path_point;
-	};
-	struct [[= shaders::ssbo_readwrite]] muscle_excitation_data {
-		using element = float;
-	};
-	struct [[= shaders::ssbo_readonly]] hull_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readonly]] body_filter_data {
-		using element = body_collision_filter;
-	};
-	struct [[= shaders::ssbo_readwrite]] active_list {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] active_data {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] active_args {
-		using element = dispatch_args;
-	};
-
-	using shader_binding_types = type_pack<
-		body_data,
-		contact_data,
-		motor_data,
-		color_data,
-		contact_offsets,
-		solve_state,
-		collision_pairs,
-		collision_state,
-		warm_starts,
-		joint_data,
-		contact_counts,
-		contact_adjacency,
-		motor_map,
-		joint_offsets,
-		joint_counts,
-		joint_adjacency,
-		grid_data,
-		indirect_args,
-		frozen_jacobians,
-		solve_deltas,
-		grounded_bits,
-		impulse_data,
-		solver_config_data,
-		jointed_pairs_data,
-		body_input_data,
-		jointless_color_data,
-		jointless_indirect_args,
-		island_data,
-		body_env_data,
-		static_bodies_data,
-		coloring_scratch,
-		joint_input_data,
-		joint_drive_input_data,
-		unowned_contacts,
-		body_input_index_data,
-		joint_drive_input_index_data,
-		muscle_data,
-		muscle_path_data,
-		muscle_excitation_data,
-		hull_data,
-		body_filter_data,
-		active_list,
-		active_data,
-		active_args
-	>;
 
 	template <fixed_string BodyPath>
 	using vbd_compute = gpu::compute_entry<
 		gpu::body_path<BodyPath>,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -262,7 +130,7 @@ namespace gse::vbd {
 	using solve_color_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_solve_color">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -272,7 +140,7 @@ namespace gse::vbd {
 	using solve_sweep_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_solve_sweep">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -282,7 +150,7 @@ namespace gse::vbd {
 	using solve_islands_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_solve_islands">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -292,7 +160,7 @@ namespace gse::vbd {
 	using build_island_levels_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_build_island_levels">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -319,7 +187,7 @@ namespace gse::vbd {
 	using collision_narrow_phase_poly_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_narrow_phase_poly">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -343,7 +211,7 @@ namespace gse::vbd {
 	using collision_scan_adjacency_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_scan_adjacency">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -353,7 +221,7 @@ namespace gse::vbd {
 	using collision_build_coloring_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/collision_build_coloring">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -363,7 +231,7 @@ namespace gse::vbd {
 	using hash_state_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_hash_state">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -373,7 +241,7 @@ namespace gse::vbd {
 	using hash_warm_inputs_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_hash_warm_inputs">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -383,7 +251,7 @@ namespace gse::vbd {
 	using hash_adjacency_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_hash_adjacency">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -393,7 +261,7 @@ namespace gse::vbd {
 	using hash_colors_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_hash_colors">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -403,7 +271,7 @@ namespace gse::vbd {
 	using hash_bodies_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_hash_bodies">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
@@ -413,19 +281,19 @@ namespace gse::vbd {
 	using apply_restitution_serial_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_apply_restitution">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
 		gpu::threads<limits.adjacency_workgroup_size>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
 	>;
 
-	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
+	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<solver_bindings>, gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
 
 	using prepare_contact_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
 		gpu::push_constant<vbd_push_constants>
@@ -434,7 +302,7 @@ namespace gse::vbd {
 	using convergence_check_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_convergence_check">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<1>,
 		gpu::push_constant<vbd_push_constants>,
@@ -444,14 +312,14 @@ namespace gse::vbd {
 	using prepare_color_indirect_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
 		gpu::types<shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<solver_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
 		gpu::threads<16>,
 		gpu::push_constant<vbd_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
 	>;
 
-	using vbd_bindings = gpu::binding_args<shader_binding_types>;
+	using vbd_bindings = gpu::binding_args<solver_bindings>;
 
 	struct [[= shaders::shader_struct]] gather_snapshot_push_constants {
 		std::uint32_t body_count;
@@ -461,23 +329,13 @@ namespace gse::vbd {
 		std::uint32_t sleep_threshold;
 	};
 
-	struct [[= shaders::ssbo_readwrite]] snapshot_source {
-		using element = body_state;
+	struct snapshot_bindings {
+		shaders::ssbo_readwrite<body_state> snapshot_source;
+		shaders::ssbo_readwrite<body_snapshot> snapshot_target;
+		shaders::ssbo_readwrite<std::uint32_t> snapshot_indices;
+		shaders::ssbo_readwrite<std::uint32_t> snapshot_count;
+		shaders::ssbo_readwrite<std::uint32_t> snapshot_linger;
 	};
-	struct [[= shaders::ssbo_readwrite]] snapshot_target {
-		using element = body_snapshot;
-	};
-	struct [[= shaders::ssbo_readwrite]] snapshot_indices {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] snapshot_count {
-		using element = std::uint32_t;
-	};
-	struct [[= shaders::ssbo_readwrite]] snapshot_linger {
-		using element = std::uint32_t;
-	};
-
-	using snapshot_binding_types = type_pack<snapshot_source, snapshot_target, snapshot_indices, snapshot_count, snapshot_linger>;
 
 	constexpr std::size_t snapshot_header_bytes = 16;
 	constexpr std::uint32_t snapshot_linger_generations = 4;
@@ -493,7 +351,7 @@ namespace gse::vbd {
 	using gather_snapshot_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_gather_snapshot">,
 		gpu::types<type_pack<body_state, body_snapshot>>,
-		gpu::bindings<snapshot_binding_types>,
+		gpu::bindings<snapshot_bindings>,
 		gpu::threads<limits.workgroup_size>,
 		gpu::push_constant<gather_snapshot_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -901,6 +759,33 @@ auto gse::vbd::gpu_solver::create_buffers(const shared_view<gpu::context::data> 
 		},
 		"vbd.active_args"
 	);
+
+	const std::size_t external_force_bytes = m_capacities.max_bodies * limits.external_force_words * sizeof(std::uint32_t);
+	m_external_force_buffer = ctx.device->create_buffer(
+		{
+			.size = external_force_bytes,
+			.stride = sizeof(std::uint32_t),
+			.usage = storage_dst,
+			.writable = true,
+			.device_local = true
+		},
+		"vbd.external_force"
+	);
+
+	for (auto& accumulator : m_external_force_accumulators) {
+		accumulator = ctx.device->create_buffer(
+			{
+				.size = external_force_bytes + sizeof(std::uint32_t),
+				.stride = sizeof(std::uint32_t),
+				.usage = storage_src_dst,
+				.writable = true,
+				.device_local = true
+			},
+			"vbd.external_force_accumulator"
+		);
+	}
+	m_external_force_stamp_word = m_capacities.max_bodies * limits.external_force_words;
+	m_external_force_fresh = true;
 
 	m_snapshot_linger_buffer = ctx.device->create_buffer(
 		{
@@ -1651,7 +1536,18 @@ auto gse::vbd::gpu_solver::upload(const solver_upload& payload) -> void {
 	}
 
 	m_solver_cfg.muscle_count = m_muscle_count;
-	m_solver_cfg.caps = m_capacities;
+	m_solver_cfg.max_bodies = m_capacities.max_bodies;
+	m_solver_cfg.max_contacts = m_capacities.max_contacts;
+	m_solver_cfg.max_collision_pairs = m_capacities.max_collision_pairs;
+	m_solver_cfg.poly_pair_base = m_capacities.poly_pair_base;
+	m_solver_cfg.max_joints = m_capacities.max_joints;
+	m_solver_cfg.max_islands = m_capacities.max_islands;
+	m_solver_cfg.max_muscles = m_capacities.max_muscles;
+	m_solver_cfg.grid_table_size = m_capacities.grid_table_size;
+	m_solver_cfg.max_contact_adjacency = m_capacities.max_contact_adjacency;
+	m_solver_cfg.max_joint_adjacency = m_capacities.max_joint_adjacency;
+	m_solver_cfg.max_grounded_uints = m_capacities.max_grounded_uints;
+	m_solver_cfg.grid_max_entries = m_capacities.grid_max_entries;
 
 	const bool pack_islands = m_solver_cfg.trace_island_convergence == 0
 		&& m_island_count >= m_island_pack_min_islands
@@ -1946,6 +1842,7 @@ auto gse::vbd::gpu_solver::latest_diagnostics() const -> std::optional<solver_di
 		.broad_nodes_walked = header[limits.state_broad_nodes_index],
 		.broad_aabb_tests = header[limits.state_broad_tests_index],
 		.broad_pairs = header[limits.state_pair_count_index],
+		.broad_walk_overruns = header[limits.state_broad_walk_overrun_index],
 		.joint_lambda_max = newtons(std::bit_cast<float>(header[limits.state_joint_lambda_index])),
 		.joint_penalty_max = newtons_per_meter(std::bit_cast<float>(header[limits.state_joint_penalty_index])),
 		.joint_c_max = meters(std::bit_cast<float>(header[limits.state_joint_c_index])),
@@ -1994,6 +1891,14 @@ auto gse::vbd::gpu_solver::dt() const -> time_step {
 
 auto gse::vbd::gpu_solver::render_body_buffer() const -> const gpu::buffer& {
 	return m_frames[1 - m_dispatch_slot].render_body_buffer;
+}
+
+auto gse::vbd::gpu_solver::external_force_accumulator(const std::uint32_t frame_index) const -> const gpu::buffer& {
+	return m_external_force_accumulators[frame_index];
+}
+
+auto gse::vbd::gpu_solver::external_force_stamp_word() const -> std::uint32_t {
+	return m_external_force_stamp_word;
 }
 
 auto gse::vbd::gpu_solver::solve_body_buffer() const -> const gpu::buffer& {
@@ -2386,6 +2291,11 @@ struct gse::vbd::gpu_solver::solve_plan {
 	bool active_full = false;
 	std::uint32_t static_body_count = 0;
 	std::uint32_t body_input_count = 0;
+	std::uint32_t external_force_slot = 0;
+	std::uint32_t external_force_stamp = 0;
+	bool external_force_fresh = false;
+	bool consume_external_force = false;
+	bool clear_external_force = false;
 
 	[[nodiscard]] auto push_constants(
 		std::uint32_t color_offset,
@@ -2472,6 +2382,7 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 		.active_list = m_active_list_buffer.slot(),
 		.active_data = m_active_data_buffer.slot(),
 		.active_args = m_active_args_buffer.slot(),
+		.external_force_data = m_external_force_buffer.slot(),
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
@@ -2566,6 +2477,9 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	}
 	out.static_body_count = m_upload_static_bodies.empty() ? 0u : m_upload_static_bodies[0];
 	out.body_input_count = m_upload_body_input_indices.empty() ? 0u : m_upload_body_input_indices[0];
+	out.external_force_slot = m_frame->current_frame();
+	out.external_force_stamp = static_cast<std::uint32_t>(m_frame->frame_count());
+	out.external_force_fresh = std::exchange(m_external_force_fresh, false);
 	out.snapshot_report_all = m_snapshot_full_dispatches == snapshot_linger_generations + 1;
 	out.snapshot_bound = m_snapshot_full_dispatches > 0 ? m_body_count : std::clamp(m_snapshot_bound, 1u, m_body_count);
 	if (m_snapshot_full_dispatches > 0) {
@@ -2716,6 +2630,33 @@ auto gse::vbd::gpu_solver::stage_apply_joint_drive_inputs(const solve_plan& p, c
 		p.bindings,
 		vec3u{ p.joint_drive_input_workgroups, 1u, 1u }
 	);
+}
+
+auto gse::vbd::gpu_solver::stage_external_force(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
+	const std::size_t force_bytes = p.body_count * limits.external_force_words * sizeof(std::uint32_t);
+	const auto& accumulator = m_external_force_accumulators[p.external_force_slot];
+
+	auto rec = co_await gpu::pass<vbd_external_force_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>(chain_index);
+
+	if (p.external_force_fresh) {
+		for (const auto& slot : m_external_force_accumulators) {
+			rec.fill_buffer(slot, 0, slot.size());
+		}
+		rec.fill_buffer(m_external_force_buffer, 0, force_bytes);
+		co_return;
+	}
+
+	if (p.consume_external_force) {
+		rec.copy_buffer(accumulator, m_external_force_buffer, force_bytes);
+	}
+	else {
+		rec.fill_buffer(m_external_force_buffer, 0, force_bytes);
+	}
+	if (p.clear_external_force) {
+		const std::size_t stamp_offset = m_external_force_stamp_word * sizeof(std::uint32_t);
+		rec.fill_buffer(accumulator, 0, stamp_offset);
+		rec.fill_buffer(accumulator, stamp_offset, sizeof(std::uint32_t), p.external_force_stamp);
+	}
 }
 
 auto gse::vbd::gpu_solver::stage_render_mirror(const solve_plan& p, const std::uint32_t chain_index, const pass_channel pass_out) -> async::task<> {
@@ -3217,7 +3158,7 @@ auto gse::vbd::gpu_solver::stage_gather_snapshot(const solve_plan& p, const std:
 			.report_all = p.snapshot_report_all ? 1u : 0u,
 			.sleep_threshold = limits.sleep_threshold,
 		},
-		gpu::binding_args<snapshot_binding_types>{
+		gpu::binding_args<snapshot_bindings>{
 			.snapshot_source = m_body_buffer.slot(),
 			.snapshot_target = f.snapshot_buffer.slot(),
 			.snapshot_indices = f.snapshot_index_buffer.slot(),
@@ -3309,7 +3250,10 @@ auto gse::vbd::gpu_solver::dispatch_compute(context& ctx, const channel_write<gp
 		stages.push_back(stage_seed_warm_starts(p, chain_seq++, pass_out));
 	}
 
+	p.clear_external_force = render_mirror;
+	p.consume_external_force = render_mirror && !p.apply_all_body_inputs;
 	stages.push_back(stage_apply_body_inputs(p, chain_seq++, pass_out));
+	stages.push_back(stage_external_force(p, chain_seq++, pass_out));
 	if (render_mirror) {
 		stages.push_back(stage_render_mirror(p, chain_seq++, pass_out));
 	}

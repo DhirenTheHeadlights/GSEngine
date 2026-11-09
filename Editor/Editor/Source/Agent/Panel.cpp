@@ -129,7 +129,7 @@ auto gse::ide::agent::draw_session_info(gui::builder& ui, data& d, const rectf& 
 
 	const std::string link = link_label(d, *s);
 	std::vector<std::pair<std::string, std::string>> rows = {
-		{ "status", !link.empty() ? link : !s->info.failure.empty() ? s->info.failure : s->running ? "running" : "ready" },
+		{ "status", !link.empty() ? link : !s->info.failure.empty() ? s->info.failure : s->link ? "running" : "ready" },
 		{ "activity", plan_chrome(d, *s).status },
 		{ "my edits", exe_label(*s) },
 		{ "broke", blame_label(*s) },
@@ -604,7 +604,7 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				.text = s.name.empty() ? std::string_view("unnamed") : std::string_view(s.name),
 				.position = { name_left, baseline },
 				.scale = fs,
-				.color = s.running ? sty.color_text : sty.color_text_secondary,
+				.color = s.link ? sty.color_text : sty.color_text_secondary,
 				.clip_rect = name_clip,
 			});
 			c.queue_text({
@@ -2261,7 +2261,7 @@ auto gse::ide::agent::draw_plan(gui::builder& ui, session& s, split_memory& colu
 }
 
 auto gse::ide::agent::submit_draft(session& s, const bool to_transcript) -> void {
-	if (!s.running && !agent_credentials().token) {
+	if (!s.link && !agent_credentials().token) {
 		request_token_prompt();
 		return;
 	}
@@ -2276,7 +2276,7 @@ auto gse::ide::agent::submit_draft(session& s, const bool to_transcript) -> void
 		restart_task(s);
 	}
 
-	if (!s.running && !launch_session(s)) {
+	if (!s.link && !launch_session(s)) {
 		append_row(s, {
 			.kind = row_kind::failure,
 			.text = s.info.failure,

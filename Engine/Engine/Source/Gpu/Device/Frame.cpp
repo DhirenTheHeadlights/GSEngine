@@ -251,8 +251,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	swap_chain* const m_swapchain = primary.swapchain;
 	m_frame_in_progress = false;
 
-	bool any_present_target = false;
-	bool any_live_target = false;
 	for (present_target& t : m_targets) {
 		const bool minimized_now = t.window && window::minimized(t.window->handle);
 		if (minimized_now != t.minimized_last) {
@@ -273,14 +271,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 			t.minimized_frames = 0;
 		}
 		++t.minimized_frames;
-		if (t.swapchain) {
-			any_present_target = true;
-			any_live_target = any_live_target || !minimized_now;
-		}
-	}
-
-	if (any_present_target && !any_live_target) {
-		return std::unexpected(frame_status::minimized);
 	}
 
 	{
@@ -363,13 +353,8 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 			continue;
 		}
 
-		const bool is_primary = std::addressof(t) == std::addressof(m_targets.front());
-
 		if (!t.swapchain->current_handle()) {
 			(void)recreate_surface(t, "swapchain handle gone");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
@@ -377,9 +362,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 			t.restore_pending = false;
 			(void)window::frame_buffer_resized(*t.window);
 			(void)recreate_surface(t, "window restored from minimize");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
@@ -399,17 +381,11 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 		if (acquire_status == result::error_surface_lost_khr) {
 			(void)recreate_surface(t, "surface lost on acquire");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
 		if (acquire_status != result::success && acquire_status != result::suboptimal_khr) {
 			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 

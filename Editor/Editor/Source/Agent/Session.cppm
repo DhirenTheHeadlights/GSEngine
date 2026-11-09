@@ -3,11 +3,13 @@ export module gse.ide.agent:session;
 import std;
 import gse;
 
+import gse.ide.analysis;
+
 import :model;
 
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
-	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk")";
+	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk mcp__gse__gse_delete_file")";
 	constexpr std::string_view sync_denied_tools = R"( --disallowed-tools "Write NotebookEdit Agent Task TodoWrite WebSearch WebFetch mcp__gse__gse_package_sdk mcp__gse__gse_run mcp__gse__gse_delete_file")";
 	constexpr std::wstring_view resume_option = L" --resume ";
 	constexpr std::string_view inquiry_command_head = R"(claude -p --output-format stream-json --input-format stream-json --verbose --tools "Read Grep Glob" --strict-mcp-config --no-session-persistence --fork-session)";
@@ -79,7 +81,7 @@ namespace gse::ide::agent {
 	auto adopt_session(
 		session& s,
 		const handoff& adopted
-	) -> bool;
+	) -> void;
 
 	auto hand_off_session(
 		session& s
@@ -144,6 +146,48 @@ namespace gse::ide::agent {
 	auto pump_session(
 		session& s
 	) -> void;
+
+	auto live_of(
+		session& s
+	) -> live_turn*;
+
+	auto live_of(
+		const session& s
+	) -> const live_turn*;
+
+	auto asleep(
+		session& s
+	) -> hibernation*;
+
+	auto asleep(
+		const session& s
+	) -> const hibernation*;
+
+	auto held_of(
+		const session& s
+	) -> const held_turn*;
+
+	auto finish_turn(
+		session& s,
+		const analysis::json::value& result
+	) -> void;
+
+	auto settle_turn(
+		session& s
+	) -> void;
+
+	auto lose_link(
+		session& s
+	) -> void;
+
+	auto sleep_session(
+		session& s,
+		std::string wake_prompt
+	) -> void;
+
+	auto take_sleep(
+		session& s
+	) -> hibernation;
 
 	auto restart_session(
 		session& s

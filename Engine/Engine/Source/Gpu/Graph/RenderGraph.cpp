@@ -162,7 +162,7 @@ auto gse::gpu::render_graph::release_output() -> void {
 auto gse::gpu::render_graph::set_offscreen_output(const offscreen_output_desc& desc) -> std::expected<void, std::string> {
 	m_device->wait_idle();
 	release_output();
-	auto output = create_offscreen_output(*m_device, *m_frame, desc);
+	auto output = create_offscreen_output(*m_device, desc);
 	if (output) {
 		m_output = std::move(*output);
 	}
@@ -203,6 +203,18 @@ auto gse::gpu::render_graph::wait_output_ready(const time timeout) const -> bool
 	const auto& offscreen = std::get<offscreen_output>(m_output);
 	const std::uint64_t next = offscreen.frame_number() + 1;
 	return m_device->wait_semaphore_for(offscreen.timelines.consumed, next - offscreen.images.size(), timeout);
+}
+
+auto gse::gpu::render_graph::claim_output() -> bool {
+	auto* offscreen = std::get_if<offscreen_output>(&m_output);
+	if (!offscreen || !offscreen->exportable()) {
+		return true;
+	}
+	offscreen->withheld = !output_ready();
+	if (!offscreen->withheld) {
+		++offscreen->published;
+	}
+	return !offscreen->withheld;
 }
 
 auto gse::gpu::render_graph::offscreen_surfaces() const -> std::span<const shared_surface> {
@@ -822,7 +834,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 		m_output
 	);
 
-	if (const auto* offscreen = std::get_if<offscreen_output>(&m_output); offscreen && offscreen->exportable()) {
+	if (const auto* offscreen = std::get_if<offscreen_output>(&m_output); offscreen && offscreen->exportable() && !offscreen->withheld) {
 		const std::uint64_t number = offscreen->frame_number();
 		const std::uint64_t slots = offscreen->images.size();
 		if (number > slots) {

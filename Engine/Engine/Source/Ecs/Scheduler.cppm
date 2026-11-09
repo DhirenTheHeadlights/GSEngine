@@ -197,8 +197,8 @@ export namespace gse {
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
 		std::function<void()> m_stall_probe;
 		time m_init_stall_dump{};
-		task_graph m_update_graph;
-		task_graph m_frame_graph;
+		task_graph m_update_graph{ task_graph::resume_policy::fan_out };
+		task_graph m_frame_graph{ task_graph::resume_policy::inline_all };
 		bool m_dep_graph_checked = false;
 	};
 }

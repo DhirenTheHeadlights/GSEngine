@@ -178,3 +178,13 @@ public mat3 rotation_from_quat(float4 q) {
 public bool is_finite3(float3 v) {
     return !any(isinf(v)) && !any(isnan(v));
 }
+
+public uint2 fixed_pair_encode(float value, float resolution) {
+    uint64_t bits = uint64_t(int64_t(round(value / resolution)));
+    return uint2(uint(bits), uint(bits >> 32));
+}
+
+public float fixed_pair_decode(uint lo, uint hi, float resolution) {
+    int64_t v = int64_t((uint64_t(hi) << 32) | uint64_t(lo));
+    return float(v) * resolution;
+}

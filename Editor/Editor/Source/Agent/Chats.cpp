@@ -625,14 +625,8 @@ auto gse::ide::agent::rewind_session(session& s, const std::uint32_t row) -> boo
 		return false;
 	}
 
-	if (s.running) {
-		spawn::terminate(s.process, s.job);
-		s.running = false;
-	}
-	close_session(s);
-	s.pending.clear();
-	s.think_clock.reset();
-	s.action.clear();
+	stop_session(s);
+	s.turn = std::monostate{};
 
 	s.rows.resize(*anchor + 1);
 	std::erase_if(s.expanded_groups, [cut = *anchor](const std::uint32_t group) {
@@ -661,7 +655,6 @@ auto gse::ide::agent::rewind_session(session& s, const std::uint32_t row) -> boo
 
 	s.info.agent_id = forked;
 	s.info.failure.clear();
-	s.retry = {};
 
 	for (transcript_row& row : s.rows) {
 		row.agent = forked;

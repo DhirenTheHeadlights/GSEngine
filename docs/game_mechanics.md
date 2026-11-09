@@ -86,7 +86,7 @@ Every system that matters prints one summary line every two seconds. Follow that
 
 - Hash gates: annotate a scenario with `gse::scenario::info` and compare `world-state hash` between a reference and a variant run. Headless, hermetic, fast.
 - Network conditions: `--engine-net-simulated-latency-ms N --engine-net-simulated-loss-permille M` on either process.
-- Scripted play: a scenario with `.real_time = true` and no scene keeps the wall clock, connects with `--engine-net-connect`, and can drive input through `gse::input::synthetic_input_request`. `net_walk_cpu` is the template.
+- Scripted play: a scenario with `.pacing = gse::scenario::pacing::wall_clock` and no scene keeps the wall clock, connects with `--engine-net-connect`, and can drive input through `gse::input::synthetic_input_request`. `net_walk_cpu` is the template.
 
 ## Checklist for a new mechanic
 

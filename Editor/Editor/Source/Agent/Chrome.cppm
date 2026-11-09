@@ -51,12 +51,8 @@ export namespace gse::ide::agent {
 		std::string woke_by;
 		std::string wake_task;
 		bool busy = false;
-		bool build_waiting = false;
 		bool has_gate = false;
 		bool pending = false;
-		bool asking = false;
-		bool goal_waiting = false;
-		bool hibernating = false;
 		bool stale = false;
 		bool failed = false;
 		bool summary_ready = false;

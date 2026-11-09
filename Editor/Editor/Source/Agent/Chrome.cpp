@@ -90,6 +90,7 @@ auto gse::ide::agent::fade(const vec4f color, const float alpha) -> vec4f {
 auto gse::ide::agent::facts_of(const data& d, const session& s) -> chrome_facts {
 	const bool busy = is_busy(s);
 	const bool waiting = build_wait_for(d, s) != build_wait::none;
+	const live_turn* live = live_of(s);
 
 	chrome_facts facts{
 		.kind = kind_of(s),
@@ -105,12 +106,8 @@ auto gse::ide::agent::facts_of(const data& d, const session& s) -> chrome_facts 
 		.blame = s.blame.empty() ? std::string{} : blame_label(s),
 		.unbuilt = s.stale ? exe_label(s) : std::string{},
 		.busy = busy,
-		.build_waiting = waiting,
 		.has_gate = s.gate.has_value(),
 		.pending = s.pending_transition.has_value(),
-		.asking = awaiting_answer(s),
-		.goal_waiting = s.goal && s.goal->waiting,
-		.hibernating = s.hibernating,
 		.stale = s.stale,
 		.failed = !s.blame.empty() || !s.info.failure.empty(),
 		.summary_ready = summary_ready(s),
@@ -123,11 +120,11 @@ auto gse::ide::agent::facts_of(const data& d, const session& s) -> chrome_facts 
 	if (!d.unclaimed.empty() && is_chat(s) && config::worktree_for(s.cwd).name == d.unclaimed_tree) {
 		facts.unclaimed = d.unclaimed.size();
 	}
-	if (s.hibernating) {
+	if (const hibernation* sleep = asleep(s)) {
 		facts.awaited_build = s.unbuilt.empty() ? std::string{} : unbuilt_label(s);
-		facts.asleep_blocker = s.asleep_blocker;
-		if (!s.wake_prompt.empty()) {
-			facts.wake_task = "on wake: " + std::string(first_line(s.wake_prompt));
+		facts.asleep_blocker = sleep->blocker;
+		if (!sleep->wake_prompt.empty()) {
+			facts.wake_task = "on wake: " + std::string(first_line(sleep->wake_prompt));
 		}
 	}
 	if (s.goal && s.goal->waiting) {
@@ -142,13 +139,15 @@ auto gse::ide::agent::facts_of(const data& d, const session& s) -> chrome_facts 
 		facts.capped = waiting.capped;
 		facts.wake_task = "on wake: " + std::string(first_line(waiting.then));
 	}
-	facts.woke_by = s.woke_by;
+	if (live) {
+		facts.woke_by = live->woke_by;
+	}
 	facts.status = build_status(facts);
 
 	if (busy) {
 		const time subsecond_limit = seconds(10.f);
-		const time elapsed = s.think_clock->elapsed();
-		const std::string& action = waiting ? facts.status : s.action;
+		const time elapsed = live->started.elapsed();
+		const std::string& action = waiting ? facts.status : live->action;
 		facts.activity = elapsed < subsecond_limit
 			? std::format("{} \xC2\xB7 {:.1f:s}", action, elapsed)
 			: std::format("{} \xC2\xB7 {:.0f:s}", action, elapsed);
@@ -714,17 +713,17 @@ auto gse::ide::agent::plan_from(const chrome_facts& facts) -> chrome_plan {
 		.activity = facts.activity,
 		.activity_color = style_of(facts.state).activity,
 		.activity_shown = facts.busy,
-		.overview_activity = facts.busy && !facts.build_waiting,
-		.stop_enabled = facts.busy || facts.goal_waiting,
+		.overview_activity = facts.busy && !style_of(facts.state).waits,
+		.stop_enabled = facts.busy || facts.state == agent_state::awaiting_goal,
 		.stop_interrupts = facts.busy,
 		.cancel_shown = facts.busy,
-		.question_shown = facts.asking,
+		.question_shown = facts.state == agent_state::awaiting_answer,
 		.fork_allowed = !facts.busy,
 		.summary_ready = facts.summary_ready,
 		.toggle_shown = facts.summary_ready,
 		.transcript_on_send = facts.kind != chat_kind::sync && facts.phase != task_phase::scope && facts.phase != task_phase::settled,
 		.tab = {
-			.dirty = facts.hibernating || facts.has_gate || facts.asking || facts.build_waiting,
+			.dirty = style_of(facts.state).waits || facts.has_gate,
 			.busy = facts.busy,
 			.warning = facts.stale,
 			.error = facts.failed,
@@ -743,7 +742,7 @@ auto gse::ide::agent::plan_from(const chrome_facts& facts) -> chrome_plan {
 
 	plan.footer = facts.unbuilt;
 	plan.wake_task = facts.wake_task;
-	if (facts.hibernating || facts.build_waiting || facts.goal_waiting || facts.asking || (facts.has_gate && !facts.pending)) {
+	if (style_of(facts.state).waits) {
 		const std::string asleep = asleep_note(facts);
 		plan.waiting = asleep.empty() ? facts.status : std::format("{} · {}", facts.status, asleep);
 		plan.waiting_color = plan.status_color;
@@ -752,7 +751,7 @@ auto gse::ide::agent::plan_from(const chrome_facts& facts) -> chrome_plan {
 		plan.footer += plan.footer.empty() ? "broke " + facts.blame : " · broke " + facts.blame;
 	}
 
-	if (facts.asking) {
+	if (facts.state == agent_state::awaiting_answer) {
 		plan.action = chrome_action::answer;
 		plan.action_label = answer_label;
 	}
@@ -818,7 +817,7 @@ auto gse::ide::agent::unbuilt_note(const chrome_facts& facts) -> std::string {
 }
 
 auto gse::ide::agent::asleep_note(const chrome_facts& facts) -> std::string {
-	return facts.hibernating ? facts.asleep_blocker : std::string{};
+	return facts.state == agent_state::hibernating ? facts.asleep_blocker : std::string{};
 }
 
 auto gse::ide::agent::woke_note(const chrome_facts& facts) -> std::string {
@@ -826,22 +825,22 @@ auto gse::ide::agent::woke_note(const chrome_facts& facts) -> std::string {
 }
 
 auto gse::ide::agent::build_wait_clause(const chrome_facts& facts) -> std::string {
-	if (!facts.hibernating) {
+	if (facts.state != agent_state::hibernating) {
 		return {};
 	}
 	return facts.awaited_build.empty() ? std::string("until the next build") : std::format("until {} is built", facts.awaited_build);
 }
 
 auto gse::ide::agent::process_wait_clause(const chrome_facts& facts) -> std::string {
-	return facts.goal_waiting && facts.awaited_pid ? std::format("pid {} to exit", *facts.awaited_pid) : std::string{};
+	return facts.state == agent_state::awaiting_goal && facts.awaited_pid ?std::format("pid {} to exit", *facts.awaited_pid) : std::string{};
 }
 
 auto gse::ide::agent::file_wait_clause(const chrome_facts& facts) -> std::string {
-	return facts.goal_waiting && !facts.awaited_file.empty() ? std::format("'{}' to change", facts.awaited_file) : std::string{};
+	return facts.state == agent_state::awaiting_goal && !facts.awaited_file.empty() ?std::format("'{}' to change", facts.awaited_file) : std::string{};
 }
 
 auto gse::ide::agent::deadline_wait_clause(const chrome_facts& facts) -> std::string {
-	if (!facts.goal_waiting) {
+	if (facts.state != agent_state::awaiting_goal) {
 		return {};
 	}
 	const std::string within = std::format("wakes within {:.0f:min}", facts.wake_in);
@@ -1039,11 +1038,7 @@ auto gse::ide::agent::gallery_facts(const chat_kind kind, const task_phase phase
 		.gate_action = gated ? std::string(policy_of(phase == task_phase::scope ? task_phase::apply : task_phase::steer).enter_label) : std::string{},
 		.failure = state == agent_state::failed ? std::string(gallery_failure) : std::string{},
 		.busy = busy,
-		.build_waiting = state == agent_state::build_queued || state == agent_state::compiling,
 		.has_gate = gated,
-		.asking = state == agent_state::awaiting_answer,
-		.goal_waiting = state == agent_state::awaiting_goal,
-		.hibernating = state == agent_state::hibernating,
 		.failed = state == agent_state::failed,
 	};
 }

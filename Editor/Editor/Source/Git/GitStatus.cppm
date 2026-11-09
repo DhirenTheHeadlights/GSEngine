@@ -39,14 +39,21 @@ export namespace gse::ide::git {
 		}]],
 	};
 
+	struct line_delta {
+		int added = 0;
+		int deleted = 0;
+	};
+
 	struct change {
 		std::filesystem::path relative;
 		std::filesystem::path original;
+		id path_id;
 		file_status state = file_status::none;
-		int added = 0;
-		int deleted = 0;
+		std::optional<line_delta> lines;
 		bool needs_stage = true;
 	};
+
+	constexpr std::size_t large_change_count = 5000;
 
 	struct repository_status {
 		std::filesystem::path root;
@@ -279,10 +286,12 @@ auto gse::ide::git::parse_header(repository_status& status, const std::string_vi
 auto gse::ide::git::add_change(repository_status& status, const std::string_view relative, const file_status state, const bool needs_stage) -> void {
 	std::filesystem::path relative_path(relative);
 	const std::filesystem::path full = status.root / relative_path;
-	status.entries[generate_temp_id(full)] = state;
+	const id path_id = generate_temp_id(full);
+	status.entries[path_id] = state;
 	mark_ancestors(status, full);
 	status.changes.push_back({
 		.relative = std::move(relative_path),
+		.path_id = path_id,
 		.state = state,
 		.needs_stage = needs_stage,
 	});
@@ -292,8 +301,7 @@ auto gse::ide::git::mark_ancestors(repository_status& status, const std::filesys
 	const id root_id = generate_temp_id(status.root);
 	for (std::filesystem::path dir = file; !dir.empty();) {
 		const id dir_id = generate_temp_id(dir);
-		status.dirty_dirs.insert(dir_id);
-		if (dir_id == root_id) {
+		if (!status.dirty_dirs.insert(dir_id).second || dir_id == root_id) {
 			break;
 		}
 		const std::filesystem::path parent = dir.parent_path();
@@ -420,7 +428,7 @@ auto gse::ide::git::capture(const std::string_view command_line, const std::file
 auto gse::ide::git::apply_numstat(repository_status& status, const std::string_view text) -> void {
 	std::unordered_map<id, change*> by_path;
 	for (change& entry : status.changes) {
-		by_path[generate_temp_id(status.root / entry.relative)] = &entry;
+		by_path[entry.path_id] = &entry;
 	}
 
 	std::size_t i = 0;
@@ -457,24 +465,38 @@ auto gse::ide::git::apply_numstat(repository_status& status, const std::string_v
 		if (found == by_path.end()) {
 			continue;
 		}
-		std::from_chars(added.data(), added.data() + added.size(), found->second->added);
-		std::from_chars(deleted.data(), deleted.data() + deleted.size(), found->second->deleted);
+		line_delta lines;
+		const bool counted = std::from_chars(added.data(), added.data() + added.size(), lines.added).ec == std::errc{}
+			&& std::from_chars(deleted.data(), deleted.data() + deleted.size(), lines.deleted).ec == std::errc{};
+		if (counted) {
+			found->second->lines = lines;
+		}
 	}
 }
 
 auto gse::ide::git::count_untracked_lines(repository_status& status) -> void {
+	if (status.changes.size() > large_change_count) {
+		return;
+	}
+	const byte_count size_limit = mebibytes(1.0);
 	for (change& entry : status.changes) {
 		if (entry.state != file_status::untracked) {
 			continue;
 		}
-		const std::expected<std::string, std::string> text = read_file_text(status.root / entry.relative);
-		if (!text) {
+		const std::filesystem::path path = status.root / entry.relative;
+		std::error_code ec;
+		const byte_count size = bytes(static_cast<double>(std::filesystem::file_size(path, ec)));
+		if (ec || size > size_limit) {
 			continue;
 		}
-		entry.added = static_cast<int>(std::ranges::count(*text, '\n'));
-		if (!text->empty() && text->back() != '\n') {
-			++entry.added;
+		const std::expected<std::string, std::string> text = read_file_text(path);
+		if (!text || text->contains('\0')) {
+			continue;
 		}
+		const int newlines = static_cast<int>(std::ranges::count(*text, '\n'));
+		entry.lines = line_delta{
+			.added = !text->empty() && text->back() != '\n' ? newlines + 1 : newlines,
+		};
 	}
 }
 

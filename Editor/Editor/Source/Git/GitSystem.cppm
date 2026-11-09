@@ -329,8 +329,8 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 			d.watched_repos = d.repo_roots;
 			for (const std::filesystem::path& root : d.watched_repos) {
 				const std::filesystem::path git_dir = git::git_dir_of(root);
-				for (const std::string_view name : { "HEAD", "index" }) {
-					d.repo_watcher.watch(git_dir / name, [&d](const std::filesystem::path&) {
+				for (const std::filesystem::path& watched : { git_dir / "HEAD", git_dir / "index", root / ".gitignore" }) {
+					d.repo_watcher.watch(watched, [&d](const std::filesystem::path&) {
 						d.refresh_requested = true;
 					});
 				}

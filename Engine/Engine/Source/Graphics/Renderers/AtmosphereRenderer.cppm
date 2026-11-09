@@ -48,8 +48,8 @@ export namespace gse::renderer::atmosphere {
 		float star_fade;
 	};
 
-	struct [[= shaders::uniform_block]] atmosphere_ubo {
-		using element = atmosphere_data;
+	struct bindings {
+		shaders::uniform_block<atmosphere_data> atmosphere_ubo;
 	};
 
 	struct sun_request {

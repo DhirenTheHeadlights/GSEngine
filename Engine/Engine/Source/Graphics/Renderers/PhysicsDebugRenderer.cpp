@@ -23,31 +23,23 @@ import :settings;
 
 
 namespace gse::renderer::physics_debug {
-	struct [[= shaders::ssbo_readonly]] body_data {
-		using element = vbd::body_state;
+	struct instanced_bindings {
+		shaders::ssbo_readonly<vbd::body_state> body_data;
+		shaders::ssbo_readonly<shape_instance> shape_instances;
+		shaders::ssbo_readonly<vec4f> shape_vertex_buffer;
 	};
 
-	struct [[= shaders::ssbo_readonly]] shape_instances {
-		using element = shape_instance;
+	struct lines_bindings {
+		shaders::ssbo_readonly<debug_vertex> line_vertex_buffer;
 	};
 
-	struct [[= shaders::ssbo_readonly]] shape_vertex_buffer {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::ssbo_readonly]] line_vertex_buffer {
-		using element = debug_vertex;
-	};
-
-	using instanced_shader_binding_types = type_pack<shaders::standard_3d::camera_ubo, body_data, shape_instances, shape_vertex_buffer>;
-	using lines_shader_binding_types = type_pack<shaders::standard_3d::camera_ubo, line_vertex_buffer>;
 	using shader_types = type_pack<shape_instance>;
 	using lines_shader_types = type_pack<debug_vertex>;
 
 	using instanced_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/physics_debug_instanced">,
 		gpu::types<shaders::common::shader_types, vbd::shader_types, shader_types>,
-		gpu::bindings<instanced_shader_binding_types>,
+		gpu::bindings<shaders::standard_3d::camera, instanced_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -61,7 +53,7 @@ namespace gse::renderer::physics_debug {
 	using lines_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/physics_debug">,
 		gpu::types<shaders::common::shader_types, lines_shader_types>,
-		gpu::bindings<lines_shader_binding_types>,
+		gpu::bindings<shaders::standard_3d::camera, lines_bindings>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::rasterization<gpu::polygon_mode::line, gpu::cull_mode::none>,
@@ -368,112 +360,126 @@ auto gse::renderer::physics_debug::init(const shared_view<gpu::context::data> gp
 	return {};
 }
 
-auto gse::renderer::physics_debug::prepare(context& ctx, data& d, const shared_view<physics::data> ps) -> async::task<> {
-	d.box_instances.clear();
-	d.sphere_instances.clear();
-	d.capsule_instances.clear();
+auto gse::renderer::physics_debug::build(context& ctx, data& d, const shared_view<physics::data> ps, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
 	d.line_vertices.clear();
-	d.cpu_body_staging.clear();
-	d.body_index_map.clear();
 
 	if (!d.enabled) {
 		return {};
 	}
 
-	const bool use_snapshot = physics::gpu_solver_active(ps) && ps.gpu_solver.body_count() > 0;
-	if (use_snapshot) {
-		const auto snapshot_states = ps.gpu_solver.read_body_snapshots();
-		if (!snapshot_states.empty()) {
-			d.cpu_body_staging.resize(snapshot_states.size());
-			for (std::size_t i = 0; i < snapshot_states.size(); ++i) {
-				d.cpu_body_staging[i].position = snapshot_states[i].position;
-				d.cpu_body_staging[i].orientation = snapshot_states[i].orientation;
-			}
-			for (const auto& [eid, idx] : ps.id_to_body_index) {
-				d.body_index_map[eid] = idx;
-			}
-		}
-	}
-
-	return {};
-}
-
-auto gse::renderer::physics_debug::build(context& ctx, data& d, read<physics::transform_component> transforms, read<physics::motion_component> motions, read<physics::collision_component> collisions, read<physics::collision_result_component> results) -> async::task<> {
-	if (!d.enabled) {
-		return {};
-	}
-
-	if (d.cpu_body_staging.empty()) {
+	d.draw_solver_bodies = physics::gpu_solver_active(ps);
+	const auto motion_ids = motions.owner_ids();
+	if (!d.draw_solver_bodies) {
 		d.cpu_body_staging.resize(motions.size());
-		const auto motion_ids = motions.owner_ids();
 		const bool order_matches =
 			transforms.size() == motions.size() && std::ranges::equal(motion_ids, transforms.owner_ids());
 		for (std::size_t i = 0; i < motions.size(); ++i) {
-			const auto eid = motion_ids[i];
-			const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(eid);
+			const auto* tc = order_matches ? std::addressof(transforms[i]) : transforms.find(motion_ids[i]);
 			if (!tc) {
 				continue;
 			}
 			auto& bs = d.cpu_body_staging[i];
 			bs.position = tc->position;
 			bs.orientation = tc->orientation;
-			d.body_index_map[eid] = static_cast<std::uint32_t>(i);
 		}
 	}
 
 	const auto collision_ids = collisions.owner_ids();
-	for (std::size_t i = 0; i < collisions.size(); ++i) {
-		const auto& coll = collisions[i];
-		const auto shape_tint = coll.resolve_collisions ? shape_color : non_resolving_shape_color;
+	const bool body_indices_current = d.draw_solver_bodies
+		? d.instance_body_index_generation == ps.body_index_generation
+		: std::ranges::equal(d.instance_motion_owners, motion_ids);
+	const bool instances_current =
+		d.instance_solver_indices == d.draw_solver_bodies &&
+		d.instance_shape_generation == ps.shape_generation &&
+		body_indices_current &&
+		std::ranges::equal(d.instance_owners, collision_ids);
 
-		const auto eid = collision_ids[i];
+	if (!instances_current) {
+		d.box_instances.clear();
+		d.sphere_instances.clear();
+		d.capsule_instances.clear();
+		d.instance_body_span = 0;
 
-		const auto idx_it = d.body_index_map.find(eid);
-		if (idx_it == d.body_index_map.end()) {
+		std::flat_map<id, std::uint32_t> motion_index;
+		if (!d.draw_solver_bodies) {
+			std::vector<std::pair<id, std::uint32_t>> entries;
+			entries.reserve(motion_ids.size());
+			for (std::size_t i = 0; i < motion_ids.size(); ++i) {
+				if (transforms.find(motion_ids[i]) != nullptr) {
+					entries.emplace_back(motion_ids[i], static_cast<std::uint32_t>(i));
+				}
+			}
+			motion_index.insert(entries.begin(), entries.end());
+		}
+		const auto& body_index_of = d.draw_solver_bodies ? ps.id_to_body_index : motion_index;
+
+		for (std::size_t i = 0; i < collisions.size(); ++i) {
+			const auto idx_it = body_index_of.find(collision_ids[i]);
+			if (idx_it == body_index_of.end()) {
+				continue;
+			}
+			const std::uint32_t body_index = idx_it->second;
+			d.instance_body_span = std::max(d.instance_body_span, body_index + 1);
+
+			const auto& coll = collisions[i];
+			const auto shape_tint = coll.resolve_collisions ? shape_color : non_resolving_shape_color;
+
+			match(coll.shape)
+				.if_is([&](const physics::box_shape& s) {
+					d.box_instances.push_back(
+						shape_instance{
+							.body_index = body_index,
+							.shape_scale = vec3<length>{ s.size.x() * 0.5f, s.size.y() * 0.5f, s.size.z() * 0.5f },
+							.color = shape_tint,
+						}
+					);
+				})
+				.else_if_is([&](const physics::sphere_shape& s) {
+					d.sphere_instances.push_back(
+						shape_instance{
+							.body_index = body_index,
+							.shape_scale = vec3<length>{ s.radius, s.radius, s.radius },
+							.color = shape_tint,
+						}
+					);
+				})
+				.else_if_is([&](const physics::capsule_shape& s) {
+					d.capsule_instances.push_back(
+						shape_instance{
+							.body_index = body_index,
+							.shape_scale = vec3<length>{ s.radius, s.half_height, s.radius },
+							.color = shape_tint,
+						}
+					);
+				});
+		}
+
+		d.instance_owners.assign(collision_ids.begin(), collision_ids.end());
+		d.instance_motion_owners.assign(motion_ids.begin(), motion_ids.end());
+		d.instance_solver_indices = d.draw_solver_bodies;
+		d.instance_shape_generation = ps.shape_generation;
+		d.instance_body_index_generation = ps.body_index_generation;
+		++d.instances_version;
+	}
+
+	const auto result_ids = results.owner_ids();
+	const bool motion_order_matches =
+		motions.size() == results.size() && std::ranges::equal(result_ids, motions.owner_ids());
+	for (std::size_t i = 0; i < results.size(); ++i) {
+		const auto& res = results[i];
+		if (!res.colliding) {
 			continue;
 		}
-		const std::uint32_t body_index = idx_it->second;
-
-		match(coll.shape)
-			.if_is([&](const physics::box_shape& s) {
-				d.box_instances.push_back(
-					shape_instance{
-						.body_index = body_index,
-						.shape_scale = vec3<length>{ s.size.x() * 0.5f, s.size.y() * 0.5f, s.size.z() * 0.5f },
-						.color = shape_tint,
-					}
-				);
-			})
-			.else_if_is([&](const physics::sphere_shape& s) {
-				d.sphere_instances.push_back(
-					shape_instance{
-						.body_index = body_index,
-						.shape_scale = vec3<length>{ s.radius, s.radius, s.radius },
-						.color = shape_tint,
-					}
-				);
-			})
-			.else_if_is([&](const physics::capsule_shape& s) {
-				d.capsule_instances.push_back(
-					shape_instance{
-						.body_index = body_index,
-						.shape_scale = vec3<length>{ s.radius, s.half_height, s.radius },
-						.color = shape_tint,
-					}
-				);
-			});
-
-		if (const auto* res = results.find(eid); res != nullptr) {
-			if (const auto* mc = motions.find(eid); mc != nullptr) {
-				build_contact_debug(*res, *mc, d.line_vertices);
-			}
+		const auto* mc = motion_order_matches ? std::addressof(motions[i]) : motions.find(result_ids[i]);
+		if (mc) {
+			build_contact_debug(res, *mc, d.line_vertices);
 		}
 	}
 
 	return {};
 }
 
-auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<physics::gpu_solver_frame_info> solver_in, shared_view<camera::data> cam_state) -> async::task<> {
 	if (!d.enabled) {
 		co_return;
 	}
@@ -509,25 +515,46 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 
 	const auto ext = gpu_s.render_graph->extent();
 
-	const bool draw_shapes = has_shape_instances && !d.cpu_body_staging.empty();
+	std::uint32_t body_count = 0;
+	if (d.draw_solver_bodies) {
+		if (const auto& solver_infos = solver_in.of<physics::gpu_solver_frame_info>(); !solver_infos.empty() && solver_infos[0].snapshot) {
+			body_count = solver_infos[0].body_count;
+		}
+	}
+	else {
+		body_count = static_cast<std::uint32_t>(d.cpu_body_staging.size());
+	}
+
+	const bool draw_shapes = has_shape_instances && body_count > 0 && body_count >= d.instance_body_span;
 
 	if (!draw_shapes && !has_lines) {
 		co_return;
 	}
 
 	if (draw_shapes) {
-		const auto body_count = static_cast<std::uint32_t>(d.cpu_body_staging.size());
-		const auto body_bytes = body_count * sizeof(vbd::body_state);
-		ensure_bindless_buffer_capacity(
-			*gpu_s.device,
-			d.cpu_body_buffers[frame_index],
-			d.cpu_body_capacity[frame_index],
-			body_bytes,
-			sizeof(vbd::body_state),
-			gpu::buffer_flag::storage,
-			"physics_debug.cpu_body"
-		);
-		d.cpu_body_buffers[frame_index].host_write(d.cpu_body_staging);
+		if (d.draw_solver_bodies) {
+			const auto& info = solver_in.of<physics::gpu_solver_frame_info>()[0];
+			if (!d.solver_body_views[frame_index].valid()) {
+				d.solver_body_views[frame_index] = gpu_s.device->allocate_buffer_slot();
+			}
+			gpu_s.device->write_storage_buffer(d.solver_body_views[frame_index].slot(), info.snapshot, info.body_count * info.body_stride);
+		}
+		else {
+			ensure_bindless_buffer_capacity(
+				*gpu_s.device,
+				d.cpu_body_buffers[frame_index],
+				d.cpu_body_capacity[frame_index],
+				body_count * sizeof(vbd::body_state),
+				sizeof(vbd::body_state),
+				gpu::buffer_flag::storage,
+				"physics_debug.cpu_body"
+			);
+			d.cpu_body_buffers[frame_index].host_write(d.cpu_body_staging);
+		}
+	}
+
+	if (draw_shapes && d.uploaded_instances_version[frame_index] != d.instances_version) {
+		d.uploaded_instances_version[frame_index] = d.instances_version;
 
 		const auto upload_instances =
 			[&](
@@ -588,12 +615,14 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.color(gpu::load_color(gpu_s.render_graph->framebuffer_image<targets::hdr_color>()))
-		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass>();
+		.after<^^forward::frame, ^^sdf_grid::frame, ^^world_text::frame, ^^cloud::cloud_composite_pass, ^^vbd::vbd_render_mirror_stage>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
 	if (draw_shapes) {
 		rec.bind(d.pipeline_instanced);
+
+		const auto body_slot = d.draw_solver_bodies ? d.solver_body_views[frame_index].slot() : d.cpu_body_buffers[frame_index].slot();
 
 		const auto draw_shape = [&](
 			const std::vector<shape_instance>& instances,
@@ -607,7 +636,7 @@ auto gse::renderer::physics_debug::frame(const context& ctx, shared_view<gpu::co
 			const auto count = static_cast<std::uint32_t>(instances.size());
 			rec.push_bindings<instanced_entry>({
 				.camera_ubo = d.camera_ubo_buffers[frame_index].slot(),
-				.body_data = d.cpu_body_buffers[frame_index].slot(),
+				.body_data = body_slot,
 				.shape_instances = instance_buffer.slot(),
 				.shape_vertex_buffer = unit_vb.slot(),
 			});

@@ -174,10 +174,11 @@ auto gse::gpu::build_compute_wrapper_source(const shader_compile_inputs& inputs,
 		out.push_back('\n');
 	}
 
-	if (inputs.emit_bindings) {
-		out.append(inputs.emit_bindings());
-		out.push_back('\n');
+	out.append(inputs.emit_bindings());
+	if (inputs.bindless_textures) {
+		out.append(shaders::emit_bindless_texture_table());
 	}
+	out.push_back('\n');
 
 	if (inputs.emit_push_constant_struct) {
 		out.append(inputs.emit_push_constant_struct());
@@ -265,10 +266,11 @@ auto gse::gpu::build_graphics_wrapper_source(const graphics_entry_pod& pod, cons
 		out.push_back('\n');
 	}
 
-	if (pod.emit_bindings) {
-		out.append(pod.emit_bindings());
-		out.push_back('\n');
+	out.append(pod.emit_bindings());
+	if (pod.bindless_textures) {
+		out.append(shaders::emit_bindless_texture_table());
 	}
+	out.push_back('\n');
 
 	if (pod.emit_push_constant_struct) {
 		out.append(pod.emit_push_constant_struct());
@@ -379,8 +381,8 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	assert(pod.binding_args_size_fn, "bindings missing on entry");
-	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
+	assert(pod.emit_bindings, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size, pod.body_path);
 
 	shader_compile_inputs inputs;
 	inputs.body_path = std::string(pod.body_path);
@@ -390,6 +392,7 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 	inputs.threads_y = pod.threads_y;
 	inputs.threads_z = pod.threads_z;
 	inputs.push_constant_size = pod.push_constant_size;
+	inputs.bindless_textures = pod.bindless_textures;
 	inputs.emit_push_constant_struct = pod.emit_push_constant_struct;
 	inputs.emit_types = pod.emit_types;
 	inputs.emit_bindings = pod.emit_bindings;
@@ -431,18 +434,9 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 		};
 	}
 
-	std::vector<specialization_entry> vk_spec_entries;
-	if (pod.build_spec_entries_fn && !spec_data.empty()) {
-		const auto entries = pod.build_spec_entries_fn();
-		vk_spec_entries.reserve(entries.size());
-		for (const auto& e : entries) {
-			vk_spec_entries.push_back({
-				.constant_id = e.constant_id,
-				.offset = e.offset,
-				.size = e.size,
-			});
-		}
-	}
+	const auto spec_entries = pod.build_spec_entries_fn && !spec_data.empty()
+		? pod.build_spec_entries_fn()
+		: std::vector<specialization_entry>{};
 
 	const shader_object_create_info stage_info{
 		.stage = stage_flag::compute,
@@ -453,16 +447,16 @@ auto gse::gpu::build_compute_program(device& dev, const compute_entry_pod& pod, 
 			? std::optional<std::uint32_t>(pod.required_subgroup_size)
 			: std::nullopt,
 		.require_full_subgroups = pod.require_full_subgroups,
-		.spec_entries = vk_spec_entries,
+		.spec_entries = spec_entries,
 		.spec_data = spec_data,
 	};
 
-	const auto binding_layout = pod.binding_layout_fn ? pod.binding_layout_fn() : std::vector<binding_layout_entry>{};
+	const auto binding_layout = pod.binding_layout_fn();
 	const shader_program_create_info info{
 		.label = pod.body_path,
 		.stages = std::span(&stage_info, 1),
 		.push_offset_start = pod.push_constant_size,
-		.binding_args_size = pod.binding_args_size_fn(),
+		.binding_args_size = pod.binding_args_size,
 		.bindings = binding_layout,
 		.push_constant_range = push_range,
 		.state = {},
@@ -480,8 +474,8 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 		spec_data.empty() || spec_data.size() == pod.spec_data_size,
 		"spec_data size mismatch with entry's spec_constants<T>"
 	);
-	assert(pod.binding_args_size_fn, "bindings missing on entry");
-	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size_fn(), pod.body_path);
+	assert(pod.emit_bindings, "bindings missing on entry");
+	assert_push_data_fits(dev, pod.push_constant_size, pod.binding_args_size, pod.body_path);
 
 	const std::string body_source = pod.body_source.empty() ? load_body_file(pod.body_path) : std::string(pod.body_source);
 	const auto parsed = parse_body_file(body_source);
@@ -510,18 +504,9 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 		}
 	}
 
-	std::vector<specialization_entry> vk_spec_entries;
-	if (pod.build_spec_entries_fn && !spec_data.empty()) {
-		const auto entries = pod.build_spec_entries_fn();
-		vk_spec_entries.reserve(entries.size());
-		for (const auto& e : entries) {
-			vk_spec_entries.push_back({
-				.constant_id = e.constant_id,
-				.offset = e.offset,
-				.size = e.size,
-			});
-		}
-	}
+	const auto spec_entries = pod.build_spec_entries_fn && !spec_data.empty()
+		? pod.build_spec_entries_fn()
+		: std::vector<specialization_entry>{};
 
 	std::vector<shader_object_create_info> stage_infos;
 	stage_infos.reserve(program.stages.size());
@@ -531,7 +516,7 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 			.spirv = s.spirv,
 			.entry_point = active_backend == backend_kind::webgpu ? std::string_view(s.entry_point) : std::string_view("main"),
 			.next_stage = next_stage_for(s.flag, all_stages),
-			.spec_entries = vk_spec_entries,
+			.spec_entries = spec_entries,
 			.spec_data = spec_data,
 		});
 	}
@@ -561,12 +546,12 @@ auto gse::gpu::build_graphics_program(device& dev, const graphics_entry_pod& pod
 	}
 	const depth_format depth_target = (pod.depth.test || pod.depth.write) ? pod.depth_fmt : depth_format::none;
 
-	const auto binding_layout = pod.binding_layout_fn ? pod.binding_layout_fn() : std::vector<binding_layout_entry>{};
+	const auto binding_layout = pod.binding_layout_fn();
 	const shader_program_create_info info{
 		.label = pod.body_path,
 		.stages = stage_infos,
 		.push_offset_start = pod.push_constant_size,
-		.binding_args_size = pod.binding_args_size_fn(),
+		.binding_args_size = pod.binding_args_size,
 		.bindings = binding_layout,
 		.push_constant_range = push_range,
 		.state = std::move(state),

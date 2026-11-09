@@ -14,6 +14,7 @@ import :physics_transform_renderer;
 import :point_light;
 import :raster_shadow_renderer;
 import :shared_shaders;
+import :grass_renderer;
 import :skin_renderer;
 import :spot_light;
 
@@ -37,25 +38,13 @@ namespace gse::renderer::raster_shadow {
 		angle local_fov_margin = degrees(2.f);
 		angle spot_max_half_angle = degrees(85.f);
 	};
-
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
+	struct setup_bindings {
+		shaders::ssbo_readonly<tile_request> tile_requests;
+		shaders::ssbo_readwrite<shaders::raster_shadow::shadow_tile> tiles_out;
 	};
 
-	struct [[= shaders::ssbo_readonly]] lights {
-		using element = shaders::forward::light;
-	};
-
-	struct [[= shaders::ssbo_readonly]] tile_requests {
-		using element = tile_request;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] tiles_out {
-		using element = shaders::raster_shadow::shadow_tile;
-	};
-
-	struct [[= shaders::ssbo_readonly]] tiles {
-		using element = shaders::raster_shadow::shadow_tile;
+	struct tile_bindings {
+		shaders::ssbo_readonly<shaders::raster_shadow::shadow_tile> tiles;
 	};
 
 	struct [[= shaders::shader_struct]]
@@ -64,12 +53,10 @@ namespace gse::renderer::raster_shadow {
 		std::int32_t shadow_quality;
 	};
 
-	using setup_bindings = type_pack<camera_ubo, lights, tile_requests, tiles_out>;
-
 	using setup_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/raster_shadow_setup">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types, type_pack<tile_request, raster_shadow_limits>>,
-		gpu::bindings<setup_bindings>,
+		gpu::bindings<shaders::standard_3d::camera, shaders::standard_3d::scene_lights, setup_bindings>,
 		gpu::helpers<"Standard3D/lighting_shared", "Standard3D/cube_faces">,
 		gpu::threads<64>,
 		gpu::push_constant<setup_push_constants>,
@@ -84,20 +71,10 @@ namespace gse::renderer::raster_shadow {
 		std::uint32_t tile_index;
 	};
 
-	using depth_bindings = type_pack<
-		tiles,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::meshlets_buffer,
-		shaders::meshlet::meshlet_vertex_indices,
-		shaders::meshlet::meshlet_triangles,
-		shaders::meshlet::meshlet_bounds_buffer,
-		shaders::meshlet::instance_data_buffer
-	>;
-
 	using depth_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/raster_shadow_depth">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types>,
-		gpu::bindings<depth_bindings>,
+		gpu::bindings<tile_bindings, shaders::meshlet::vertices, shaders::meshlet::meshlets, shaders::meshlet::instances>,
 		gpu::helpers<"Standard3D/meshlet_common">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
@@ -114,16 +91,10 @@ namespace gse::renderer::raster_shadow {
 		std::uint32_t tile_index;
 	};
 
-	using vertex_depth_bindings = type_pack<
-		tiles,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::instance_data_buffer
-	>;
-
 	using vertex_depth_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/raster_shadow_depth_vertex">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types>,
-		gpu::bindings<vertex_depth_bindings>,
+		gpu::bindings<tile_bindings, shaders::meshlet::vertices, shaders::meshlet::instances>,
 		gpu::helpers<"Standard3D/meshlet_common">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -132,6 +103,34 @@ namespace gse::renderer::raster_shadow {
 		gpu::depth<true, true, gpu::compare_op::greater_or_equal>,
 		gpu::color_targets<>
 	>;
+
+	struct [[= shaders::shader_struct]]
+	grass_depth_push_constants {
+		std::uint32_t tile_index;
+	};
+
+	using grass_depth_entry = gpu::graphics_entry<
+		gpu::body_path<"Grass/grass_shadow">,
+		gpu::types<shaders::common::shader_types, shaders::raster_shadow::shader_types, grass::shader_types>,
+		gpu::bindings<tile_bindings, shaders::meshlet::instances, grass::draw_bindings>,
+		gpu::helpers<"Grass/grass_shape", "Grass/grass_geometry">,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<grass_depth_push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::depth<true, true, gpu::compare_op::greater_or_equal>,
+		gpu::color_targets<>
+	>;
+
+	auto record_grass_tiles(
+		gpu::recording_context& rec,
+		const gpu::shader_program& pipeline,
+		shared_view<grass::data> grass_r,
+		std::uint32_t frame_index,
+		std::span<const tile_request> requests,
+		std::uint32_t first_tile,
+		gpu::bindless_slot tiles_slot
+	) -> void;
 
 	auto create_atlas(
 		shared_view<gpu::context::data> gpu_s,
@@ -234,12 +233,48 @@ auto gse::renderer::raster_shadow::record_tiles(gpu::recording_context& rec, con
 	}
 }
 
+auto gse::renderer::raster_shadow::record_grass_tiles(gpu::recording_context& rec, const gpu::shader_program& pipeline, const shared_view<grass::data> grass_r, const std::uint32_t frame_index, const std::span<const tile_request> requests, const std::uint32_t first_tile, const gpu::bindless_slot tiles_slot) -> void {
+	if (requests.empty() || std::ranges::none_of(grass_r.fields | std::views::values, &grass::field_render::culled)) {
+		return;
+	}
+
+	rec.bind(pipeline);
+	for (std::size_t t = 0; t < requests.size(); ++t) {
+		const auto& request = requests[t];
+		const auto tile_index = first_tile + static_cast<std::uint32_t>(t);
+		rec.set_viewport(static_cast<float>(request.atlas_offset.x()), static_cast<float>(request.atlas_offset.y()), static_cast<float>(request.atlas_extent), static_cast<float>(request.atlas_extent));
+		rec.set_scissor(static_cast<std::int32_t>(request.atlas_offset.x()), static_cast<std::int32_t>(request.atlas_offset.y()), request.atlas_extent, request.atlas_extent);
+
+		for (const auto& field : grass_r.fields | std::views::values) {
+			if (!field.culled) {
+				continue;
+			}
+			rec.push_bindings<grass_depth_entry>(
+				{
+					.tile_index = tile_index,
+				},
+				{
+					.tiles = tiles_slot,
+					.instance_data_buffer = field.instance[frame_index].slot(),
+					.grass_params_in = field.params[frame_index],
+					.grass_pool = field.pool,
+					.grass_tiles = field.tiles,
+					.grass_visible = field.visible.slot(),
+				}
+			);
+			grass::record_draw(rec, grass_r.indices, field, grass::views.grass_first_shadow_view + tile_index);
+		}
+	}
+}
+
 auto gse::renderer::raster_shadow::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
 	d.setup_pipeline = gpu::build_compute_program(*gpu_s.device, setup_entry::pod);
 	d.vertex_pulled = !gpu_s.device->capabilities().mesh_shaders;
 	d.depth_pipeline = d.vertex_pulled
 		? gpu::build_graphics_program(*gpu_s.device, vertex_depth_entry::pod)
 		: gpu::build_graphics_program(*gpu_s.device, depth_entry::pod);
+	d.grass_cull_pipeline = gpu::build_compute_program(*gpu_s.device, grass::cull_entry::pod);
+	d.grass_depth_pipeline = gpu::build_graphics_program(*gpu_s.device, grass_depth_entry::pod);
 
 	d.cascade_atlas = create_atlas(gpu_s, cascade_atlas_extent, "raster_shadow.cascades");
 	d.local_atlas = create_atlas(gpu_s, local_atlas_extent, "raster_shadow.local");
@@ -297,7 +332,7 @@ auto gse::renderer::raster_shadow::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::raster_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<lighting_source::raster_shadows> shadows_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<forward::data> forward_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
+auto gse::renderer::raster_shadow::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_write<lighting_source::raster_shadows> shadows_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, shared_view<forward::data> forward_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const shared_view<grass::data> grass_r) -> async::task<> {
 	lighting_source::raster_shadows published{
 		.cascade_atlas = d.cascade_atlas.sampled_slot(),
 		.local_atlas = d.local_atlas.sampled_slot(),
@@ -407,13 +442,29 @@ auto gse::renderer::raster_shadow::frame(context& ctx, shared_view<gpu::context:
 	const auto tiles_slot = d.tile_buffers[frame_index].slot();
 	const auto instance_slot = gc_r.instance_buffer[frame_index].slot();
 	const auto requests = d.requests.span();
+	if (std::ranges::any_of(grass_r.fields | std::views::values, &grass::field_render::culled)) {
+		auto rec = co_await gpu::pass<^^grass_cull_pass>(pass_out)
+			.pipeline(d.grass_cull_pipeline)
+			.after<^^setup_pass, ^^grass::cull_pass>();
+		const grass::cull_push_constants pc{
+			.camera_view_projection = proj * view,
+			.first_view = grass::views.grass_first_shadow_view,
+			.shadow_views = 1,
+		};
+		for (const auto& field : grass_r.fields | std::views::values) {
+			if (field.culled) {
+				grass::record_cull(rec, field, frame_index, pc, tile_count, tiles_slot);
+			}
+		}
+	}
 
 	{
 		auto rec = co_await gpu::pass<^^cascade_pass>(pass_out)
 			.pipeline(d.depth_pipeline)
 			.depth(gpu::clear_depth(gpu::depth_clear{ 0.0f }, d.cascade_atlas))
-			.after<^^setup_pass, ^^skin::deform_pass, ^^physics_transform::frame>();
+			.after<^^setup_pass, ^^skin::deform_pass, ^^grass_cull_pass, ^^physics_transform::frame>();
 		record_tiles(rec, geometry, requests.first(cascade_count), 0, tiles_slot, instance_slot, d.vertex_pulled);
+		record_grass_tiles(rec, d.grass_depth_pipeline, grass_r, frame_index, requests.first(cascade_count), 0, tiles_slot);
 	}
 
 	auto rec = co_await gpu::pass<^^frame>(pass_out)
@@ -421,4 +472,5 @@ auto gse::renderer::raster_shadow::frame(context& ctx, shared_view<gpu::context:
 		.depth(gpu::clear_depth(gpu::depth_clear{ 0.0f }, d.local_atlas))
 		.after<^^cascade_pass>();
 	record_tiles(rec, geometry, requests.subspan(cascade_count), cascade_count, tiles_slot, instance_slot, d.vertex_pulled);
+	record_grass_tiles(rec, d.grass_depth_pipeline, grass_r, frame_index, requests.subspan(cascade_count), cascade_count, tiles_slot);
 }

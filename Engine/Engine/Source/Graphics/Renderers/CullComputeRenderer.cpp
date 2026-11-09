@@ -36,20 +36,15 @@ namespace gse::renderer::cull_compute {
 		std::uint32_t indirect_stride;
 	};
 
-	struct [[= shaders::uniform_block]] frustum_ubo {
-		using element = frustum_data;
+	struct cull_bindings {
+		shaders::uniform_block<frustum_data> frustum_ubo;
+		shaders::ssbo_readonly<batch_info> batches;
+		shaders::rw_byte_address_buffer indirect_commands;
 	};
 
-	struct [[= shaders::ssbo_readonly]] batches {
-		using element = batch_info;
-	};
-
-	struct [[= shaders::rw_byte_address_buffer]] indirect_commands {};
-
-	using shader_binding_types = type_pack<frustum_ubo, batches, indirect_commands>;
 	using shader_types = type_pack<frustum_data, batch_info>;
 
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::types<shader_types>, gpu::bindings<shader_binding_types>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/cull_instances">, gpu::types<shader_types>, gpu::bindings<cull_bindings>, gpu::threads<1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::group_id>>;
 }
 
 auto gse::renderer::cull_compute::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<geometry_collector::data> gc_r, data& d) -> async::task<> {

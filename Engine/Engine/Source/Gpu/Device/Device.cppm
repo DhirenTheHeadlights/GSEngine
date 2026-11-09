@@ -305,7 +305,8 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]]
@@ -316,7 +317,8 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]]

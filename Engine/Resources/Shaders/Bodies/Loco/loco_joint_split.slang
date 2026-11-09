@@ -45,6 +45,8 @@ void loco_joint_split(uint3 dispatch_id) {
 
     float desired[8];
     float coordinate[8];
+    float held_rate[8];
+    float drive_target[8];
     for (uint c = 0; c < slots; ++c) {
         uint at = (side * slots + c) * loco_split_slot_words;
         uint parent = loco_split_table_data[env + loco_split_table_data[at + 0]];
@@ -57,8 +59,50 @@ void loco_joint_split(uint3 dispatch_id) {
         loco_split_state_data[state + c] = q;
         float action = loco_act_out_data[e * pc.act_dim + pc.target_dim + side * slots + c];
         float reference = clamp(loco_split_word_float(at + 4) + action * pc.action_scale, loco_split_word_float(at + 5), loco_split_word_float(at + 6));
-        desired[c] = loco_split_stiffness * (reference - q - loco_split_damping * rate);
+        float ahead = loco_split_lead != 0.0 ? q + rate * loco_split_lead : q;
+        if (loco_split_drive_gains != 0) {
+            float target = reference;
+            if (loco_split_hip_passive != 0) {
+                target = reference + (loco_split_word_float(at + 4) - reference) * loco_split_word_float(at + 7);
+            }
+            float cap = loco_split_word_float(at + 9);
+            desired[c] = clamp(loco_split_word_float(at + 8) * (target - ahead - loco_split_damping * rate), -cap, cap);
+        } else {
+            desired[c] = loco_split_stiffness * (reference - ahead - loco_split_damping * rate);
+        }
         coordinate[c] = q;
+        held_rate[c] = rate;
+        if (loco_split_drive_legs != 0) {
+            float target = reference;
+            if (loco_split_hip_passive != 0) {
+                target = reference + (loco_split_word_float(at + 4) - reference) * loco_split_word_float(at + 7);
+            }
+            if (loco_split_drive_lag > 0.0 && loco_split_word_float(at + 8) > 0.0) {
+                uint lagged = state + slots + 1 + muscles + slots * muscles + c;
+                if (primed) {
+                    target = loco_split_state_data[lagged] + (target - loco_split_state_data[lagged]) * (1.0 - exp(-pc.dt / loco_split_drive_lag));
+                }
+                loco_split_state_data[lagged] = target;
+            }
+            drive_target[c] = target;
+            uint drive = loco_split_table_data[env + loco_split_bodies + loco_split_joints + loco_split_table_data[at + 2]];
+            if (drive != loco_split_no_drive && loco_split_drive_capacity == 0) {
+                joint_constraint resident = loco_joint_data[drive];
+                if (k == 0) resident.drive_target.x = target;
+                else if (k == 1) resident.drive_target.y = target;
+                else resident.drive_target.z = target;
+                loco_joint_data[drive] = resident;
+            }
+        }
+    }
+
+    if (loco_split_drive_legs != 0 && loco_split_drive_blend == 0 && loco_split_drive_capacity == 0) {
+        loco_split_state_data[state + slots] = 1.0;
+        for (uint mi = 0; mi < muscles; ++mi) {
+            uint global = loco_split_table_data[loco_split_muscle_base + side * muscles + mi];
+            loco_act_out_data[pc.env_count * pc.act_dim + e * loco_split_muscle_count + global] = loco_split_floor;
+        }
+        return;
     }
 
     float plus[8];
@@ -81,7 +125,35 @@ void loco_joint_split(uint3 dispatch_id) {
             minus[c] += min(torque, 0.0);
         }
     }
+    if (loco_split_drive_capacity != 0) {
+        for (uint c = 0; c < slots; ++c) {
+            uint at = (side * slots + c) * loco_split_slot_words;
+            float stiffness = loco_split_word_float(at + 8);
+            uint drive = loco_split_table_data[env + loco_split_bodies + loco_split_joints + loco_split_table_data[at + 2]];
+            if (drive == loco_split_no_drive) continue;
+            float target = drive_target[c];
+            if (stiffness > 0.0) {
+                float held = coordinate[c] + loco_split_drive_damping * held_rate[c];
+                target = held + clamp(stiffness * (target - held), minus[c], plus[c]) / stiffness;
+            }
+            uint k = loco_split_table_data[at + 3];
+            joint_constraint resident = loco_joint_data[drive];
+            if (k == 0) resident.drive_target.x = target;
+            else if (k == 1) resident.drive_target.y = target;
+            else resident.drive_target.z = target;
+            loco_joint_data[drive] = resident;
+        }
+        loco_split_state_data[state + slots] = 1.0;
+        for (uint mi = 0; mi < muscles; ++mi) {
+            uint global = loco_split_table_data[loco_split_muscle_base + side * muscles + mi];
+            loco_act_out_data[pc.env_count * pc.act_dim + e * loco_split_muscle_count + global] = loco_split_floor;
+        }
+        return;
+    }
     for (uint c = 0; c < slots; ++c) {
+        if (loco_split_drive_blend != 0) {
+            desired[c] *= pc.muscle_share;
+        }
         desired[c] = clamp(desired[c], minus[c], plus[c]);
     }
 

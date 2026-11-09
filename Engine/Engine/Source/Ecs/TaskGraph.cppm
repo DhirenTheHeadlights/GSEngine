@@ -12,6 +12,15 @@ export namespace gse {
 		struct state_slot;
 
 	public:
+		enum class resume_policy : std::uint8_t {
+			inline_all,
+			fan_out,
+		};
+
+		explicit task_graph(
+			resume_policy policy
+		);
+
 		struct ready_awaiter {
 			state_slot* slot;
 
@@ -59,8 +68,11 @@ export namespace gse {
 		) const -> state_slot&;
 
 		std::flat_map<id, std::unique_ptr<state_slot>> m_states;
+		resume_policy m_policy;
 	};
 }
+
+gse::task_graph::task_graph(const resume_policy policy) : m_policy(policy) {}
 
 auto gse::task_graph::add_state(const id state_type, const bool ready) -> void {
 	m_states.try_emplace(state_type, std::make_unique<state_slot>(ready));
@@ -88,7 +100,13 @@ auto gse::task_graph::notify_state_ready(const id state_type) -> void {
 		handles = std::move(slot.waiters);
 	}
 
-	for (const async::checked_handle& h : handles) {
+	std::span<const async::checked_handle> inline_handles = handles;
+	if (m_policy == resume_policy::fan_out && !handles.empty()) {
+		async::post_resumes(inline_handles.subspan(1), trace_id<"task_graph::resume">());
+		inline_handles = inline_handles.first(1);
+	}
+
+	for (const async::checked_handle& h : inline_handles) {
 		if (!async::resume_checked(h)) {
 			log::println(
 				log::level::error,

@@ -163,8 +163,15 @@ if (unconstrained) {
 }
 
 float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
-body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;
-body.predicted_position = body.position + body.velocity * pc.dt + gravity_step * body.accel_weight;
+uint force_base = bi * external_force_words;
+float3 external_force = float3(
+    fixed_pair_decode(external_force_data[force_base + 0], external_force_data[force_base + 1], external_force_resolution),
+    fixed_pair_decode(external_force_data[force_base + 2], external_force_data[force_base + 3], external_force_resolution),
+    fixed_pair_decode(external_force_data[force_base + 4], external_force_data[force_base + 5], external_force_resolution)
+);
+float3 accel_step = gravity_step + external_force * (pc.dt * pc.dt / max(body.mass, 1e-6));
+body.inertia_target = body.position + body.velocity * pc.dt + accel_step;
+body.predicted_position = body.position + body.velocity * pc.dt + accel_step * body.accel_weight;
 body.motor_target = body.inertia_target;
 
 if (update_orient) {

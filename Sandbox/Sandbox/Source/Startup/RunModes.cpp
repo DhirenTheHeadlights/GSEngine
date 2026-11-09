@@ -90,7 +90,7 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 	if (bench.frames == defaults.frames) {
 		bench.frames = selected->info.frames;
 	}
-	bench.real_time = selected->info.real_time;
+	bench.pacing = selected->info.pacing;
 
 	std::vector<std::string> owned;
 	const auto own = [&owned](const std::string_view flag) -> void {

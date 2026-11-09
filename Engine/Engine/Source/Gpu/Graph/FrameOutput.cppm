@@ -49,11 +49,12 @@ namespace gse::gpu {
 	};
 
 	struct offscreen_output {
-		const frame* owner = nullptr;
 		std::vector<image> images;
 		std::vector<shared_surface> shared;
 		offscreen_timelines timelines;
-		std::uint64_t base_frame = 0;
+		image withheld_target;
+		std::uint64_t published = 0;
+		bool withheld = false;
 
 		[[nodiscard]] auto extent() const -> vec2u;
 
@@ -72,7 +73,6 @@ namespace gse::gpu {
 
 	auto create_offscreen_output(
 		device& dev,
-		const frame& owner,
 		const offscreen_output_desc& desc
 	) -> std::expected<offscreen_output, std::string>;
 
@@ -124,7 +124,10 @@ auto gse::gpu::offscreen_output::extent() const -> vec2u {
 }
 
 auto gse::gpu::offscreen_output::color_target() const -> const image* {
-	return std::addressof(images[frame_number() % images.size()]);
+	if (withheld) {
+		return std::addressof(withheld_target);
+	}
+	return std::addressof(images[published % images.size()]);
 }
 
 auto gse::gpu::offscreen_output::live() const -> bool {
@@ -141,19 +144,16 @@ auto gse::gpu::offscreen_output::target() const -> image_ref {
 }
 
 auto gse::gpu::offscreen_output::frame_number() const -> std::uint64_t {
-	return owner->frame_count() - base_frame;
+	return published;
 }
 
 auto gse::gpu::offscreen_output::exportable() const -> bool {
 	return !shared.empty();
 }
 
-auto gse::gpu::create_offscreen_output(device& dev, const frame& owner, const offscreen_output_desc& desc) -> std::expected<offscreen_output, std::string> {
+auto gse::gpu::create_offscreen_output(device& dev, const offscreen_output_desc& desc) -> std::expected<offscreen_output, std::string> {
 	const auto format = dev.surface_format();
-	offscreen_output output{
-		.owner = std::addressof(owner),
-		.base_frame = owner.frame_count(),
-	};
+	offscreen_output output;
 	output.images.reserve(desc.slots);
 
 	if (!desc.exportable) {
@@ -197,6 +197,15 @@ auto gse::gpu::create_offscreen_output(device& dev, const frame& owner, const of
 			}
 		);
 	}
+	output.withheld_target = dev.create_image(
+		{
+			.size = desc.extent,
+			.format = format,
+			.usage = { image_flag::color_attachment, image_flag::sampled, image_flag::transfer_src },
+		},
+		"offscreen.withheld"
+	);
+	transition_image_to(dev, output.withheld_target);
 	output.timelines = {
 		.produced = dev.create_exportable_semaphore(),
 		.consumed = dev.create_exportable_semaphore(),
@@ -206,6 +215,7 @@ auto gse::gpu::create_offscreen_output(device& dev, const frame& owner, const of
 
 auto gse::gpu::destroy_offscreen_output(device& dev, offscreen_output& output) -> void {
 	output.images.clear();
+	output.withheld_target = {};
 	for (const auto& surface : output.shared) {
 		dev.destroy_shared_surface(surface);
 	}

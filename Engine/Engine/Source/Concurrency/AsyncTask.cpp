@@ -165,6 +165,23 @@ auto gse::async::resume_checked_with(const checked_handle& tracked, void (*befor
 	return true;
 }
 
+auto gse::async::post_resumes(const std::span<const checked_handle> handles, const id trace) -> void {
+	std::vector<job> jobs;
+	jobs.reserve(handles.size());
+	for (const checked_handle& tracked : handles) {
+		jobs.emplace_back([tracked] {
+			if (!resume_checked(tracked)) {
+				log::println(
+					log::level::error,
+					log::category::task,
+					"post_resumes: resume skipped because the coroutine frame was destroyed before the job ran"
+				);
+			}
+		});
+	}
+	gse::task::post_range(jobs.begin(), jobs.end(), trace);
+}
+
 auto gse::async::void_promise::get_return_object() -> task<> {
 	return task{ std::coroutine_handle<void_promise>::from_promise(*this) };
 }
@@ -185,8 +202,8 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 		return std::noop_coroutine();
 	}
 	if (helpers.size() > 1) {
-		std::vector<job> jobs;
-		jobs.reserve(helpers.size() - 1);
+		std::vector<checked_handle> rest;
+		rest.reserve(helpers.size() - 1);
 		for (std::size_t i = 1; i < helpers.size(); ++i) {
 			const checked_handle tracked = track_frame(helpers[i].consume_start_handle());
 			if (!tracked.handle) {
@@ -198,17 +215,9 @@ auto gse::async::suspend_and_capture::await_suspend(const std::coroutine_handle<
 				);
 				continue;
 			}
-			jobs.emplace_back([tracked] {
-				if (!resume_checked(tracked)) {
-					log::println(
-						log::level::error,
-						log::category::task,
-						"when_all helper resume skipped: coroutine frame was destroyed before the job ran"
-					);
-				}
-			});
+			rest.push_back(tracked);
 		}
-		gse::task::post_range(jobs.begin(), jobs.end(), trace_id<"async::when_all::resume">());
+		post_resumes(rest, trace_id<"async::when_all::resume">());
 	}
 
 	const std::coroutine_handle<> first = helpers[0].consume_start_handle();

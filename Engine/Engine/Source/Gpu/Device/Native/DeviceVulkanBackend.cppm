@@ -57,6 +57,15 @@ export namespace gse::gpu {
 			std::uint32_t value
 		) -> void;
 
+		auto record_checkpoint(
+			command_buffer_handle cmd,
+			std::uint64_t marker
+		) -> void;
+
+		[[nodiscard]] auto queue_checkpoints(
+			queue_type queue_type
+		) const -> std::vector<queue_checkpoint>;
+
 		auto cmd_reset(
 			command_buffer_handle cmd
 		) -> void;
@@ -339,7 +348,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]] auto create_tlas(
@@ -348,7 +358,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> device_size;
@@ -469,7 +480,7 @@ auto gse::gpu::vulkan_device_backend::queue_family(const queue_type queue_type) 
 }
 
 auto gse::gpu::vulkan_device_backend::wait_idle() const -> void {
-	device_config.wait_idle();
+	device_config.wait_idle(queue);
 }
 
 auto gse::gpu::vulkan_device_backend::timestamp_period() const -> float {
@@ -502,6 +513,19 @@ auto gse::gpu::vulkan_device_backend::query_fault_info(device_fault_counts& coun
 
 auto gse::gpu::vulkan_device_backend::record_buffer_fill_u32(const command_buffer_handle cmd, const gpu::handle<buffer> buf, const device_size offset, const std::uint32_t value) -> void {
 	vulkan::commands(cmd).fill_buffer(buf, offset, sizeof(std::uint32_t), value);
+}
+
+auto gse::gpu::vulkan_device_backend::record_checkpoint(const command_buffer_handle cmd, const std::uint64_t marker) -> void {
+	if (device_config.diagnostic_checkpoints_enabled()) {
+		vulkan::commands(cmd).set_checkpoint(marker);
+	}
+}
+
+auto gse::gpu::vulkan_device_backend::queue_checkpoints(const queue_type queue_type) const -> std::vector<queue_checkpoint> {
+	if (!device_config.diagnostic_checkpoints_enabled()) {
+		return {};
+	}
+	return queue.checkpoints(queue_type);
 }
 
 auto gse::gpu::vulkan_device_backend::cmd_reset(const command_buffer_handle cmd) -> void {
@@ -729,7 +753,7 @@ auto gse::gpu::vulkan_device_backend::destroy_surface(const surface surface) -> 
 }
 
 auto gse::gpu::vulkan_device_backend::recreate_surface(const window::window_surface& win, const swap_chain_handle current_swapchain) -> surface {
-	device_config.wait_idle();
+	device_config.wait_idle(queue);
 	device_config.destroy_swapchain(current_swapchain);
 	instance.destroy_surface();
 	instance.create_surface(win.handle);
@@ -756,16 +780,16 @@ auto gse::gpu::vulkan_device_backend::swapchain_past_presentation_timing(const s
 	return device_config.swapchain_past_presentation_timing(swapchain);
 }
 
-auto gse::gpu::vulkan_device_backend::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
-	return device_config.create_blas(geometry, prim_count);
+auto gse::gpu::vulkan_device_backend::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) -> blas {
+	return device_config.create_blas(geometry, prim_count, flags);
 }
 
 auto gse::gpu::vulkan_device_backend::create_tlas(const std::uint32_t max_instances) -> tlas {
 	return device_config.create_tlas(max_instances);
 }
 
-auto gse::gpu::vulkan_device_backend::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
-	return device_config.query_blas_build_sizes(geometry, prim_count);
+auto gse::gpu::vulkan_device_backend::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) const -> acceleration_structure_build_sizes {
+	return device_config.query_blas_build_sizes(geometry, prim_count, flags);
 }
 
 auto gse::gpu::vulkan_device_backend::acceleration_structure_scratch_alignment() const -> device_size {

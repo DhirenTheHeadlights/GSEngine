@@ -76,22 +76,15 @@ namespace gse::renderer::ui {
 		d.frames_since_state_change = 0;
 	}
 
-	struct [[= shaders::ssbo_readonly]] vertex_buffer {
-		using element = vertex;
+	struct vertex_bindings {
+		shaders::ssbo_readonly<vertex> vertex_buffer;
 	};
 
-	struct [[= shaders::texture2d]] ui_texture {
-		using element = vec4f;
+	struct bound_texture_bindings {
+		shaders::texture2d<vec4f> ui_texture;
+		shaders::texture2d<vec4f> ui_snapshot;
+		shaders::sampler_state ui_texture_sampler;
 	};
-
-	struct [[= shaders::texture2d]] ui_snapshot {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] ui_texture_sampler {};
-
-	using shader_binding_types = type_pack<vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
-	using bound_binding_types = type_pack<vertex_buffer, ui_texture, ui_snapshot, ui_texture_sampler>;
 
 	using shader_types = type_pack<vertex>;
 
@@ -102,11 +95,11 @@ namespace gse::renderer::ui {
 		vec2f inv_screen_size;
 	};
 
-	template <typename Bindings, fixed_string Texture>
+	template <fixed_string Texture, typename... BindingSpecs>
 	using sprite_entry_for = gpu::graphics_entry<
 		gpu::body_path<"Graphics/sprite">,
 		gpu::types<shader_types>,
-		gpu::bindings<Bindings>,
+		BindingSpecs...,
 		gpu::helpers<Texture>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -128,11 +121,11 @@ namespace gse::renderer::ui {
 		float shadow_strength;
 	};
 
-	template <typename Bindings, fixed_string Texture>
+	template <fixed_string Texture, typename... BindingSpecs>
 	using msdf_entry_for = gpu::graphics_entry<
 		gpu::body_path<"Graphics/msdf">,
 		gpu::types<shader_types>,
-		gpu::bindings<Bindings>,
+		BindingSpecs...,
 		gpu::helpers<Texture>,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -143,10 +136,10 @@ namespace gse::renderer::ui {
 		gpu::depth_target<gpu::depth_format::none>
 	>;
 
-	using sprite_entry = sprite_entry_for<shader_binding_types, "Ui/ui_texture_bindless">;
-	using msdf_entry = msdf_entry_for<shader_binding_types, "Ui/ui_texture_bindless">;
-	using sprite_bound_entry = sprite_entry_for<bound_binding_types, "Ui/ui_texture_bound">;
-	using msdf_bound_entry = msdf_entry_for<bound_binding_types, "Ui/ui_texture_bound">;
+	using sprite_entry = sprite_entry_for<"Ui/ui_texture_bindless", gpu::bindings<vertex_bindings, shaders::bindless::sampler>, gpu::bindless_textures>;
+	using msdf_entry = msdf_entry_for<"Ui/ui_texture_bindless", gpu::bindings<vertex_bindings, shaders::bindless::sampler>, gpu::bindless_textures>;
+	using sprite_bound_entry = sprite_entry_for<"Ui/ui_texture_bound", gpu::bindings<vertex_bindings, bound_texture_bindings>>;
+	using msdf_bound_entry = msdf_entry_for<"Ui/ui_texture_bound", gpu::bindings<vertex_bindings, bound_texture_bindings>>;
 }
 
 auto gse::renderer::ui::add_sprite_quad(linear_vector<vertex>& vertices, linear_vector<std::uint32_t>& indices, const unified_command& cmd) -> std::size_t {

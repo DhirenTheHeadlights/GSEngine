@@ -34,7 +34,7 @@ export namespace sandbox {
 }
 
 auto sandbox::world_catalog() -> std::span<const world_entry> {
-	static const std::array<world_entry, 22> entries{
+	static const std::array<world_entry, 23> entries{
 		world_entry{
 			.name = "Sandbox",
 			.label = "Sandbox",
@@ -94,8 +94,15 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 		world_entry{
 			.name = "Grass",
 			.label = "Grass",
-			.blurb = "A field of ball-jointed grass blades for the sleeping-body path",
+			.blurb = "A field of GPU softbody grass blades",
 			.setup = &grass_scene_setup,
+			.group = world_group::world,
+		},
+		world_entry{
+			.name = "Grass Rigid",
+			.label = "Grass Rigid",
+			.blurb = "A field of ball-jointed grass blades for the sleeping-body path",
+			.setup = &grass_rigid_scene_setup,
 			.group = world_group::world,
 		},
 		world_entry{

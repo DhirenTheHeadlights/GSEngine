@@ -15,7 +15,7 @@ A row earns its place by naming the real failure mode it catches — a bug this 
 | Check | Tier | Status | Catches / note |
 |---|---|---|---|
 | `push_constant_layout_is_portable<T>` | Compile | ✅ Done | DX12 cbuffer straddle reading garbage where Vulkan scalar layout was fine. `PipelineBuilder.cppm:261` |
-| `binding_args_layout_is_flat<Pack>` | Compile | ✅ Done | Bindless slot scramble from C++ padding shifting later binding indices. `PipelineBuilder.cppm:52` |
+| `is_binding_set<T>` | Compile | ✅ Done | Bindless slot scramble from C++ padding shifting later binding indices; sets admit only the uint32-only binding wrappers, so the args block cannot pad. `PipelineBuilder.cppm` |
 | Lossy integer unit construction | Compile | ✅ Done | Retired a runtime test outright; covers every call site that will ever exist |
 | Semantic token contract | Compile | ✅ Done | Fails the editor build |
 | Math contracts (`pre`, `contract_assert`) | Runtime | ✅ Done | `ignore` in Release — see the violation-tier gap below |

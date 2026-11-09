@@ -54,6 +54,11 @@ export namespace gse::async {
 		void* context
 	) -> bool;
 
+	auto post_resumes(
+		std::span<const checked_handle> handles,
+		id trace
+	) -> void;
+
 	auto completed_marker() noexcept -> void*;
 
 	struct promise_base {

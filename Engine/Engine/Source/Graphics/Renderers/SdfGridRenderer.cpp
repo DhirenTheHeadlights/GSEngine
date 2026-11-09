@@ -35,12 +35,10 @@ namespace gse::renderer::sdf_grid {
 		float major_thickness;
 	};
 
-	using sdf_grid_bindings = type_pack<shaders::standard_3d::camera_ubo>;
-
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/SdfGrid">,
 		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<sdf_grid_bindings>,
+		gpu::bindings<shaders::standard_3d::camera>,
 		gpu::helpers<"Screen/screen_pass">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,

@@ -34,11 +34,6 @@ export namespace gse::gpu {
 		acceleration_structure,
 	};
 
-	enum class descriptor_access : std::uint8_t {
-		read,
-		read_write,
-	};
-
 	enum class descriptor_type : std::uint8_t {
 		uniform_buffer,
 		storage_buffer,
@@ -152,8 +147,6 @@ export namespace gse::gpu {
 	constexpr std::uint32_t max_frames_in_flight = 2;
 
 	enum class frame_status : std::uint8_t {
-		minimized,
-		swapchain_out_of_date,
 		device_lost
 	};
 

@@ -256,6 +256,10 @@ export namespace gse::vulkan {
 			std::uint32_t data
 		) const -> void;
 
+		auto set_checkpoint(
+			std::uint64_t marker
+		) const -> void;
+
 		auto copy_buffer_to_image(
 			gpu::handle<gpu::buffer> src,
 			gpu::handle<gpu::image> dst,
@@ -556,6 +560,10 @@ auto gse::vulkan::commands::fill_buffer(const gpu::handle<gpu::buffer> dst, cons
 	raw().fillBuffer(std::bit_cast<vk::Buffer>(dst), offset, size, data);
 }
 
+auto gse::vulkan::commands::set_checkpoint(const std::uint64_t marker) const -> void {
+	raw().setCheckpointNV(std::bit_cast<const void*>(static_cast<std::uintptr_t>(marker)));
+}
+
 auto gse::vulkan::commands::copy_buffer_to_image(const gpu::handle<gpu::buffer> src, const gpu::handle<gpu::image> dst, const std::span<const gpu::buffer_image_copy_region> regions) const -> void {
 	std::vector<vk::BufferImageCopy> vk_regions;
 	vk_regions.reserve(regions.size());
@@ -704,6 +712,7 @@ auto gse::vulkan::commands::build_acceleration_structures(const gpu::acceleratio
 		.type = to_vk(build_info.type),
 		.flags = to_vk(build_info.flags),
 		.mode = to_vk(build_info.mode),
+		.srcAccelerationStructure = std::bit_cast<vk::AccelerationStructureKHR>(build_info.src.value),
 		.dstAccelerationStructure = std::bit_cast<vk::AccelerationStructureKHR>(build_info.dst.value),
 		.geometryCount = static_cast<std::uint32_t>(vk_geometries.size()),
 		.pGeometries = vk_geometries.data(),

@@ -50,6 +50,15 @@ export namespace gse::gpu {
 			std::uint32_t value
 		) -> void;
 
+		auto record_checkpoint(
+			command_buffer_handle cmd,
+			std::uint64_t marker
+		) -> void;
+
+		[[nodiscard]] auto queue_checkpoints(
+			queue_type queue_type
+		) const -> std::vector<queue_checkpoint>;
+
 		auto cmd_reset(
 			command_buffer_handle cmd
 		) -> void;
@@ -332,7 +341,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]] auto create_tlas(
@@ -341,7 +351,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> device_size;

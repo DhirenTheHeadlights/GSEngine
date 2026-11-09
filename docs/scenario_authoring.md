@@ -8,7 +8,7 @@ This document is the operating manual. Read the traps at the end once before aut
 
 Two files, both in the Sandbox. Nothing central needs editing — the registry is a reflection sweep over `sandbox::scenarios`, so an annotated function in that namespace is discovered automatically.
 
-Declaration, in `Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm`:
+Declaration, in `Sandbox/Sandbox/Source/Scenarios/Scenarios.cppm`:
 
 ```cpp
 export namespace sandbox::scenarios {
@@ -19,7 +19,7 @@ export namespace sandbox::scenarios {
 }
 ```
 
-Body, in `Sandbox/Sandbox/Source/Sandbox/Scenarios.cpp`:
+Body, in `Sandbox/Sandbox/Source/Scenarios/Scenarios.cpp`:
 
 ```cpp
 auto sandbox::scenarios::my_scenario(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -38,6 +38,7 @@ The body **must** live in the `.cpp`. A coroutine body in the partition interfac
 | `scene` | Activated before the settle gate. Empty means no scene, which measures an empty world. |
 | `headless` | `true` runs with no window or renderer. Only ever *forces* headless — a `false` here leaves the command line's choice alone. |
 | `gpu_solver` | Pins `Physics.use_gpu_solver` to this value in **both** directions, unlike `headless`. A `false` here is a positive assertion that the scenario runs on the CPU solver, not a shrug. |
+| `pacing` | How the clock steps. `lockstep` (default): one fixed step per frame, and an attached run holds each frame until the editor takes it. `unpaced`: one fixed step per frame, frames never held, so a bench measures real frame time on a deterministic world. `wall_clock`: steps follow the wall clock, for networked or timed-wakeup scenarios that need real time; such a run is not deterministic. |
 | `warmup_frames` | Discarded frames before measurement. Default 120. |
 | `frames` | Measured frames. Default 600. Also sizes the profiler's recording ring. |
 
@@ -134,7 +135,7 @@ The run prints one summary line carrying both the timings and the digest:
 bench: 120 frames measured, p50 9.4 ms p95 12.7 ms p99 16.9 ms, world-state hash 0x6d3576e5fbf1029c
 ```
 
-The hash covers every transform and motion component, ordered by owner id, digested through `binary_writer`'s reflection walk — so it follows fields added later without anyone maintaining a list.
+The hash covers every transform and motion component, ordered by owner id, digested through `binary_writer`'s reflection walk — so it follows fields added later without anyone maintaining a list. A grass field's blades are GPU buffers rather than components, so the bench asks the grass probe for a digest of every blade node 8 frames before the end and folds each field's digest and step into the hash after the bodies. A field that never reports a digest fails the run, and its digest is also logged on its own `bench: grass field` line.
 
 ## Rules that will otherwise cost you a cycle
 

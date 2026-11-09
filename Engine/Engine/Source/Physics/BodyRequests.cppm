@@ -27,6 +27,10 @@ export namespace gse::physics {
 		id target;
 		typename [:std::meta::type_of(Member):] value;
 	};
+
+	struct reset_request {
+		id target;
+	};
 }
 
 consteval auto gse::physics::settable_members() -> std::vector<std::meta::info> {
@@ -51,6 +55,7 @@ consteval auto gse::physics::set_request_channel(const std::meta::info channel_t
 	for (const auto member : settable_members()) {
 		requests.push_back(std::meta::substitute(^^set_request, { std::meta::reflect_constant(member) }));
 	}
+	requests.push_back(^^reset_request);
 	return std::meta::substitute(channel_template, requests);
 }
 

@@ -140,15 +140,21 @@ auto gse::ide::agent::adopt_inherited(data& d) -> void {
 		}
 
 		const auto match = std::ranges::find(d.sessions, adopted.session, &session::id);
-		if (match != d.sessions.end() && !match->running && adopt_session(*match, adopted)) {
+		if (match != d.sessions.end() && !match->link) {
+			adopt_session(*match, adopted);
 			continue;
 		}
 		discard_handoff(adopted);
 	}
 
 	std::erase_if(d.sessions, [](const session& s) {
-		return s.sync.has_value() && !s.running;
+		return s.sync.has_value() && !s.link;
 	});
+	for (session& s : d.sessions) {
+		if (!s.link) {
+			lose_link(s);
+		}
+	}
 
 	if (!d.overview_active && std::ranges::none_of(d.sessions, [&](const session& s) {
 		return s.id == d.active;
@@ -233,52 +239,53 @@ auto gse::ide::agent::inherited_handoffs() -> std::vector<handoff> {
 	return adopted;
 }
 
-auto gse::ide::agent::adopt_session(session& s, const handoff& adopted) -> bool {
-	if (!win32::valid_handle(adopted.output) || !win32::valid_handle(adopted.input)) {
-		return false;
-	}
-
-	s.process = adopted.process;
-	s.job = adopted.job;
-	s.output = adopted.output;
-	s.input = adopted.input;
-	s.running = true;
-	s.launched_model_id = s.model_id;
-	s.launched_effort = s.requested_effort;
-
-	for (void* handle : { s.process, s.job, s.output, s.input }) {
+auto gse::ide::agent::adopt_session(session& s, const handoff& adopted) -> void {
+	for (void* handle : { adopted.process, adopted.job, adopted.output, adopted.input }) {
 		if (win32::valid_handle(handle)) {
 			win32::SetHandleInformation(handle, win32::handle_flag_inherit, 0);
 		}
 	}
 
+	s.link = agent_link{
+		.process = os::unique_handle(adopted.process),
+		.job = os::unique_handle(adopted.job),
+		.output = os::unique_handle(adopted.output),
+		.input = os::unique_handle(adopted.input),
+	};
+	s.launched_model_id = s.model_id;
+	s.launched_effort = s.requested_effort;
+
 	append_row(s, {
 		.kind = row_kind::note,
 		.text = "reattached across the editor restart",
 	});
-	return true;
 }
 
 auto gse::ide::agent::hand_off_session(session& s) -> bool {
-	if (!s.running || !win32::valid_handle(s.output) || !win32::valid_handle(s.input)) {
+	if (!s.link) {
 		return false;
 	}
 
-	std::vector<void*> handles;
-	for (void* handle : { s.process, s.job, s.output, s.input }) {
-		if (win32::valid_handle(handle)) {
-			handles.push_back(handle);
-		}
-	}
+	const std::array<void*, 4> released{
+		s.link->process.release(),
+		s.link->job.release(),
+		s.link->output.release(),
+		s.link->input.release(),
+	};
+	s.link.reset();
+
+	const std::vector<void*> handles = released
+		| std::views::filter([](void* handle) { return win32::valid_handle(handle); })
+		| std::ranges::to<std::vector>();
 
 	app::add_relaunch_handoff(handles, std::format(
 		L"{}{},{},{},{},{}",
 		handoff_option,
 		s.id,
-		reinterpret_cast<std::uintptr_t>(s.process),
-		reinterpret_cast<std::uintptr_t>(s.job),
-		reinterpret_cast<std::uintptr_t>(s.output),
-		reinterpret_cast<std::uintptr_t>(s.input)
+		reinterpret_cast<std::uintptr_t>(released[0]),
+		reinterpret_cast<std::uintptr_t>(released[1]),
+		reinterpret_cast<std::uintptr_t>(released[2]),
+		reinterpret_cast<std::uintptr_t>(released[3])
 	));
 	return true;
 }
@@ -406,12 +413,12 @@ auto gse::ide::agent::launch_session(session& s) -> bool {
 		return false;
 	}
 
-	s.process = child.process;
-	s.job = child.job;
-	s.output = child.output;
-	s.input = child.input;
-	s.pending.clear();
-	s.running = true;
+	s.link = agent_link{
+		.process = os::unique_handle(child.process),
+		.job = os::unique_handle(child.job),
+		.output = os::unique_handle(child.output),
+		.input = os::unique_handle(child.input),
+	};
 	s.launched_model_id = s.model_id;
 	s.launched_effort = s.requested_effort;
 	s.info.failure.clear();
@@ -526,7 +533,7 @@ auto gse::ide::agent::append_row(session& s, transcript_row row) -> void {
 
 auto gse::ide::agent::pump_session(session& s) -> void {
 	std::vector<std::string> lines;
-	const bool open = spawn::read_lines(s.output, s.pending, lines);
+	const bool open = spawn::read_lines(s.link->output.handle(), s.link->pending, lines);
 
 	for (const std::string& line : lines) {
 		if (line.empty()) {
@@ -541,37 +548,23 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			continue;
 		}
 		const std::string_view kind = string_at(*event, "type");
-		if (const std::int64_t resets = limit_reset_at(*event); resets > s.limited_until) {
-			s.limited_until = resets;
-		}
-		if (kind == "result") {
-			s.think_clock.reset();
-			s.recent_turn.emplace();
-			s.wrote_this_turn = false;
-			if (!turn_failed(*event)) {
-				s.limited_until = 0;
-			}
-			else if (usage_limited(*event) && s.limited_until <= unix_now()) {
-				s.limited_until = unix_now() + limit_backoff_seconds;
-			}
-		}
-		else if (kind == "assistant" || kind == "user") {
-			if (!s.think_clock) {
-				s.think_clock.emplace();
-			}
-			if (kind == "user" || s.action.empty()) {
-				s.action = thinking_phrase(s);
+		if (live_turn* live = live_of(s)) {
+			live->limited_until = std::max(live->limited_until, limit_reset_at(*event));
+			if (kind == "user" || (kind == "assistant" && live->action.empty())) {
+				live->action = thinking_phrase(s);
 			}
 		}
 
 		const std::string_view uuid = anchorable(*event) ? string_at(*event, "uuid") : std::string_view{};
 		std::vector<transcript_row> rows = summarize(*event, s.info);
-		for (const transcript_row& row : rows) {
-			if (row.kind == row_kind::tool) {
-				s.action = action_phrase(row);
-			}
-			else if (row.kind == row_kind::text) {
-				s.action = "writing back";
+		if (live_turn* live = live_of(s)) {
+			for (const transcript_row& row : rows) {
+				if (row.kind == row_kind::tool) {
+					live->action = action_phrase(row);
+				}
+				else if (row.kind == row_kind::text) {
+					live->action = "writing back";
+				}
 			}
 		}
 		for (transcript_row& row : rows) {
@@ -579,19 +572,8 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			append_row(s, std::move(row));
 		}
 
-		if (kind != "result") {
-			continue;
-		}
-		s.turn_open = false;
-		s.woke_by.clear();
-		if (retryable_failure(*event)) {
-			arm_retry(s);
-		}
-		else if (!turn_failed(*event)) {
-			s.turn_ended = true;
-			s.retry.waiting = false;
-			s.retry.attempts = 0;
-			s.resume_attempts = 0;
+		if (kind == "result") {
+			finish_turn(s, *event);
 		}
 	}
 
@@ -602,23 +584,126 @@ auto gse::ide::agent::pump_session(session& s) -> void {
 			.kind = row_kind::note,
 			.text = "agent exited",
 		});
-		s.running = false;
-		s.think_clock.reset();
-		s.wrote_this_turn = false;
+		lose_link(s);
 	}
 }
 
+auto gse::ide::agent::live_of(session& s) -> live_turn* {
+	return std::get_if<live_turn>(&s.turn);
+}
+
+auto gse::ide::agent::live_of(const session& s) -> const live_turn* {
+	return std::get_if<live_turn>(&s.turn);
+}
+
+auto gse::ide::agent::asleep(session& s) -> hibernation* {
+	if (live_turn* live = live_of(s); live && live->sleep_after) {
+		return &*live->sleep_after;
+	}
+	return std::get_if<hibernation>(&s.turn);
+}
+
+auto gse::ide::agent::asleep(const session& s) -> const hibernation* {
+	if (const live_turn* live = live_of(s); live && live->sleep_after) {
+		return &*live->sleep_after;
+	}
+	return std::get_if<hibernation>(&s.turn);
+}
+
+auto gse::ide::agent::held_of(const session& s) -> const held_turn* {
+	return std::get_if<held_turn>(&s.turn);
+}
+
+auto gse::ide::agent::finish_turn(session& s, const analysis::json::value& result) -> void {
+	s.recent_turn.emplace();
+
+	live_turn* live = live_of(s);
+	if (!live) {
+		return;
+	}
+	if (live->stopping || live->sleep_after) {
+		settle_turn(s);
+		return;
+	}
+
+	if (retryable_failure(result)) {
+		const std::int64_t until = usage_limited(result) && live->limited_until <= unix_now()
+			? unix_now() + limit_backoff_seconds
+			: live->limited_until;
+		s.turn = held_turn{
+			.editor_driven = live->editor_driven,
+			.attempts = live->retries + 1,
+			.until = until,
+		};
+
+		const std::int64_t remaining = until - unix_now();
+		append_row(s, {
+			.kind = row_kind::note,
+			.text = remaining > 0
+				? std::format("usage limit reached - holding this turn, resending in {}m", std::max<std::int64_t>(remaining / 60, 1))
+				: "holding this turn - it will be resent once the connection is back",
+		});
+		return;
+	}
+
+	if (turn_failed(result)) {
+		s.turn = std::monostate{};
+		return;
+	}
+
+	s.turn = ended_turn{ .editor_driven = live->editor_driven };
+	s.resume_attempts = 0;
+}
+
+auto gse::ide::agent::settle_turn(session& s) -> void {
+	live_turn* live = live_of(s);
+	if (!live) {
+		return;
+	}
+	if (live->sleep_after) {
+		hibernation sleep = std::move(*live->sleep_after);
+		s.turn = std::move(sleep);
+		return;
+	}
+	s.turn = std::monostate{};
+}
+
+auto gse::ide::agent::lose_link(session& s) -> void {
+	s.link.reset();
+	if (const live_turn* live = live_of(s); live && (live->stopping || live->sleep_after)) {
+		settle_turn(s);
+	}
+}
+
+auto gse::ide::agent::sleep_session(session& s, std::string wake_prompt) -> void {
+	if (live_turn* live = live_of(s)) {
+		live->sleep_after = hibernation{ .wake_prompt = std::move(wake_prompt) };
+		return;
+	}
+	s.turn = hibernation{ .wake_prompt = std::move(wake_prompt) };
+}
+
+auto gse::ide::agent::take_sleep(session& s) -> hibernation {
+	hibernation* found = asleep(s);
+	if (!found) {
+		return {};
+	}
+	hibernation sleep = std::move(*found);
+	if (live_turn* live = live_of(s)) {
+		live->sleep_after.reset();
+	}
+	else {
+		s.turn = std::monostate{};
+	}
+	return sleep;
+}
+
 auto gse::ide::agent::stop_session(session& s) -> void {
-	if (s.running) {
-		spawn::terminate(s.process, s.job);
-		s.running = false;
+	if (s.link) {
+		spawn::terminate(s.link->process.handle(), s.link->job.handle());
 	}
 	close_session(s);
-	s.pending.clear();
-	s.turn_open = false;
-	s.think_clock.reset();
-	s.wrote_this_turn = false;
-	s.action.clear();
+	settle_turn(s);
 }
 
 auto gse::ide::agent::restart_session(session& s) -> void {
@@ -637,22 +722,7 @@ auto gse::ide::agent::close_session(session& s) -> void {
 	if (s.fork.process) {
 		end_inquiry(*s.fork.process);
 	}
-	if (win32::valid_handle(s.input)) {
-		win32::CloseHandle(s.input);
-		s.input = nullptr;
-	}
-	if (win32::valid_handle(s.output)) {
-		win32::CloseHandle(s.output);
-		s.output = nullptr;
-	}
-	if (win32::valid_handle(s.job)) {
-		win32::CloseHandle(s.job);
-		s.job = nullptr;
-	}
-	if (win32::valid_handle(s.process)) {
-		win32::CloseHandle(s.process);
-		s.process = nullptr;
-	}
+	s.link.reset();
 }
 
 auto gse::ide::agent::owns_transcript(const session& s, const std::string_view agent_id) -> bool {
@@ -690,12 +760,7 @@ auto gse::ide::agent::erase_session(data& d, const std::uint32_t session_id) -> 
 		return;
 	}
 
-	if (found->running) {
-		spawn::terminate(found->process, found->job);
-		found->running = false;
-	}
-	close_session(*found);
-
+	stop_session(*found);
 	remember_name(d, *found);
 
 	const auto index = static_cast<std::size_t>(std::distance(d.sessions.begin(), found));
@@ -728,7 +793,7 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 	if (found == d.sessions.end()) {
 		return;
 	}
-	if (found->running) {
+	if (found->link) {
 		d.pending_close = session_id;
 		return;
 	}
@@ -737,10 +802,10 @@ auto gse::ide::agent::request_close(data& d, const std::uint32_t session_id) -> 
 
 auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt, const std::span<const gui::image_attachment> attachments, const bool editor_driven, std::optional<transcript_row> shown) -> bool {
 	const bool settings_stale = s.launched_model_id != s.model_id || s.launched_effort != s.requested_effort;
-	if (s.running && !s.think_clock && settings_stale) {
+	if (s.link && !live_of(s) && settings_stale) {
 		restart_session(s);
 	}
-	if (!s.running || !win32::valid_handle(s.input)) {
+	if (!s.link) {
 		s.info.failure = "Message not sent: Claude is not connected. Your draft has been kept.";
 		append_row(s, { .kind = row_kind::failure, .text = s.info.failure });
 		return false;
@@ -748,7 +813,7 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 
 	const std::string message = user_message(prompt, attachments);
 	win32::DWORD written = 0;
-	if (!win32::WriteFile(s.input, message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)
+	if (!win32::WriteFile(s.link->input.handle(), message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)
 		|| written != message.size()) {
 		stop_session(s);
 		s.info.failure = "Message not sent: the Claude connection failed. Your draft has been kept; try sending again.";
@@ -757,15 +822,13 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 	}
 
 	s.info.failure.clear();
-	s.retry.waiting = false;
-	s.retry.held = true;
-	s.turn_open = true;
-	s.editor_turn = editor_driven;
-	s.turn_ended = false;
-	s.hibernating = false;
-	s.wake_prompt.clear();
-	s.asleep_blocker.clear();
-	s.woke_by.clear();
+	const held_turn* held = held_of(s);
+	const live_turn* live = live_of(s);
+	s.turn = live_turn{
+		.editor_driven = editor_driven,
+		.retries = held ? held->attempts : live ? live->retries : 0,
+		.action = thinking_phrase(s),
+	};
 
 	append_row(s, shown ? std::move(*shown) : transcript_row{
 		.kind = row_kind::user,
@@ -774,20 +837,23 @@ auto gse::ide::agent::send_to_session(session& s, const std::string_view prompt,
 			? std::string{}
 			: std::format("{} image(s) attached", attachments.size()),
 	});
-
-
-	s.action = thinking_phrase(s);
-	s.think_clock.emplace();
 	return true;
 }
 
 auto gse::ide::agent::interrupt_session(session& s) -> void {
-	s.retry.waiting = false;
-	s.turn_open = false;
-
-	if (!s.running || !win32::valid_handle(s.input) || !s.think_clock) {
+	if (held_of(s)) {
+		s.turn = std::monostate{};
 		return;
 	}
+	live_turn* live = live_of(s);
+	if (!live) {
+		return;
+	}
+	if (!s.link) {
+		settle_turn(s);
+		return;
+	}
+	live->stopping = true;
 
 	const std::string message = std::format(
 		R"({{"type":"control_request","request_id":"stop_{}_{}","request":{{"subtype":"interrupt"}}}})" "\n",
@@ -796,7 +862,7 @@ auto gse::ide::agent::interrupt_session(session& s) -> void {
 	);
 
 	win32::DWORD written = 0;
-	if (!win32::WriteFile(s.input, message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)) {
+	if (!win32::WriteFile(s.link->input.handle(), message.data(), static_cast<win32::DWORD>(message.size()), &written, nullptr)) {
 		append_row(s, {
 			.kind = row_kind::failure,
 			.text = "failed to interrupt the agent",
@@ -804,7 +870,7 @@ auto gse::ide::agent::interrupt_session(session& s) -> void {
 		return;
 	}
 
-	s.action = "stopping";
+	live->action = "stopping";
 }
 
 auto gse::ide::agent::active_session(data& d) -> session* {

@@ -24,8 +24,8 @@ namespace gse::renderer::world_text {
 		vec2f tex_coord;
 	};
 
-	struct [[= shaders::ssbo_readonly]] world_text_vertex_buffer {
-		using element = world_text_vertex;
+	struct world_text_bindings {
+		shaders::ssbo_readonly<world_text_vertex> world_text_vertex_buffer;
 	};
 
 	struct [[= shaders::shader_struct]] push_constants {
@@ -38,13 +38,13 @@ namespace gse::renderer::world_text {
 		float shadow_strength;
 	};
 
-	using world_text_bindings = type_pack<shaders::standard_3d::camera_ubo, world_text_vertex_buffer, shaders::bindless::textures, shaders::bindless::textures_sampler>;
 	using world_text_shader_types = type_pack<world_text_vertex>;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/WorldText">,
 		gpu::types<shaders::common::shader_types, world_text_shader_types>,
-		gpu::bindings<world_text_bindings>,
+		gpu::bindings<shaders::standard_3d::camera, world_text_bindings, shaders::bindless::sampler>,
+		gpu::bindless_textures,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,

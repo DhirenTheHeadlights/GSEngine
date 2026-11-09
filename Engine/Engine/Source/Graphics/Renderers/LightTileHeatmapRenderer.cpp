@@ -16,8 +16,8 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::light_tile_heatmap {
-	struct [[= shaders::ssbo_readonly]] tile_light_table {
-		using element = vec2u;
+	struct heatmap_bindings {
+		shaders::ssbo_readonly<vec2u> tile_light_table;
 	};
 
 	struct [[= shaders::shader_struct]] push_constants {
@@ -27,11 +27,9 @@ namespace gse::renderer::light_tile_heatmap {
 		float opacity;
 	};
 
-	using shader_binding_types = type_pack<tile_light_table>;
-
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/LightTileHeatmap">,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<heatmap_bindings>,
 		gpu::helpers<"Screen/screen_pass">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,

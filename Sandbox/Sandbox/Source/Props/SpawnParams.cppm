@@ -33,7 +33,7 @@ export namespace sandbox {
 		int box_grid_layers = 3;
 	};
 
-	struct grass_field_params {
+	struct rigid_grass_field_params {
 		int blades_per_side = 100;
 		int segments = 3;
 		gse::length spacing = gse::meters(0.15f);
@@ -50,6 +50,18 @@ export namespace sandbox {
 			= gse::settings::range<1, 32>{}
 		]]
 		int count = 1;
+
+		[[
+			= gse::settings::describe<"Ground position along x of the first character a spawn request builds. Later "
+									  "characters line up from it at 2 m steps along x. A scenario that walks a character "
+									  "across a prop pins this so the walk starts where the prop needs it.">{}
+		]]
+		gse::length origin_x = gse::meters(0.f);
+
+		[[
+			= gse::settings::describe<"Ground position along z of every character a spawn request builds.">{}
+		]]
+		gse::length origin_z = gse::meters(0.f);
 	};
 
 	struct pyramid_scene_params {

@@ -147,7 +147,11 @@ export namespace gse::vulkan {
 
 		[[nodiscard]] auto vendor_binary_fault_enabled() const -> bool;
 
-		auto wait_idle() const -> void;
+		[[nodiscard]] auto diagnostic_checkpoints_enabled() const -> bool;
+
+		auto wait_idle(
+			const queue& queues
+		) const -> void;
 
 		[[nodiscard]] auto timestamp_period() const -> float;
 
@@ -547,7 +551,8 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto create_blas(
 			const gpu::acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			gpu::build_acceleration_structure_flags flags
 		) -> gpu::blas;
 
 		[[nodiscard]]
@@ -558,7 +563,8 @@ export namespace gse::vulkan {
 		[[nodiscard]]
 		auto query_blas_build_sizes(
 			const gpu::acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			gpu::build_acceleration_structure_flags flags
 		) const -> gpu::acceleration_structure_build_sizes;
 
 		[[nodiscard]]
@@ -752,6 +758,7 @@ export namespace gse::vulkan {
 		bool m_fault_enabled = false;
 		bool m_vendor_binary_fault_enabled = false;
 		bool m_calibrated_timestamps_enabled = false;
+		bool m_diagnostic_checkpoints_enabled = false;
 		std::array<std::uint64_t, gpu::queue_type_count> m_timestamp_valid_masks{};
 		std::array<std::uint32_t, gpu::queue_type_count> m_queue_families{};
 

@@ -34,53 +34,59 @@ namespace gse::renderer::geometry_collector {
 		const material* mat_ptr
 	) -> std::uint32_t;
 
-	auto write_instance(
-		std::vector<shaders::common::instance_data>& instance_staging,
-		const spatial_matrix& model_matrix,
-		const spatial_matrix& normal_matrix,
-		const spatial_matrix& prev_model_matrix,
-		std::uint32_t mat_idx,
-		const vec4f& tint
+	constexpr std::size_t collect_chunk_size = 2048;
+
+	auto entry_bounds(
+		const owned_render_queue_entry& q
+	) -> std::pair<vec3<length>, vec3<length>>;
+
+	auto group_key_of(
+		const owned_render_queue_entry& q
+	) -> queue_group_key;
+
+	auto append_entry(
+		collect_chunk& chunk,
+		owned_render_queue_entry q
 	) -> void;
 
-	template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
-	auto build_batches(
-		render_data& data,
-		std::uint32_t& global_instance_offset,
-		const Items& items,
-		Batches& batches,
-		KeyOf key_of,
-		GetMesh get_mesh,
-		AccumAabb accum_aabb,
-		OnInstance on_instance
+	auto reset_chunk(
+		collect_chunk& chunk
 	) -> void;
+
+	auto pinned_model(
+		std::flat_map<id, std::shared_ptr<const model>>& resolved,
+		const resource::handle<model>& handle
+	) -> const model*;
 
 	auto collect_static(
 		write<render_component>& render,
 		read<physics::transform_component>& transform,
 		read<physics::motion_component>& motion,
 		const std::flat_map<id, std::uint32_t>& body_index_map,
-		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices,
+		std::uint32_t gpu_body_count,
 		const physics::interpolation_state& interpolation,
-		std::vector<owned_render_queue_entry>& out,
-		std::vector<owned_render_queue_entry>& transparent_out
+		data& d
 	) -> void;
 
 	auto collect_skinned(
 		read<skeleton_instance_component>& skeletons,
 		const skin::skinned_bounds_map& bounds,
-		std::vector<owned_render_queue_entry>& out
+		collect_chunk& out
 	) -> void;
 
-	auto sort_queues(
-		std::vector<owned_render_queue_entry>& out
-	) -> void;
-
-	auto build_queue_batches(
+	auto plan_batches(
 		render_data& data,
-		std::uint32_t& global_instance_offset,
-		const std::vector<owned_render_queue_entry>& queue,
+		std::span<collect_chunk> chunks,
+		collect_list collect_chunk::* list,
+		std::flat_map<queue_group_key, queue_locator>& batch_groups,
+		std::uint32_t& instance_offset,
+		std::uint32_t& mapping_offset,
 		std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches
+	) -> void;
+
+	auto scatter_instances(
+		render_data& data,
+		std::span<collect_chunk> chunks
 	) -> void;
 
 	auto initialize(
@@ -113,112 +119,168 @@ auto gse::renderer::geometry_collector::material_palette_index(render_data& data
 	return index;
 }
 
-auto gse::renderer::geometry_collector::write_instance(std::vector<shaders::common::instance_data>& instance_staging, const spatial_matrix& model_matrix, const spatial_matrix& normal_matrix, const spatial_matrix& prev_model_matrix, const std::uint32_t mat_idx, const vec4f& tint) -> void {
-	instance_staging.push_back({
-		.model_matrix = model_matrix,
-		.normal_matrix = normal_matrix,
-		.prev_model_matrix = prev_model_matrix,
-		.material_index = mat_idx,
-		.tint = tint,
-	});
-}
-
-template <typename Items, typename Batches, typename KeyOf, typename GetMesh, typename AccumAabb, typename OnInstance>
-auto gse::renderer::geometry_collector::build_batches(render_data& data, std::uint32_t& global_instance_offset, const Items& items, Batches& batches, KeyOf key_of, GetMesh get_mesh, AccumAabb accum_aabb, OnInstance on_instance) -> void {
-	std::size_t batch_begin = 0;
-	while (batch_begin < items.size()) {
-		const auto key = key_of(items[batch_begin]);
-		std::size_t batch_end = batch_begin + 1;
-		while (batch_end < items.size() && key_of(items[batch_end]) == key) {
-			++batch_end;
-		}
-
-		const auto& mesh = get_mesh(key);
-		const auto instance_count = static_cast<std::uint32_t>(batch_end - batch_begin);
-		const auto mat_idx = material_palette_index(data, &mesh.material());
-		const auto batch = std::span(items.data() + batch_begin, batch_end - batch_begin);
-
-		vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
-		vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
-		accum_aabb(world_aabb_min, world_aabb_max, batch, mesh);
-
-		batches.push_back({
-			.key = key,
-			.first_instance = global_instance_offset,
-			.instance_count = instance_count,
-			.world_aabb_min = world_aabb_min,
-			.world_aabb_max = world_aabb_max
-		});
-
-		for (const auto& item : batch) {
-			on_instance(item, key, mat_idx, global_instance_offset++);
-		}
-
-		batch_begin = batch_end;
+auto gse::renderer::geometry_collector::entry_bounds(const owned_render_queue_entry& q) -> std::pair<vec3<length>, vec3<length>> {
+	if (q.skinned.valid()) {
+		return { vec3<length>(q.skinned_bounds.min), vec3<length>(q.skinned_bounds.max) };
 	}
+
+	if (q.body_index != owned_render_queue_entry::invalid_body_index) {
+		constexpr float physics_cull_extent = 1.0e9f;
+		return { vec3<length>(meters(-physics_cull_extent)), vec3<length>(meters(physics_cull_extent)) };
+	}
+
+	const auto [local_min, local_max] = q.model_snapshot->meshes()[q.entry.index].aabb();
+	return transform_aabb(local_min, local_max, q.entry.model_matrix);
 }
 
-auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, std::unordered_map<id, std::vector<std::optional<spatial_matrix>>>& prev_model_matrices, const physics::interpolation_state& interpolation, std::vector<owned_render_queue_entry>& out, std::vector<owned_render_queue_entry>& transparent_out) -> void {
+auto gse::renderer::geometry_collector::group_key_of(const owned_render_queue_entry& q) -> queue_group_key {
+	return {
+		.model = q.entry.model,
+		.skinned = q.skinned.id(),
+		.skinned_owner = q.skinned.valid() ? q.owner : id{},
+		.mesh_index = q.entry.index,
+		.model_snapshot = q.model_snapshot,
+		.skinned_snapshot = q.skinned_snapshot.get(),
+	};
+}
+
+auto gse::renderer::geometry_collector::append_entry(collect_chunk& chunk, owned_render_queue_entry q) -> void {
+	auto& list = q.entry.color.w() < 1.0f ? chunk.transparent : chunk.opaque;
+	const auto [entry_min, entry_max] = entry_bounds(q);
+	auto [it, inserted] = list.groups.try_emplace(
+		group_key_of(q),
+		collect_group{
+			.first_index = static_cast<std::uint32_t>(list.entries.size()),
+			.world_aabb_min = entry_min,
+			.world_aabb_max = entry_max,
+		}
+	);
+	auto& group = it->second;
+	if (!inserted) {
+		group.world_aabb_min = min(group.world_aabb_min, entry_min);
+		group.world_aabb_max = max(group.world_aabb_max, entry_max);
+	}
+	++group.count;
+	if (q.body_index != owned_render_queue_entry::invalid_body_index) {
+		++group.gpu_count;
+	}
+	list.entries.push_back(std::move(q));
+}
+
+auto gse::renderer::geometry_collector::reset_chunk(collect_chunk& chunk) -> void {
+	chunk.opaque.entries.clear();
+	chunk.opaque.groups.clear();
+	chunk.transparent.entries.clear();
+	chunk.transparent.groups.clear();
+	chunk.resolved.clear();
+}
+
+auto gse::renderer::geometry_collector::pinned_model(std::flat_map<id, std::shared_ptr<const model>>& resolved, const resource::handle<model>& handle) -> const model* {
+	auto [it, inserted] = resolved.try_emplace(handle.id());
+	if (inserted) {
+		it->second = handle.resolve();
+	}
+	return it->second.get();
+}
+
+auto gse::renderer::geometry_collector::collect_static(write<render_component>& render, read<physics::transform_component>& transform, read<physics::motion_component>& motion, const std::flat_map<id, std::uint32_t>& body_index_map, const std::uint32_t gpu_body_count, const physics::interpolation_state& interpolation, data& d) -> void {
 	const auto render_size = render.size();
 	const auto render_ids = render.owner_ids();
 	const bool transform_order_matches =
 		render_size == transform.size() && std::ranges::equal(render_ids, transform.owner_ids());
 
+	std::swap(d.previous_matrices, d.current_matrices);
+	const auto& previous = d.previous_matrices;
+	auto& current = d.current_matrices;
+	current.owners.assign(render_size, id{});
+	current.offsets.resize(render_size + 1);
+	current.offsets[0] = 0;
 	for (std::size_t i = 0; i < render_size; ++i) {
-		auto& component = render[i];
-		if (!component.render) {
-			continue;
-		}
-
-		const auto eid = render_ids[i];
-		const auto* tc = transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
-		if (tc == nullptr) {
-			continue;
-		}
-
-		const auto render_tc = physics::render_transform(*tc, motion.find(eid), interpolation);
-
-		std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
-		if (const auto it = body_index_map.find(eid); it != body_index_map.end()) {
-			body_index = it->second;
-		}
-
-		auto& entity_prev = prev_model_matrices[eid];
-		if (entity_prev.size() < component.model_count) {
-			entity_prev.resize(component.model_count);
-		}
-
-		for (std::uint32_t j = 0; j < component.model_count; ++j) {
-			if (!component.models[j].valid()) {
-				continue;
-			}
-			const auto mdl = component.models[j].resolve();
-			const auto [model_matrix, normal_matrix] =
-				compute_render_transform(render_tc, mdl->render_pivot(), component.sizes[j]);
-			const auto prev_model_matrix = entity_prev[j].value_or(model_matrix);
-			entity_prev[j] = model_matrix;
-			const float opacity = component.tints[j].w();
-			auto& target = opacity < 1.0f ? transparent_out : out;
-			for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
-				target.push_back({
-					.entry = {
-						.model = component.models[j],
-						.index = mi,
-						.model_matrix = model_matrix,
-						.normal_matrix = normal_matrix,
-						.prev_model_matrix = prev_model_matrix,
-						.color = component.tints[j]
-					},
-					.owner = eid,
-					.body_index = body_index,
-					.model_snapshot = mdl
-				});
-			}
-		}
+		current.offsets[i + 1] = current.offsets[i] + render[i].model_count;
 	}
+	current.matrices.resize(current.offsets[render_size]);
+
+	const std::size_t chunk_count = (render_size + collect_chunk_size - 1) / collect_chunk_size;
+	d.collect_chunks.resize(chunk_count + 1);
+
+	task::coarse_parallel(
+		chunk_count,
+		1,
+		[&](const std::size_t c) {
+			auto& chunk = d.collect_chunks[c];
+			reset_chunk(chunk);
+
+			const auto begin = c * collect_chunk_size;
+			const auto end = std::min(render_size, begin + collect_chunk_size);
+			for (std::size_t i = begin; i < end; ++i) {
+				auto& component = render[i];
+				if (!component.render) {
+					continue;
+				}
+
+				const auto eid = render_ids[i];
+				const auto* tc = transform_order_matches ? std::addressof(transform[i]) : transform.find(eid);
+				if (tc == nullptr) {
+					continue;
+				}
+
+				std::uint32_t body_index = owned_render_queue_entry::invalid_body_index;
+				if (const auto it = body_index_map.find(eid); it != body_index_map.end() && it->second < gpu_body_count) {
+					body_index = it->second;
+				}
+				const bool gpu_driven = body_index != owned_render_queue_entry::invalid_body_index;
+
+				const auto render_tc = gpu_driven ? *tc : physics::render_transform(*tc, motion.find(eid), interpolation);
+
+				const bool has_history = i < previous.owners.size() && previous.owners[i] == eid;
+				const auto history_first = has_history ? previous.offsets[i] : 0;
+				const auto history_count = has_history ? previous.offsets[i + 1] - history_first : 0;
+				current.owners[i] = eid;
+
+				for (std::uint32_t j = 0; j < component.model_count; ++j) {
+					auto& stored = current.matrices[current.offsets[i] + j];
+					if (!component.models[j].valid()) {
+						stored.reset();
+						continue;
+					}
+					const auto* mdl = pinned_model(chunk.resolved, component.models[j]);
+					spatial_matrix model_matrix(mat4f(1.f));
+					spatial_matrix normal_matrix(mat4f(1.f));
+					spatial_matrix prev_model_matrix(mat4f(1.f));
+					if (gpu_driven) {
+						stored.reset();
+					}
+					else {
+						std::tie(model_matrix, normal_matrix) = compute_render_transform(render_tc, mdl->render_pivot(), component.sizes[j]);
+						prev_model_matrix = j < history_count
+							? previous.matrices[history_first + j].value_or(model_matrix)
+							: model_matrix;
+						stored = model_matrix;
+					}
+					for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
+						append_entry(chunk, {
+							.entry = {
+								.model = component.models[j].id(),
+								.index = mi,
+								.model_matrix = model_matrix,
+								.normal_matrix = normal_matrix,
+								.prev_model_matrix = prev_model_matrix,
+								.color = component.tints[j]
+							},
+							.owner = eid,
+							.body_index = body_index,
+							.scale = component.sizes[j],
+							.model_snapshot = mdl
+						});
+					}
+				}
+			}
+		},
+		trace_id<"geom_collect::collect_chunk">()
+	);
 }
 
-auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_component>& skeletons, const skin::skinned_bounds_map& bounds, std::vector<owned_render_queue_entry>& out) -> void {
+auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_component>& skeletons, const skin::skinned_bounds_map& bounds, collect_chunk& out) -> void {
 	const auto owners = skeletons.owner_ids();
 
 	for (std::size_t i = 0; i < skeletons.size(); ++i) {
@@ -234,7 +296,7 @@ auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_c
 
 		constexpr float unbounded_extent = 1.0e9f;
 		const auto bounds_it = bounds.find(owners[i]);
-		const auto entry_bounds = bounds_it != bounds.end()
+		const auto owner_bounds = bounds_it != bounds.end()
 			? bounds_it->second
 			: aabb{
 			.max = vec3<position>(meters(unbounded_extent)),
@@ -242,7 +304,7 @@ auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_c
 		};
 
 		for (std::size_t mi = 0; mi < mdl->meshes().size(); ++mi) {
-			out.push_back({
+			append_entry(out, {
 				.entry = {
 					.index = mi,
 					.model_matrix = spatial_matrix(mat4f(1.f)),
@@ -253,126 +315,90 @@ auto gse::renderer::geometry_collector::collect_skinned(read<skeleton_instance_c
 				.owner = owners[i],
 				.skinned = skeleton.model,
 				.skinned_snapshot = mdl,
-				.skinned_bounds = entry_bounds
+				.skinned_bounds = owner_bounds
 			});
 		}
 	}
 }
 
-auto gse::renderer::geometry_collector::sort_queues(std::vector<owned_render_queue_entry>& out) -> void {
-	trace::scope_guard _{ trace_id<"geom_collect::sort">() };
-	std::ranges::sort(
-		out,
-		[](const owned_render_queue_entry& a, const owned_render_queue_entry& b) {
-			const auto ma = a.entry.model.id();
-			const auto mb = b.entry.model.id();
-
-			if (ma != mb) {
-				return ma < mb;
-			}
-
-			const auto sa = a.skinned.id();
-			const auto sb = b.skinned.id();
-
-			if (sa != sb) {
-				return sa < sb;
-			}
-
-			const auto oa = a.skinned.valid() ? a.owner : id{};
-			const auto ob = b.skinned.valid() ? b.owner : id{};
-
-			if (oa != ob) {
-				return oa < ob;
-			}
-
-			return a.entry.index < b.entry.index;
+auto gse::renderer::geometry_collector::plan_batches(render_data& data, const std::span<collect_chunk> chunks, collect_list collect_chunk::* list, std::flat_map<queue_group_key, queue_locator>& batch_groups, std::uint32_t& instance_offset, std::uint32_t& mapping_offset, std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches) -> void {
+	batch_groups.clear();
+	for (std::uint32_t c = 0; c < chunks.size(); ++c) {
+		for (const auto& [key, group] : (chunks[c].*list).groups) {
+			batch_groups.try_emplace(key, queue_locator{ .chunk = c, .index = group.first_index });
 		}
-	);
+	}
+
+	for (const auto& [key, first] : batch_groups) {
+		const auto& q = (chunks[first.chunk].*list).entries[first.index];
+		normal_batch_key batch_key{
+			.model = q.entry.model,
+			.skinned = q.skinned,
+			.model_snapshot = q.model_snapshot,
+			.skinned_snapshot = q.skinned_snapshot,
+			.skinned_owner = q.skinned.valid() ? q.owner : id{},
+			.mesh_index = q.entry.index
+		};
+		const auto material_index = material_palette_index(data, &batch_key.resolve_mesh().material());
+		const auto& first_group = (chunks[first.chunk].*list).groups.find(key)->second;
+
+		normal_instance_batch batch{
+			.key = std::move(batch_key),
+			.first_instance = instance_offset,
+			.instance_count = 0,
+			.world_aabb_min = first_group.world_aabb_min,
+			.world_aabb_max = first_group.world_aabb_max
+		};
+
+		for (std::uint32_t c = first.chunk; c < chunks.size(); ++c) {
+			auto& groups = (chunks[c].*list).groups;
+			const auto it = groups.find(key);
+			if (it == groups.end()) {
+				continue;
+			}
+			auto& group = it->second;
+			group.material_index = material_index;
+			group.instance_cursor = instance_offset;
+			group.mapping_cursor = mapping_offset;
+			instance_offset += group.count;
+			mapping_offset += group.gpu_count;
+			batch.world_aabb_min = min(batch.world_aabb_min, group.world_aabb_min);
+			batch.world_aabb_max = max(batch.world_aabb_max, group.world_aabb_max);
+		}
+
+		batch.instance_count = instance_offset - batch.first_instance;
+		batches.push_back(std::move(batch));
+	}
 }
 
-auto gse::renderer::geometry_collector::build_queue_batches(render_data& data, std::uint32_t& global_instance_offset, const std::vector<owned_render_queue_entry>& queue, std::inplace_vector<normal_instance_batch, render_data::max_batches>& batches) -> void {
-	trace::scope_guard _{ trace_id<"geom_collect::batch">() };
-	build_batches(
-		data,
-		global_instance_offset,
-		queue,
-		batches,
-		[](const owned_render_queue_entry& q) {
-			return normal_batch_key{
-				.model = q.entry.model,
-				.skinned = q.skinned,
-				.model_snapshot = q.model_snapshot,
-				.skinned_snapshot = q.skinned_snapshot,
-				.skinned_owner = q.skinned.valid() ? q.owner : id{},
-				.mesh_index = q.entry.index
-			};
-		},
-		[](const normal_batch_key& key) -> const mesh& {
-			return key.resolve_mesh();
-		},
-		[](
-			vec3<length>& mn,
-			vec3<length>& mx,
-			std::span<const owned_render_queue_entry> batch,
-			const mesh& m
-	) {
-			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
-				return q.skinned.valid();
-			})) {
-				for (const auto& q : batch) {
-					mn = vec3<length>(min(mn, q.skinned_bounds.min));
-					mx = vec3<length>(max(mx, q.skinned_bounds.max));
+auto gse::renderer::geometry_collector::scatter_instances(render_data& data, const std::span<collect_chunk> chunks) -> void {
+	task::coarse_parallel(
+		chunks.size(),
+		1,
+		[&](const std::size_t c) {
+			for (collect_list* list : { &chunks[c].opaque, &chunks[c].transparent }) {
+				for (const auto& q : list->entries) {
+					auto& group = list->groups.find(group_key_of(q))->second;
+					const auto instance_index = group.instance_cursor++;
+					data.instance_staging[instance_index] = {
+						.model_matrix = q.entry.model_matrix,
+						.normal_matrix = q.entry.normal_matrix,
+						.prev_model_matrix = q.entry.prev_model_matrix,
+						.material_index = group.material_index,
+						.tint = q.entry.color,
+					};
+					if (q.body_index != owned_render_queue_entry::invalid_body_index) {
+						data.physics_mappings[group.mapping_cursor++] = {
+							.body_index = q.body_index,
+							.instance_index = instance_index,
+							.pivot = q.model_snapshot->render_pivot(),
+							.scale = q.scale
+						};
+					}
 				}
-				return;
-			}
-
-			if (std::ranges::any_of(batch, [](const owned_render_queue_entry& q) {
-				return q.body_index != owned_render_queue_entry::invalid_body_index;
-			})) {
-				constexpr float physics_cull_extent = 1.0e9f;
-				mn = vec3<length>(meters(-physics_cull_extent));
-				mx = vec3<length>(meters(physics_cull_extent));
-				return;
-			}
-
-			const auto [local_min, local_max] = m.aabb();
-			for (const auto& q : batch) {
-				const auto [inst_min, inst_max] = transform_aabb(local_min, local_max, q.entry.model_matrix);
-				mn = vec3<length>(
-					std::min(mn.x(), inst_min.x()),
-					std::min(mn.y(), inst_min.y()),
-					std::min(mn.z(), inst_min.z())
-				);
-				mx = vec3<length>(
-					std::max(mx.x(), inst_max.x()),
-					std::max(mx.y(), inst_max.y()),
-					std::max(mx.z(), inst_max.z())
-				);
 			}
 		},
-		[&](
-			const owned_render_queue_entry& q,
-			const normal_batch_key& key,
-			std::uint32_t mat_idx,
-			std::uint32_t instance_index
-	) {
-			const auto& entry = q.entry;
-			write_instance(
-				data.instance_staging,
-				entry.model_matrix,
-				entry.normal_matrix,
-				entry.prev_model_matrix,
-				mat_idx,
-				entry.color
-			);
-			if (q.body_index != owned_render_queue_entry::invalid_body_index) {
-				data.physics_mappings.push_back({
-					.body_index = q.body_index,
-					.instance_index = instance_index,
-					.center_of_mass = key.model_snapshot->center_of_mass()
-				});
-			}
-		}
+		trace_id<"geom_collect::scatter">()
 	);
 }
 
@@ -444,29 +470,28 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 
 	{
 		trace::scope_guard _{ trace_id<"geom_collect::collect">() };
-		collect_static(
-			render,
-			transform,
-			motion,
-			phys_s.id_to_body_index,
-			d.prev_model_matrices,
-			interpolation,
-			data.render_queue,
-			data.transparent_queue
-		);
-		collect_skinned(skeletons, skin_s.bounds, data.render_queue);
+		const std::uint32_t gpu_body_count = physics::gpu_solver_active(phys_s) ? phys_s.gpu_solver.body_count() : 0;
+		collect_static(render, transform, motion, phys_s.id_to_body_index, gpu_body_count, interpolation, d);
+		auto& skinned_chunk = d.collect_chunks.back();
+		reset_chunk(skinned_chunk);
+		collect_skinned(skeletons, skin_s.bounds, skinned_chunk);
 	}
 
-	sort_queues(data.render_queue);
-	sort_queues(data.transparent_queue);
+	for (const auto& chunk : d.collect_chunks) {
+		std::ranges::copy(chunk.resolved.values(), std::back_inserter(data.model_pins));
+	}
 
-	const auto total_entries = data.render_queue.size() + data.transparent_queue.size();
-	data.instance_staging.reserve(total_entries);
-	data.physics_mappings.reserve(total_entries);
+	std::uint32_t instance_count = 0;
+	std::uint32_t mapping_count = 0;
+	{
+		trace::scope_guard _{ trace_id<"geom_collect::plan">() };
+		plan_batches(data, d.collect_chunks, &collect_chunk::opaque, d.batch_groups, instance_count, mapping_count, data.normal_batches);
+		plan_batches(data, d.collect_chunks, &collect_chunk::transparent, d.batch_groups, instance_count, mapping_count, data.transparent_batches);
+		data.instance_staging.resize(instance_count);
+		data.physics_mappings.resize(mapping_count);
+	}
 
-	std::uint32_t global_instance_offset = 0;
-	build_queue_batches(data, global_instance_offset, data.render_queue, data.normal_batches);
-	build_queue_batches(data, global_instance_offset, data.transparent_queue, data.transparent_batches);
+	scatter_instances(data, d.collect_chunks);
 
 	for (auto& batch : data.normal_batches) {
 		if (batch.key.skinned.valid()) {
@@ -480,29 +505,9 @@ auto gse::renderer::geometry_collector::tick(context& ctx, data& d, const channe
 		}
 	}
 
-	data.physics_mapping_count = static_cast<std::uint32_t>(data.physics_mappings.size());
+	data.physics_mapping_count = mapping_count;
 
 	geometry_out.push<render_data>(std::move(data));
-}
-
-auto gse::renderer::geometry_collector::filter_render_queue(const render_data& data, const std::span<const id> exclude_ids) -> std::vector<render_queue_entry> {
-	std::vector<render_queue_entry> result;
-	result.reserve(data.render_queue.size());
-
-	for (const auto& queue_entry : data.render_queue) {
-		const bool excluded = std::ranges::any_of(
-			exclude_ids,
-			[&](const id& ex) {
-				return ex == queue_entry.owner;
-			}
-		);
-
-		if (!excluded) {
-			result.push_back(queue_entry.entry);
-		}
-	}
-
-	return result;
 }
 
 auto gse::renderer::geometry_collector::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
@@ -533,15 +538,12 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 						.size = d.instance_capacity * sizeof(shaders::common::instance_data),
 						.stride = sizeof(shaders::common::instance_data),
 						.usage = { gpu::buffer_flag::storage, gpu::buffer_flag::transfer_src, gpu::buffer_flag::transfer_dst },
-						.data = data.instance_staging.data(),
 					},
 					"gc_instance_buffer"
 				);
 			}
 		}
-		else {
-			d.instance_buffer[frame_index].host_write(data.instance_staging);
-		}
+		d.instance_buffer[frame_index].host_write(data.instance_staging);
 	}
 
 	if (!data.normal_batches.empty()) {
@@ -582,7 +584,16 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		}
 	}
 
-	const auto material_count = std::min(data.material_palette_map.size(), data::max_materials);
+	const auto material_count = std::min<std::size_t>(data.material_palette_map.size(), data::grass_material_index);
+	d.material_palette_buffers[frame_index].host_write(
+		shaders::forward::material_data{
+			.base_color = vec3f(0.24f, 0.46f, 0.12f),
+			.roughness = 0.8f,
+			.metallic = 0.f,
+			.diffuse_index = shaders::bindless::invalid_index,
+		},
+		data::grass_material_index * sizeof(shaders::forward::material_data)
+	);
 	if (material_count > 0) {
 		auto& mat_staging = d.material_staging;
 		mat_staging.assign(
@@ -592,7 +603,7 @@ auto gse::renderer::geometry_collector::frame(context& ctx, shared_view<gpu::con
 		auto* staging_materials = reinterpret_cast<shaders::forward::material_data*>(mat_staging.data());
 
 		for (const auto& [mat_ptr, idx] : data.material_palette_map) {
-			if (idx >= data::max_materials) {
+			if (idx >= data::grass_material_index) {
 				continue;
 			}
 			const auto& diffuse = mat_ptr->diffuse_texture;

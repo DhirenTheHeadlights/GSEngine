@@ -433,8 +433,10 @@ auto gse::ide::write_source_control(const panel_sources& src, const std::uint32_
 			field(out, "repository", repo->root.generic_display_string());
 			field(out, "path", change.relative.generic_display_string());
 			field(out, "state", enum_to_string(change.state));
-			field(out, "added", std::format("{}", change.added));
-			field(out, "deleted", std::format("{}", change.deleted));
+			if (change.lines) {
+				field(out, "added", std::format("{}", change.lines->added));
+				field(out, "deleted", std::format("{}", change.lines->deleted));
+			}
 			field(out, "staged", change.needs_stage ? "0" : "1");
 			if (!change.original.empty()) {
 				field(out, "renamed_from", change.original.generic_display_string());
@@ -505,11 +507,16 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		field(out, "id", std::format("{}", chat.id));
 		field(out, "name", chat.name);
 		field(out, "cwd", chat.cwd.generic_display_string());
-		field(out, "running", chat.running ? "1" : "0");
-		field(out, "turn_open", chat.turn_open ? "1" : "0");
-		field(out, "hibernating", chat.hibernating ? "1" : "0");
-		if (chat.hibernating && !chat.asleep_blocker.empty()) {
-			field(out, "asleep_reason", chat.asleep_blocker);
+		constexpr std::array<std::string_view, std::variant_size_v<agent::turn_state>> turn_names = { "none", "live", "ended", "held", "hibernating" };
+		field(out, "link", chat.link ? "1" : "0");
+		field(out, "turn", std::string(turn_names[chat.turn.index()]));
+		const agent::live_turn* live = std::get_if<agent::live_turn>(&chat.turn);
+		const agent::hibernation* sleep = live && live->sleep_after ? &*live->sleep_after : std::get_if<agent::hibernation>(&chat.turn);
+		if (sleep) {
+			field(out, "sleep", live ? "after this turn" : "now");
+			if (!sleep->blocker.empty()) {
+				field(out, "asleep_reason", sleep->blocker);
+			}
 		}
 		if (chat.sync) {
 			field(out, "syncing", chat.sync->root.generic_display_string());

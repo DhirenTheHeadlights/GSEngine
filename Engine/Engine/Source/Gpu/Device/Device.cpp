@@ -23,6 +23,21 @@ namespace gse::gpu {
 	auto trimmed_metric_name(
 		std::string_view field
 	) -> std::string_view;
+
+	enum class checkpoint_phase : std::uint64_t {
+		begin = 1,
+		end = 2,
+	};
+
+	auto encode_checkpoint(
+		std::uint64_t seq,
+		device::pass_marker_domain domain,
+		checkpoint_phase phase
+	) -> std::uint64_t;
+}
+
+auto gse::gpu::encode_checkpoint(const std::uint64_t seq, const device::pass_marker_domain domain, const checkpoint_phase phase) -> std::uint64_t {
+	return seq << 4 | static_cast<std::uint64_t>(domain) << 2 | static_cast<std::uint64_t>(phase);
 }
 
 auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_view {
@@ -130,6 +145,8 @@ auto gse::gpu::device::begin_pass_marker(const command_buffer_handle cmd, const 
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
 
+	m_vt->record_checkpoint(m_backend.get(), cmd, encode_checkpoint(seq, domain, checkpoint_phase::begin));
+
 	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
 		const auto offset = slot * 4 * sizeof(std::uint32_t);
@@ -186,6 +203,8 @@ auto gse::gpu::device::post_renderpass_pass_marker(const command_buffer_handle c
 
 auto gse::gpu::device::end_pass_marker(const command_buffer_handle cmd, const pass_marker_handle handle) -> void {
 	end_debug_event(cmd);
+
+	m_vt->record_checkpoint(m_backend.get(), cmd, encode_checkpoint(handle.seq, handle.domain, checkpoint_phase::end));
 
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
@@ -316,6 +335,64 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 					m.pass_type.tag()
 				);
 			}
+		}
+	}
+
+	for (const auto queue : { queue_type::graphics, queue_type::compute }) {
+		const auto checkpoints = m_vt->queue_checkpoints(m_backend.get(), queue);
+		if (checkpoints.empty()) {
+			continue;
+		}
+
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"{} queue diagnostic checkpoints (last marker each pipeline stage passed; a begin with no matching end is the pass that hung):",
+			queue
+		);
+
+		for (const auto& checkpoint : checkpoints) {
+			const auto seq = checkpoint.marker >> 4;
+			const auto domain_index = static_cast<std::size_t>(checkpoint.marker >> 2 & 3);
+			const auto phase = static_cast<checkpoint_phase>(checkpoint.marker & 3);
+			const auto ended = std::ranges::any_of(checkpoints, [&](const queue_checkpoint& other) {
+				return other.marker == (checkpoint.marker & ~std::uint64_t{ 3 } | static_cast<std::uint64_t>(checkpoint_phase::end));
+			});
+			const std::string_view verdict = phase == checkpoint_phase::begin && !ended ? "BEGAN, NOT ENDED" : phase == checkpoint_phase::begin ? "began" : "ended";
+
+			if (domain_index >= pass_marker_domain_count) {
+				log::println(log::level::error, log::category::vulkan, "  stage={} marker={:#x} (not a pass marker)", checkpoint.stage, checkpoint.marker);
+				continue;
+			}
+
+			const auto& ring = m_pass_marker_rings[domain_index];
+			const auto seq_next = ring.seq.load(std::memory_order_relaxed);
+			if (seq >= seq_next || seq_next - seq > pass_marker_ring_size) {
+				log::println(
+					log::level::error,
+					log::category::vulkan,
+					"  stage={} seq={} domain={} [{}] (pass evicted from the marker ring)",
+					checkpoint.stage,
+					seq,
+					static_cast<pass_marker_domain>(domain_index),
+					verdict
+				);
+				continue;
+			}
+
+			const auto& m = ring.entries[seq % pass_marker_ring_size];
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"  stage={} seq={} domain={} frame={} pass_index={} pass_type={} [{}]",
+				checkpoint.stage,
+				seq,
+				static_cast<pass_marker_domain>(domain_index),
+				m.frame_counter,
+				m.pass_index,
+				m.pass_type.tag(),
+				verdict
+			);
 		}
 	}
 
@@ -703,16 +780,16 @@ auto gse::gpu::device::swapchain_past_presentation_timing(const swap_chain_handl
 	return m_vt->swapchain_past_presentation_timing(m_backend.get(), swapchain);
 }
 
-auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
-	return m_vt->create_blas(m_backend.get(), geometry, prim_count);
+auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) -> blas {
+	return m_vt->create_blas(m_backend.get(), geometry, prim_count, flags);
 }
 
 auto gse::gpu::device::create_tlas(const std::uint32_t max_instances) -> tlas {
 	return m_vt->create_tlas(m_backend.get(), max_instances);
 }
 
-auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
-	return m_vt->query_blas_build_sizes(m_backend.get(), geometry, prim_count);
+auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) const -> acceleration_structure_build_sizes {
+	return m_vt->query_blas_build_sizes(m_backend.get(), geometry, prim_count, flags);
 }
 
 auto gse::gpu::device::acceleration_structure_scratch_alignment() const -> device_size {

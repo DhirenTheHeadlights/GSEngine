@@ -410,6 +410,9 @@ namespace gse::ide::build_runner {
 		std::string_view name
 	) -> std::filesystem::path;
 
+	auto editor_preset_build_dir(
+	) -> std::filesystem::path;
+
 	auto preset_configure_command(
 		const std::filesystem::path& engine_dir,
 		std::string_view name
@@ -1021,6 +1024,14 @@ auto gse::ide::build_runner::engine_build_dir_for_config(const config::worktree&
 		return gse::config::generic(editor_build.parent_path() / selected->directory);
 	}
 	return gse::config::generic(tree.engine_root / selected->source_relative);
+}
+
+auto gse::ide::build_runner::editor_preset_build_dir() -> std::filesystem::path {
+	const build_config* active = build_config_for(active_build_config());
+	if (active == nullptr || active->source_relative.empty()) {
+		return config::build_dir();
+	}
+	return gse::config::generic(gse::config::root_dir() / active->source_relative);
 }
 
 auto gse::ide::build_runner::preset_configure_command(const std::filesystem::path& engine_dir, const std::string_view name) -> std::wstring {
@@ -2065,7 +2076,29 @@ auto gse::ide::build_runner::build_game(
 }
 
 auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_completion& completion, spawn::output_stream& stream) -> void {
-	const std::filesystem::path build_dir = find_build_dir(config::build_dir());
+	const std::filesystem::path running_exe = os::current_executable();
+	if (running_exe.empty()) {
+		spawn::emit(stream, "could not resolve editor executable path");
+		return;
+	}
+
+	const std::filesystem::path& running_build = config::build_dir();
+	const std::filesystem::path preset_build = editor_preset_build_dir();
+	const bool relocating = config::canonical_path(preset_build) != config::canonical_path(running_build);
+
+	if (relocating) {
+		spawn::emit(stream, "the editor runs from " + running_build.generic_display_string() + ", but CMakePresets.json builds " + std::string(active_build_config()) + " in " + preset_build.generic_display_string() + "; rebuilding there");
+		if (find_build_dir(preset_build).empty()) {
+			spawn::emit(stream, "configuring " + preset_build.generic_display_string() + "; the first build of a tree compiles everything");
+			const std::filesystem::path& root = gse::config::root_dir();
+			if (spawn::run_capture(stream, preset_configure_command(root, active_build_config()), root.wstring(), compiler_bin_dir(running_build)) != 0) {
+				spawn::emit(stream, "configure failed");
+				return;
+			}
+		}
+	}
+
+	const std::filesystem::path build_dir = find_build_dir(preset_build);
 	if (build_dir.empty()) {
 		spawn::emit(stream, "configured build directory is unavailable");
 		return;
@@ -2075,38 +2108,46 @@ auto gse::ide::build_runner::rebuild_editor(const std::stop_token& st, build_com
 	const std::int64_t snapshot = source_snapshot_time();
 	const std::filesystem::path compiler_bin = compiler_bin_dir(build_dir);
 
-	const std::filesystem::path editor_exe = os::current_executable();
-	if (editor_exe.empty()) {
-		spawn::emit(stream, "could not resolve editor executable path");
-		return;
-	}
+	const std::filesystem::path editor_exe = relocating
+		? retarget_build_path(config::editor_executable(), running_build, preset_build)
+		: running_exe;
 
-	const std::size_t still_running = sweep_backups(editor_exe);
-	const std::filesystem::path backup = next_backup_path(editor_exe);
 	std::error_code ec;
-	if (still_running > 0) {
-		spawn::emit(stream, std::format("{} earlier editor image(s) are still mapped; they are cleaned up once those instances exit", still_running));
-	}
+	const bool replacing = std::filesystem::exists(editor_exe, ec);
+	std::filesystem::path backup;
+	if (replacing) {
+		const std::size_t still_running = sweep_backups(editor_exe);
+		backup = next_backup_path(editor_exe);
+		if (still_running > 0) {
+			spawn::emit(stream, std::format("{} earlier editor image(s) are still mapped; they are cleaned up once those instances exit", still_running));
+		}
 
-	std::filesystem::rename(editor_exe, backup, ec);
-	if (ec) {
-		spawn::emit(stream, "could not rename " + editor_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
-		spawn::emit(stream, "something has the editor executable locked for writing, usually an attached debugger or antivirus scanning it, then rebuild");
-		return;
+		std::filesystem::rename(editor_exe, backup, ec);
+		if (ec) {
+			spawn::emit(stream, "could not rename " + editor_exe.generic_display_string() + " to " + backup.filename().generic_display_string() + ": " + ec.message());
+			spawn::emit(stream, "something has the editor executable locked for writing, usually an attached debugger or antivirus scanning it, then rebuild");
+			return;
+		}
 	}
 
 	spawn::emit(stream, "rebuilding editor...");
 	build_outcome outcome = run_build_with_module_recovery(st, stream, build_command(build_dir, config::editor_target), gse::config::root_dir(), build_dir, compiler_bin);
 	if (outcome.code != 0) {
-		spawn::emit(stream, "rebuild failed (exit " + std::to_string(outcome.code) + "); restoring previous editor");
+		spawn::emit(stream, "rebuild failed (exit " + std::to_string(outcome.code) + ")" + (replacing ? "; restoring previous editor" : ""));
 		{
 			std::lock_guard _(completion.mutex);
 			completion.errors = std::move(outcome.errors);
 			completion.output = std::move(outcome.output);
 		}
-		std::filesystem::remove(editor_exe, ec);
-		std::filesystem::rename(backup, editor_exe, ec);
+		if (replacing) {
+			std::filesystem::remove(editor_exe, ec);
+			std::filesystem::rename(backup, editor_exe, ec);
+		}
 		return;
+	}
+
+	if (relocating) {
+		spawn::emit(stream, "relaunching from " + editor_exe.generic_display_string() + "; " + running_build.generic_display_string() + " is no longer used and can be deleted once nothing runs from it");
 	}
 
 	record_build_time(build_key(config::primary(), config::editor_target), snapshot);

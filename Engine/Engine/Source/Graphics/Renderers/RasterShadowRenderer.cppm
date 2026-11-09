@@ -7,6 +7,7 @@ import :camera_system;
 import :directional_light;
 import :forward_renderer;
 import :geometry_collector;
+import :grass_renderer;
 import :lighting_source;
 import :point_light;
 import :spot_light;
@@ -48,10 +49,16 @@ export namespace gse::renderer::raster_shadow {
 
 	struct setup_pass {};
 
+	struct grass_cull_pass {};
+
+	static_assert(max_tiles + grass::views.grass_first_shadow_view <= grass::views.grass_max_views);
+
 	struct [[= system_state<"RasterShadow">{}]]
 	data {
 		gpu::shader_program setup_pipeline;
 		gpu::shader_program depth_pipeline;
+		gpu::shader_program grass_cull_pipeline;
+		gpu::shader_program grass_depth_pipeline;
 		bool vertex_pulled = false;
 
 		gpu::image cascade_atlas;
@@ -91,6 +98,7 @@ export namespace gse::renderer::raster_shadow {
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,
 		read<point_light_component> point_lights,
-		read<physics::transform_component> transforms
+		read<physics::transform_component> transforms,
+		shared_view<grass::data> grass_r
 	) -> async::task<>;
 }

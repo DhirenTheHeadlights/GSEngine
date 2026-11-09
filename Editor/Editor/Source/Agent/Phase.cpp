@@ -278,7 +278,11 @@ auto gse::ide::agent::sync_facts(const sync_request& request) -> std::string {
 
 	facts += "\n## Selected Files\n\n";
 	for (const sync_file& file : request.files) {
-		facts += std::format("- `{}` {} +{} -{}\n", file.relative.generic_display_string(), file.code, file.added, file.deleted);
+		std::format_to(std::back_inserter(facts), "- `{}` {}", file.relative.generic_display_string(), file.code);
+		if (file.lines) {
+			std::format_to(std::back_inserter(facts), " +{} -{}", file.lines->added, file.lines->deleted);
+		}
+		facts += '\n';
 	}
 
 	facts += request.message.empty()
@@ -551,7 +555,7 @@ auto gse::ide::agent::begin_phase(session& s, const task_phase phase, const phas
 	s.gate.reset();
 	s.info.agent_id = resumed;
 	s.info.failure.clear();
-	s.retry = {};
+	s.turn = std::monostate{};
 	s.nudges = 0;
 
 	if (phase == task_phase::settled) {
@@ -616,7 +620,7 @@ auto gse::ide::agent::advance_phase(session& s, const std::string_view note) -> 
 }
 
 auto gse::ide::agent::service_phase(session& s, const std::uint32_t steer_budget) -> bool {
-	if (!s.pending_transition || s.think_clock) {
+	if (!s.pending_transition || is_busy(s)) {
 		return false;
 	}
 
@@ -1275,7 +1279,9 @@ auto gse::ide::agent::wake_goal(session& s, const std::string_view fired) -> voi
 	}
 
 	begin_phase(s, task_phase::steer, { .from = task_phase::steer, .summary = summary });
-	s.woke_by.assign(fired);
+	if (live_turn* live = live_of(s)) {
+		live->woke_by.assign(fired);
+	}
 }
 
 auto gse::ide::agent::service_awaits(data& d) -> bool {
@@ -1285,10 +1291,10 @@ auto gse::ide::agent::service_awaits(data& d) -> bool {
 		if (!s.goal || !s.goal->waiting || s.pending_transition) {
 			continue;
 		}
-		if (s.running && s.think_clock) {
+		if (is_busy(s)) {
 			continue;
 		}
-		if (s.running) {
+		if (s.link) {
 			stop_session(s);
 		}
 

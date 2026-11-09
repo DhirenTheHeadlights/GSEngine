@@ -17,20 +17,17 @@ import gse.gpu_record;
 import gse.math;
 
 namespace gse::renderer::gtao {
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
+	struct occlusion_bindings {
+		shaders::uniform_block<shaders::common::camera_data> camera_ubo;
+		shaders::texture2d<vec4f> depth_in;
+		shaders::storage_image<vec4f> occlusion_out;
 	};
 
-	struct [[= shaders::texture2d]] depth_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] occlusion_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::storage_image]] occlusion_out {
-		using element = vec4f;
+	struct blur_bindings {
+		shaders::uniform_block<shaders::common::camera_data> camera_ubo;
+		shaders::texture2d<vec4f> depth_in;
+		shaders::texture2d<vec4f> occlusion_in;
+		shaders::storage_image<vec4f> occlusion_out;
 	};
 
 	struct [[= shaders::shader_struct]]
@@ -48,7 +45,7 @@ namespace gse::renderer::gtao {
 	using occlusion_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/gtao_occlusion">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
-		gpu::bindings<type_pack<camera_ubo, depth_in, occlusion_out>>,
+		gpu::bindings<occlusion_bindings>,
 		gpu::helpers<"Screen/depth_reconstruct", "Standard3D/lighting_shared">,
 		gpu::threads<8, 8, 1>,
 		gpu::push_constant<occlusion_push_constants>,
@@ -58,7 +55,7 @@ namespace gse::renderer::gtao {
 	using blur_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/gtao_blur">,
 		gpu::types<shaders::common::shader_types>,
-		gpu::bindings<type_pack<camera_ubo, depth_in, occlusion_in, occlusion_out>>,
+		gpu::bindings<blur_bindings>,
 		gpu::helpers<"Screen/depth_reconstruct">,
 		gpu::threads<8, 8, 1>,
 		gpu::push_constant<blur_push_constants>,

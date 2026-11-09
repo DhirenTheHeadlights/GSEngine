@@ -5,6 +5,7 @@ import gse;
 
 import gse.ide.build;
 import gse.ide.config;
+import gse.ide.git;
 import gse.ide.net;
 
 import :canvas;
@@ -239,8 +240,7 @@ export namespace gse::ide::agent {
 	struct sync_file {
 		std::filesystem::path relative;
 		char code = '\0';
-		int added = 0;
-		int deleted = 0;
+		std::optional<git::line_delta> lines;
 	};
 
 	struct sync_request {
@@ -460,6 +460,7 @@ export namespace gse::ide::agent {
 		char label[24] = "idle";
 		vec4f gui::style::* color = &gui::style::color_text_secondary;
 		vec4f gui::style::* activity = &gui::style::color_accent;
+		bool waits = false;
 	};
 
 	enum class agent_state : std::uint8_t {
@@ -487,30 +488,37 @@ export namespace gse::ide::agent {
 		build_queued [[= state_style{
 			.label = "build queued",
 			.color = &gui::style::color_warning,
+			.waits = true,
 		}]],
 		compiling [[= state_style{
 			.label = "compiling",
 			.color = &gui::style::color_folder,
+			.waits = true,
 		}]],
 		hibernating [[= state_style{
 			.label = "hibernating",
 			.color = &gui::style::color_file,
+			.waits = true,
 		}]],
 		awaiting_approval [[= state_style{
 			.label = "waiting for approval",
 			.color = &gui::style::color_folder,
+			.waits = true,
 		}]],
 		awaiting_goal [[= state_style{
 			.label = "waiting on the goal",
 			.color = &gui::style::color_file,
+			.waits = true,
 		}]],
 		awaiting_answer [[= state_style{
 			.label = "waiting on your answer",
 			.color = &gui::style::color_folder,
+			.waits = true,
 		}]],
 		rate_limited [[= state_style{
 			.label = "usage limit reached",
 			.color = &gui::style::color_warning,
+			.waits = true,
 		}]],
 	};
 
@@ -709,11 +717,42 @@ export namespace gse::ide::agent {
 		std::string blocker;
 	};
 
-	struct retry_state {
-		bool held = false;
-		std::uint32_t attempts = 0;
-		bool waiting = false;
+	struct agent_link {
+		os::unique_handle process;
+		os::unique_handle job;
+		os::unique_handle output;
+		os::unique_handle input;
+		std::string pending;
 	};
+
+	struct hibernation {
+		std::string wake_prompt;
+		[[= archive_skip{}]] std::string blocker;
+	};
+
+	struct live_turn {
+		bool editor_driven = false;
+		bool stopping = false;
+		std::uint32_t retries = 0;
+		std::int64_t limited_until = 0;
+		std::optional<hibernation> sleep_after;
+		[[= archive_skip{}]] clock started;
+		[[= archive_skip{}]] bool wrote = false;
+		[[= archive_skip{}]] std::string action;
+		[[= archive_skip{}]] std::string woke_by;
+	};
+
+	struct ended_turn {
+		bool editor_driven = false;
+	};
+
+	struct held_turn {
+		bool editor_driven = false;
+		std::uint32_t attempts = 0;
+		std::int64_t until = 0;
+	};
+
+	using turn_state = std::variant<std::monostate, live_turn, ended_turn, held_turn, hibernation>;
 
 	struct usage_window {
 		std::string label;
@@ -756,11 +795,8 @@ export namespace gse::ide::agent {
 		std::filesystem::path cwd;
 		chat_kind kind = chat_kind::chat;
 		session_info info;
-		[[= archive_skip{}]] void* process = nullptr;
-		[[= archive_skip{}]] void* job = nullptr;
-		[[= archive_skip{}]] void* output = nullptr;
-		[[= archive_skip{}]] void* input = nullptr;
-		[[= archive_skip{}]] std::string pending;
+		[[= archive_skip{}]] std::optional<agent_link> link;
+		turn_state turn;
 		[[= archive_skip{}]] std::vector<transcript_row> rows;
 		[[= archive_skip{}]] std::int64_t message_chars = 0;
 		[[= archive_skip{}]] std::size_t counted_rows = 0;
@@ -785,10 +821,6 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] gui::image_attachments attachments;
 		[[= archive_skip{}]] gui::text_input_state name_state;
 		[[= archive_skip{}]] std::vector<std::uint32_t> expanded_groups;
-		bool hibernating = false;
-		std::string wake_prompt;
-		[[= archive_skip{}]] std::string asleep_blocker;
-		[[= archive_skip{}]] std::string woke_by;
 		std::optional<sync_request> sync;
 		std::optional<std::string> sync_report;
 		bool sync_announced = false;
@@ -825,21 +857,12 @@ export namespace gse::ide::agent {
 		std::vector<blamed_error> blame;
 		gse::id blame_build;
 		std::optional<build_fix> fix;
-		retry_state retry;
-		bool turn_open = false;
-		[[= archive_skip{}]] bool editor_turn = false;
-		[[= archive_skip{}]] bool turn_ended = false;
 		[[= archive_skip{}]] std::uint32_t nudges = 0;
 		std::uint32_t resume_attempts = 0;
-		[[= archive_skip{}]] std::int64_t limited_until = 0;
-		[[= archive_skip{}]] bool running = false;
 		[[= archive_skip{}]] bool stale = false;
-		[[= archive_skip{}]] std::optional<clock> think_clock;
 		[[= archive_skip{}]] std::optional<clock> recent_turn;
 		[[= archive_skip{}]] std::optional<clock> last_write;
-		[[= archive_skip{}]] bool wrote_this_turn = false;
 		[[= archive_skip{}]] bool published_presence = false;
-		[[= archive_skip{}]] std::string action;
 		[[= archive_skip{}]] std::uint32_t next_control = 0;
 	};
 

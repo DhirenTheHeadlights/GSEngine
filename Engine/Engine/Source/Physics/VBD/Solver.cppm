@@ -71,7 +71,18 @@ export namespace gse::vbd {
 		std::uint32_t convergence_probe_interval = 64;
 		std::uint32_t coupled_limit_normalized = 0;
 		velocity joint_correction_speed = meters_per_second(0.f);
-		vbd_capacities caps{};
+		std::uint32_t max_bodies = vbd_capacities{}.max_bodies;
+		std::uint32_t max_contacts = vbd_capacities{}.max_contacts;
+		std::uint32_t max_collision_pairs = vbd_capacities{}.max_collision_pairs;
+		std::uint32_t poly_pair_base = vbd_capacities{}.poly_pair_base;
+		std::uint32_t max_joints = vbd_capacities{}.max_joints;
+		std::uint32_t max_islands = vbd_capacities{}.max_islands;
+		std::uint32_t max_muscles = vbd_capacities{}.max_muscles;
+		std::uint32_t grid_table_size = vbd_capacities{}.grid_table_size;
+		std::uint32_t max_contact_adjacency = vbd_capacities{}.max_contact_adjacency;
+		std::uint32_t max_joint_adjacency = vbd_capacities{}.max_joint_adjacency;
+		std::uint32_t max_grounded_uints = vbd_capacities{}.max_grounded_uints;
+		std::uint32_t grid_max_entries = vbd_capacities{}.grid_max_entries;
 		std::uint32_t muscle_reset_activation = 0;
 	};
 

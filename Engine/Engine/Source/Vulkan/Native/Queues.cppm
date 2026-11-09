@@ -77,6 +77,12 @@ export namespace gse::vulkan {
 			const gpu::present_info& info
 		) -> gpu::result;
 
+		[[nodiscard]] auto lock() const -> std::unique_lock<std::recursive_mutex>;
+
+		[[nodiscard]] auto checkpoints(
+			gpu::queue_type queue
+		) const -> std::vector<gpu::queue_checkpoint>;
+
 	private:
 		gpu::handle<gpu::queue> m_graphics;
 		gpu::handle<gpu::queue> m_present;
@@ -356,4 +362,35 @@ auto gse::vulkan::queue::present(const gpu::present_info& info) -> gpu::result {
 		log::println(log::level::error, log::category::vulkan, "vkQueuePresentKHR returned {}", vk::to_string(vk_result));
 	}
 	return from_vk(vk_result);
+}
+
+auto gse::vulkan::queue::lock() const -> std::unique_lock<std::recursive_mutex> {
+	return std::unique_lock(*m_mutex);
+}
+
+auto gse::vulkan::queue::checkpoints(const gpu::queue_type queue) const -> std::vector<gpu::queue_checkpoint> {
+	gpu::handle<gpu::queue> handle;
+	switch (queue) {
+		case gpu::queue_type::graphics:
+			handle = m_graphics;
+			break;
+		case gpu::queue_type::compute:
+			handle = m_compute;
+			break;
+		case gpu::queue_type::video_encode:
+			handle = m_video_encode;
+			break;
+	}
+	if (!handle) {
+		return {};
+	}
+
+	std::vector<gpu::queue_checkpoint> out;
+	for (const auto& data : std::bit_cast<vk::Queue>(handle).getCheckpointData2NV()) {
+		out.push_back({
+			.stage = vk::to_string(data.stage),
+			.marker = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(data.pCheckpointMarker)),
+		});
+	}
+	return out;
 }

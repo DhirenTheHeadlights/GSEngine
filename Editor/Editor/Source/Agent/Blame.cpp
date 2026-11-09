@@ -40,15 +40,17 @@ auto gse::ide::agent::note_written_file(session& s, const std::filesystem::path&
 			touch->second.hunks.emplace_back(added.begin(), added.end());
 		}
 	}
-	s.wrote_this_turn = true;
+	if (live_turn* live = live_of(s)) {
+		live->wrote = true;
+	}
 	s.last_write.emplace();
 }
 
 auto gse::ide::agent::working_on_files(const session& s) -> bool {
-	if (!s.running) {
+	if (!s.link || policy_of(current_phase(s)).read_only) {
 		return false;
 	}
-	if (s.think_clock) {
+	if (live_of(s)) {
 		return true;
 	}
 	const time settled = seconds(10.f);
@@ -56,7 +58,11 @@ auto gse::ide::agent::working_on_files(const session& s) -> bool {
 }
 
 auto gse::ide::agent::is_busy(const session& s) -> bool {
-	return s.running && s.think_clock.has_value();
+	return s.link && live_of(s);
+}
+
+auto gse::ide::agent::parked(const session& s) -> bool {
+	return asleep(s) || s.gate || s.pending_transition || s.question;
 }
 
 auto gse::ide::agent::edit_settle() -> time {
@@ -64,10 +70,11 @@ auto gse::ide::agent::edit_settle() -> time {
 }
 
 auto gse::ide::agent::editing_tree(const session& s) -> bool {
-	if (!s.running || s.hibernating) {
+	if (!s.link || asleep(s) || policy_of(current_phase(s)).read_only) {
 		return false;
 	}
-	if (is_busy(s) && (s.wrote_this_turn || !s.unbuilt.empty())) {
+	const live_turn* live = live_of(s);
+	if (live && (live->wrote || !s.unbuilt.empty())) {
 		return true;
 	}
 	return s.last_write && s.last_write->elapsed() < edit_settle();
@@ -120,10 +127,10 @@ auto gse::ide::agent::queued_for(const data& d, const session& s) -> const queue
 }
 
 auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
-	if (s.hibernating) {
+	if (asleep(s)) {
 		return agent_state::hibernating;
 	}
-	if (s.retry.waiting && s.limited_until > unix_now()) {
+	if (const held_turn* held = held_of(s); held && held->until > unix_now()) {
 		return agent_state::rate_limited;
 	}
 
@@ -136,19 +143,22 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 			break;
 	}
 
-	if (!s.running) {
-		if (s.goal && s.goal->waiting) {
-			return agent_state::awaiting_goal;
-		}
-		return s.info.failure.empty() ? agent_state::resting : agent_state::failed;
-	}
-	if (s.think_clock) {
-		return s.wrote_this_turn ? agent_state::editing : agent_state::working;
+	if (const live_turn* live = live_of(s); live && s.link) {
+		return live->wrote ? agent_state::editing : agent_state::working;
 	}
 	if (awaiting_answer(s)) {
 		return agent_state::awaiting_answer;
 	}
-	return s.gate ? agent_state::awaiting_approval : agent_state::idle;
+	if (s.gate && !s.pending_transition) {
+		return agent_state::awaiting_approval;
+	}
+	if (s.goal && s.goal->waiting) {
+		return agent_state::awaiting_goal;
+	}
+	if (s.link) {
+		return agent_state::idle;
+	}
+	return s.info.failure.empty() ? agent_state::resting : agent_state::failed;
 }
 
 auto gse::ide::agent::style_of(const agent_state state) -> state_style {
@@ -170,7 +180,7 @@ auto gse::ide::agent::status_label(const data& d, const session& s) -> std::stri
 	const agent_state state = state_of(d, s);
 	std::string out = style_of(state).label;
 	if (state == agent_state::rate_limited) {
-		out += std::format(" - resuming in {}m", std::max<std::int64_t>((s.limited_until - unix_now()) / 60, 1));
+		out += std::format(" - resuming in {}m", std::max<std::int64_t>((held_of(s)->until - unix_now()) / 60, 1));
 	}
 	return out;
 }
@@ -984,8 +994,7 @@ auto gse::ide::agent::accept_hibernations(data& d) -> bool {
 		}
 		build_inbox::consume_hibernation(incoming.id);
 
-		found->hibernating = true;
-		found->wake_prompt = std::move(incoming.prompt);
+		sleep_session(*found, std::move(incoming.prompt));
 		recorded = true;
 
 		const std::string awaited = found->unbuilt.empty() ? "the next build" : unbuilt_label(*found);
@@ -1012,7 +1021,7 @@ auto gse::ide::agent::accept_hibernations(data& d) -> bool {
 
 auto gse::ide::agent::hibernating_count(const data& d) -> std::size_t {
 	return static_cast<std::size_t>(std::ranges::count_if(d.sessions, [](const session& s) {
-		return s.hibernating;
+		return asleep(s) != nullptr;
 	}));
 }
 
@@ -1020,16 +1029,18 @@ auto gse::ide::agent::nudge_unclosed_phases(data& d) -> void {
 	constexpr std::uint32_t nudge_limit = 1;
 
 	for (session& s : d.sessions) {
-		if (!s.turn_ended) {
+		const ended_turn* ended = std::get_if<ended_turn>(&s.turn);
+		if (!ended) {
 			continue;
 		}
-		s.turn_ended = false;
+		const bool editor_driven = ended->editor_driven;
+		s.turn = std::monostate{};
 
 		const task_phase phase = current_phase(s);
-		if (!s.editor_turn || s.nudges >= nudge_limit || phase == task_phase::settled) {
+		if (!editor_driven || s.nudges >= nudge_limit || phase == task_phase::settled) {
 			continue;
 		}
-		if (s.hibernating || s.gate || s.pending_transition || s.question || !s.running) {
+		if (parked(s) || !s.link) {
 			continue;
 		}
 
@@ -1043,20 +1054,20 @@ auto gse::ide::agent::nudge_unclosed_phases(data& d) -> void {
 }
 
 auto gse::ide::agent::wake_session(session& s, const std::string_view lead) -> void {
-	s.hibernating = false;
-	const std::string prompt = std::move(s.wake_prompt);
-	s.wake_prompt.clear();
+	const hibernation sleep = take_sleep(s);
 
 	std::string message(lead);
-	if (!prompt.empty()) {
-		message += "\n\n" + prompt;
+	if (!sleep.wake_prompt.empty()) {
+		message += "\n\n" + sleep.wake_prompt;
 	}
 	resume_with(s, std::move(message));
-	s.woke_by = "the build it slept on finished";
+	if (live_turn* live = live_of(s)) {
+		live->woke_by = "the build it slept on finished";
+	}
 }
 
 auto gse::ide::agent::resume_with(session& s, std::string message, std::optional<transcript_row> shown) -> void {
-	if (!s.running && !launch_session(s)) {
+	if (!s.link && !launch_session(s)) {
 		append_row(s, {
 			.kind = row_kind::failure,
 			.text = "'claude' could not be relaunched to continue this chat",
@@ -1101,12 +1112,12 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 	}
 
 	for (session& s : d.sessions) {
-		if (!s.hibernating || !(s.unbuilt.empty() || s.unbuilt.contains(finished.key))) {
+		hibernation* sleep = asleep(s);
+		if (!sleep || !(s.unbuilt.empty() || s.unbuilt.contains(finished.key))) {
 			continue;
 		}
 
 		if (orphaned && !broke_this_build(s)) {
-			s.asleep_blocker.clear();
 			log::println(log::level::warning, log::category::task, "agent: waking chat '{}' - the build failed on errors no chat owns and nothing else is queued", s.name);
 			append_row(s, {
 				.kind = row_kind::failure,
@@ -1119,8 +1130,8 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 
 		if (!finished.succeeded && !broke_this_build(s)) {
 			const std::string reason = "blocked on a red tree - " + red_owner;
-			if (s.asleep_blocker != reason) {
-				s.asleep_blocker = reason;
+			if (sleep->blocker != reason) {
+				sleep->blocker = reason;
 				log::println(log::level::info, log::category::task, "agent: chat '{}' stays asleep - the failed build had no errors of its own ({})", s.name, red_owner);
 				append_row(s, {
 					.kind = row_kind::note,
@@ -1136,8 +1147,8 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 		if (finished.succeeded && started_before_edits) {
 			const std::string pending = unbuilt_label(s);
 			const std::string reason = "that build started before these edits";
-			if (s.asleep_blocker != reason) {
-				s.asleep_blocker = reason;
+			if (sleep->blocker != reason) {
+				sleep->blocker = reason;
 				log::println(log::level::info, log::category::task, "agent: chat '{}' stays asleep - that build started before its latest edits to {}", s.name, pending);
 				append_row(s, {
 					.kind = row_kind::note,
@@ -1147,7 +1158,6 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 			}
 			continue;
 		}
-		s.asleep_blocker.clear();
 
 		std::string lead = finished.succeeded
 			? "The build you were waiting on succeeded and your edits are in the current binaries."
@@ -1174,7 +1184,7 @@ auto gse::ide::agent::wake_observers(data& d, const build_runner::build_finished
 
 auto gse::ide::agent::wake_covered(data& d) -> void {
 	for (session& s : d.sessions) {
-		if (!s.hibernating || s.unbuilt.empty() || !edits_built(d, s)) {
+		if (!asleep(s) || s.unbuilt.empty() || !edits_built(d, s)) {
 			continue;
 		}
 
@@ -1192,7 +1202,7 @@ auto gse::ide::agent::resume_interrupted(data& d) -> void {
 	const std::vector<build_inbox::request> carried = build_inbox::peek_requests();
 
 	for (session& s : d.sessions) {
-		if (s.hibernating && !s.running && !s.info.agent_id.empty() && std::ranges::none_of(carried, [&s](const build_inbox::request& r) {
+		if (asleep(s) && !s.link && !s.info.agent_id.empty() && std::ranges::none_of(carried, [&s](const build_inbox::request& r) {
 			return r.agent == s.info.agent_id;
 		})) {
 			if (s.resume_attempts >= resume_limit) {
@@ -1209,13 +1219,13 @@ auto gse::ide::agent::resume_interrupted(data& d) -> void {
 			continue;
 		}
 
-		if (!s.turn_open || s.running || s.hibernating || s.pending_transition || s.gate || s.question || s.info.agent_id.empty()) {
+		if (!live_of(s) || s.link || parked(s) || s.info.agent_id.empty()) {
 			continue;
 		}
 
 		if (s.resume_attempts >= resume_limit) {
 			log::println(log::level::warning, log::category::task, "agent: chat '{}' has been cut off mid-turn {} times in a row - leaving it stopped", s.name, s.resume_attempts);
-			s.turn_open = false;
+			s.turn = std::monostate{};
 			append_row(s, {
 				.kind = row_kind::failure,
 				.text = std::format("cut off mid-turn {} times in a row - not continuing it again on its own", s.resume_attempts),
@@ -1520,7 +1530,7 @@ auto gse::ide::agent::dispatch_blame(data& d, const std::uint32_t session_id) ->
 		return;
 	}
 
-	if (!found->running && !launch_session(*found)) {
+	if (!found->link && !launch_session(*found)) {
 		append_row(*found, {
 			.kind = row_kind::failure,
 			.text = "failed to launch 'claude' - is it on PATH?",
@@ -1723,23 +1733,6 @@ auto gse::ide::agent::describe_errors(const std::span<const blamed_error> errors
 	return out;
 }
 
-auto gse::ide::agent::arm_retry(session& s) -> void {
-	if (!s.retry.held) {
-		return;
-	}
-
-	s.retry.waiting = true;
-	++s.retry.attempts;
-
-	const std::int64_t remaining = s.limited_until - unix_now();
-	append_row(s, {
-		.kind = row_kind::note,
-		.text = remaining > 0
-			? std::format("usage limit reached - holding this turn, resending in {}m", std::max<std::int64_t>(remaining / 60, 1))
-			: "holding this turn - it will be resent once the connection is back",
-	});
-}
-
 auto gse::ide::agent::link_delay(const data& d) -> time {
 	const time first = seconds(5.f);
 	const time longest = seconds(20.f);
@@ -1748,19 +1741,21 @@ auto gse::ide::agent::link_delay(const data& d) -> time {
 
 auto gse::ide::agent::resume_waiting(data& d) -> void {
 	for (session& s : d.sessions) {
-		if (!s.retry.waiting || s.limited_until > unix_now()) {
+		const held_turn* held = held_of(s);
+		if (!held || held->until > unix_now()) {
 			continue;
 		}
-		if (!s.running && !launch_session(s)) {
+		const bool editor_driven = held->editor_driven;
+		const std::uint32_t attempts = held->attempts;
+		if (!s.link && !launch_session(s)) {
 			continue;
 		}
 
 		append_row(s, {
 			.kind = row_kind::note,
-			.text = std::format("continuing the interrupted turn (attempt {})", s.retry.attempts + 1),
+			.text = std::format("continuing the interrupted turn (attempt {})", attempts + 1),
 		});
-		s.retry.waiting = false;
-		send_to_session(s, "continue", {}, s.editor_turn);
+		send_to_session(s, "continue", {}, editor_driven);
 	}
 }
 
@@ -1768,7 +1763,7 @@ auto gse::ide::agent::service_link(data& d) -> void {
 	constexpr std::uint32_t blind_retry_after = 6;
 
 	const bool waiting = std::ranges::any_of(d.sessions, [](const session& s) {
-		return s.retry.waiting;
+		return held_of(s) != nullptr;
 	});
 
 	if (!waiting) {
@@ -1806,11 +1801,12 @@ auto gse::ide::agent::service_link(data& d) -> void {
 }
 
 auto gse::ide::agent::link_label(const data& d, const session& s) -> std::string {
-	if (!s.retry.waiting) {
+	const held_turn* held = held_of(s);
+	if (!held) {
 		return {};
 	}
 
-	if (const std::int64_t remaining = s.limited_until - unix_now(); remaining > 0) {
+	if (const std::int64_t remaining = held->until - unix_now(); remaining > 0) {
 		return remaining >= 120
 			? std::format("usage limit reached - the held turn resumes in {}m", remaining / 60)
 			: std::format("usage limit reached - the held turn resumes in {}s", remaining);
@@ -1818,10 +1814,10 @@ auto gse::ide::agent::link_label(const data& d, const session& s) -> std::string
 
 	const std::string_view lead = d.link_misses > 0 ? "offline - " : "";
 	if (net::active(d.link)) {
-		return std::format("{}checking the connection (attempt {})", lead, s.retry.attempts);
+		return std::format("{}checking the connection (attempt {})", lead, held->attempts);
 	}
 
 	const time waited = d.link_clock ? d.link_clock->elapsed() : time{};
 	const time remaining = std::max<time>(link_delay(d) - waited, time{});
-	return std::format("{}resending the held turn in {:.0f:s} (attempt {})", lead, remaining,s.retry.attempts);
+	return std::format("{}resending the held turn in {:.0f:s} (attempt {})", lead, remaining, held->attempts);
 }

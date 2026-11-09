@@ -33,7 +33,8 @@ export namespace gse::vbd {
 		std::uint32_t tick_hash_uints = 13;
 		std::uint32_t state_tick_hash_base_index = state_island_convergence_base_index + island_convergence_count;
 		std::uint32_t state_color_rounds_index = state_tick_hash_base_index + tick_hash_uints;
-		std::uint32_t collision_state_header_uints = state_color_rounds_index + 1;
+		std::uint32_t state_broad_walk_overrun_index = state_color_rounds_index + 1;
+		std::uint32_t collision_state_header_uints = state_broad_walk_overrun_index + 1;
 		std::uint32_t solve_state_float4s_per_body = 11;
 		std::uint32_t state_contact_count_index = 0;
 		std::uint32_t state_max_used_color_index = 1;
@@ -128,6 +129,8 @@ export namespace gse::vbd {
 		std::uint32_t wrap_uints = 10;
 		std::uint32_t wrap_passes = 8;
 		length wrap_pass_tolerance = millimeters(0.5f);
+		std::uint32_t external_force_words = 6;
+		force external_force_resolution = newtons(1.f / 4194304.f);
 	};
 
 	constexpr vbd_limits limits{};

@@ -1,5 +1,6 @@
 # Generated trees: builds, dist stages, msys64, gcc and wasm workspaces (Tools/repo_paths.py)
 /.generated/
+/.gcc-build/
 /out
 bin/
 build/

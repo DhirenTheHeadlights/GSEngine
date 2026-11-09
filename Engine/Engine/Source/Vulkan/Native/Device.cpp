@@ -609,7 +609,7 @@ gse::vulkan::device::~device() {
 }
 
 gse::vulkan::device::device(device&& other) noexcept
-	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_calibrated_timestamps_enabled(other.m_calibrated_timestamps_enabled), m_timestamp_valid_masks(other.m_timestamp_valid_masks), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
+	: m_physical_device(std::move(other.m_physical_device)), m_device(std::move(other.m_device)), m_fault_enabled(other.m_fault_enabled), m_vendor_binary_fault_enabled(other.m_vendor_binary_fault_enabled), m_calibrated_timestamps_enabled(other.m_calibrated_timestamps_enabled), m_diagnostic_checkpoints_enabled(other.m_diagnostic_checkpoints_enabled), m_timestamp_valid_masks(other.m_timestamp_valid_masks), m_queue_families(other.m_queue_families), m_pools(std::move(other.m_pools)), m_live_allocation_count(other.m_live_allocation_count.load()), m_next_allocation_id(other.m_next_allocation_id.load()), m_cleaned_up(other.m_cleaned_up), m_settings(other.m_settings), m_live_allocations(std::move(other.m_live_allocations)) {
 }
 
 auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
@@ -620,6 +620,7 @@ auto gse::vulkan::device::operator=(device&& other) noexcept -> device& {
 		m_fault_enabled = other.m_fault_enabled;
 		m_vendor_binary_fault_enabled = other.m_vendor_binary_fault_enabled;
 		m_calibrated_timestamps_enabled = other.m_calibrated_timestamps_enabled;
+		m_diagnostic_checkpoints_enabled = other.m_diagnostic_checkpoints_enabled;
 		m_timestamp_valid_masks = other.m_timestamp_valid_masks;
 		m_queue_families = other.m_queue_families;
 		m_pools = std::move(other.m_pools);
@@ -998,9 +999,11 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		device_extensions.push_back(vk::KHRSwapchainExtensionName);
 	}
 
+	bool diagnostic_checkpoints_enabled = false;
 	for (const auto* aftermath_ext : aftermath_tracker.required_device_extensions()) {
 		if (supports_extension(aftermath_ext)) {
 			device_extensions.push_back(aftermath_ext);
+			diagnostic_checkpoints_enabled |= std::string_view(aftermath_ext) == vk::NVDeviceDiagnosticCheckpointsExtensionName;
 		}
 	}
 
@@ -1099,6 +1102,8 @@ auto gse::vulkan::device::create(const instance& instance_data, gpu::device_sett
 		instance_data.surface()
 	);
 
+	created_device.m_diagnostic_checkpoints_enabled = diagnostic_checkpoints_enabled;
+
 	if (external_memory_supported) {
 		created_device.run_exportable_self_test();
 	}
@@ -1131,8 +1136,13 @@ auto gse::vulkan::device::vendor_binary_fault_enabled() const -> bool {
 	return m_vendor_binary_fault_enabled;
 }
 
-auto gse::vulkan::device::wait_idle() const -> void {
+auto gse::vulkan::device::diagnostic_checkpoints_enabled() const -> bool {
+	return m_diagnostic_checkpoints_enabled;
+}
+
+auto gse::vulkan::device::wait_idle(const queue& queues) const -> void {
 	constexpr std::uint64_t idle_timeout_ns = 10'000'000'000;
+	const auto lock = queues.lock();
 
 	auto [fence_result, fence] = raii_device().createFence({});
 	if (fence_result != vk::Result::eSuccess) {
@@ -2599,11 +2609,11 @@ namespace gse::vulkan {
 	}
 }
 
-auto gse::vulkan::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> gpu::acceleration_structure_build_sizes {
+auto gse::vulkan::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const gpu::build_acceleration_structure_flags flags) const -> gpu::acceleration_structure_build_sizes {
 	const auto vk_geometry = to_vk_geometry(geometry);
 	const vk::AccelerationStructureBuildGeometryInfoKHR sizing_info{
 		.type = vk::AccelerationStructureTypeKHR::eBottomLevel,
-		.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild,
+		.flags = to_vk(flags),
 		.mode = vk::BuildAccelerationStructureModeKHR::eBuild,
 		.geometryCount = 1,
 		.pGeometries = &vk_geometry,
@@ -3295,8 +3305,8 @@ auto gse::vulkan::device::create_shader_program(const gpu::shader_program_create
 	);
 }
 
-auto gse::vulkan::device::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> gpu::blas {
-	const auto sizes = query_blas_build_sizes(geometry, prim_count);
+auto gse::vulkan::device::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const gpu::build_acceleration_structure_flags flags) -> gpu::blas {
+	const auto sizes = query_blas_build_sizes(geometry, prim_count, flags);
 
 	auto storage = create_buffer(
 		gpu::buffer_desc{

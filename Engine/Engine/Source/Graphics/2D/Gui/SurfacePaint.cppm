@@ -118,7 +118,7 @@ auto gse::gui::draw::label(const draw_context& ctx, const rectf& rect, const std
 
 	const float scale = ctx.style.font_size * spec.size_mult;
 	const float glyph_extent = paint.glyph.empty() ? 0.f : std::min(ctx.style.icon_extent, std::min(rect.width(), rect.height()));
-	const float glyph_span = paint.glyph.empty() ? 0.f : glyph_extent + paint.glyph_gap;
+	const float glyph_span = paint.glyph.empty() ? 0.f : glyph_extent + (shown.empty() ? 0.f : paint.glyph_gap);
 	const float text_width = shown.empty() ? 0.f : fnt_view->width(shown, scale);
 
 	const rectf content = layout::align_in(

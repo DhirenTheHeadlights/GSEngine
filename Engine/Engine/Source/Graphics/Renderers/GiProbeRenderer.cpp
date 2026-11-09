@@ -60,37 +60,23 @@ namespace gse::renderer::gi_probe {
 		std::uint32_t first_instance;
 	};
 
-	struct [[= shaders::texture2d]] capture_in {
-		using element = vec4f;
+	struct capture_input_bindings {
+		shaders::texture2d<vec4f> capture_in;
 	};
 
-	struct [[= shaders::tlas]] scene_tlas {};
-
-	struct [[= shaders::storage_image]] irradiance_atlas_out {
-		using element = vec4f;
+	struct ray_traced_bindings {
+		shaders::tlas scene_tlas;
 	};
 
-	struct [[= shaders::ssbo_readonly]] material_palette {
-		using element = shaders::forward::material_data;
+	struct atlas_bindings {
+		shaders::storage_image<vec4f> irradiance_atlas_out;
 	};
-
-	struct [[= shaders::texture2d]] sky_view_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] sky_view_sampler {};
-
-	struct [[= shaders::ssbo_readonly]] lights {
-		using element = shaders::forward::light;
-	};
-
-	using common_bindings = type_pack<irradiance_atlas_out, material_palette, sky_view_in, sky_view_sampler, lights, atmosphere::atmosphere_ubo>;
 
 	template <typename TechniqueBindings, typename TechniqueHelpers, fixed_string Body = "Compute/gi_probe_update">
 	using update_entry = gpu::compute_entry<
 		gpu::body_path<Body>,
 		gpu::types<shaders::forward::shader_types, type_pack<gi_probe_limits>>,
-		gpu::bindings<typename type_pack_concat<TechniqueBindings, common_bindings>::type>,
+		gpu::bindings<TechniqueBindings, atlas_bindings, shaders::standard_3d::materials, shaders::standard_3d::scene_lights, shaders::standard_3d::sky_view, atmosphere::bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/probe_radiance">,
 		TechniqueHelpers,
 		gpu::helpers<"Standard3D/probe_irradiance_project">,
@@ -99,42 +85,18 @@ namespace gse::renderer::gi_probe {
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_id, gpu::group_thread_id>
 	>;
 
-	using ray_traced_entry = update_entry<type_pack<scene_tlas>, gpu::helpers<"Standard3D/probe_radiance_ray_traced">>;
+	using ray_traced_entry = update_entry<ray_traced_bindings, gpu::helpers<"Standard3D/probe_radiance_ray_traced">>;
 
 	using raster_helpers = gpu::helpers<"Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_radiance_raster">;
 
-	using raster_entry = update_entry<type_pack<capture_in>, raster_helpers>;
+	using raster_entry = update_entry<capture_input_bindings, raster_helpers>;
 
-	using raster_overwrite_entry = update_entry<type_pack<capture_in>, raster_helpers, "Compute/gi_probe_update_overwrite">;
-
-	using capture_bindings = type_pack<
-		material_palette,
-		lights,
-		sky_view_in,
-		sky_view_sampler,
-		atmosphere::atmosphere_ubo,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::meshlets_buffer,
-		shaders::meshlet::meshlet_vertex_indices,
-		shaders::meshlet::meshlet_triangles,
-		shaders::meshlet::meshlet_bounds_buffer,
-		shaders::meshlet::instance_data_buffer
-	>;
-
-	using capture_vertex_bindings = type_pack<
-		material_palette,
-		lights,
-		sky_view_in,
-		sky_view_sampler,
-		atmosphere::atmosphere_ubo,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::instance_data_buffer
-	>;
+	using raster_overwrite_entry = update_entry<capture_input_bindings, raster_helpers, "Compute/gi_probe_update_overwrite">;
 
 	using capture_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/gi_probe_capture">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, type_pack<gi_probe_limits>>,
-		gpu::bindings<capture_bindings>,
+		gpu::bindings<shaders::standard_3d::materials, shaders::standard_3d::scene_lights, shaders::standard_3d::sky_view, atmosphere::bindings, shaders::meshlet::vertices, shaders::meshlet::meshlets, shaders::meshlet::instances>,
 		gpu::helpers<"Standard3D/meshlet_common", "Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_capture_shading">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
@@ -148,7 +110,7 @@ namespace gse::renderer::gi_probe {
 	using capture_vertex_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/gi_probe_capture_vertex">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, type_pack<gi_probe_limits>>,
-		gpu::bindings<capture_vertex_bindings>,
+		gpu::bindings<shaders::standard_3d::materials, shaders::standard_3d::scene_lights, shaders::standard_3d::sky_view, atmosphere::bindings, shaders::meshlet::vertices, shaders::meshlet::instances>,
 		gpu::helpers<"Standard3D/meshlet_common", "Atmosphere/atmosphere_common", "Standard3D/light_eval", "Standard3D/cube_faces", "Standard3D/probe_capture_common", "Standard3D/probe_capture_shading">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -176,7 +138,7 @@ namespace gse::renderer::gi_probe {
 		gpu::recording_context& rec,
 		const geometry_collector::render_data& geometry,
 		const capture_push_constants& base,
-		const gpu::binding_args<capture_bindings>& bindings,
+		const gpu::entry_binding_args<capture_entry>& bindings,
 		bool vertex_pulled
 	) -> void;
 }
@@ -203,7 +165,7 @@ auto gse::renderer::gi_probe::create_capture_targets(const shared_view<gpu::cont
 	gpu::transition_image_to(*gpu_s.device, d.capture_depth);
 }
 
-auto gse::renderer::gi_probe::record_capture(gpu::recording_context& rec, const geometry_collector::render_data& geometry, const capture_push_constants& base, const gpu::binding_args<capture_bindings>& bindings, const bool vertex_pulled) -> void {
+auto gse::renderer::gi_probe::record_capture(gpu::recording_context& rec, const geometry_collector::render_data& geometry, const capture_push_constants& base, const gpu::entry_binding_args<capture_entry>& bindings, const bool vertex_pulled) -> void {
 	for (const auto& batch : geometry.normal_batches) {
 		const auto& mesh = batch.key.resolve_mesh();
 		if (!mesh.has_meshlets() || !mesh.upload_token().ready() || batch.instance_count == 0) {
@@ -423,9 +385,9 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 					.capture_in = d.capture_radiance.sampled_slot(),
 					.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
 					.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
+					.lights = d.light_buffers[frame_index].slot(),
 					.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
 					.sky_view_sampler = d.sky_view_sampler.slot(),
-					.lights = d.light_buffers[frame_index].slot(),
 					.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
 				},
 				vec3u{ probes_per_capture, 1u, 1u }
@@ -465,9 +427,9 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 			.scene_tlas = gpu::make_acceleration_structure_arg(scene.tlas_addresses[frame_index], scene.tlas_slots[frame_index]),
 			.irradiance_atlas_out = d.irradiance_atlas.storage_slot(),
 			.material_palette = gc_r.material_palette_buffers[frame_index].slot(),
+			.lights = d.light_buffers[frame_index].slot(),
 			.sky_view_in = atm_state.sky_view_lut.sampled_slot(),
 			.sky_view_sampler = d.sky_view_sampler.slot(),
-			.lights = d.light_buffers[frame_index].slot(),
 			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
 		},
 		active_grid_dim

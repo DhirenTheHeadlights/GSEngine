@@ -22,6 +22,7 @@ import :cloud_renderer;
 import :directional_light;
 import :geometry_collector;
 import :gi_probe_renderer;
+import :grass_renderer;
 import :light_culling_renderer;
 import :lighting_source;
 import :point_light;
@@ -84,6 +85,7 @@ export namespace gse::renderer::forward {
 		[[= shared]] reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
 		gpu::shader_program pipeline;
+		gpu::shader_program grass_pipeline;
 		bool vertex_pulled = false;
 
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
@@ -133,6 +135,7 @@ export namespace gse::renderer::forward {
 		read<physics::transform_component> transforms,
 		channel_read<camera::temporal_reset_request> reset_in,
 		shared_view<lighting::data> lighting_s,
-		channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in
+		channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in,
+		shared_view<grass::data> grass_r
 	) -> async::task<>;
 }

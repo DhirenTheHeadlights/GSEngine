@@ -92,6 +92,13 @@ export namespace gse::directx {
 	constexpr DXGI_FORMAT format_r32g32b32_float = DXGI_FORMAT_R32G32B32_FLOAT;
 	constexpr DXGI_FORMAT format_r32_uint = DXGI_FORMAT_R32_UINT;
 
+	constexpr std::uint32_t as_build_allow_update = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+	constexpr std::uint32_t as_build_allow_compaction = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+	constexpr std::uint32_t as_build_prefer_fast_trace = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+	constexpr std::uint32_t as_build_prefer_fast_build = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+	constexpr std::uint32_t as_build_minimize_memory = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_MINIMIZE_MEMORY;
+	constexpr std::uint32_t as_build_perform_update = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+
 	constexpr auto sync_none = D3D12_BARRIER_SYNC_NONE;
 	constexpr auto sync_all = D3D12_BARRIER_SYNC_ALL;
 	constexpr auto sync_draw = D3D12_BARRIER_SYNC_DRAW;
@@ -579,8 +586,10 @@ export namespace gse::directx {
 	auto blas_prebuild_info(
 		ID3D12Device* device,
 		const blas_triangles& triangles,
+		std::uint32_t build_flags,
 		std::uint64_t* out_acceleration_structure_size,
-		std::uint64_t* out_scratch_size
+		std::uint64_t* out_build_scratch_size,
+		std::uint64_t* out_update_scratch_size
 	) -> void;
 
 	auto tlas_prebuild_info(
@@ -594,8 +603,10 @@ export namespace gse::directx {
 	auto build_blas(
 		ID3D12GraphicsCommandList* list,
 		std::uint64_t dst_address,
+		std::uint64_t src_address,
 		std::uint64_t scratch_address,
-		const blas_triangles& triangles
+		const blas_triangles& triangles,
+		std::uint32_t build_flags
 	) -> void;
 
 	auto build_tlas(
@@ -1946,7 +1957,7 @@ auto gse::directx::calibrate_clock(ID3D12CommandQueue* queue) -> clock_calibrati
 	return result;
 }
 
-auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles& triangles, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_scratch_size) -> void {
+auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles& triangles, const std::uint32_t build_flags, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_build_scratch_size, std::uint64_t* out_update_scratch_size) -> void {
 	D3D12_RAYTRACING_GEOMETRY_DESC geometry = {};
 	geometry.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 	geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
@@ -1961,7 +1972,7 @@ auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+	inputs.Flags = static_cast<D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS>(build_flags);
 	inputs.NumDescs = 1;
 	inputs.pGeometryDescs = &geometry;
 
@@ -1972,7 +1983,8 @@ auto gse::directx::blas_prebuild_info(ID3D12Device* device, const blas_triangles
 		device5->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
 	}
 	*out_acceleration_structure_size = info.ResultDataMaxSizeInBytes;
-	*out_scratch_size = info.ScratchDataSizeInBytes;
+	*out_build_scratch_size = info.ScratchDataSizeInBytes;
+	*out_update_scratch_size = info.UpdateScratchDataSizeInBytes;
 }
 
 auto gse::directx::tlas_prebuild_info(ID3D12Device* device, const std::uint32_t max_instances, std::uint64_t* out_acceleration_structure_size, std::uint64_t* out_build_scratch_size, std::uint64_t* out_update_scratch_size) -> void {
@@ -2012,7 +2024,7 @@ auto gse::directx::tlas_prebuild_info(ID3D12Device* device, const std::uint32_t 
 	}
 }
 
-auto gse::directx::build_blas(ID3D12GraphicsCommandList* list, const std::uint64_t dst_address, const std::uint64_t scratch_address, const blas_triangles& triangles) -> void {
+auto gse::directx::build_blas(ID3D12GraphicsCommandList* list, const std::uint64_t dst_address, const std::uint64_t src_address, const std::uint64_t scratch_address, const blas_triangles& triangles, const std::uint32_t build_flags) -> void {
 	D3D12_RAYTRACING_GEOMETRY_DESC geometry = {};
 	geometry.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 	geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
@@ -2026,9 +2038,10 @@ auto gse::directx::build_blas(ID3D12GraphicsCommandList* list, const std::uint64
 
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC desc = {};
 	desc.DestAccelerationStructureData = dst_address;
+	desc.SourceAccelerationStructureData = src_address;
 	desc.Inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 	desc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	desc.Inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+	desc.Inputs.Flags = static_cast<D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS>(build_flags);
 	desc.Inputs.NumDescs = 1;
 	desc.Inputs.pGeometryDescs = &geometry;
 	desc.ScratchAccelerationStructureData = scratch_address;

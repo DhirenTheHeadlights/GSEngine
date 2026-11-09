@@ -22,6 +22,7 @@ import :world_system;
 
 namespace gse {
 	constexpr int bench_settle_frame_limit = 6000;
+	constexpr int grass_digest_lead_frames = 8;
 
 	auto world_body_order(
 		std::span<const id> owners
@@ -37,6 +38,11 @@ namespace gse {
 
 	auto report_scenario_failure(
 		const test::failure& f
+	) -> void;
+
+	auto report_grass_digests(
+		registry& reg,
+		bench_state& state
 	) -> void;
 }
 
@@ -75,6 +81,19 @@ auto gse::world_state_hash(registry& reg) -> std::uint64_t {
 		writer & number;
 		writer & transforms[index];
 		writer & *motion;
+	}
+
+	const auto field_owners = reg.owner_ids<physics::grass_field>();
+	for (const std::size_t index : world_body_order(field_owners)) {
+		const id owner = field_owners[index];
+		const auto* probe = reg.try_component<physics::grass::probe_state>(owner);
+		if (!probe) {
+			continue;
+		}
+		const std::uint64_t number = owner.number();
+		writer & number;
+		writer & probe->digest;
+		writer & probe->digest_step;
 	}
 
 	return stable_id(buffer.view());
@@ -119,6 +138,20 @@ auto gse::report_scenario_failure(const test::failure& f) -> void {
 		f.location.line(),
 		f.message
 	);
+}
+
+auto gse::report_grass_digests(registry& reg, bench_state& state) -> void {
+	const auto field_owners = reg.owner_ids<physics::grass_field>();
+	for (const std::size_t index : world_body_order(field_owners)) {
+		const id owner = field_owners[index];
+		const auto* probe = reg.try_component<physics::grass::probe_state>(owner);
+		if (!probe || !probe->digested) {
+			log::println(log::level::error, log::category::general, "bench: grass field {} produced no state digest, so the world-state hash does not cover its blades", owner.number());
+			state.failures.push_back(std::format("grass field {} produced no state digest", owner.number()));
+			continue;
+		}
+		log::println(log::category::general, "bench: grass field {} digest {:#018x} at step {}", owner.number(), probe->digest, probe->digest_step);
+	}
 }
 
 auto gse::drive_scenario(const bench_config& config, bench_state& state, engine& e) -> void {
@@ -211,7 +244,7 @@ auto gse::compare_against_baseline(const bench_config& config, const std::filesy
 }
 
 auto gse::begin_bench(const bench_config& config) -> void {
-	if (!config.real_time) {
+	if (config.pacing != scenario::pacing::wall_clock) {
 		system_clock::set_fixed_step_override(0);
 	}
 	profile::set_enabled(true);
@@ -220,7 +253,8 @@ auto gse::begin_bench(const bench_config& config) -> void {
 
 	log::println(
 		log::category::general,
-		"bench: fixed-step clock engaged, {} warmup frames then {} measured frames",
+		"bench: {} pacing, {} warmup frames then {} measured frames",
+		config.pacing,
 		config.warmup_frames,
 		config.frames
 	);
@@ -254,7 +288,7 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 			if (bench_world_ready(config, e)) {
 				state.phase = bench_phase::warmup;
 				state.frames_in_phase = 0;
-				if (!config.real_time) {
+				if (config.pacing != scenario::pacing::wall_clock) {
 					system_clock::set_fixed_step_override(1);
 				}
 				log::println(log::category::general, "bench: world settled, warming up");
@@ -301,6 +335,9 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 		case bench_phase::measuring: {
 			if (state.state_dump.is_open()) {
 				write_state_frame(e.registry(), state.state_dump, static_cast<std::uint32_t>(state.frames_in_phase));
+			}
+			if (state.frames_in_phase == std::max(config.frames - grass_digest_lead_frames, 0)) {
+				e.make_channel_writer().push(physics::grass::probe_request{ .kind = physics::grass::probe_kind::digest });
 			}
 			if (++state.frames_in_phase >= config.frames) {
 				state.phase = bench_phase::done;
@@ -352,6 +389,8 @@ auto gse::finish_bench(const bench_config& config, bench_state& state, engine& e
 			state.failures.push_back(std::format("{}:{}: {}", f.location.file_name(), f.location.line(), f.message));
 		}
 	}
+
+	report_grass_digests(e.registry(), state);
 
 	if (summary.frames == 0) {
 		log::println(

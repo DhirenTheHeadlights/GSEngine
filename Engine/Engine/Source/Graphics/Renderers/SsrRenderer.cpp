@@ -18,22 +18,11 @@ import gse.gpu_record;
 import gse.math;
 
 namespace gse::renderer::ssr {
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
-	};
-
-	struct [[= shaders::texture2d]] depth_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] history_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] history_sampler {};
-
-	struct [[= shaders::storage_image]] radiance_out {
-		using element = vec4f;
+	struct trace_bindings {
+		shaders::texture2d<vec4f> depth_in;
+		shaders::texture2d<vec4f> history_in;
+		shaders::sampler_state history_sampler;
+		shaders::storage_image<vec4f> radiance_out;
 	};
 
 	struct [[= shaders::shader_struct]]
@@ -49,7 +38,7 @@ namespace gse::renderer::ssr {
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/ssr_trace">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
-		gpu::bindings<type_pack<camera_ubo, depth_in, history_in, history_sampler, radiance_out>>,
+		gpu::bindings<shaders::standard_3d::camera, trace_bindings>,
 		gpu::helpers<"Screen/depth_reconstruct", "Screen/screen_target", "Standard3D/lighting_shared">,
 		gpu::threads<8, 8, 1>,
 		gpu::push_constant<push_constants>,

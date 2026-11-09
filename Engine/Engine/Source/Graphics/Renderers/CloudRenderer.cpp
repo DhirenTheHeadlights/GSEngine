@@ -58,86 +58,57 @@ namespace gse::renderer::cloud {
 		vec2f history_subpixel_offset;
 	};
 
-	struct [[= shaders::uniform_block]] cloud_view_ubo {
-		using element = cloud_view_data;
-	};
-
 	using cloud_types = type_pack<cloud_limits, cloud_data, atmosphere::atmosphere_data, cloud_view_data>;
 	using shadow_types = type_pack<cloud_limits, cloud_data, cloud_shadow_data, atmosphere::atmosphere_data>;
 
-	struct [[= shaders::storage_image_3d]] cloud_shape_out {
-		using element = vec4f;
+	struct shape_bake_bindings {
+		shaders::storage_image_3d<vec4f> cloud_shape_out;
 	};
 
-	struct [[= shaders::storage_image_3d]] cloud_detail_out {
-		using element = vec4f;
+	struct detail_bake_bindings {
+		shaders::storage_image_3d<vec4f> cloud_detail_out;
 	};
 
-	struct [[= shaders::texture2d]] transmittance_in {
-		using element = vec4f;
+	struct weather_bake_bindings {
+		shaders::storage_image_3d<vec4f> cloud_weather_out;
 	};
 
-	struct [[= shaders::texture2d]] sky_view_in {
-		using element = vec4f;
+	struct raymarch_bindings {
+		shaders::texture2d<vec4f> transmittance_in;
+		shaders::texture2d<vec4f> sky_view_in;
+		shaders::texture3d<vec4f> cloud_shape_in;
+		shaders::texture3d<vec4f> cloud_detail_in;
+		shaders::storage_image<vec4f> cloud_out;
+		shaders::uniform_block<cloud_data> cloud_ubo;
+		shaders::sampler_state sky_view_sampler_binding;
+		shaders::sampler_state transmittance_sampler;
+		shaders::sampler_state noise_sampler_binding;
+		shaders::texture3d<vec4f> cloud_weather_in;
+		shaders::texture2d<vec4f> scene_depth_in;
+		shaders::sampler_state scene_depth_sampler;
+		shaders::texture2d<vec4f> cloud_history_in;
+		shaders::sampler_state cloud_history_sampler;
+		shaders::uniform_block<cloud_view_data> cloud_view_ubo;
 	};
 
-	struct [[= shaders::texture3d]] cloud_shape_in {
-		using element = vec4f;
+	struct composite_bindings {
+		shaders::texture2d<vec4f> cloud_in;
+		shaders::sampler_state cloud_composite_sampler;
 	};
 
-	struct [[= shaders::texture3d]] cloud_detail_in {
-		using element = vec4f;
+	struct resolve_bindings {
+		shaders::texture2d<vec4f> resolve_low_in;
+		shaders::texture2d<vec4f> resolve_history_in;
+		shaders::sampler_state resolve_sampler_binding;
 	};
 
-	struct [[= shaders::storage_image]] cloud_out {
-		using element = vec4f;
+	struct shadow_map_bindings {
+		shaders::texture3d<vec4f> cloud_shape_in;
+		shaders::uniform_block<cloud_data> cloud_ubo;
+		shaders::sampler_state noise_sampler_binding;
+		shaders::storage_image<vec4f> cloud_shadow_out;
+		shaders::texture3d<vec4f> cloud_weather_in;
 	};
-
-	struct [[= shaders::sampler_state]] transmittance_sampler {};
-
-	struct [[= shaders::sampler_state]] sky_view_sampler_binding {};
-
-	struct [[= shaders::sampler_state]] noise_sampler_binding {};
-
-	struct [[= shaders::storage_image]] cloud_shadow_out {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::storage_image_3d]] cloud_weather_out {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture3d]] cloud_weather_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] scene_depth_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] scene_depth_sampler {};
-
-	struct [[= shaders::texture2d]] cloud_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] cloud_history_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] cloud_history_sampler {};
-
-	struct [[= shaders::sampler_state]] cloud_composite_sampler {};
-
-	struct [[= shaders::texture2d]] resolve_low_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] resolve_history_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] resolve_sampler_binding {};
 
 	struct [[= shaders::shader_struct]] cloud_push_constants {
 		vec3f sun_direction;
@@ -184,14 +155,6 @@ namespace gse::renderer::cloud {
 		vec2f screen_uv_max;
 	};
 
-	using shape_bake_bindings = type_pack<cloud_shape_out>;
-	using detail_bake_bindings = type_pack<cloud_detail_out>;
-	using weather_bake_bindings = type_pack<cloud_weather_out>;
-	using raymarch_bindings = type_pack<transmittance_in, sky_view_in, cloud_shape_in, cloud_detail_in, cloud_out, cloud_ubo, sky_view_sampler_binding, atmosphere::atmosphere_ubo, transmittance_sampler, noise_sampler_binding, cloud_weather_in, scene_depth_in, scene_depth_sampler, cloud_history_in, cloud_history_sampler, cloud_view_ubo>;
-	using composite_bindings = type_pack<cloud_in, cloud_composite_sampler>;
-	using resolve_bindings = type_pack<resolve_low_in, resolve_history_in, resolve_sampler_binding>;
-	using shadow_bindings = type_pack<cloud_shape_in, cloud_ubo, atmosphere::atmosphere_ubo, noise_sampler_binding, cloud_shadow_out, cloud_shadow_ubo, cloud_weather_in>;
-
 	using shape_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_shape_bake">, gpu::bindings<shape_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
 
 	using detail_bake_entry = gpu::compute_entry<gpu::body_path<"Compute/cloud_detail_bake">, gpu::bindings<detail_bake_bindings>, gpu::helpers<"Clouds/cloud_common">, gpu::threads<8, 8, 1>, gpu::system_values<gpu::dispatch_thread_id>>;
@@ -201,7 +164,7 @@ namespace gse::renderer::cloud {
 	using raymarch_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/cloud_raymarch">,
 		gpu::types<cloud_types>,
-		gpu::bindings<raymarch_bindings>,
+		gpu::bindings<raymarch_bindings, atmosphere::bindings>,
 		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common", "Clouds/cloud_density", "Screen/screen_target">,
 		gpu::push_constant<cloud_push_constants>,
 		gpu::threads<8, 8, 1>,
@@ -224,7 +187,7 @@ namespace gse::renderer::cloud {
 	using shadow_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/cloud_shadow_map">,
 		gpu::types<shadow_types>,
-		gpu::bindings<shadow_bindings>,
+		gpu::bindings<shadow_map_bindings, atmosphere::bindings, shadow_bindings>,
 		gpu::helpers<"Clouds/cloud_common", "Clouds/cloud_density">,
 		gpu::push_constant<cloud_shadow_push_constants>,
 		gpu::threads<8, 8, 1>,
@@ -667,11 +630,11 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			{
 				.cloud_shape_in = d.shape_noise.sampled_slot(),
 				.cloud_ubo = d.cloud_ubo_buffer.slot(),
-				.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
 				.noise_sampler_binding = d.noise_sampler.slot(),
 				.cloud_shadow_out = d.shadow_map.storage_slot(),
-				.cloud_shadow_ubo = d.shadow_ubo_buffer.slot(),
 				.cloud_weather_in = d.weather_map.sampled_slot(),
+				.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
+				.cloud_shadow_ubo = d.shadow_ubo_buffer.slot(),
 			},
 			vec3u{ shadow_groups, shadow_groups, 1 }
 		);
@@ -758,7 +721,6 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.cloud_out = d.cloud_target[history_index].storage_slot(),
 			.cloud_ubo = d.cloud_ubo_buffer.slot(),
 			.sky_view_sampler_binding = d.sky_view_sampler.slot(),
-			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
 			.transmittance_sampler = d.atmosphere_lut_sampler.slot(),
 			.noise_sampler_binding = d.noise_sampler.slot(),
 			.cloud_weather_in = d.weather_map.sampled_slot(),
@@ -767,6 +729,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.cloud_history_in = d.cloud_target[previous_index].sampled_slot(),
 			.cloud_history_sampler = d.resolve_sampler.slot(),
 			.cloud_view_ubo = d.view_ubo_buffer[history_index].slot(),
+			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer.slot(),
 		},
 		raymarch_groups
 	);

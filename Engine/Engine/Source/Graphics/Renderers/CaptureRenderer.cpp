@@ -29,17 +29,12 @@ namespace gse::renderer::capture {
 		std::uint32_t rgba_index;
 	};
 
-	struct [[= shaders::storage_image]] output_y {
-		using element = float;
+	struct convert_bindings {
+		shaders::storage_image<float> output_y;
+		shaders::storage_image<vec2f> output_uv;
 	};
 
-	struct [[= shaders::storage_image]] output_uv {
-		using element = vec2f;
-	};
-
-	using shader_binding_types = type_pack<output_y, output_uv, shaders::bindless::textures, shaders::bindless::textures_sampler>;
-
-	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<shader_binding_types>, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<convert_bindings, shaders::bindless::sampler>, gpu::bindless_textures, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>, gpu::system_values<gpu::dispatch_thread_id>>;
 }
 
 auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {

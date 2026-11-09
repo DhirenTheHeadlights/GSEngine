@@ -111,6 +111,8 @@ void collision_broad_phase(uint3 dispatch_id) {
 
     uint nodes_walked = 0;
     uint aabb_tests = 0;
+    uint walk_overruns = 0;
+    uint walk_bound = min(grid_data[0], grid_max_entries());
 
     for (int cx = min_cell_i.x; cx <= max_cell_i.x; cx++) {
         for (int cy = min_cell_i.y; cy <= max_cell_i.y; cy++) {
@@ -118,8 +120,14 @@ void collision_broad_phase(uint3 dispatch_id) {
                 int3 cell = int3(cx, cy, cz);
                 uint bucket = hash_cell(cell);
                 uint entry_ptr = grid_data[bucket];
+                uint bucket_steps = 0;
 
                 while (entry_ptr != 0 && entry_ptr >= grid_table_size() + 1) {
+                    if (bucket_steps >= walk_bound) {
+                        walk_overruns += 1;
+                        break;
+                    }
+                    bucket_steps += 1;
                     uint j = grid_data[entry_ptr];
                     uint next = grid_data[entry_ptr + 1];
                     nodes_walked += 1;
@@ -158,5 +166,8 @@ void collision_broad_phase(uint3 dispatch_id) {
     }
     if (aabb_tests != 0) {
         InterlockedAdd(collision_state[state_broad_tests_index], aabb_tests);
+    }
+    if (walk_overruns != 0) {
+        InterlockedAdd(collision_state[state_broad_walk_overrun_index], walk_overruns);
     }
 }

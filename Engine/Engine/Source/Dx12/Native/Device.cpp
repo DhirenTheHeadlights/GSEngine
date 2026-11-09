@@ -1532,8 +1532,8 @@ auto gse::dx12::device::query_pool_results(const gpu::handle<gpu::query_pool> po
 	return { gpu::query_status::success, std::move(values) };
 }
 
-auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> gpu::blas {
-	const auto sizes = query_blas_build_sizes(geometry, prim_count);
+auto gse::dx12::device::create_blas(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const gpu::build_acceleration_structure_flags flags) -> gpu::blas {
+	const auto sizes = query_blas_build_sizes(geometry, prim_count, flags);
 
 	auto storage = create_buffer(
 		gpu::buffer_desc{
@@ -1599,7 +1599,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 	};
 }
 
-auto gse::dx12::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> gpu::acceleration_structure_build_sizes {
+auto gse::dx12::device::query_blas_build_sizes(const gpu::acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const gpu::build_acceleration_structure_flags flags) const -> gpu::acceleration_structure_build_sizes {
 	const directx::blas_triangles triangles{
 		.vertex_format = directx::format_r32g32b32_float,
 		.vertex_address = geometry.triangles.vertex_data,
@@ -1611,13 +1611,14 @@ auto gse::dx12::device::query_blas_build_sizes(const gpu::acceleration_structure
 	};
 
 	std::uint64_t as_size = 0;
-	std::uint64_t scratch_size = 0;
-	directx::blas_prebuild_info(m_device.get(), triangles, &as_size, &scratch_size);
+	std::uint64_t build_scratch = 0;
+	std::uint64_t update_scratch = 0;
+	directx::blas_prebuild_info(m_device.get(), triangles, acceleration_structure_build_flags_of(flags, gpu::build_acceleration_structure_mode::build), &as_size, &build_scratch, &update_scratch);
 
 	return {
 		.acceleration_structure_size = as_size,
-		.build_scratch_size = scratch_size,
-		.update_scratch_size = scratch_size,
+		.build_scratch_size = build_scratch,
+		.update_scratch_size = update_scratch,
 	};
 }
 

@@ -16,6 +16,7 @@ import :collision_component;
 import :joint_drive_component;
 import :motion_component;
 import :motor_component;
+import :muscle_component;
 import :system;
 import :transform_component;
 import :vbd_constraints;
@@ -441,7 +442,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 	co_return;
 }
 
-auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component>) -> async::task<> {
+auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
 	if (!d.enabled || !d.solver.compute_initialized() || motion.empty()) {
 		co_return;
 	}
@@ -514,6 +515,12 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	build_joint_constraints(d.joints, id_to_body_index, bodies, joints);
 
 	d.muscles.assign(phys.muscles.items().begin(), phys.muscles.items().end());
+	const auto muscle_owners = phys.muscles.ids();
+	for (std::size_t i = 0; i < d.muscles.size(); ++i) {
+		if (const auto* mc = muscles.find(muscle_owners[i])) {
+			apply_muscle_excitation(d.muscles[i], *mc);
+		}
+	}
 	std::vector<vbd::muscle_constraint> muscle_constraints;
 	std::vector<vbd::muscle_path_point> muscle_points;
 	build_muscle_constraints(d.muscles, id_to_body_index, muscle_constraints, muscle_points);

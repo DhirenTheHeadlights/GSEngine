@@ -52,6 +52,15 @@ export namespace gse::gpu {
 			std::uint32_t value
 		) -> void;
 
+		auto record_checkpoint(
+			command_buffer_handle cmd,
+			std::uint64_t marker
+		) -> void;
+
+		[[nodiscard]] auto queue_checkpoints(
+			queue_type queue_type
+		) const -> std::vector<queue_checkpoint>;
+
 		auto cmd_reset(
 			command_buffer_handle cmd
 		) -> void;
@@ -334,7 +343,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]] auto create_tlas(
@@ -343,7 +353,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> device_size;
@@ -503,6 +514,13 @@ auto gse::gpu::webgpu_device_backend::query_fault_info(device_fault_counts&, dev
 
 auto gse::gpu::webgpu_device_backend::record_buffer_fill_u32(command_buffer_handle, gpu::handle<buffer>, device_size, std::uint32_t) -> void {
 	webgpu_unsupported("record_buffer_fill_u32");
+}
+
+auto gse::gpu::webgpu_device_backend::record_checkpoint(command_buffer_handle, std::uint64_t) -> void {
+}
+
+auto gse::gpu::webgpu_device_backend::queue_checkpoints(queue_type) const -> std::vector<queue_checkpoint> {
+	return {};
 }
 
 auto gse::gpu::webgpu_device_backend::cmd_reset(const command_buffer_handle cmd) -> void {
@@ -754,7 +772,7 @@ auto gse::gpu::webgpu_device_backend::swapchain_past_presentation_timing(swap_ch
 	return {};
 }
 
-auto gse::gpu::webgpu_device_backend::create_blas(const acceleration_structure_geometry&, std::uint32_t) -> blas {
+auto gse::gpu::webgpu_device_backend::create_blas(const acceleration_structure_geometry&, std::uint32_t, build_acceleration_structure_flags) -> blas {
 	webgpu_unsupported("create_blas");
 	return {};
 }
@@ -764,7 +782,7 @@ auto gse::gpu::webgpu_device_backend::create_tlas(std::uint32_t) -> tlas {
 	return {};
 }
 
-auto gse::gpu::webgpu_device_backend::query_blas_build_sizes(const acceleration_structure_geometry&, std::uint32_t) const -> acceleration_structure_build_sizes {
+auto gse::gpu::webgpu_device_backend::query_blas_build_sizes(const acceleration_structure_geometry&, std::uint32_t, build_acceleration_structure_flags) const -> acceleration_structure_build_sizes {
 	webgpu_unsupported("query_blas_build_sizes");
 	return {};
 }

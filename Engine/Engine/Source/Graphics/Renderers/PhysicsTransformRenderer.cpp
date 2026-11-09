@@ -19,12 +19,6 @@ import gse.ecs;
 import gse.physics;
 
 namespace gse::renderer::physics_transform {
-	struct [[= shaders::shader_struct]] physics_mapping {
-		std::uint32_t body_index;
-		std::uint32_t instance_index;
-		vec3f center_of_mass;
-	};
-
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t mapping_count;
 		std::uint32_t body_count;
@@ -32,25 +26,18 @@ namespace gse::renderer::physics_transform {
 		time_t<float, seconds> frame_delta;
 	};
 
-	struct [[= shaders::ssbo_readonly]] body_data {
-		using element = vbd::body_state;
+	struct transform_bindings {
+		shaders::ssbo_readonly<vbd::body_state> body_data;
+		shaders::ssbo_readonly<geometry_collector::physics_mapping> mapping_data;
+		shaders::ssbo_readwrite<shaders::common::instance_data> instance_data_buffer;
 	};
 
-	struct [[= shaders::ssbo_readonly]] mapping_data {
-		using element = physics_mapping;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] instance_data_buffer {
-		using element = shaders::common::instance_data;
-	};
-
-	using shader_binding_types = type_pack<body_data, mapping_data, instance_data_buffer>;
-	using shader_types = type_pack<physics_mapping>;
+	using shader_types = type_pack<geometry_collector::physics_mapping>;
 
 	using entry = gpu::compute_entry<
 		gpu::body_path<"Compute/physics_instance_transform">,
 		gpu::types<shaders::common::shader_types, vbd::shader_types, shader_types>,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<transform_bindings>,
 		gpu::helpers<"VBDPhysics/vbd_shared">,
 		gpu::threads<64>,
 		gpu::push_constant<push_constants>,
@@ -85,7 +72,7 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 
 	if (!render_items.empty() && render_items[0].physics_mapping_count > 0) {
 		const auto& data = render_items[0];
-		const auto required = data.physics_mapping_count * sizeof(geometry_collector::physics_mapping_entry);
+		const auto required = data.physics_mapping_count * sizeof(geometry_collector::physics_mapping);
 
 		d.cached_mapping_count = data.physics_mapping_count;
 
@@ -94,17 +81,14 @@ auto gse::renderer::physics_transform::frame(context& ctx, shared_view<gpu::cont
 				d.mapping_buffers[i] = gpu_s.device->create_buffer(
 					{
 						.size = required,
-						.stride = sizeof(geometry_collector::physics_mapping_entry),
+						.stride = sizeof(geometry_collector::physics_mapping),
 						.usage = gpu::buffer_flag::storage,
-						.data = data.physics_mappings.data(),
 					}
 				);
 			}
 			d.mapping_buffer_size = required;
 		}
-		else {
-			d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
-		}
+		d.mapping_buffers[frame_index].host_write(data.physics_mappings.data(), required);
 	}
 
 	if (d.cached_mapping_count == 0) {

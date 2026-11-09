@@ -27,9 +27,27 @@ namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	auto press_key(
+		gse::scenario::context& ctx,
+		gse::key key
+	) -> void;
+
+	auto release_key(
+		gse::scenario::context& ctx,
+		gse::key key
+	) -> void;
+
 	auto walk_pattern(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
+
+	auto find_proxy_owner(
+		gse::scenario::context& ctx
+	) -> std::optional<gse::id>;
+
+	auto find_proxy(
+		gse::scenario::context& ctx
+	) -> const gse::physics::transform_component*;
 
 	auto expect_bodies_sane(
 		gse::scenario::context& ctx
@@ -106,6 +124,366 @@ auto sandbox::scenarios::physics_grow(gse::scenario::context& ctx) -> gse::async
 
 auto sandbox::scenarios::grass_sleep_bench(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::grass_render(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr float flatten_ratio = 0.3f;
+	constexpr float recovered_ratio = 0.9f;
+	constexpr std::uint32_t min_under_samples = 50;
+	const auto recovery_window = gse::seconds(5.f);
+	const auto walk_timeout = gse::seconds(6.f);
+	const auto walk_depth = gse::meters(8.f);
+	const auto sample_interval = gse::seconds(0.5f);
+	const auto exit_margin = gse::meters(1.5f);
+	const auto inside_margin = gse::meters(0.5f);
+	const auto outside_margin = gse::meters(1.f);
+	const auto no_force = gse::newtons(0.f);
+	constexpr float max_weight_share = 0.1f;
+	constexpr std::uint32_t min_inside_samples = 4;
+	constexpr std::uint32_t min_outside_samples = 1;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto fields = ctx.owners<gse::physics::grass_field>();
+	if (!ctx.expect(fields.size() == 1)) {
+		co_return;
+	}
+	const auto field_owner = fields[0];
+	const auto* field = ctx.try_component<gse::physics::grass_field>(field_owner);
+	if (!ctx.expect(field != nullptr)) {
+		co_return;
+	}
+	const auto half_extent = gse::physics::grass::field_extent(*field) * 0.5f;
+	const auto contact_stiffness = field->contact_stiffness;
+
+	ctx.channels().push<prefetch_character_request>({});
+	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
+	ctx.channels().push<spawn_character_request>({});
+	co_await gse::scenario::wait_frames(ctx, 2);
+	const auto proxy_owner = find_proxy_owner(ctx);
+	if (!ctx.expect(proxy_owner.has_value())) {
+		co_return;
+	}
+	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
+
+	ctx.channels().push<gse::physics::grass::probe_request>({
+		.kind = gse::physics::grass::probe_kind::track_start,
+		.recovery_window = recovery_window,
+		.flatten_ratio = flatten_ratio,
+		.reaction_body = *proxy_owner,
+	});
+
+	std::uint32_t inside_samples = 0;
+	std::uint32_t inside_pushed = 0;
+	std::uint32_t outside_samples = 0;
+	std::uint32_t outside_pushed = 0;
+	auto peak_inside = no_force;
+	const auto sample_reaction = [&](const std::string_view when, const gse::physics::transform_component& walker, const gse::physics::grass::probe_state& sample) {
+		const auto pushing = gse::magnitude(sample.reaction);
+		const bool pushed = pushing > no_force;
+		const auto z = walker.position.z();
+		if (z < half_extent - inside_margin) {
+			++inside_samples;
+			inside_pushed += pushed ? 1u : 0u;
+			peak_inside = std::max(peak_inside, pushing);
+		}
+		else if (z > half_extent + outside_margin) {
+			++outside_samples;
+			outside_pushed += pushed ? 1u : 0u;
+		}
+		gse::log::println(gse::log::category::general, "grass_walk: {} z {} grass force on the character {:.3f}", when, z, sample.reaction);
+	};
+
+	co_await gse::scenario::wait(ctx, sample_interval);
+	if (const auto* walker = find_proxy(ctx); walker != nullptr) {
+		if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+			sample_reaction("before walking", *walker, *sample);
+		}
+	}
+
+	std::uint32_t max_awake_tiles = 0;
+	const auto walk_leg = [&](const gse::key key, const auto arrived) -> gse::async::task<> {
+		press_key(ctx, key);
+		for (gse::time walked = gse::seconds(0.f); walked < walk_timeout; walked += sample_interval) {
+			co_await gse::scenario::wait(ctx, sample_interval);
+			const auto* walker = find_proxy(ctx);
+			if (walker == nullptr) {
+				break;
+			}
+			if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+				max_awake_tiles = std::max(max_awake_tiles, sample->awake_tiles);
+				gse::log::println(gse::log::category::general, "grass_walk: z {} awake tiles {} slot overflow {}", walker->position.z(), sample->awake_tiles, sample->slot_overflow);
+				sample_reaction("walking", *walker, *sample);
+			}
+			if (arrived(walker->position.z())) {
+				break;
+			}
+		}
+		release_key(ctx, key);
+	};
+	co_await walk_leg(gse::key::w, [&](const auto z) {
+		return z < half_extent - walk_depth;
+	});
+	co_await walk_leg(gse::key::s, [&](const auto z) {
+		return z > half_extent + exit_margin;
+	});
+	co_await gse::scenario::wait(ctx, recovery_window + gse::seconds(0.5f));
+	bool recovered_pushed = true;
+	if (const auto* walker = find_proxy(ctx); walker != nullptr) {
+		if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+			sample_reaction("after recovery", *walker, *sample);
+			recovered_pushed = gse::magnitude(sample->reaction) > no_force;
+		}
+	}
+	ctx.channels().push<gse::physics::grass::probe_request>({
+		.kind = gse::physics::grass::probe_kind::track_stop,
+	});
+	co_await gse::scenario::wait_frames(ctx, 30);
+
+	const auto* probe = ctx.try_component<gse::physics::grass::probe_state>(field_owner);
+	const auto* proxy = find_proxy(ctx);
+	const auto* proxy_motion = ctx.try_component<gse::physics::motion_component>(*proxy_owner);
+	const auto* proxy_body = proxy_motion != nullptr ? std::get_if<gse::physics::dynamic_body>(&proxy_motion->body) : nullptr;
+	if (!ctx.expect(probe != nullptr && proxy != nullptr && proxy_body != nullptr)) {
+		co_return;
+	}
+	const auto proxy_weight = proxy_body->mass * gse::vbd::gravity_magnitude();
+
+	gse::log::println(
+		gse::log::category::general,
+		"grass_walk: {} under-body samples, max tip ratio under a body {:.3f}, {} blades touched, {} recovery checks, min tip ratio {:.3f}, max bodies in a grid cell {}, max awake tiles {}, slot overflow {}, character ended at z {}",
+		probe->under_samples,
+		probe->under_max_tip_ratio,
+		probe->blades_touched,
+		probe->recovery_checks,
+		probe->recovery_min_tip_ratio,
+		probe->max_cell_bodies,
+		max_awake_tiles,
+		probe->slot_overflow,
+		proxy->position.z()
+	);
+	gse::log::println(
+		gse::log::category::general,
+		"grass_walk: covered tip ratios <=0.3 {} <=0.6 {} <=0.9 {} >0.9 {}; tips inside a body {}, max penetration {} (penalty {}), max horizontal tip offset {}; tips above the limit still under the body {}, escaped beside it {}; planted {} samples max ratio {:.3f}, airborne {} samples max ratio {:.3f}",
+		probe->under_ratio_bins[0],
+		probe->under_ratio_bins[1],
+		probe->under_ratio_bins[2],
+		probe->under_ratio_bins[3],
+		probe->under_tips_inside,
+		probe->under_max_tip_penetration,
+		contact_stiffness * probe->under_max_tip_penetration,
+		probe->under_max_tip_offset,
+		probe->high_tips_under,
+		probe->high_tips_escaped,
+		probe->planted_samples,
+		probe->planted_max_tip_ratio,
+		probe->airborne_samples,
+		probe->airborne_max_tip_ratio
+	);
+	gse::log::println(
+		gse::log::category::general,
+		"grass_walk: recovery from last cover min {:.3f} over {} checks; from last contact min {:.3f} over {} checks; latest contact after cover {}; blades asleep inside their window {}",
+		probe->recovery_min_tip_ratio,
+		probe->recovery_checks,
+		probe->contact_recovery_min_tip_ratio,
+		probe->contact_recovery_checks,
+		probe->max_contact_after_cover,
+		probe->early_sleeps
+	);
+	gse::log::println(
+		gse::log::category::general,
+		"grass_walk: grass force on the character non-zero in {} of {} samples inside the field, in {} of {} samples outside it, after recovery {}; peak inside {} against a weight of {}",
+		inside_pushed,
+		inside_samples,
+		outside_pushed,
+		outside_samples,
+		recovered_pushed ? "non-zero" : "zero",
+		peak_inside,
+		proxy_weight
+	);
+
+	ctx.expect(inside_samples >= min_inside_samples);
+	ctx.expect(inside_pushed == inside_samples);
+	ctx.expect(peak_inside <= proxy_weight * max_weight_share);
+	ctx.expect(outside_samples >= min_outside_samples);
+	ctx.expect(outside_pushed == 0);
+	ctx.expect(!recovered_pushed);
+	ctx.expect(probe->slot_overflow == 0);
+	ctx.expect(probe->under_samples >= min_under_samples);
+	ctx.expect(probe->under_max_tip_ratio <= flatten_ratio);
+	ctx.expect(probe->blades_touched > 0);
+	ctx.expect(probe->recovery_checks >= probe->blades_touched);
+	ctx.expect(probe->recovery_min_tip_ratio >= recovered_ratio);
+	ctx.expect(probe->contact_recovery_checks >= probe->blades_touched);
+	ctx.expect(probe->contact_recovery_min_tip_ratio >= recovered_ratio);
+	ctx.expect(probe->max_cell_bodies <= gse::physics::grass::cell_capacity);
+	ctx.expect(proxy->position.z() > half_extent);
+}
+
+auto sandbox::scenarios::grass_rigid_render(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::grass_look(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 240;
+	constexpr std::uint64_t converge_frames = 240;
+	constexpr std::uint64_t flush_frames = 70;
+	const auto calm_drift = gse::millimeters(5.f);
+	const auto calm_speed = gse::meters_per_second(0.005f);
+
+	co_await gse::scenario::wait_settled(ctx);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	ctx.channels().push<gse::physics::grass::probe_request>({
+		.kind = gse::physics::grass::probe_kind::track_start,
+	});
+	co_await gse::scenario::wait_frames(ctx, converge_frames);
+	ctx.channels().push<gse::physics::grass::probe_request>({
+		.kind = gse::physics::grass::probe_kind::track_stop,
+	});
+	ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+	co_await gse::scenario::wait_frames(ctx, flush_frames);
+	ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+	co_await gse::scenario::wait_frames(ctx, flush_frames);
+
+	const auto fields = ctx.owners<gse::physics::grass_field>();
+	if (!ctx.expect(fields.size() == 1)) {
+		co_return;
+	}
+	const auto* probe = ctx.try_component<gse::physics::grass::probe_state>(fields[0]);
+	if (!ctx.expect(probe != nullptr)) {
+		co_return;
+	}
+
+	gse::log::println(
+		gse::log::category::general,
+		"grass_look: untouched blades over {} frames, max tip drift from rest {}, max tip speed {}",
+		converge_frames,
+		probe->calm_max_tip_drift,
+		probe->calm_max_tip_speed
+	);
+
+	ctx.expect(probe->calm_max_tip_drift <= calm_drift);
+	ctx.expect(probe->calm_max_tip_speed <= calm_speed);
+}
+
+auto sandbox::scenarios::grass_pan(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t hold_frames = 180;
+	constexpr std::uint64_t pan_frames = 120;
+	constexpr std::uint64_t flush_frames = 70;
+	const auto eye = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.4f), gse::meters(0.f));
+	const auto pitch = gse::degrees(-15.f);
+	const auto start = gse::degrees(0.f);
+	const auto sweep = gse::degrees(120.f);
+	const auto look = [&](const gse::angle yaw) -> gse::camera::target {
+		return {
+			.position = eye,
+			.orientation = gse::from_axis_angle(gse::axis_y, yaw) * gse::from_axis_angle(gse::axis_x, pitch),
+		};
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (std::uint64_t i = 0; i < hold_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = look(start),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		if (i == hold_frames - 1) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	for (std::uint64_t i = 0; i < pan_frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = look(start + sweep * (static_cast<float>(i) / static_cast<float>(pan_frames - 1))),
+			.priority = 100,
+			.blend_duration = {},
+		});
+		if (i == pan_frames / 2) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+
+	co_await gse::scenario::wait_frames(ctx, flush_frames);
+}
+
+auto sandbox::scenarios::grass_stride_look(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t walk_frames = 600;
+	constexpr std::uint64_t hold_frames = 90;
+	constexpr std::uint64_t flush_frames = 70;
+	const auto stride_depth = gse::meters(3.f);
+	const auto side_offset = gse::meters(2.5f);
+	const auto eye_height = gse::meters(0.6f);
+	const auto pitch = gse::degrees(-10.f);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto fields = ctx.owners<gse::physics::grass_field>();
+	if (!ctx.expect(fields.size() == 1)) {
+		co_return;
+	}
+	const auto* field = ctx.try_component<gse::physics::grass_field>(fields[0]);
+	if (!ctx.expect(field != nullptr)) {
+		co_return;
+	}
+	const auto half_extent = gse::physics::grass::field_extent(*field) * 0.5f;
+
+	ctx.channels().push<prefetch_character_request>({});
+	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
+	ctx.channels().push<spawn_character_request>({});
+	co_await gse::scenario::wait_frames(ctx, 2);
+	if (!ctx.expect(find_proxy(ctx) != nullptr)) {
+		co_return;
+	}
+	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
+
+	const auto look_from_side = [&](const gse::physics::transform_component& walker, const float side) {
+		ctx.channels().push<gse::camera::request>({
+			.target = {
+				.position = gse::vec3<gse::position>(walker.position.x() + side_offset * side, eye_height, walker.position.z()),
+				.orientation = gse::from_axis_angle(gse::axis_y, gse::degrees(90.f) * side) * gse::from_axis_angle(gse::axis_x, pitch),
+			},
+			.priority = 100,
+			.blend_duration = {},
+		});
+	};
+
+	press_key(ctx, gse::key::w);
+	for (std::uint64_t i = 0; i < walk_frames; ++i) {
+		const auto* walker = find_proxy(ctx);
+		if (walker == nullptr) {
+			break;
+		}
+		look_from_side(*walker, 1.f);
+		if (walker->position.z() < half_extent - stride_depth) {
+			ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+			break;
+		}
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+	release_key(ctx, gse::key::w);
+
+	for (const float side : { 1.f, -1.f }) {
+		for (std::uint64_t i = 0; i < hold_frames; ++i) {
+			if (const auto* walker = find_proxy(ctx)) {
+				look_from_side(*walker, side);
+			}
+			if (i == hold_frames - 1) {
+				ctx.channels().push<gse::renderer::capture::screenshot_request>({});
+			}
+			co_await gse::scenario::wait_frames(ctx, 1);
+		}
+	}
+
+	co_await gse::scenario::wait_frames(ctx, flush_frames);
+	ctx.expect(find_proxy(ctx) != nullptr);
 }
 
 auto sandbox::scenarios::render_stress(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -435,34 +813,49 @@ auto sandbox::scenarios::rollback_impulse_replay_gpu(gse::scenario::context& ctx
 	});
 }
 
-auto sandbox::scenarios::walk_pattern(gse::scenario::context& ctx) -> gse::async::task<> {
-	const auto press = [&ctx](const gse::key key) {
-		ctx.channels().push<gse::input::synthetic_input_request>({
-			.value = gse::input::key_pressed{ .key_code = key },
-		});
-	};
-	const auto release = [&ctx](const gse::key key) {
-		ctx.channels().push<gse::input::synthetic_input_request>({
-			.value = gse::input::key_released{ .key_code = key },
-		});
-	};
+auto sandbox::scenarios::press_key(gse::scenario::context& ctx, const gse::key key) -> void {
+	ctx.channels().push<gse::input::synthetic_input_request>({
+		.value = gse::input::key_pressed{ .key_code = key },
+	});
+}
 
+auto sandbox::scenarios::release_key(gse::scenario::context& ctx, const gse::key key) -> void {
+	ctx.channels().push<gse::input::synthetic_input_request>({
+		.value = gse::input::key_released{ .key_code = key },
+	});
+}
+
+auto sandbox::scenarios::find_proxy_owner(gse::scenario::context& ctx) -> std::optional<gse::id> {
+	for (const auto owner : ctx.owners<gse::physics::motor_component>()) {
+		if (owner.tag().ends_with(".Proxy")) {
+			return owner;
+		}
+	}
+	return std::nullopt;
+}
+
+auto sandbox::scenarios::find_proxy(gse::scenario::context& ctx) -> const gse::physics::transform_component* {
+	const auto owner = find_proxy_owner(ctx);
+	return owner ? ctx.try_component<gse::physics::transform_component>(*owner) : nullptr;
+}
+
+auto sandbox::scenarios::walk_pattern(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait(ctx, gse::seconds(6.f));
-	press(gse::key::w);
+	press_key(ctx, gse::key::w);
 	co_await gse::scenario::wait(ctx, gse::seconds(4.f));
-	release(gse::key::w);
-	press(gse::key::a);
+	release_key(ctx, gse::key::w);
+	press_key(ctx, gse::key::a);
 	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
-	release(gse::key::a);
-	press(gse::key::w);
-	press(gse::key::d);
+	release_key(ctx, gse::key::a);
+	press_key(ctx, gse::key::w);
+	press_key(ctx, gse::key::d);
 	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
-	release(gse::key::w);
-	release(gse::key::d);
+	release_key(ctx, gse::key::w);
+	release_key(ctx, gse::key::d);
 	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
-	press(gse::key::s);
+	press_key(ctx, gse::key::s);
 	co_await gse::scenario::wait(ctx, gse::seconds(3.f));
-	release(gse::key::s);
+	release_key(ctx, gse::key::s);
 }
 
 auto sandbox::scenarios::net_walk(gse::scenario::context& ctx) -> gse::async::task<> {

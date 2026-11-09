@@ -7,9 +7,9 @@ import gse.gpu;
 import gse.math;
 
 export namespace gse::shaders::bindless {
-	struct [[= sampler2d_array]] textures {};
-
-	struct [[= sampler_state]] textures_sampler {};
+	struct sampler {
+		sampler_state textures_sampler;
+	};
 
 	constexpr std::uint32_t invalid_index = std::numeric_limits<std::uint32_t>::max();
 }
@@ -130,31 +130,37 @@ export namespace gse::shaders::forward {
 }
 
 export namespace gse::shaders::meshlet {
-	struct [[= ssbo_readonly]] vertices_buffer {
-		using element = forward::vertex;
+	struct vertices {
+		ssbo_readonly<forward::vertex> vertices_buffer;
 	};
 
-	struct [[= ssbo_readonly]] meshlets_buffer {
-		using element = forward::meshlet_descriptor;
+	struct meshlets {
+		ssbo_readonly<forward::meshlet_descriptor> meshlets_buffer;
+		ssbo_readonly<std::uint32_t> meshlet_vertex_indices;
+		byte_address_buffer meshlet_triangles;
+		ssbo_readonly<forward::meshlet_bounds> meshlet_bounds_buffer;
 	};
 
-	struct [[= ssbo_readonly]] meshlet_vertex_indices {
-		using element = std::uint32_t;
-	};
-
-	struct [[= byte_address_buffer]] meshlet_triangles {};
-
-	struct [[= ssbo_readonly]] meshlet_bounds_buffer {
-		using element = forward::meshlet_bounds;
-	};
-
-	struct [[= ssbo_readonly]] instance_data_buffer {
-		using element = common::instance_data;
+	struct instances {
+		ssbo_readonly<common::instance_data> instance_data_buffer;
 	};
 }
 
 export namespace gse::shaders::standard_3d {
-	struct [[= uniform_block]] camera_ubo {
-		using element = common::camera_data;
+	struct camera {
+		uniform_block<common::camera_data> camera_ubo;
+	};
+
+	struct sky_view {
+		texture2d<vec4f> sky_view_in;
+		sampler_state sky_view_sampler;
+	};
+
+	struct scene_lights {
+		ssbo_readonly<forward::light> lights;
+	};
+
+	struct materials {
+		ssbo_readonly<forward::material_data> material_palette;
 	};
 }

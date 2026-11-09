@@ -4,6 +4,7 @@ import std;
 
 import :skin_renderer;
 import :animation_components;
+import :deformed_target;
 import :mesh;
 import :shared_shaders;
 import :skinned_model;
@@ -26,21 +27,17 @@ namespace gse::renderer::skin {
 		std::uint32_t bone_count;
 	};
 
-	struct [[= shaders::ssbo_readonly]] bone_data {
-		using element = rig_bone_binding;
+	struct palette_bindings {
+		shaders::ssbo_readonly<rig_bone_binding> bone_data;
+		shaders::ssbo_readwrite<skin_matrix> palette_out;
 	};
 
-	struct [[= shaders::ssbo_readwrite]] palette_out {
-		using element = skin_matrix;
-	};
-
-	using palette_binding_types = type_pack<bone_data, palette_out>;
 	using palette_shader_types = type_pack<rig_bone_binding, skin_matrix>;
 
 	using palette_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/skin_palette">,
 		gpu::types<palette_shader_types>,
-		gpu::bindings<palette_binding_types>,
+		gpu::bindings<palette_bindings>,
 		gpu::threads<64>,
 		gpu::push_constant<palette_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -53,29 +50,19 @@ namespace gse::renderer::skin {
 		std::uint32_t bone_count;
 	};
 
-	struct [[= shaders::ssbo_readonly]] palette_data {
-		using element = skin_matrix;
+	struct deform_bindings {
+		shaders::ssbo_readonly<skin_matrix> palette_data;
+		shaders::ssbo_readonly<shaders::forward::vertex> bind_vertices;
+		shaders::ssbo_readonly<skin_influence> influence_data;
+		shaders::ssbo_readwrite<shaders::forward::vertex> deformed_vertices;
 	};
 
-	struct [[= shaders::ssbo_readonly]] bind_vertices {
-		using element = shaders::forward::vertex;
-	};
-
-	struct [[= shaders::ssbo_readonly]] influence_data {
-		using element = skin_influence;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] deformed_vertices {
-		using element = shaders::forward::vertex;
-	};
-
-	using deform_binding_types = type_pack<palette_data, bind_vertices, influence_data, deformed_vertices>;
 	using deform_shader_types = type_pack<shaders::forward::vertex, skin_matrix, skin_influence>;
 
 	using deform_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/skin_deform">,
 		gpu::types<deform_shader_types>,
-		gpu::bindings<deform_binding_types>,
+		gpu::bindings<deform_bindings>,
 		gpu::threads<64>,
 		gpu::push_constant<deform_push_constants>,
 		gpu::system_values<gpu::dispatch_thread_id>
@@ -93,6 +80,10 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 	d.instances.clear();
 	d.bone_bindings.clear();
 	d.bounds.clear();
+
+	if (!d.initialized) {
+		return {};
+	}
 
 	physics::interpolation_state interpolation;
 	if (const auto& published = interp_in.of<physics::interpolation_state>(); !published.empty()) {
@@ -113,6 +104,9 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 		}
 
 		const auto bones = model->bones();
+		if (bones.empty()) {
+			continue;
+		}
 		const auto bone_offset = static_cast<std::uint32_t>(d.bone_bindings.size());
 
 		auto bounds = aabb{
@@ -167,7 +161,7 @@ auto gse::renderer::skin::collect(context& ctx, data& d, const channel_read<phys
 			});
 
 			if (const auto target = d.targets.find(std::pair(owners[i], m)); target != d.targets.end()) {
-				target->second.write_index ^= 1u;
+				target->second.begin_write();
 			}
 		}
 	}
@@ -181,19 +175,7 @@ auto gse::renderer::skin::deformed_slots_for(const deformed_target_map& targets,
 		return {};
 	}
 
-	const auto& target = it->second;
-	const auto previous_index = target.write_index ^ 1u;
-
-	if (!target.vertices[target.write_index].valid()) {
-		return {};
-	}
-
-	return {
-		.current = target.vertices[target.write_index].slot(),
-		.previous = target.writes > 0 && target.vertices[previous_index].valid()
-			? target.vertices[previous_index].slot()
-			: gpu::bindless_slot{},
-	};
+	return it->second.slots();
 }
 
 auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
@@ -266,23 +248,7 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 		const auto& influences = instance.model->influence_buffers()[instance.mesh_index];
 
 		auto& target = d.targets[std::pair(instance.owner, instance.mesh_index)];
-		const auto bytes = instance.vertex_count * sizeof(vertex);
-		if (target.capacity < bytes) {
-			for (auto& buffer : target.vertices) {
-				buffer = gpu_s.device->create_buffer(
-					{
-						.size = bytes,
-						.stride = sizeof(vertex),
-						.usage = gpu::buffer_flag::storage,
-						.writable = true,
-					},
-					"skin.deformed"
-				);
-			}
-			target.capacity = bytes;
-			target.write_index = 0;
-			target.writes = 0;
-		}
+		target.reserve(*gpu_s.device, instance.vertex_count * sizeof(vertex), sizeof(vertex), "skin.deformed");
 
 		rec.dispatch<deform_entry>(
 			{
@@ -295,11 +261,11 @@ auto gse::renderer::skin::frame(context& ctx, shared_view<gpu::context::data> gp
 				.palette_data = d.palette_buffers[frame_index].slot(),
 				.bind_vertices = mesh.meshlet_gpu().vertex_storage.slot(),
 				.influence_data = influences.slot(),
-				.deformed_vertices = target.vertices[target.write_index].slot(),
+				.deformed_vertices = target.write_buffer().slot(),
 			},
 			vec3u{ (instance.vertex_count + 63) / 64, 1u, 1u }
 		);
 
-		++target.writes;
+		target.finish_write();
 	}
 }

@@ -55,6 +55,15 @@ export namespace gse::gpu {
 			std::uint32_t value
 		) -> void;
 
+		auto record_checkpoint(
+			command_buffer_handle cmd,
+			std::uint64_t marker
+		) -> void;
+
+		[[nodiscard]] auto queue_checkpoints(
+			queue_type queue_type
+		) const -> std::vector<queue_checkpoint>;
+
 		auto cmd_reset(
 			command_buffer_handle cmd
 		) -> void;
@@ -337,7 +346,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]] auto create_tlas(
@@ -346,7 +356,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> device_size;
@@ -500,6 +511,13 @@ auto gse::gpu::dx12_device_backend::query_fault_info(device_fault_counts& counts
 
 auto gse::gpu::dx12_device_backend::record_buffer_fill_u32(const command_buffer_handle cmd, const gpu::handle<buffer> buf, const device_size offset, const std::uint32_t value) -> void {
 	device->record_buffer_fill_u32(cmd, buf, offset, value);
+}
+
+auto gse::gpu::dx12_device_backend::record_checkpoint(command_buffer_handle, std::uint64_t) -> void {
+}
+
+auto gse::gpu::dx12_device_backend::queue_checkpoints(queue_type) const -> std::vector<queue_checkpoint> {
+	return {};
 }
 
 auto gse::gpu::dx12_device_backend::cmd_reset(const command_buffer_handle cmd) -> void {
@@ -745,16 +763,16 @@ auto gse::gpu::dx12_device_backend::swapchain_past_presentation_timing(swap_chai
 	return swapchain.past_presentation_timing();
 }
 
-auto gse::gpu::dx12_device_backend::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
-	return device->create_blas(geometry, prim_count);
+auto gse::gpu::dx12_device_backend::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) -> blas {
+	return device->create_blas(geometry, prim_count, flags);
 }
 
 auto gse::gpu::dx12_device_backend::create_tlas(const std::uint32_t max_instances) -> tlas {
 	return device->create_tlas(max_instances);
 }
 
-auto gse::gpu::dx12_device_backend::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
-	return device->query_blas_build_sizes(geometry, prim_count);
+auto gse::gpu::dx12_device_backend::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) const -> acceleration_structure_build_sizes {
+	return device->query_blas_build_sizes(geometry, prim_count, flags);
 }
 
 auto gse::gpu::dx12_device_backend::acceleration_structure_scratch_alignment() const -> device_size {

@@ -28,27 +28,6 @@ import gse.gpu_backend;
 import gse.meta;
 
 namespace gse::renderer::oit {
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
-	};
-
-	struct [[= shaders::ssbo_readonly]] material_palette {
-		using element = shaders::forward::material_data;
-	};
-
-	using accum_binding_types = type_pack<
-		camera_ubo,
-		material_palette,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::meshlets_buffer,
-		shaders::meshlet::meshlet_vertex_indices,
-		shaders::meshlet::meshlet_triangles,
-		shaders::meshlet::meshlet_bounds_buffer,
-		shaders::meshlet::instance_data_buffer,
-		shaders::bindless::textures,
-		shaders::bindless::textures_sampler
-	>;
-
 	struct [[= shaders::shader_struct]] oit_push_constants {
 		std::uint32_t meshlet_offset;
 		std::uint32_t meshlet_count;
@@ -62,7 +41,8 @@ namespace gse::renderer::oit {
 	using accum_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_oit">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
-		gpu::bindings<accum_binding_types>,
+		gpu::bindings<shaders::standard_3d::camera, shaders::standard_3d::materials, shaders::meshlet::vertices, shaders::meshlet::meshlets, shaders::meshlet::instances, shaders::bindless::sampler>,
+		gpu::bindless_textures,
 		gpu::helpers<"Standard3D/meshlet_common">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
@@ -74,17 +54,11 @@ namespace gse::renderer::oit {
 		gpu::depth<true, false, gpu::compare_op::greater_or_equal>
 	>;
 
-	struct [[= shaders::texture2d]] oit_accum_in {
-		using element = vec4f;
+	struct composite_bindings {
+		shaders::texture2d<vec4f> oit_accum_in;
+		shaders::texture2d<vec4f> oit_reveal_in;
+		shaders::sampler_state oit_sampler;
 	};
-
-	struct [[= shaders::texture2d]] oit_reveal_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] oit_sampler {};
-
-	using composite_binding_types = type_pack<oit_accum_in, oit_reveal_in, oit_sampler>;
 
 	struct [[= shaders::shader_struct]] composite_push_constants {
 		vec2f screen_uv_scale;
@@ -93,7 +67,7 @@ namespace gse::renderer::oit {
 
 	using composite_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/OitComposite">,
-		gpu::bindings<composite_binding_types>,
+		gpu::bindings<composite_bindings>,
 		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,

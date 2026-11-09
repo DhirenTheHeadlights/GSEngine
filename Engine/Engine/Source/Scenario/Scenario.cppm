@@ -12,6 +12,12 @@ import gse.concurrency;
 import gse.test;
 
 export namespace gse::scenario {
+	enum class pacing : std::uint8_t {
+		lockstep,
+		unpaced,
+		wall_clock
+	};
+
 	struct info {
 		char name[64];
 		char scene[64] = "";
@@ -19,7 +25,7 @@ export namespace gse::scenario {
 		bool gpu_solver = false;
 		bool backend_variants = false;
 		bool video_encode = false;
-		bool real_time = false;
+		scenario::pacing pacing = scenario::pacing::lockstep;
 		int warmup_frames = 120;
 		int frames = 600;
 	};

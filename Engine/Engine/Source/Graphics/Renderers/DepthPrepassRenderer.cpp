@@ -6,6 +6,7 @@ import :depth_prepass_renderer;
 import :geometry_collector;
 import :cull_compute_renderer;
 import :physics_transform_renderer;
+import :grass_renderer;
 import :skin_renderer;
 import :camera_system;
 import :render_targets;
@@ -24,15 +25,9 @@ import gse.ecs;
 import gse.math;
 
 namespace gse::renderer::depth_prepass::meshlet {
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
+	struct prev_vertices {
+		shaders::ssbo_readonly<shaders::forward::vertex> prev_vertices_buffer;
 	};
-
-	struct [[= shaders::ssbo_readonly]] prev_vertices_buffer {
-		using element = shaders::forward::vertex;
-	};
-
-	using shader_binding_types = type_pack<camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::meshlets_buffer, shaders::meshlet::meshlet_vertex_indices, shaders::meshlet::meshlet_triangles, shaders::meshlet::meshlet_bounds_buffer, shaders::meshlet::instance_data_buffer, prev_vertices_buffer>;
 
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t meshlet_offset;
@@ -45,8 +40,8 @@ namespace gse::renderer::depth_prepass::meshlet {
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_depth_only">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
-		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity">,
+		gpu::bindings<shaders::standard_3d::camera, shaders::meshlet::vertices, shaders::meshlet::meshlets, shaders::meshlet::instances, prev_vertices>,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity", "Standard3D/depth_mesh_output">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -57,8 +52,6 @@ namespace gse::renderer::depth_prepass::meshlet {
 }
 
 namespace gse::renderer::depth_prepass::vertex_pulled {
-	using shader_binding_types = type_pack<meshlet::camera_ubo, shaders::meshlet::vertices_buffer, shaders::meshlet::instance_data_buffer, meshlet::prev_vertices_buffer>;
-
 	struct [[= shaders::shader_struct]] push_constants {
 		std::uint32_t first_instance;
 		std::uint32_t use_prev_vertices;
@@ -67,11 +60,30 @@ namespace gse::renderer::depth_prepass::vertex_pulled {
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/vertex_depth_only">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types>,
-		gpu::bindings<shader_binding_types>,
-		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity">,
+		gpu::bindings<shaders::standard_3d::camera, shaders::meshlet::vertices, shaders::meshlet::instances, meshlet::prev_vertices>,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/depth_velocity", "Standard3D/depth_mesh_output">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
 		gpu::push_constant<push_constants>,
+		gpu::depth<true, true, gpu::compare_op::greater>,
+		gpu::color_targets<gpu::color_format::hdr>
+	>;
+}
+
+namespace gse::renderer::depth_prepass::grass_draw {
+	struct [[= shaders::shader_struct]] push_constants {
+		std::uint32_t view;
+	};
+
+	using entry = gpu::graphics_entry<
+		gpu::body_path<"Grass/grass_depth">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, grass::shader_types>,
+		gpu::bindings<shaders::standard_3d::camera, shaders::meshlet::instances, grass::draw_bindings>,
+		gpu::helpers<"Standard3D/depth_velocity", "Grass/grass_shape", "Grass/grass_geometry">,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
 		gpu::depth<true, true, gpu::compare_op::greater>,
 		gpu::color_targets<gpu::color_format::hdr>
 	>;
@@ -82,6 +94,7 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 	d.pipeline = d.vertex_pulled
 		? gpu::build_graphics_program(*gpu_s.device, vertex_pulled::entry::pod)
 		: gpu::build_graphics_program(*gpu_s.device, meshlet::entry::pod);
+	d.grass_pipeline = gpu::build_graphics_program(*gpu_s.device, grass_draw::entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 
@@ -99,7 +112,7 @@ auto gse::renderer::depth_prepass::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<geometry_collector::data> gc_r, shared_view<camera::data> cam_state, const shared_view<grass::data> grass_r) -> async::task<> {
 	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		co_return;
@@ -138,14 +151,10 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 			)
 		)
 		.depth(gpu::clear_depth(gpu::depth_clear{ 0.0f }))
-		.after<^^cull_compute::frame, ^^physics_transform::frame, ^^skin::deform_pass>();
+		.after<^^cull_compute::frame, ^^physics_transform::frame, ^^skin::deform_pass, ^^grass::cull_pass>();
 
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
-
-	if (data.normal_batches.empty()) {
-		co_return;
-	}
 
 	const auto camera_slot = d.camera_ubo_buffers[frame_index].slot();
 	const auto instance_slot = gc_r.instance_buffer[frame_index].slot();
@@ -214,5 +223,30 @@ auto gse::renderer::depth_prepass::frame(context& ctx, shared_view<gpu::context:
 			1,
 			sizeof(gpu::draw_mesh_tasks_indirect_command)
 		);
+	}
+
+	if (std::ranges::none_of(grass_r.fields | std::views::values, &grass::field_render::culled)) {
+		co_return;
+	}
+
+	rec.bind(d.grass_pipeline);
+	for (const auto& field : grass_r.fields | std::views::values) {
+		if (!field.culled) {
+			continue;
+		}
+		rec.push_bindings<grass_draw::entry>(
+			{
+				.view = grass::views.grass_camera_view,
+			},
+			{
+				.camera_ubo = camera_slot,
+				.instance_data_buffer = field.instance[frame_index].slot(),
+				.grass_params_in = field.params[frame_index],
+				.grass_pool = field.pool,
+				.grass_tiles = field.tiles,
+				.grass_visible = field.visible.slot(),
+			}
+		);
+		grass::record_draw(rec, grass_r.indices, field, grass::views.grass_camera_view);
 	}
 }

@@ -16,6 +16,8 @@ export namespace sandbox {
 
 	struct spawn_character_request {};
 
+	struct prefetch_character_request {};
+
 	struct spawn_pyramid_request {};
 
 	struct strike_pyramid_request {};
@@ -88,7 +90,7 @@ export namespace sandbox::dev_spawn {
 	auto run(
 		gse::context& ctx,
 		data& state,
-		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
+		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
 		gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 		gse::channel_write<gse::physics::impulse_request> impulse_out,
 		gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
@@ -98,7 +100,7 @@ export namespace sandbox::dev_spawn {
 	) -> gse::async::task<>;
 }
 
-auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
+auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = world_d.active_scene_ptr;
 	const gse::scene::mutation_scope _(ctx);
@@ -165,6 +167,10 @@ auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_
 	if (scene != nullptr && (key_joints || req_joints)) {
 		spawn_joint_test(*scene);
 	}
+	if (!spawn_in.of<prefetch_character_request>().empty()) {
+		character_model(assets_d);
+		character_clips(assets_d);
+	}
 	if (key_character || req_character) {
 		state.pending_characters = state.characters.count;
 	}
@@ -180,7 +186,7 @@ auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_
 				gse::generate_id(std::format("Character {}", i)),
 				rig,
 				clips,
-				gse::vec3<gse::position>(gse::meters(static_cast<float>(i) * character_spacing, 0.f, 0.f))
+				gse::vec3<gse::position>(state.characters.origin_x + gse::meters(static_cast<float>(i) * character_spacing), gse::meters(0.f), state.characters.origin_z)
 			);
 			if (!spawned.character.exists()) {
 				break;

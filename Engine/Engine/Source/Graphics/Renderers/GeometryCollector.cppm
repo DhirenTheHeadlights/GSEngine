@@ -100,9 +100,9 @@ export namespace gse::renderer {
 	}
 
 	struct normal_batch_key {
-		resource::handle<model> model;
+		id model;
 		resource::handle<skinned_model> skinned;
-		std::shared_ptr<const gse::model> model_snapshot;
+		const gse::model* model_snapshot = nullptr;
 		std::shared_ptr<const skinned_model> skinned_snapshot;
 		id skinned_owner;
 		std::size_t mesh_index;
@@ -110,7 +110,7 @@ export namespace gse::renderer {
 		auto operator==(
 			const normal_batch_key& other
 		) const -> bool {
-			return model.id() == other.model.id()
+			return model == other.model
 				&& skinned.id() == other.skinned.id()
 				&& model_snapshot == other.model_snapshot
 				&& skinned_snapshot == other.skinned_snapshot
@@ -137,10 +137,11 @@ export namespace gse::renderer {
 }
 
 export namespace gse::renderer::geometry_collector {
-	struct physics_mapping_entry {
+	struct [[= shaders::shader_struct]] physics_mapping {
 		std::uint32_t body_index;
 		std::uint32_t instance_index;
-		vec3<length> center_of_mass;
+		vec3<length> pivot;
+		vec3<length> scale;
 	};
 
 	struct owned_render_queue_entry {
@@ -149,8 +150,9 @@ export namespace gse::renderer::geometry_collector {
 		render_queue_entry entry;
 		id owner;
 		std::uint32_t body_index = invalid_body_index;
+		vec3<length> scale;
 		resource::handle<skinned_model> skinned;
-		std::shared_ptr<const model> model_snapshot;
+		const model* model_snapshot = nullptr;
 		std::shared_ptr<const skinned_model> skinned_snapshot;
 		aabb skinned_bounds;
 	};
@@ -158,15 +160,14 @@ export namespace gse::renderer::geometry_collector {
 	struct render_data {
 		static constexpr std::size_t max_batches = 256;
 
-		std::vector<owned_render_queue_entry> render_queue;
-		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
+		std::vector<std::shared_ptr<const model>> model_pins;
 
-		std::vector<owned_render_queue_entry> transparent_queue;
+		std::inplace_vector<normal_instance_batch, max_batches> normal_batches;
 		std::inplace_vector<normal_instance_batch, max_batches> transparent_batches;
 
 		std::vector<shaders::common::instance_data> instance_staging;
 
-		std::vector<physics_mapping_entry> physics_mappings;
+		std::vector<physics_mapping> physics_mappings;
 		std::uint32_t physics_mapping_count = 0;
 
 		std::flat_map<const material*, std::uint32_t> material_palette_map;
@@ -175,16 +176,58 @@ export namespace gse::renderer::geometry_collector {
 		projection_matrix proj;
 	};
 
-	auto filter_render_queue(
-		const render_data& data,
-		std::span<const id> exclude_ids
-	) -> std::vector<render_queue_entry>;
+	struct model_matrix_history {
+		std::vector<id> owners;
+		std::vector<std::size_t> offsets;
+		std::vector<std::optional<spatial_matrix>> matrices;
+	};
+
+	struct queue_group_key {
+		id model;
+		id skinned;
+		id skinned_owner;
+		std::size_t mesh_index;
+		const gse::model* model_snapshot;
+		const skinned_model* skinned_snapshot;
+
+		auto operator<=>(
+			const queue_group_key& other
+		) const = default;
+	};
+
+	struct collect_group {
+		std::uint32_t first_index;
+		std::uint32_t count = 0;
+		std::uint32_t gpu_count = 0;
+		vec3<length> world_aabb_min;
+		vec3<length> world_aabb_max;
+		std::uint32_t material_index = 0;
+		std::uint32_t instance_cursor = 0;
+		std::uint32_t mapping_cursor = 0;
+	};
+
+	struct collect_list {
+		std::vector<owned_render_queue_entry> entries;
+		std::flat_map<queue_group_key, collect_group> groups;
+	};
+
+	struct collect_chunk {
+		collect_list opaque;
+		collect_list transparent;
+		std::flat_map<id, std::shared_ptr<const model>> resolved;
+	};
+
+	struct queue_locator {
+		std::uint32_t chunk;
+		std::uint32_t index;
+	};
 
 	struct [[= system_state<"GeometryCollector">{}]] data {
 		[[= shared]] per_frame_resource<gpu::buffer> instance_buffer;
 
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_materials = 1024;
+		static constexpr std::uint32_t grass_material_index = static_cast<std::uint32_t>(max_materials - 1);
 
 		std::size_t instance_capacity = max_instances;
 
@@ -193,7 +236,10 @@ export namespace gse::renderer::geometry_collector {
 		[[= shared]] per_frame_resource<gpu::buffer> material_palette_buffers;
 
 		linear_vector<std::byte> material_staging;
-		std::unordered_map<id, std::vector<std::optional<spatial_matrix>>> prev_model_matrices;
+		model_matrix_history previous_matrices;
+		model_matrix_history current_matrices;
+		std::vector<collect_chunk> collect_chunks;
+		std::flat_map<queue_group_key, queue_locator> batch_groups;
 	};
 
 	[[= system_init{}]]

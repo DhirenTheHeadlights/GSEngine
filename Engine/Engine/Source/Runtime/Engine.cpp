@@ -472,7 +472,9 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	if (device_capabilities && !device_capabilities->shader_int64) {
 		disabled.insert(id_of<renderer::physics_transform::data>());
 		disabled.insert(id_of<renderer::physics_debug::data>());
-		log::println(log::category::render, "no 64-bit shader integers on the {} device: physics_transform and physics_debug renderers are disabled", gpu::active_backend);
+		disabled.insert(id_of<physics::grass::data>());
+		disabled.insert(id_of<physics::grass::probe::data>());
+		log::println(log::category::render, "no 64-bit shader integers on the {} device: physics_transform and physics_debug renderers and the grass solver and probe are disabled", gpu::active_backend);
 	}
 	m_scheduler.resolve_activation(disabled);
 
@@ -703,39 +705,34 @@ auto gse::engine::render() -> void {
 		}
 	}
 
-	bool attached_slot_starved = false;
-
 	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph) {
-		if (m_config.bench.enabled && !m_config.bench.real_time && m_scheduler.all_settled()) {
+		if (m_config.bench.enabled && m_config.bench.pacing == scenario::pacing::lockstep && m_scheduler.all_settled()) {
 			const clock wait_timer;
-			attached_slot_starved = !gpu_state->render_graph->wait_output_ready(seconds(2.f));
+			(void)gpu_state->render_graph->wait_output_ready(seconds(2.f));
 			m_attached_wait += wait_timer.elapsed();
 		}
-		else {
-			attached_slot_starved = !gpu_state->render_graph->output_ready();
-		}
-		if (attached_slot_starved) {
-			++m_attached_frames_skipped;
-		}
-		else {
+		if (gpu_state->render_graph->claim_output()) {
 			++m_attached_frames_presented;
+		}
+		else {
+			++m_attached_frames_withheld;
 		}
 	}
 
-	if (m_attached_report.tick() && m_attached_frames_presented + m_attached_frames_skipped > 0) {
+	if (m_attached_report.tick() && m_attached_frames_presented + m_attached_frames_withheld > 0) {
 		log::println(
 			log::category::runtime,
-			"attached surface: {} frames handed to the editor, {} skipped waiting on a free slot, {:.1f:ms} blocked on the editor in the last window",
+			"attached surface: {} frames handed to the editor, {} rendered but withheld because no slot was free, {:.1f:ms} blocked on the editor in the last window",
 			m_attached_frames_presented,
-			m_attached_frames_skipped,
+			m_attached_frames_withheld,
 			m_attached_wait
 		);
 		m_attached_frames_presented = 0;
-		m_attached_frames_skipped = 0;
+		m_attached_frames_withheld = 0;
 		m_attached_wait = {};
 	}
 
-	if (gpu_state && !attached_slot_starved) {
+	if (gpu_state) {
 		auto* window_state = m_scheduler.try_state_of<window::data>();
 		std::expected<gpu::frame_token, gpu::frame_status> result;
 		{

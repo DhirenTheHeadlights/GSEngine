@@ -50,6 +50,7 @@ auto gse::physics::gpu_diagnostics::run(data& d, const shared_view<physics::data
 		.broad_nodes_walked = std::max(diag.broad_nodes_walked, d.peak.broad_nodes_walked),
 		.broad_aabb_tests = std::max(diag.broad_aabb_tests, d.peak.broad_aabb_tests),
 		.broad_pairs = std::max(diag.broad_pairs, d.peak.broad_pairs),
+		.broad_walk_overruns = std::max(diag.broad_walk_overruns, d.peak.broad_walk_overruns),
 		.joint_lambda_max = std::max(diag.joint_lambda_max, d.peak.joint_lambda_max),
 		.joint_penalty_max = std::max(diag.joint_penalty_max, d.peak.joint_penalty_max),
 		.joint_c_max = std::max(diag.joint_c_max, d.peak.joint_c_max),
@@ -63,7 +64,7 @@ auto gse::physics::gpu_diagnostics::run(data& d, const shared_view<physics::data
 	d.peak = peak;
 	log::println(
 		log::category::physics,
-		"vbd gpu peak: contacts {}/{} dropped {} dup {} | colors {}/{} fallback {} conflicts {} total {} over {} ticks | stale {} of {} first {} | sweep bails {} | broad nodes {} tests {} pairs {} | joint lambda {:.3f} penalty {:.3f} c {:.6f} c0 {:.6f}",
+		"vbd gpu peak: contacts {}/{} dropped {} dup {} | colors {}/{} fallback {} conflicts {} total {} over {} ticks | stale {} of {} first {} | sweep bails {} | broad nodes {} tests {} pairs {} overruns {} | joint lambda {:.3f} penalty {:.3f} c {:.6f} c0 {:.6f}",
 		peak.attempted_contacts,
 		phys.gpu_solver.capacities().max_contacts,
 		peak.attempted_contacts > phys.gpu_solver.capacities().max_contacts ? peak.attempted_contacts - phys.gpu_solver.capacities().max_contacts : 0u,
@@ -81,6 +82,7 @@ auto gse::physics::gpu_diagnostics::run(data& d, const shared_view<physics::data
 		peak.broad_nodes_walked,
 		peak.broad_aabb_tests,
 		peak.broad_pairs,
+		peak.broad_walk_overruns,
 		peak.joint_lambda_max,
 		peak.joint_penalty_max,
 		peak.joint_c_max,

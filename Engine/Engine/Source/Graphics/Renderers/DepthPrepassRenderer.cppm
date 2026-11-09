@@ -8,10 +8,12 @@ import gse.gpu_record;
 
 import :camera_system;
 import :geometry_collector;
+import :grass_renderer;
 
 export namespace gse::renderer::depth_prepass {
 	struct [[= system_state<"DepthPrepass">{}]] data {
 		gpu::shader_program pipeline;
+		gpu::shader_program grass_pipeline;
 		bool vertex_pulled = false;
 
 		per_frame_resource<gpu::buffer> camera_ubo_buffers;
@@ -33,6 +35,7 @@ export namespace gse::renderer::depth_prepass {
 		channel_write<gpu::render_pass_request> pass_out,
 		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<geometry_collector::data> gc_r,
-		shared_view<camera::data> cam_state
+		shared_view<camera::data> cam_state,
+		shared_view<grass::data> grass_r
 	) -> async::task<>;
 }

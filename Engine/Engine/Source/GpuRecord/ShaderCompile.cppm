@@ -28,6 +28,7 @@ namespace gse::gpu {
 		std::vector<std::string> helper_paths;
 		std::vector<std::string> call_names;
 		std::uint32_t push_constant_size = 0;
+		bool bindless_textures = false;
 		std::string (
 			*emit_push_constant_struct
 		)() = nullptr;

@@ -2,7 +2,6 @@ module gse.ide.agent:system_impl;
 
 import std;
 import gse;
-import gse.win32;
 
 import gse.ide.build;
 import gse.ide.config;
@@ -135,11 +134,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		if (s.fork.process) {
 			pump_inquiry(*s.fork.process);
 		}
-		if (s.running) {
+		if (s.link) {
 			pump_session(s);
-		}
-		else if (win32::valid_handle(s.process)) {
-			close_session(s);
 		}
 	}
 

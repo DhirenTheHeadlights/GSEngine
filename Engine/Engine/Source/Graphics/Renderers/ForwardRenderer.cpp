@@ -28,154 +28,58 @@ import :lighting_source;
 import :mesh;
 import :point_light;
 import :render_targets;
+import :grass_renderer;
 import :skin_renderer;
 import :spot_light;
 import :texture;
 import :settings;
 
 namespace gse::renderer::forward {
-	struct [[= shaders::uniform_block]] camera_ubo {
-		using element = shaders::common::camera_data;
+	struct light_bindings {
+		shaders::ssbo_readonly<shaders::forward::light> lights_ssbo;
 	};
 
-	struct [[= shaders::ssbo_readonly]] lights_ssbo {
-		using element = shaders::forward::light;
+	struct ray_traced_bindings {
+		shaders::tlas scene_tlas;
 	};
 
-	struct [[= shaders::tlas]] scene_tlas {};
-
-	struct [[= shaders::ssbo_readwrite]] light_index_list {
-		using element = std::uint32_t;
+	struct raster_bindings {
+		shaders::texture2d<vec4f> shadow_cascade_atlas;
+		shaders::texture2d<vec4f> shadow_local_atlas;
+		shaders::ssbo_readonly<shaders::raster_shadow::shadow_tile> shadow_tiles;
+		shaders::ssbo_readonly<vec2u> light_shadow_tiles;
+		shaders::texture2d<vec4f> ambient_occlusion_in;
+		shaders::texture2d<vec4f> reflection_in;
 	};
 
-	struct [[= shaders::ssbo_readwrite]] tile_light_table {
-		using element = vec2u;
+	struct scene_bindings {
+		shaders::ssbo_readwrite<std::uint32_t> light_index_list;
+		shaders::ssbo_readwrite<vec2u> tile_light_table;
+		shaders::texture3d<vec4f> aerial_perspective_in;
+		shaders::texture2d<vec4f> gi_atlas;
+		shaders::sampler_state ap_sampler;
+		shaders::sampler_state gi_atlas_sampler;
+		shaders::texture2d<vec4f> cloud_shadow_in;
+		shaders::sampler_state cloud_shadow_sampler;
 	};
 
-	struct [[= shaders::ssbo_readonly]] material_palette {
-		using element = shaders::forward::material_data;
+	struct material_texture_bindings {
+		shaders::texture2d<vec4f> material_diffuse_in;
+		shaders::sampler_state material_diffuse_sampler;
 	};
 
-	struct [[= shaders::texture3d]] aerial_perspective_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] gi_atlas {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] ap_sampler {};
-
-	struct [[= shaders::sampler_state]] gi_atlas_sampler {};
-
-	struct [[= shaders::texture2d]] cloud_shadow_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] cloud_shadow_sampler {};
-
-	struct [[= shaders::texture2d]] sky_view_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] sky_view_sampler {};
-
-	struct [[= shaders::texture2d]] shadow_cascade_atlas {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] shadow_local_atlas {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::ssbo_readonly]] shadow_tiles {
-		using element = shaders::raster_shadow::shadow_tile;
-	};
-
-	struct [[= shaders::ssbo_readonly]] light_shadow_tiles {
-		using element = vec2u;
-	};
-
-	struct [[= shaders::texture2d]] ambient_occlusion_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] reflection_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] material_diffuse_in {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] material_diffuse_sampler {};
-
-	using ray_traced_bindings = type_pack<
-		scene_tlas
+	template <typename TechniqueBindings, typename... Tail>
+	using forward_bindings = gpu::bindings<
+		shaders::standard_3d::camera,
+		light_bindings,
+		TechniqueBindings,
+		scene_bindings,
+		shaders::standard_3d::materials,
+		atmosphere::bindings,
+		cloud::shadow_bindings,
+		shaders::standard_3d::sky_view,
+		Tail...
 	>;
-
-	using raster_bindings = type_pack<
-		shadow_cascade_atlas,
-		shadow_local_atlas,
-		shadow_tiles,
-		light_shadow_tiles,
-		ambient_occlusion_in,
-		reflection_in
-	>;
-
-	using leading_bindings = type_pack<
-		camera_ubo,
-		lights_ssbo
-	>;
-
-	using trailing_bindings = type_pack<
-		light_index_list,
-		tile_light_table,
-		material_palette,
-		aerial_perspective_in,
-		atmosphere::atmosphere_ubo,
-		gi_atlas,
-		ap_sampler,
-		gi_atlas_sampler,
-		cloud::cloud_shadow_ubo,
-		cloud_shadow_in,
-		cloud_shadow_sampler,
-		sky_view_in,
-		sky_view_sampler,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::meshlets_buffer,
-		shaders::meshlet::meshlet_vertex_indices,
-		shaders::meshlet::meshlet_triangles,
-		shaders::meshlet::meshlet_bounds_buffer,
-		shaders::meshlet::instance_data_buffer,
-		shaders::bindless::textures,
-		shaders::bindless::textures_sampler
-	>;
-
-	using vertex_pulled_trailing_bindings = type_pack<
-		light_index_list,
-		tile_light_table,
-		material_palette,
-		aerial_perspective_in,
-		atmosphere::atmosphere_ubo,
-		gi_atlas,
-		ap_sampler,
-		gi_atlas_sampler,
-		cloud::cloud_shadow_ubo,
-		cloud_shadow_in,
-		cloud_shadow_sampler,
-		sky_view_in,
-		sky_view_sampler,
-		shaders::meshlet::vertices_buffer,
-		shaders::meshlet::instance_data_buffer,
-		material_diffuse_in,
-		material_diffuse_sampler
-	>;
-
-	template <typename TechniqueBindings>
-	using shader_binding_types = type_pack_concat<leading_bindings, typename type_pack_concat<TechniqueBindings, trailing_bindings>::type>::type;
-
-	using vertex_pulled_binding_types = type_pack_concat<leading_bindings, typename type_pack_concat<raster_bindings, vertex_pulled_trailing_bindings>::type>::type;
 
 	struct [[= shaders::shader_struct]] meshlet_push_constants {
 		std::uint32_t meshlet_offset;
@@ -202,7 +106,8 @@ namespace gse::renderer::forward {
 	using meshlet_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/meshlet_geometry">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types>,
-		gpu::bindings<shader_binding_types<TechniqueBindings>>,
+		forward_bindings<TechniqueBindings, shaders::meshlet::vertices, shaders::meshlet::meshlets, shaders::meshlet::instances, shaders::bindless::sampler>,
+		gpu::bindless_textures,
 		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample", "Standard3D/light_eval", "Atmosphere/atmosphere_common", "Standard3D/lighting_shared", "Standard3D/lighting_common", "Standard3D/cube_faces", TechniqueHelper, "Standard3D/material_bindless", "Standard3D/forward_shading">,
 		gpu::amplification_stage<"as_main">,
 		gpu::mesh_stage<"ms_main">,
@@ -216,10 +121,28 @@ namespace gse::renderer::forward {
 
 	using raster_entry = meshlet_entry<raster_bindings, "Standard3D/lighting_raster">;
 
+	template <typename TechniqueBindings, fixed_string TechniqueHelper>
+	using grass_entry = gpu::graphics_entry<
+		gpu::body_path<"Grass/grass_forward">,
+		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types, grass::shader_types>,
+		forward_bindings<TechniqueBindings, shaders::meshlet::instances, grass::draw_bindings>,
+		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample", "Standard3D/light_eval", "Atmosphere/atmosphere_common", "Standard3D/lighting_shared", "Standard3D/lighting_common", "Standard3D/cube_faces", TechniqueHelper, "Grass/grass_material", "Standard3D/forward_shading", "Grass/grass_shape", "Grass/grass_geometry">,
+		gpu::vertex_stage<"vs_main">,
+		gpu::fragment_stage<"fs_main">,
+		gpu::push_constant<meshlet_push_constants>,
+		gpu::rasterization<gpu::polygon_mode::fill, gpu::cull_mode::none>,
+		gpu::color_targets<gpu::color_format::hdr>,
+		gpu::depth<true, false, gpu::compare_op::greater_or_equal>
+	>;
+
+	using grass_ray_traced_entry = grass_entry<ray_traced_bindings, "Standard3D/lighting_ray_traced">;
+
+	using grass_raster_entry = grass_entry<raster_bindings, "Standard3D/lighting_raster">;
+
 	using vertex_pulled_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/vertex_geometry">,
 		gpu::types<shaders::common::shader_types, shaders::forward::shader_types, shaders::raster_shadow::shader_types>,
-		gpu::bindings<vertex_pulled_binding_types>,
+		forward_bindings<raster_bindings, shaders::meshlet::vertices, shaders::meshlet::instances, material_texture_bindings>,
 		gpu::helpers<"Standard3D/meshlet_common", "Standard3D/gi_probe_sample", "Standard3D/light_eval", "Atmosphere/atmosphere_common", "Standard3D/lighting_shared", "Standard3D/lighting_common", "Standard3D/cube_faces", "Standard3D/lighting_raster", "Standard3D/material_single_texture", "Standard3D/forward_shading">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -231,14 +154,18 @@ namespace gse::renderer::forward {
 
 auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<lighting::data> lighting_s, const shared_view<light_culling::data> lc_r, const shared_view<atmosphere::data> atm_state, const shared_view<geometry_collector::data> gc_state, data& d) -> async::task<> {
 	d.vertex_pulled = !gpu_s.device->capabilities().mesh_shaders;
+	const bool ray_traced = !d.vertex_pulled && lighting_s.lighting_technique == lighting::technique::ray_traced;
 	if (d.vertex_pulled) {
 		d.pipeline = gpu::build_graphics_program(*gpu_s.device, vertex_pulled_entry::pod);
 	}
 	else {
-		d.pipeline = lighting_s.lighting_technique == lighting::technique::ray_traced
+		d.pipeline = ray_traced
 			? gpu::build_graphics_program(*gpu_s.device, ray_traced_entry::pod)
 			: gpu::build_graphics_program(*gpu_s.device, raster_entry::pod);
 	}
+	d.grass_pipeline = ray_traced
+		? gpu::build_graphics_program(*gpu_s.device, grass_ray_traced_entry::pod)
+		: gpu::build_graphics_program(*gpu_s.device, grass_raster_entry::pod);
 
 	constexpr std::size_t camera_ubo_size = sizeof(shaders::common::camera_data);
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
@@ -302,7 +229,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, const std::optional<shared_view<gi_probe::data>> gi_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const channel_read<camera::temporal_reset_request> reset_in, const shared_view<lighting::data> lighting_s, const channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, const std::optional<shared_view<gi_probe::data>> gi_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const channel_read<camera::temporal_reset_request> reset_in, const shared_view<lighting::data> lighting_s, const channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in, const shared_view<grass::data> grass_r) -> async::task<> {
 	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
 		d.frame_counter = 0;
 	}
@@ -416,11 +343,12 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 		)
 		.depth(gpu::load_depth())
 		.after(technique_passes)
-		.after<^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass, ^^cloud::cloud_shadow_pass>();
+		.after<^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass, ^^grass::cull_pass, ^^cloud::cloud_shadow_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 
-	if (normal_batches.empty()) {
+	const bool grass_culled = std::ranges::any_of(grass_r.fields | std::views::values, &grass::field_render::culled);
+	if (normal_batches.empty() && !grass_culled) {
 		co_return;
 	}
 
@@ -478,20 +406,20 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 
 			const auto& ml = mesh.meshlet_gpu();
 
-			gpu::binding_args<gpu::entry_bindings_pack_t<Entry>> bindings{
+			gpu::entry_binding_args<Entry> bindings{
 				.camera_ubo = camera_ubo_slot,
 				.lights_ssbo = lights_slot,
 				.light_index_list = light_index_list_slot,
 				.tile_light_table = tile_light_table_slot,
-				.material_palette = material_palette_slot,
 				.aerial_perspective_in = aerial_perspective_slot,
-				.atmosphere_ubo = atmosphere_ubo_slot,
 				.gi_atlas = gi_atlas_slot,
 				.ap_sampler = ap_sampler_slot,
 				.gi_atlas_sampler = gi_atlas_sampler_slot,
-				.cloud_shadow_ubo = cloud_shadow_ubo_slot,
 				.cloud_shadow_in = cloud_shadow_slot,
 				.cloud_shadow_sampler = cloud_shadow_sampler_slot,
+				.material_palette = material_palette_slot,
+				.atmosphere_ubo = atmosphere_ubo_slot,
+				.cloud_shadow_ubo = cloud_shadow_ubo_slot,
 				.sky_view_in = sky_view_slot,
 				.sky_view_sampler = sky_view_sampler_slot,
 				.vertices_buffer = batch.deformed_vertices.valid() ? batch.deformed_vertices : ml.vertex_storage.slot(),
@@ -543,21 +471,63 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 		bindings.reflection_in = d.reflections->radiance;
 	};
 
+	const auto draw_grass = [&]<typename Entry>(const auto& bind_technique) {
+		if (!grass_culled) {
+			return;
+		}
+		rec.bind(d.grass_pipeline);
+		for (const auto& field : grass_r.fields | std::views::values) {
+			if (!field.culled) {
+				continue;
+			}
+			gpu::entry_binding_args<Entry> bindings{
+				.camera_ubo = camera_ubo_slot,
+				.lights_ssbo = lights_slot,
+				.light_index_list = light_index_list_slot,
+				.tile_light_table = tile_light_table_slot,
+				.aerial_perspective_in = aerial_perspective_slot,
+				.gi_atlas = gi_atlas_slot,
+				.ap_sampler = ap_sampler_slot,
+				.gi_atlas_sampler = gi_atlas_sampler_slot,
+				.cloud_shadow_in = cloud_shadow_slot,
+				.cloud_shadow_sampler = cloud_shadow_sampler_slot,
+				.material_palette = material_palette_slot,
+				.atmosphere_ubo = atmosphere_ubo_slot,
+				.cloud_shadow_ubo = cloud_shadow_ubo_slot,
+				.sky_view_in = sky_view_slot,
+				.sky_view_sampler = sky_view_sampler_slot,
+				.instance_data_buffer = field.instance[frame_index].slot(),
+				.grass_params_in = field.params[frame_index],
+				.grass_pool = field.pool,
+				.grass_tiles = field.tiles,
+				.grass_visible = field.visible.slot(),
+			};
+			bind_technique(bindings);
+			rec.push_bindings<Entry>(base_pc, bindings);
+			grass::record_draw(rec, grass_r.indices, field, grass::views.grass_camera_view);
+		}
+	};
+
 	if (d.vertex_pulled) {
 		draw_batches.template operator()<vertex_pulled_entry>(
 			[&](auto& bindings, const meshlet_gpu_data&) {
 				bind_raster(bindings);
 			}
 		);
+		draw_grass.template operator()<grass_raster_entry>(bind_raster);
 	}
 	else if (ray_traced) {
 		const auto& scene = *d.ray_traced_scene;
+		const auto bind_tlas = [&](auto& bindings) {
+			bindings.scene_tlas = gpu::make_acceleration_structure_arg(scene.tlas_addresses[frame_index], scene.tlas_slots[frame_index]);
+		};
 		draw_batches.template operator()<ray_traced_entry>(
 			[&](auto& bindings, const meshlet_gpu_data& ml) {
 				bind_meshlets(bindings, ml);
-				bindings.scene_tlas = gpu::make_acceleration_structure_arg(scene.tlas_addresses[frame_index], scene.tlas_slots[frame_index]);
+				bind_tlas(bindings);
 			}
 		);
+		draw_grass.template operator()<grass_ray_traced_entry>(bind_tlas);
 	}
 	else {
 		draw_batches.template operator()<raster_entry>(
@@ -566,5 +536,6 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 				bind_raster(bindings);
 			}
 		);
+		draw_grass.template operator()<grass_raster_entry>(bind_raster);
 	}
 }

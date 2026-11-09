@@ -23,15 +23,16 @@ auto gse::gpu::make_blas_geometry(const blas_geometry_desc& desc) -> acceleratio
 	};
 }
 
-auto gse::gpu::build_blas_in_place(device& device, const acceleration_structure dst, const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const buffer& scratch, recording_context& rec) -> void {
+auto gse::gpu::build_blas_in_place(device& device, const acceleration_structure dst, const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags, const build_acceleration_structure_mode mode, const buffer& scratch, recording_context& rec) -> void {
 	const auto scratch_alignment = device.acceleration_structure_scratch_alignment();
 	const auto scratch_raw = scratch.device_address();
 	const device_address scratch_addr = (scratch_raw + scratch_alignment - 1) & ~(scratch_alignment - 1);
 
 	const acceleration_structure_build_geometry_info build_info{
 		.type = acceleration_structure_type::bottom_level,
-		.flags = build_acceleration_structure_flag::prefer_fast_build,
-		.mode = build_acceleration_structure_mode::build,
+		.flags = flags,
+		.mode = mode,
+		.src = mode == build_acceleration_structure_mode::update ? dst : acceleration_structure{},
 		.dst = dst,
 		.geometries = std::span(&geometry, 1),
 		.scratch_address = scratch_addr,

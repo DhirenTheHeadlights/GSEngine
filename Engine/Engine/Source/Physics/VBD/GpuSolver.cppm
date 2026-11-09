@@ -32,6 +32,7 @@ export namespace gse::vbd {
 	struct vbd_external_body_inputs_stage {};
 	struct vbd_apply_joint_inputs_stage {};
 	struct vbd_apply_joint_drive_inputs_stage {};
+	struct vbd_external_force_stage {};
 	struct vbd_render_mirror_stage {};
 	struct vbd_clear_state_buffers_stage {};
 	struct vbd_collision_reset_stage {};
@@ -75,6 +76,7 @@ export namespace gse::vbd {
 		std::uint32_t broad_nodes_walked = 0;
 		std::uint32_t broad_aabb_tests = 0;
 		std::uint32_t broad_pairs = 0;
+		std::uint32_t broad_walk_overruns = 0;
 		force joint_lambda_max{};
 		stiffness joint_penalty_max{};
 		gap joint_c_max{};
@@ -237,6 +239,12 @@ export namespace gse::vbd {
 
 		auto render_body_buffer() const -> const gpu::buffer&;
 
+		auto external_force_accumulator(
+			std::uint32_t frame_index
+		) const -> const gpu::buffer&;
+
+		auto external_force_stamp_word() const -> std::uint32_t;
+
 		auto solve_body_buffer() const -> const gpu::buffer&;
 
 		auto solve_joint_buffer() const -> const gpu::buffer&;
@@ -333,6 +341,12 @@ export namespace gse::vbd {
 		) -> async::task<>;
 
 		auto stage_apply_joint_drive_inputs(
+			const solve_plan& p,
+			std::uint32_t chain_index,
+			pass_channel pass_out
+		) -> async::task<>;
+
+		auto stage_external_force(
 			const solve_plan& p,
 			std::uint32_t chain_index,
 			pass_channel pass_out
@@ -699,6 +713,10 @@ export namespace gse::vbd {
 		gpu::buffer m_active_list_buffer;
 		gpu::buffer m_active_data_buffer;
 		gpu::buffer m_active_args_buffer;
+		gpu::buffer m_external_force_buffer;
+		per_frame_resource<gpu::buffer> m_external_force_accumulators;
+		std::uint32_t m_external_force_stamp_word = 0;
+		bool m_external_force_fresh = false;
 		std::vector<body_snapshot> m_snapshot_mirror;
 		std::vector<std::uint32_t> m_changed_bodies;
 		std::uint64_t m_mirror_generation = 0;

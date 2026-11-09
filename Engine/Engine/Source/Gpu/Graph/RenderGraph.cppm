@@ -161,6 +161,8 @@ export namespace gse::gpu {
 			time timeout
 		) const -> bool;
 
+		auto claim_output() -> bool;
+
 		[[nodiscard]] auto offscreen_surfaces() const -> std::span<const shared_surface>;
 
 		[[nodiscard]] auto offscreen_timelines() const -> gpu::offscreen_timelines;

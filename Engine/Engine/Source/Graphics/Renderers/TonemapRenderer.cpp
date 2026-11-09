@@ -37,38 +37,22 @@ namespace gse::renderer::tonemap {
 		float middle_grey = 0.18f;
 	};
 
-	struct [[= shaders::texture2d]] hdr_color {
-		using element = vec4f;
+	struct tonemap_bindings {
+		shaders::texture2d<vec4f> hdr_color;
+		shaders::texture2d<vec4f> bloom_color;
+		shaders::texture2d<vec4f> velocity_color;
+		shaders::sampler_state color_sampler;
+		shaders::ssbo_readonly<float> exposure_in;
 	};
 
-	struct [[= shaders::texture2d]] bloom_color {
-		using element = vec4f;
+	struct histogram_bindings {
+		shaders::texture2d<vec4f> histogram_source;
+		shaders::ssbo_readwrite<std::uint32_t> histogram_out;
 	};
 
-	struct [[= shaders::texture2d]] velocity_color {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] color_sampler {};
-
-	struct [[= shaders::ssbo_readonly]] exposure_in {
-		using element = float;
-	};
-
-	struct [[= shaders::texture2d]] histogram_source {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] histogram_out {
-		using element = std::uint32_t;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] histogram_in {
-		using element = std::uint32_t;
-	};
-
-	struct [[= shaders::ssbo_readwrite]] exposure_out {
-		using element = float;
+	struct exposure_bindings {
+		shaders::ssbo_readwrite<std::uint32_t> histogram_in;
+		shaders::ssbo_readwrite<float> exposure_out;
 	};
 
 	struct [[= shaders::shader_struct]] push_constants {
@@ -95,13 +79,9 @@ namespace gse::renderer::tonemap {
 
 	using exposure_types = type_pack<exposure_limits>;
 
-	using shader_binding_types = type_pack<hdr_color, bloom_color, velocity_color, color_sampler, exposure_in>;
-	using histogram_binding_types = type_pack<histogram_source, histogram_out>;
-	using exposure_binding_types = type_pack<histogram_in, exposure_out>;
-
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Tonemap">,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<tonemap_bindings>,
 		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -118,7 +98,7 @@ namespace gse::renderer::tonemap {
 	using histogram_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/exposure_histogram">,
 		gpu::types<exposure_types>,
-		gpu::bindings<histogram_binding_types>,
+		gpu::bindings<histogram_bindings>,
 		gpu::push_constant<histogram_push_constants>,
 		gpu::threads<16, 16, 1>,
 		gpu::system_values<gpu::dispatch_thread_id, gpu::group_index>
@@ -127,25 +107,27 @@ namespace gse::renderer::tonemap {
 	using exposure_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/exposure_update">,
 		gpu::types<exposure_types>,
-		gpu::bindings<exposure_binding_types>,
+		gpu::bindings<exposure_bindings>,
 		gpu::push_constant<exposure_push_constants>,
 		gpu::threads<histogram_bins>,
 		gpu::system_values<gpu::group_index>
 	>;
 
 	namespace atomic {
-		struct [[= shaders::ssbo_readwrite]] histogram_out {
-			using element = shaders::atomic_u32;
+		struct histogram_bindings {
+			shaders::texture2d<vec4f> histogram_source;
+			shaders::ssbo_readwrite<shaders::atomic_u32> histogram_out;
 		};
 
-		struct [[= shaders::ssbo_readwrite]] histogram_in {
-			using element = shaders::atomic_u32;
+		struct exposure_bindings {
+			shaders::ssbo_readwrite<shaders::atomic_u32> histogram_in;
+			shaders::ssbo_readwrite<float> exposure_out;
 		};
 
 		using histogram_entry = gpu::compute_entry<
 			gpu::body_path<"Compute/exposure_histogram_atomic">,
 			gpu::types<exposure_types>,
-			gpu::bindings<type_pack<histogram_source, histogram_out>>,
+			gpu::bindings<histogram_bindings>,
 			gpu::push_constant<histogram_push_constants>,
 			gpu::threads<16, 16, 1>,
 			gpu::system_values<gpu::dispatch_thread_id, gpu::group_index>
@@ -154,7 +136,7 @@ namespace gse::renderer::tonemap {
 		using exposure_entry = gpu::compute_entry<
 			gpu::body_path<"Compute/exposure_update_atomic">,
 			gpu::types<exposure_types>,
-			gpu::bindings<type_pack<histogram_in, exposure_out>>,
+			gpu::bindings<exposure_bindings>,
 			gpu::push_constant<exposure_push_constants>,
 			gpu::threads<histogram_bins>,
 			gpu::system_values<gpu::group_index>

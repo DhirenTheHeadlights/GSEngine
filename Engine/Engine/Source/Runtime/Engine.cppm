@@ -50,7 +50,7 @@ export namespace gse {
 		std::string summary_out;
 		std::string state_dump_out;
 		bool update_baseline = false;
-		bool real_time = false;
+		scenario::pacing pacing = scenario::pacing::lockstep;
 		double regression_threshold = 1.10;
 		scenario::body_fn scenario_body = nullptr;
 	};
@@ -246,7 +246,7 @@ export namespace gse {
 		bool m_frame_presented = false;
 		attached_surface_message m_attached_message{};
 		std::uint32_t m_attached_frames_presented = 0;
-		std::uint32_t m_attached_frames_skipped = 0;
+		std::uint32_t m_attached_frames_withheld = 0;
 		interval_timer<> m_attached_report{ seconds(2.f) };
 		time m_attached_wait{};
 		std::uint32_t m_attached_revision = 0;

@@ -64,10 +64,6 @@ export namespace gse::renderer::cloud {
 		) const -> bool = default;
 	};
 
-	struct [[= shaders::uniform_block]] cloud_ubo {
-		using element = cloud_data;
-	};
-
 	struct [[= shaders::shader_struct]] cloud_shadow_data {
 		vec3f sun_direction;
 		float strength;
@@ -83,8 +79,8 @@ export namespace gse::renderer::cloud {
 		) const -> bool = default;
 	};
 
-	struct [[= shaders::uniform_block]] cloud_shadow_ubo {
-		using element = cloud_shadow_data;
+	struct shadow_bindings {
+		shaders::uniform_block<cloud_shadow_data> cloud_shadow_ubo;
 	};
 
 	struct [[= system_state<"Cloud">{}, = settings::category<"Clouds">{}]] data {

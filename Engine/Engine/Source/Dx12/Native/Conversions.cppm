@@ -1,5 +1,7 @@
 export module gse.dx12:conversions;
 
+import std;
+
 import gse.gpu_backend;
 import gse.directx;
 
@@ -30,6 +32,11 @@ export namespace gse::dx12 {
 	[[nodiscard]] auto primitive_topology_of(
 		gpu::topology t
 	) -> directx::D3D12_PRIMITIVE_TOPOLOGY;
+
+	[[nodiscard]] auto acceleration_structure_build_flags_of(
+		gpu::build_acceleration_structure_flags flags,
+		gpu::build_acceleration_structure_mode mode
+	) -> std::uint32_t;
 }
 
 auto gse::dx12::dxgi_format_of(const gpu::image_format fmt) -> directx::DXGI_FORMAT {
@@ -210,4 +217,27 @@ auto gse::dx12::primitive_topology_of(const gpu::topology t) -> directx::D3D12_P
 		case gpu::topology::point_list: return directx::topology_point_list;
 		default: return directx::topology_triangle_list;
 	}
+}
+
+auto gse::dx12::acceleration_structure_build_flags_of(const gpu::build_acceleration_structure_flags flags, const gpu::build_acceleration_structure_mode mode) -> std::uint32_t {
+	std::uint32_t bits = 0;
+	if (flags.test(gpu::build_acceleration_structure_flag::allow_update)) {
+		bits |= directx::as_build_allow_update;
+	}
+	if (flags.test(gpu::build_acceleration_structure_flag::allow_compaction)) {
+		bits |= directx::as_build_allow_compaction;
+	}
+	if (flags.test(gpu::build_acceleration_structure_flag::prefer_fast_trace)) {
+		bits |= directx::as_build_prefer_fast_trace;
+	}
+	if (flags.test(gpu::build_acceleration_structure_flag::prefer_fast_build)) {
+		bits |= directx::as_build_prefer_fast_build;
+	}
+	if (flags.test(gpu::build_acceleration_structure_flag::low_memory)) {
+		bits |= directx::as_build_minimize_memory;
+	}
+	if (mode == gpu::build_acceleration_structure_mode::update) {
+		bits |= directx::as_build_perform_update;
+	}
+	return bits;
 }

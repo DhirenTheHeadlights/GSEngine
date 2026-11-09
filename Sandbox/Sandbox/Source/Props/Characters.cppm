@@ -90,6 +90,9 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 	const auto proxy_center = origin + proxy.center;
 	const auto proxy_mass = gse::kilograms(78.f);
 
+	constexpr std::uint32_t proxy_layer = 1u << 0;
+	constexpr std::uint32_t bone_layer = 1u << 1;
+
 	const auto proxy_id = s.build(std::format("{}.Proxy", owner.tag()))
 		.with<gse::physics::transform_component>({
 			.position = proxy_center,
@@ -105,11 +108,17 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 				.radius = proxy.radius,
 				.half_height = proxy.half_height,
 			},
+			.filter = {
+				.group = owner,
+				.layers = proxy_layer,
+				.mask = 0,
+			},
 		})
 		.with<gse::physics::motor_component>({
 			.max_force = gse::newtons(3900.f),
 			.compliance = 0.02f,
 		})
+		.with<gse::physics::grass_passthrough>({})
 		.identify();
 
 	gse::log::println(
@@ -159,11 +168,18 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 			})
 			.with<gse::physics::collision_component>({
 				.shape = bone.shape,
-				.resolve_collisions = false,
+				.filter = {
+					.group = owner,
+					.layers = bone_layer,
+					.mask = bone_layer,
+				},
 			})
 			.with<gse::physics::kinematic_target_component>({
 				.position = body.position,
 				.orientation = body.orientation,
+			})
+			.with<gse::physics::grass_reaction_target>({
+				.body = proxy_id,
 			})
 			.identify();
 	}

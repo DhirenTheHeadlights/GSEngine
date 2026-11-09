@@ -4,11 +4,12 @@ import gse;
 
 export namespace sandbox::crosshair {
 	struct [[= gse::system_state<"Crosshair">{}]] data {
-		[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::shared]] bool show = true;
+		[[= gse::settings::describe<"Show the crosshair while in-game.">{}, = gse::settings::hot_reloadable, = gse::shared]] bool show = true;
 
 		[[
 			= gse::settings::describe<"Length of each arm in pixels.">{},
 			= gse::settings::range<0, 30>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		int arm_length = 8;
@@ -16,6 +17,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Thickness of each arm in pixels.">{},
 			= gse::settings::range<1, 8>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		int arm_thickness = 2;
@@ -23,15 +25,17 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Gap between center and each arm.">{},
 			= gse::settings::range<0, 20>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		int gap = 3;
 
-		[[= gse::settings::describe<"Show the center dot.">{}, = gse::shared]] bool show_dot = true;
+		[[= gse::settings::describe<"Show the center dot.">{}, = gse::settings::hot_reloadable, = gse::shared]] bool show_dot = true;
 
 		[[
 			= gse::settings::describe<"Center dot size in pixels.">{},
 			= gse::settings::range<1, 6>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		int dot_size = 1;
@@ -39,6 +43,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Red channel.">{},
 			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		float color_r = 1.f;
@@ -46,6 +51,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Green channel.">{},
 			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		float color_g = 1.f;
@@ -53,6 +59,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Blue channel.">{},
 			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		float color_b = 1.f;
@@ -60,6 +67,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Opacity.">{},
 			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		float opacity = 0.9f;
@@ -67,6 +75,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Outline thickness around each arm (0 = no outline).">{},
 			= gse::settings::range<0, 3>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		int outline_thickness = 0;
@@ -74,6 +83,7 @@ export namespace sandbox::crosshair {
 		[[
 			= gse::settings::describe<"Outline opacity.">{},
 			= gse::settings::range<0.f, 1.f>{},
+			= gse::settings::hot_reloadable,
 			= gse::shared
 		]]
 		float outline_opacity = 1.f;
@@ -102,27 +112,11 @@ export namespace sandbox::crosshair {
 }
 
 auto sandbox::crosshair::draw_settings(gse::gui::builder& b, gse::settings::panel_state& ps, const gse::settings::register_settings_type& entry, const gse::settings::change_request_writer channels) -> void {
-	auto& ctx = b.ctx;
-	const auto& sty = ctx.style;
 	namespace lo = gse::gui::layout;
 
-	b.draw<gse::gui::section>({
-		.title = "Crosshair"
-	});
-
-	const gse::rect_t<gse::vec2f> preview = lo::reserve_row(ctx, sty.preview_height, sty.padding);
-	if (entry.settings_ptr) {
-		draw_preview(ctx, preview, *static_cast<const data*>(entry.settings_ptr));
-	}
-
-	b.scroll_region(
-		{
-			.id = "crosshair.fields"
-		},
-		[&](gse::gui::builder& sub) {
-			gse::settings::draw_fields_for_entry(sub, ps, channels, entry);
-		}
-	);
+	const gse::rect_t<gse::vec2f> preview = lo::reserve_row(b.ctx, b.ctx.style.preview_height, b.ctx.style.padding);
+	draw_preview(b.ctx, preview, *static_cast<const data*>(entry.settings_ptr));
+	gse::settings::draw_fields_for_entry(b, ps, channels, entry);
 }
 
 auto sandbox::crosshair::draw_preview(const gse::gui::draw_context& ctx, const gse::rect_t<gse::vec2f>& rect, const data& crosshair) -> void {

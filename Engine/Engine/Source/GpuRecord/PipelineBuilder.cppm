@@ -13,87 +13,48 @@ import gse.math;
 import gse.containers;
 
 export namespace gse::gpu {
-	struct acceleration_structure_arg {
-		std::uint32_t address_lo = 0;
-		std::uint32_t address_hi = 0;
-		bindless_slot slot;
-	};
-
-	constexpr auto make_acceleration_structure_arg(const device_address address, const bindless_slot slot) -> acceleration_structure_arg {
-		return {
-			.address_lo = static_cast<std::uint32_t>(address),
-			.address_hi = static_cast<std::uint32_t>(address >> 32),
-			.slot = slot,
-		};
-	}
+	template <typename T>
+	consteval auto members_are_bindings() -> bool;
 
 	template <typename T>
-	constexpr auto descriptor_type_v = shaders::descriptor_type_of<T>();
+	concept is_binding_set = std::is_aggregate_v<T> && members_are_bindings<T>();
 
-	template <typename T>
-	constexpr auto is_bindless_table_v = shaders::is_bindless_table<T>();
-
-	template <typename T>
-	constexpr auto descriptor_access_v = shaders::descriptor_access_of<T>();
-
-	consteval auto binding_arg_type(
-		std::meta::info t
-	) -> std::meta::info;
-
-	template <typename T>
-	consteval auto binding_arg_is_flat() -> bool;
-
-	template <typename Pack>
-	consteval auto binding_args_layout_is_flat() -> bool;
-
-	template <typename Pack>
+	template <is_binding_set... Sets>
 	struct binding_args_aggregate {
-		static_assert(
-			binding_args_layout_is_flat<Pack>(),
-			"binding arg struct has a non-4-byte field: the binding-args aggregate is memcpy'd as the push-data block and generated Slang packs its uniform fields flat, so C++ padding around a wider member (e.g. a uint64 address) shifts every later binding index. Use uint32 fields only and split 64-bit values into lo/hi halves (see acceleration_structure_arg)."
-		);
-
 		struct type;
 
 		consteval {
-			constexpr auto pack_types = []<typename... Ts>(type_pack<Ts...>) {
-				return std::array{ ^^Ts... };
-			}(Pack{});
 			std::vector<std::meta::info> members;
-			for (const auto t : pack_types) {
-				const auto is_table = std::meta::extract<bool>(std::meta::substitute(
-					^^is_bindless_table_v,
-					{
-						t }
-				));
-				if (is_table) {
-					continue;
+			for (const auto set : std::array<std::meta::info, sizeof...(Sets)>{ ^^Sets... }) {
+				for (const auto m : std::meta::nonstatic_data_members_of(set, std::meta::access_context::unchecked())) {
+					members.push_back(std::meta::data_member_spec(
+						std::meta::type_of(m),
+						{
+							.name = std::meta::identifier_of(m),
+						}
+					));
 				}
-				members.push_back(std::meta::data_member_spec(
-					binding_arg_type(t),
-					{
-						.name = std::meta::identifier_of(t),
-					}
-				));
 			}
 			std::meta::define_aggregate(^^type, members);
 		}
 	};
 
-	template <typename Pack>
-	using binding_args = typename binding_args_aggregate<Pack>::type;
+	template <is_binding_set... Sets>
+	using binding_args = typename binding_args_aggregate<Sets...>::type;
 
-	template <typename... Packs>
-	struct bindings;
+	template <is_binding_set... Sets>
+	struct bindings {
+		using args = binding_args<Sets...>;
+	};
 
 	template <typename T>
 	struct push_constant;
 
 	template <typename Entry>
-	consteval auto entry_bindings_pack_info() -> std::meta::info {
+	consteval auto entry_bindings_info() -> std::meta::info {
 		for (const auto a : std::meta::template_arguments_of(^^Entry)) {
 			if (std::meta::has_template_arguments(a) && std::meta::template_of(a) == ^^bindings) {
-				return std::meta::template_arguments_of(a)[0];
+				return a;
 			}
 		}
 		return {};
@@ -110,12 +71,12 @@ export namespace gse::gpu {
 	}
 
 	template <typename Entry>
-	using entry_bindings_pack_t = [:entry_bindings_pack_info<Entry>():];
+	using entry_binding_args = typename [:entry_bindings_info<Entry>():]::args;
 
 	template <typename Entry>
 	using entry_push_constants_t = [:entry_push_constants_info<Entry>():];
 
-	template <typename Pack>
+	template <typename Args>
 	auto binding_layout_of() -> std::vector<binding_layout_entry>;
 
 	template <typename Spec>
@@ -146,6 +107,8 @@ export namespace gse::gpu {
 		std::array<std::string_view, 8> call_names{};
 		std::size_t call_count = 0;
 		std::uint32_t spec_data_size = 0;
+		std::uint32_t binding_args_size = 0;
+		bool bindless_textures = false;
 		std::string (
 			*emit_push_constant_struct
 		)() = nullptr;
@@ -158,11 +121,8 @@ export namespace gse::gpu {
 		std::string (
 			*emit_spec_decls
 		)() = nullptr;
-		std::vector<shaders::spec_constant_entry> (
+		std::vector<specialization_entry> (
 			*build_spec_entries_fn
-		)() = nullptr;
-		std::uint32_t (
-			*binding_args_size_fn
 		)() = nullptr;
 		std::vector<binding_layout_entry> (
 			*binding_layout_fn
@@ -213,6 +173,8 @@ export namespace gse::gpu {
 		std::size_t color_count = 1;
 		depth_format depth_fmt = depth_format::d32_sfloat;
 		std::uint32_t spec_data_size = 0;
+		std::uint32_t binding_args_size = 0;
+		bool bindless_textures = false;
 		std::string (
 			*emit_push_constant_struct
 		)() = nullptr;
@@ -225,11 +187,8 @@ export namespace gse::gpu {
 		std::string (
 			*emit_spec_decls
 		)() = nullptr;
-		std::vector<shaders::spec_constant_entry> (
+		std::vector<specialization_entry> (
 			*build_spec_entries_fn
-		)() = nullptr;
-		std::uint32_t (
-			*binding_args_size_fn
 		)() = nullptr;
 		std::vector<binding_layout_entry> (
 			*binding_layout_fn
@@ -289,8 +248,7 @@ export namespace gse::gpu {
 		using type = T;
 	};
 
-	template <typename... Packs>
-	struct bindings {};
+	struct bindless_textures {};
 
 	template <typename... Packs>
 	struct types {};
@@ -355,8 +313,14 @@ export namespace gse::gpu {
 	template <typename T>
 	struct is_bindings : std::false_type {};
 
-	template <typename... Packs>
-	struct is_bindings<bindings<Packs...>> : std::true_type {};
+	template <is_binding_set... Sets>
+	struct is_bindings<bindings<Sets...>> : std::true_type {};
+
+	template <typename T>
+	struct is_bindless_textures : std::false_type {};
+
+	template <>
+	struct is_bindless_textures<bindless_textures> : std::true_type {};
 
 	template <typename T>
 	struct is_types : std::false_type {};
@@ -376,16 +340,27 @@ export namespace gse::gpu {
 	template <fixed_string... Names>
 	struct is_calls<calls<Names...>> : std::true_type {};
 
+	template <typename Spec>
+	concept is_common_entry_spec = is_body_path<Spec>::value
+		|| is_body_inline<Spec>::value
+		|| is_spec_constants<Spec>::value
+		|| is_bindings<Spec>::value
+		|| is_bindless_textures<Spec>::value
+		|| is_types<Spec>::value
+		|| is_helpers<Spec>::value;
+
+	template <is_common_entry_spec Spec, typename Pod>
+	consteval auto apply_common_entry_spec(
+		Pod& e
+	) -> void;
+
 	template <typename... Specs>
 	struct compute_entry {
 		static constexpr compute_entry_pod pod = []() consteval {
 			compute_entry_pod e{};
 			auto apply = [&]<typename Spec>() consteval {
-				if constexpr (is_body_path<Spec>::value) {
-					e.body_path = Spec::value;
-				}
-				else if constexpr (is_body_inline<Spec>::value) {
-					e.body_source = Spec::value;
+				if constexpr (is_common_entry_spec<Spec>) {
+					apply_common_entry_spec<Spec>(e);
 				}
 				else if constexpr (is_threads<Spec>::value) {
 					e.threads_x = Spec::x;
@@ -407,19 +382,7 @@ export namespace gse::gpu {
 						.semantic = {},
 						.is_function_param = false,
 					};
-					e.emit_push_constant_struct = +[]() -> std::string {
-						return shaders::emit_slang_struct<T>();
-					};
-				}
-				else if constexpr (is_spec_constants<Spec>::value) {
-					using T = typename Spec::type;
-					e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
-					e.emit_spec_decls = +[]() -> std::string {
-						return shaders::emit_slang_specialization_constants<T>();
-					};
-					e.build_spec_entries_fn = +[]() -> std::vector<shaders::spec_constant_entry> {
-						return shaders::build_spec_constant_entries<T>();
-					};
+					e.emit_push_constant_struct = &shaders::emit_slang_struct<T>;
 				}
 				else if constexpr (is_system_values<Spec>::value) {
 					[&]<is_system_value... SVs>(system_values<SVs...>) consteval {
@@ -432,39 +395,6 @@ export namespace gse::gpu {
 							 };
 						 }()),
 						 ...);
-					}(Spec{});
-				}
-				else if constexpr (is_bindings<Spec>::value) {
-					e.emit_bindings = +[]() -> std::string {
-						std::string out;
-						[&]<typename... Packs>(bindings<Packs...>) {
-							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
-						}(Spec{});
-						return out;
-					};
-					e.binding_args_size_fn = +[]() -> std::uint32_t {
-						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
-							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
-						}(Spec{});
-					};
-					e.binding_layout_fn = +[]() -> std::vector<binding_layout_entry> {
-						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
-							return binding_layout_of<Pack>();
-						}(Spec{});
-					};
-				}
-				else if constexpr (is_types<Spec>::value) {
-					e.emit_types = +[]() -> std::string {
-						std::string out;
-						[&]<typename... Packs>(types<Packs...>) {
-							((out.append(shaders::emit_pack_types<Packs>())), ...);
-						}(Spec{});
-						return out;
-					};
-				}
-				else if constexpr (is_helpers<Spec>::value) {
-					[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
-						((e.helper_paths[e.helper_count++] = Paths), ...);
 					}(Spec{});
 				}
 				else if constexpr (is_calls<Spec>::value) {
@@ -606,29 +536,14 @@ export namespace gse::gpu {
 		static constexpr graphics_entry_pod pod = []() consteval {
 			graphics_entry_pod e{};
 			auto apply = [&]<typename Spec>() consteval {
-				if constexpr (is_body_path<Spec>::value) {
-					e.body_path = Spec::value;
-				}
-				else if constexpr (is_body_inline<Spec>::value) {
-					e.body_source = Spec::value;
+				if constexpr (is_common_entry_spec<Spec>) {
+					apply_common_entry_spec<Spec>(e);
 				}
 				else if constexpr (is_push_constant<Spec>::value) {
 					using T = typename Spec::type;
 					e.push_constant_size = static_cast<std::uint32_t>(sizeof(T));
 					e.push_constant_type_name = shaders::slang_type<T>::name;
-					e.emit_push_constant_struct = +[]() -> std::string {
-						return shaders::emit_slang_struct<T>();
-					};
-				}
-				else if constexpr (is_spec_constants<Spec>::value) {
-					using T = typename Spec::type;
-					e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
-					e.emit_spec_decls = +[]() -> std::string {
-						return shaders::emit_slang_specialization_constants<T>();
-					};
-					e.build_spec_entries_fn = +[]() -> std::vector<shaders::spec_constant_entry> {
-						return shaders::build_spec_constant_entries<T>();
-					};
+					e.emit_push_constant_struct = &shaders::emit_slang_struct<T>;
 				}
 				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value || is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
 					e.stages[e.stage_count++] = {
@@ -668,39 +583,6 @@ export namespace gse::gpu {
 				else if constexpr (is_depth_target<Spec>::value) {
 					e.depth_fmt = Spec::value;
 				}
-				else if constexpr (is_bindings<Spec>::value) {
-					e.emit_bindings = +[]() -> std::string {
-						std::string out;
-						[&]<typename... Packs>(bindings<Packs...>) {
-							((out.append(shaders::emit_pack_bindings<Packs>())), ...);
-						}(Spec{});
-						return out;
-					};
-					e.binding_args_size_fn = +[]() -> std::uint32_t {
-						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
-							return static_cast<std::uint32_t>(sizeof(binding_args<Pack>));
-						}(Spec{});
-					};
-					e.binding_layout_fn = +[]() -> std::vector<binding_layout_entry> {
-						return []<typename Pack, typename... Rest>(bindings<Pack, Rest...>) {
-							return binding_layout_of<Pack>();
-						}(Spec{});
-					};
-				}
-				else if constexpr (is_types<Spec>::value) {
-					e.emit_types = +[]() -> std::string {
-						std::string out;
-						[&]<typename... Packs>(types<Packs...>) {
-							((out.append(shaders::emit_pack_types<Packs>())), ...);
-						}(Spec{});
-						return out;
-					};
-				}
-				else if constexpr (is_helpers<Spec>::value) {
-					[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
-						((e.helper_paths[e.helper_count++] = Paths), ...);
-					}(Spec{});
-				}
 				else {
 					static_assert(sizeof(Spec) == 0, "unknown graphics_entry spec");
 				}
@@ -716,74 +598,70 @@ export namespace gse::gpu {
 	};
 }
 
-consteval auto gse::gpu::binding_arg_type(const std::meta::info t) -> std::meta::info {
-	const auto dt = std::meta::extract<descriptor_type>(std::meta::substitute(
-		^^descriptor_type_v,
-		{
-			t }
-	));
-	if (dt == descriptor_type::acceleration_structure) {
-		return ^^acceleration_structure_arg;
-	}
-	return ^^bindless_slot;
-}
-
 template <typename T>
-consteval auto gse::gpu::binding_arg_is_flat() -> bool {
-	if constexpr (is_bindless_table_v<T>) {
-		return true;
-	}
-	else {
-		bool flat = true;
-		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(binding_arg_type(^^T), std::meta::access_context::unchecked()))) {
-			using member_t = [:std::meta::type_of(m):];
-			if constexpr (sizeof(member_t) != 4) {
-				flat = false;
-			}
-		}
-		return flat;
-	}
-}
-
-template <typename Pack>
-consteval auto gse::gpu::binding_args_layout_is_flat() -> bool {
-	return []<typename... Ts>(type_pack<Ts...>) {
-		return (binding_arg_is_flat<Ts>() && ...);
-	}(Pack{});
-}
-
-namespace gse::gpu {
-	template <typename Args, typename T>
-	consteval auto binding_args_member() -> std::meta::info;
-
-	template <typename Pack, typename T>
-	auto append_binding_layout(
-		std::vector<binding_layout_entry>& out
-	) -> void;
-}
-
-template <typename Args, typename T>
-consteval auto gse::gpu::binding_args_member() -> std::meta::info {
-	for (const auto m : std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked())) {
-		if (std::meta::identifier_of(m) == std::meta::identifier_of(^^T)) {
-			return m;
+consteval auto gse::gpu::members_are_bindings() -> bool {
+	bool all = true;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		if constexpr (!shaders::is_shader_binding<member_t>) {
+			all = false;
 		}
 	}
-	return std::meta::info{};
+	return all;
 }
 
-template <typename Pack, typename T>
-auto gse::gpu::append_binding_layout(std::vector<binding_layout_entry>& out) -> void {
-	if constexpr (shaders::is_shader_binding<T> && !is_bindless_table_v<T>) {
-		constexpr auto member = binding_args_member<binding_args<Pack>, T>();
-		constexpr auto kind = shaders::binding_kind_of<T>();
-		auto offset = static_cast<std::uint32_t>(std::meta::offset_of(member).bytes);
+template <gse::gpu::is_common_entry_spec Spec, typename Pod>
+consteval auto gse::gpu::apply_common_entry_spec(Pod& e) -> void {
+	if constexpr (is_body_path<Spec>::value) {
+		e.body_path = Spec::value;
+	}
+	else if constexpr (is_body_inline<Spec>::value) {
+		e.body_source = Spec::value;
+	}
+	else if constexpr (is_spec_constants<Spec>::value) {
+		using T = typename Spec::type;
+		e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
+		e.emit_spec_decls = &shaders::emit_slang_specialization_constants<T>;
+		e.build_spec_entries_fn = &shaders::build_spec_constant_entries<T>;
+	}
+	else if constexpr (is_bindings<Spec>::value) {
+		using args = typename Spec::args;
+		e.binding_args_size = static_cast<std::uint32_t>(sizeof(args));
+		e.emit_bindings = &shaders::emit_bindings<args>;
+		e.binding_layout_fn = &binding_layout_of<args>;
+	}
+	else if constexpr (is_bindless_textures<Spec>::value) {
+		e.bindless_textures = true;
+	}
+	else if constexpr (is_types<Spec>::value) {
+		e.emit_types = +[]() -> std::string {
+			std::string out;
+			[&]<typename... Packs>(types<Packs...>) {
+				((out.append(shaders::emit_pack_types<Packs>())), ...);
+			}(Spec{});
+			return out;
+		};
+	}
+	else if constexpr (is_helpers<Spec>::value) {
+		[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
+			((e.helper_paths[e.helper_count++] = Paths), ...);
+		}(Spec{});
+	}
+}
+
+template <typename Args>
+auto gse::gpu::binding_layout_of() -> std::vector<binding_layout_entry> {
+	std::vector<binding_layout_entry> out;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		constexpr auto kind = shaders::binding_info_v<member_t>.kind;
+		auto offset = static_cast<std::uint32_t>(std::meta::offset_of(m).bytes);
 		if constexpr (kind == binding_kind::acceleration_structure) {
 			offset += static_cast<std::uint32_t>(std::meta::offset_of(^^acceleration_structure_arg::slot).bytes);
 		}
-		gpu::image_format storage_format = image_format::undefined;
+		auto storage_format = image_format::undefined;
 		if constexpr (kind == binding_kind::storage_texture_2d || kind == binding_kind::storage_texture_3d) {
-			storage_format = shaders::storage_format_of<T>();
+			storage_format = shaders::storage_format_of<member_t>();
 		}
 		out.push_back({
 			.kind = kind,
@@ -791,14 +669,6 @@ auto gse::gpu::append_binding_layout(std::vector<binding_layout_entry>& out) -> 
 			.storage_format = storage_format,
 		});
 	}
-}
-
-template <typename Pack>
-auto gse::gpu::binding_layout_of() -> std::vector<binding_layout_entry> {
-	std::vector<binding_layout_entry> out;
-	[&]<typename... Ts>(type_pack<Ts...>) {
-		(append_binding_layout<Pack, Ts>(out), ...);
-	}(Pack{});
 	return out;
 }
 
@@ -814,9 +684,7 @@ auto gse::gpu::collect_spec_struct_layouts(std::vector<shaders::struct_layout>& 
 		}(Spec{});
 	}
 	else if constexpr (is_bindings<Spec>::value) {
-		[&]<typename... Packs>(bindings<Packs...>) {
-			(shaders::emit_pack_struct_layouts<Packs>(out), ...);
-		}(Spec{});
+		shaders::emit_binding_struct_layouts<typename Spec::args>(out);
 	}
 }
 

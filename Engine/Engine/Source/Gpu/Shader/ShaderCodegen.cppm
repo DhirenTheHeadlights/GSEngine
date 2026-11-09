@@ -44,6 +44,17 @@ export namespace gse::gpu {
 
 	template <is_system_value T>
 	consteval auto default_sv_name() -> std::string_view;
+
+	struct acceleration_structure_arg {
+		std::uint32_t address_lo = 0;
+		std::uint32_t address_hi = 0;
+		bindless_slot slot;
+	};
+
+	constexpr auto make_acceleration_structure_arg(
+		device_address address,
+		bindless_slot slot
+	) -> acceleration_structure_arg;
 }
 
 template <gse::gpu::is_system_value T>
@@ -92,36 +103,140 @@ export namespace gse::shaders {
 	struct shader_struct_tag {};
 	struct shader_enum_tag {};
 	struct shader_constant_block_tag {};
-	struct sampler2d_array_tag {};
-	struct ssbo_readonly_tag {};
-	struct ssbo_readwrite_tag {};
-	struct ssbo_read_use_tag {};
-	struct tlas_tag {};
-	struct byte_address_buffer_tag {};
-	struct rw_byte_address_buffer_tag {};
-	struct storage_image_tag {};
-	struct storage_image_3d_tag {};
-	struct texture2d_tag {};
-	struct texture3d_tag {};
-	struct sampler_state_tag {};
-	struct uniform_block_tag {};
 
 	constexpr shader_struct_tag shader_struct{};
 	constexpr shader_enum_tag shader_enum{};
 	constexpr shader_constant_block_tag shader_constant_block{};
-	constexpr sampler2d_array_tag sampler2d_array{};
-	constexpr ssbo_readonly_tag ssbo_readonly{};
-	constexpr ssbo_readwrite_tag ssbo_readwrite{};
-	constexpr ssbo_read_use_tag ssbo_read_use{};
-	constexpr tlas_tag tlas{};
-	constexpr byte_address_buffer_tag byte_address_buffer{};
-	constexpr rw_byte_address_buffer_tag rw_byte_address_buffer{};
-	constexpr storage_image_tag storage_image{};
-	constexpr storage_image_3d_tag storage_image_3d{};
-	constexpr texture2d_tag texture2d{};
-	constexpr texture3d_tag texture3d{};
-	constexpr sampler_state_tag sampler_state{};
-	constexpr uniform_block_tag uniform_block{};
+
+	struct binding_form_info {
+		gpu::binding_kind kind = gpu::binding_kind::read_only_storage_buffer;
+		gpu::access_flag read = gpu::access_flag::none;
+		gpu::access_flag write = gpu::access_flag::none;
+	};
+
+	enum class binding_form : std::uint8_t {
+		ssbo_readonly [[= binding_form_info{
+			.kind = gpu::binding_kind::read_only_storage_buffer,
+			.read = gpu::access_flag::shader_storage_read,
+		}]],
+		ssbo_readwrite [[= binding_form_info{
+			.kind = gpu::binding_kind::storage_buffer,
+			.read = gpu::access_flag::shader_storage_read,
+			.write = gpu::access_flag::shader_storage_write,
+		}]],
+		uniform_block [[= binding_form_info{
+			.kind = gpu::binding_kind::read_only_storage_buffer,
+			.read = gpu::access_flag::shader_storage_read,
+		}]],
+		byte_address_buffer [[= binding_form_info{
+			.kind = gpu::binding_kind::read_only_storage_buffer,
+			.read = gpu::access_flag::shader_storage_read,
+		}]],
+		rw_byte_address_buffer [[= binding_form_info{
+			.kind = gpu::binding_kind::storage_buffer,
+			.read = gpu::access_flag::shader_storage_read,
+			.write = gpu::access_flag::shader_storage_write,
+		}]],
+		texture2d [[= binding_form_info{
+			.kind = gpu::binding_kind::sampled_texture_2d,
+			.read = gpu::access_flag::shader_sampled_read,
+		}]],
+		texture3d [[= binding_form_info{
+			.kind = gpu::binding_kind::sampled_texture_3d,
+			.read = gpu::access_flag::shader_sampled_read,
+		}]],
+		storage_image [[= binding_form_info{
+			.kind = gpu::binding_kind::storage_texture_2d,
+			.read = gpu::access_flag::shader_storage_read,
+			.write = gpu::access_flag::shader_storage_write,
+		}]],
+		storage_image_3d [[= binding_form_info{
+			.kind = gpu::binding_kind::storage_texture_3d,
+			.read = gpu::access_flag::shader_storage_read,
+			.write = gpu::access_flag::shader_storage_write,
+		}]],
+		sampler_state [[= binding_form_info{
+			.kind = gpu::binding_kind::sampler,
+		}]],
+		tlas [[= binding_form_info{
+			.kind = gpu::binding_kind::acceleration_structure,
+		}]],
+	};
+
+	template <binding_form Form>
+	struct slot_binding : gpu::bindless_slot {
+		static constexpr binding_form form = Form;
+
+		constexpr slot_binding() = default;
+
+		constexpr slot_binding(
+			gpu::bindless_slot slot
+		);
+	};
+
+	template <typename T>
+	struct ssbo_readonly : slot_binding<binding_form::ssbo_readonly> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct ssbo_readwrite : slot_binding<binding_form::ssbo_readwrite> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct uniform_block : slot_binding<binding_form::uniform_block> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	struct byte_address_buffer : slot_binding<binding_form::byte_address_buffer> {
+		using slot_binding::slot_binding;
+	};
+
+	struct rw_byte_address_buffer : slot_binding<binding_form::rw_byte_address_buffer> {
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct texture2d : slot_binding<binding_form::texture2d> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct texture3d : slot_binding<binding_form::texture3d> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct storage_image : slot_binding<binding_form::storage_image> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	template <typename T>
+	struct storage_image_3d : slot_binding<binding_form::storage_image_3d> {
+		using element = T;
+		using slot_binding::slot_binding;
+	};
+
+	struct sampler_state : slot_binding<binding_form::sampler_state> {
+		using slot_binding::slot_binding;
+	};
+
+	struct tlas : gpu::acceleration_structure_arg {
+		static constexpr binding_form form = binding_form::tlas;
+
+		constexpr tlas() = default;
+
+		constexpr tlas(
+			gpu::acceleration_structure_arg arg
+		);
+	};
 
 	struct atomic_u32 {
 		std::uint32_t value = 0;
@@ -145,18 +260,12 @@ export namespace gse::shaders {
 	concept is_shader_constant_block = has_annotation<shader_constant_block_tag>(^^T);
 
 	template <typename T>
-	concept is_shader_binding = has_annotation<uniform_block_tag>(^^T)
-		|| has_annotation<sampler2d_array_tag>(^^T)
-		|| has_annotation<ssbo_readonly_tag>(^^T)
-		|| has_annotation<ssbo_readwrite_tag>(^^T)
-		|| has_annotation<tlas_tag>(^^T)
-		|| has_annotation<byte_address_buffer_tag>(^^T)
-		|| has_annotation<rw_byte_address_buffer_tag>(^^T)
-		|| has_annotation<storage_image_tag>(^^T)
-		|| has_annotation<storage_image_3d_tag>(^^T)
-		|| has_annotation<texture2d_tag>(^^T)
-		|| has_annotation<texture3d_tag>(^^T)
-		|| has_annotation<sampler_state_tag>(^^T);
+	concept is_shader_binding = requires {
+		{ T::form } -> std::convertible_to<binding_form>;
+	};
+
+	template <is_shader_binding T>
+	constexpr binding_form_info binding_info_v = annotation_from_enum(T::form, binding_form_info{});
 
 	template <typename T>
 	concept is_shader_user_type = is_shader_struct<T> || is_shader_enum<T> || is_shader_constant_block<T>;
@@ -178,35 +287,24 @@ export namespace gse::shaders {
 	template <typename T>
 	auto emit_slang_specialization_constants() -> std::string;
 
-	struct spec_constant_entry {
-		std::uint32_t constant_id = 0;
-		std::uint32_t offset = 0;
-		std::uint32_t size = 0;
-	};
-
 	template <typename T>
-	auto build_spec_constant_entries() -> std::vector<spec_constant_entry>;
+	auto build_spec_constant_entries() -> std::vector<gpu::specialization_entry>;
 
 	template <is_shader_binding T>
-	auto emit_slang_binding() -> std::string;
+	auto emit_slang_binding(
+		std::string_view name
+	) -> std::string;
 
 	template <typename T>
 	consteval auto push_constant_layout_is_portable() -> bool;
 
-	template <is_shader_binding T>
-	consteval auto descriptor_type_of() -> gpu::descriptor_type;
-
-	template <is_shader_binding T>
-	consteval auto is_bindless_table() -> bool;
-
-	template <is_shader_binding T>
-	consteval auto descriptor_access_of() -> gpu::descriptor_access;
-
 	template <typename Pack>
 	auto emit_pack_types() -> std::string;
 
-	template <typename Pack>
-	auto emit_pack_bindings() -> std::string;
+	template <typename Args>
+	auto emit_bindings() -> std::string;
+
+	auto emit_bindless_texture_table() -> std::string;
 
 	struct struct_field_layout {
 		std::string name;
@@ -222,9 +320,6 @@ export namespace gse::shaders {
 	template <is_shader_binding T>
 	consteval auto storage_format_of() -> gpu::image_format;
 
-	template <is_shader_binding T>
-	consteval auto binding_kind_of() -> gpu::binding_kind;
-
 	template <typename T>
 	auto wgsl_struct_layout(
 		std::string_view name
@@ -234,7 +329,25 @@ export namespace gse::shaders {
 	auto emit_pack_struct_layouts(
 		std::vector<struct_layout>& out
 	) -> void;
+
+	template <typename Args>
+	auto emit_binding_struct_layouts(
+		std::vector<struct_layout>& out
+	) -> void;
 }
+
+constexpr auto gse::gpu::make_acceleration_structure_arg(const device_address address, const bindless_slot slot) -> acceleration_structure_arg {
+	return {
+		.address_lo = static_cast<std::uint32_t>(address),
+		.address_hi = static_cast<std::uint32_t>(address >> 32),
+		.slot = slot,
+	};
+}
+
+template <gse::shaders::binding_form Form>
+constexpr gse::shaders::slot_binding<Form>::slot_binding(const gpu::bindless_slot slot) : gpu::bindless_slot(slot) {}
+
+constexpr gse::shaders::tlas::tlas(const gpu::acceleration_structure_arg arg) : gpu::acceleration_structure_arg(arg) {}
 
 template <>
 struct gse::shaders::slang_type<bool> {
@@ -414,6 +527,7 @@ namespace gse::shaders {
 
 	template <is_shader_binding T>
 	auto emit_wgsl_binding(
+		std::string_view name,
 		std::uint32_t binding
 	) -> std::string;
 }
@@ -716,8 +830,8 @@ auto gse::shaders::emit_slang_specialization_constants() -> std::string {
 }
 
 template <typename T>
-auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_entry> {
-	std::vector<spec_constant_entry> entries;
+auto gse::shaders::build_spec_constant_entries() -> std::vector<gpu::specialization_entry> {
+	std::vector<gpu::specialization_entry> entries;
 	std::uint32_t idx = 0;
 	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
 		using member_t = [:std::meta::type_of(m):];
@@ -732,26 +846,22 @@ auto gse::shaders::build_spec_constant_entries() -> std::vector<spec_constant_en
 }
 
 template <gse::shaders::is_shader_binding T>
-auto gse::shaders::emit_slang_binding() -> std::string {
-	constexpr auto name = std::meta::identifier_of(^^T);
+auto gse::shaders::emit_slang_binding(const std::string_view name) -> std::string {
 	const auto read_index = gpu::active_backend == gpu::backend_kind::dx12
 		? std::format("({}_idx + {})", name, gpu::dx12_buffer_read_view_offset)
 		: std::format("{}_idx", name);
-	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return std::format("public struct {0}_table {{ public __subscript(uint i) -> Texture2D<float4> {{ get {{ return (Texture2D<float4>.Handle)i; }} }} }}\npublic {0}_table {0};\n", name);
-	}
-	else if constexpr (has_annotation<texture2d_tag>(^^T)) {
+	if constexpr (T::form == binding_form::texture2d) {
 		using element_t = typename T::element;
 		return std::format("public uniform uint {1}_idx;\npublic property Texture2D<{0}> {1} {{ get {{ return (Texture2D<{0}>.Handle){1}_idx; }} }}\n", slang_type<element_t>::name, name);
 	}
-	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::texture3d) {
 		using element_t = typename T::element;
 		return std::format("public uniform uint {1}_idx;\npublic property Texture3D<{0}> {1} {{ get {{ return (Texture3D<{0}>.Handle){1}_idx; }} }}\n", slang_type<element_t>::name, name);
 	}
-	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::sampler_state) {
 		return std::format("public uniform uint {0}_idx;\npublic property SamplerState {0} {{ get {{ return (SamplerState.Handle){0}_idx; }} }}\n", name);
 	}
-	else if constexpr (has_annotation<tlas_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::tlas) {
 		if (gpu::active_backend == gpu::backend_kind::vulkan) {
 			return std::format(
 				"public uniform uint {0}_address_lo;\n"
@@ -769,20 +879,20 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			name
 		);
 	}
-	else if constexpr (has_annotation<byte_address_buffer_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::byte_address_buffer) {
 		return std::format(
 			"public uniform uint {0}_idx;\npublic property ByteAddressBuffer {0} {{ get {{ return (ByteAddressBuffer.Handle){1}; }} }}\n",
 			name,
 			read_index
 		);
 	}
-	else if constexpr (has_annotation<rw_byte_address_buffer_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::rw_byte_address_buffer) {
 		return std::format(
 			"public uniform uint {0}_idx;\npublic property RWByteAddressBuffer {0} {{ get {{ return (RWByteAddressBuffer.Handle){0}_idx; }} }}\n",
 			name
 		);
 	}
-	else if constexpr (has_annotation<storage_image_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::storage_image) {
 		using element_t = typename T::element;
 		return std::format(
 			"public uniform uint {1}_idx;\npublic property RWTexture2D<{0}> {1} {{ get {{ return (RWTexture2D<{0}>.Handle){1}_idx; }} }}\n",
@@ -790,7 +900,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			name
 		);
 	}
-	else if constexpr (has_annotation<storage_image_3d_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::storage_image_3d) {
 		using element_t = typename T::element;
 		return std::format(
 			"public uniform uint {1}_idx;\npublic property RWTexture3D<{0}> {1} {{ get {{ return (RWTexture3D<{0}>.Handle){1}_idx; }} }}\n",
@@ -798,7 +908,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			name
 		);
 	}
-	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::ssbo_readonly) {
 		using element_t = typename T::element;
 		return std::format(
 			"public uniform uint {0}_idx;\npublic property StructuredBuffer<{1}> {0} {{ get {{ return (StructuredBuffer<{1}>.Handle){2}; }} }}\n",
@@ -807,7 +917,7 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 			read_index
 		);
 	}
-	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::ssbo_readwrite) {
 		using element_t = typename T::element;
 		return std::format(
 			"public uniform uint {0}_idx;\npublic property RWStructuredBuffer<{1}> {0} {{ get {{ return (RWStructuredBuffer<{1}>.Handle){0}_idx; }} }}\n",
@@ -842,42 +952,11 @@ auto gse::shaders::emit_slang_binding() -> std::string {
 
 template <gse::shaders::is_shader_binding T>
 consteval auto gse::shaders::storage_format_of() -> gpu::image_format {
-	if constexpr (requires { T::format; }) {
-		return T::format;
-	}
-	else if constexpr (std::is_same_v<typename T::element, vec4f>) {
+	if constexpr (std::is_same_v<typename T::element, vec4f>) {
 		return gpu::image_format::r16g16b16a16_sfloat;
 	}
 	else {
 		return gpu::image_format::undefined;
-	}
-}
-
-template <gse::shaders::is_shader_binding T>
-consteval auto gse::shaders::binding_kind_of() -> gpu::binding_kind {
-	if constexpr (has_annotation<texture2d_tag>(^^T)) {
-		return gpu::binding_kind::sampled_texture_2d;
-	}
-	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
-		return gpu::binding_kind::sampled_texture_3d;
-	}
-	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
-		return gpu::binding_kind::sampler;
-	}
-	else if constexpr (has_annotation<tlas_tag>(^^T)) {
-		return gpu::binding_kind::acceleration_structure;
-	}
-	else if constexpr (has_annotation<storage_image_tag>(^^T)) {
-		return gpu::binding_kind::storage_texture_2d;
-	}
-	else if constexpr (has_annotation<storage_image_3d_tag>(^^T)) {
-		return gpu::binding_kind::storage_texture_3d;
-	}
-	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T)) {
-		return gpu::binding_kind::storage_buffer;
-	}
-	else {
-		return gpu::binding_kind::read_only_storage_buffer;
 	}
 }
 
@@ -895,28 +974,27 @@ auto gse::shaders::slang_storage_format_name(const gpu::image_format format) -> 
 }
 
 template <gse::shaders::is_shader_binding T>
-auto gse::shaders::emit_wgsl_binding(const std::uint32_t binding) -> std::string {
-	constexpr auto name = std::meta::identifier_of(^^T);
-	if constexpr (has_annotation<texture2d_tag>(^^T)) {
+auto gse::shaders::emit_wgsl_binding(const std::string_view name, const std::uint32_t binding) -> std::string {
+	if constexpr (T::form == binding_form::texture2d) {
 		return std::format("[[vk::binding({0}, 0)]] public Texture2D<{1}> {2};\n", binding, slang_type<typename T::element>::name, name);
 	}
-	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::texture3d) {
 		return std::format("[[vk::binding({0}, 0)]] public Texture3D<{1}> {2};\n", binding, slang_type<typename T::element>::name, name);
 	}
-	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::sampler_state) {
 		return std::format("[[vk::binding({0}, 0)]] public SamplerState {1};\n", binding, name);
 	}
-	else if constexpr (has_annotation<byte_address_buffer_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::byte_address_buffer) {
 		return std::format("[[vk::binding({0}, 0)]] public ByteAddressBuffer {1};\n", binding, name);
 	}
-	else if constexpr (has_annotation<rw_byte_address_buffer_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::rw_byte_address_buffer) {
 		return std::format("[[vk::binding({0}, 0)]] public RWByteAddressBuffer {1};\n", binding, name);
 	}
-	else if constexpr (has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
-		constexpr bool volume = has_annotation<storage_image_3d_tag>(^^T);
+	else if constexpr (T::form == binding_form::storage_image || T::form == binding_form::storage_image_3d) {
+		constexpr bool volume = T::form == binding_form::storage_image_3d;
 		constexpr auto format = storage_format_of<T>();
 		const auto format_name = slang_storage_format_name(format);
-		assert(!format_name.empty(), "{}: storage image has no WGSL texel format; give the binding a `static constexpr gpu::image_format format`", name);
+		assert(!format_name.empty(), "{}: storage image element type has no WGSL texel format", name);
 		return std::format(
 			"[[vk::binding({0}, 0)]] [format(\"{1}\")] public {2}<{3}> {4}_storage;\n"
 			"public struct {4}_view {{ public __subscript({5} i) -> {3} {{ set {{ {4}_storage.Store(i, newValue); }} }} public void GetDimensions({6}) {{ {4}_storage.GetDimensions({7}); }} }}\n"
@@ -931,13 +1009,13 @@ auto gse::shaders::emit_wgsl_binding(const std::uint32_t binding) -> std::string
 			volume ? "w, h, d" : "w, h"
 		);
 	}
-	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::ssbo_readonly) {
 		return std::format("[[vk::binding({0}, 0)]] public StructuredBuffer<{1}> {2};\n", binding, slang_type<typename T::element>::name, name);
 	}
-	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::ssbo_readwrite) {
 		return std::format("[[vk::binding({0}, 0)]] public RWStructuredBuffer<{1}> {2};\n", binding, slang_type<typename T::element>::name, name);
 	}
-	else if constexpr (has_annotation<uniform_block_tag>(^^T)) {
+	else if constexpr (T::form == binding_form::uniform_block) {
 		const auto data_name = std::format("{}_ubo_data", name);
 		return emit_wgsl_struct<typename T::element>(data_name) + std::format(
 			"[[vk::binding({0}, 0)]] public StructuredBuffer<{1}> {2}_buffer;\n"
@@ -948,7 +1026,7 @@ auto gse::shaders::emit_wgsl_binding(const std::uint32_t binding) -> std::string
 		);
 	}
 	else {
-		assert(false, "{}: this binding has no WGSL form (ray-tracing acceleration structures and the bindless texture table are unavailable on webgpu)", name);
+		assert(false, "{}: ray-tracing acceleration structures have no WGSL form", name);
 		return {};
 	}
 }
@@ -984,52 +1062,6 @@ consteval auto gse::shaders::push_constant_layout_is_portable() -> bool {
 	return portable;
 }
 
-template <gse::shaders::is_shader_binding T>
-consteval auto gse::shaders::descriptor_type_of() -> gpu::descriptor_type {
-	if constexpr (has_annotation<sampler2d_array_tag>(^^T)) {
-		return gpu::descriptor_type::combined_image_sampler;
-	}
-	else if constexpr (has_annotation<texture2d_tag>(^^T)) {
-		return gpu::descriptor_type::sampled_image;
-	}
-	else if constexpr (has_annotation<texture3d_tag>(^^T)) {
-		return gpu::descriptor_type::sampled_image;
-	}
-	else if constexpr (has_annotation<sampler_state_tag>(^^T)) {
-		return gpu::descriptor_type::sampler;
-	}
-	else if constexpr (has_annotation<tlas_tag>(^^T)) {
-		return gpu::descriptor_type::acceleration_structure;
-	}
-	else if constexpr (has_annotation<ssbo_readonly_tag>(^^T) || has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<byte_address_buffer_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T)) {
-		return gpu::descriptor_type::storage_buffer;
-	}
-	else if constexpr (has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
-		return gpu::descriptor_type::storage_image;
-	}
-	else {
-		return gpu::descriptor_type::storage_buffer;
-	}
-}
-
-template <gse::shaders::is_shader_binding T>
-consteval auto gse::shaders::is_bindless_table() -> bool {
-	return has_annotation<sampler2d_array_tag>(^^T);
-}
-
-template <gse::shaders::is_shader_binding T>
-consteval auto gse::shaders::descriptor_access_of() -> gpu::descriptor_access {
-	if constexpr (has_annotation<ssbo_read_use_tag>(^^T)) {
-		return gpu::descriptor_access::read;
-	}
-	else if constexpr (has_annotation<ssbo_readwrite_tag>(^^T) || has_annotation<rw_byte_address_buffer_tag>(^^T) || has_annotation<storage_image_tag>(^^T) || has_annotation<storage_image_3d_tag>(^^T)) {
-		return gpu::descriptor_access::read_write;
-	}
-	else {
-		return gpu::descriptor_access::read;
-	}
-}
-
 namespace gse::shaders {
 	template <typename T>
 	auto emit_one_user_type(std::string& out) -> void {
@@ -1048,33 +1080,9 @@ namespace gse::shaders {
 	}
 
 	template <typename T>
-	auto emit_one_binding(std::string& out) -> void {
-		if constexpr (is_shader_binding<T>) {
-			out.append(emit_slang_binding<T>());
-		}
-	}
-
-	template <typename T>
-	auto emit_one_wgsl_binding(std::string& out, std::uint32_t& binding) -> void {
-		if constexpr (is_shader_binding<T>) {
-			if constexpr (!is_bindless_table<T>()) {
-				out.append(emit_wgsl_binding<T>(binding++));
-			}
-			else {
-				assert(false, "{}: the bindless texture table has no WGSL form; systems that sample it are unregistered on webgpu", std::meta::identifier_of(^^T));
-			}
-		}
-	}
-
-	template <typename T>
 	auto collect_one_struct_layout(std::vector<struct_layout>& out) -> void {
 		if constexpr (is_shader_struct<T>) {
 			out.push_back(wgsl_struct_layout<T>(std::meta::identifier_of(^^T)));
-		}
-		else if constexpr (is_shader_binding<T>) {
-			if constexpr (has_annotation<uniform_block_tag>(^^T)) {
-				out.push_back(wgsl_struct_layout<typename T::element>(std::format("{}_ubo_data", std::meta::identifier_of(^^T))));
-			}
 		}
 	}
 }
@@ -1095,18 +1103,34 @@ auto gse::shaders::emit_pack_types() -> std::string {
 	return out;
 }
 
-template <typename Pack>
-auto gse::shaders::emit_pack_bindings() -> std::string {
+template <typename Args>
+auto gse::shaders::emit_bindings() -> std::string {
 	std::string out;
-	if (gpu::active_backend == gpu::backend_kind::webgpu) {
-		std::uint32_t binding = 0;
-		[&]<typename... Ts>(type_pack<Ts...>) {
-			(emit_one_wgsl_binding<Ts>(out, binding), ...);
-		}(Pack{});
-		return out;
+	std::uint32_t binding = 0;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		constexpr auto name = std::meta::identifier_of(m);
+		if (gpu::active_backend == gpu::backend_kind::webgpu) {
+			out.append(emit_wgsl_binding<member_t>(name, binding++));
+		}
+		else {
+			out.append(emit_slang_binding<member_t>(name));
+		}
 	}
-	[&]<typename... Ts>(type_pack<Ts...>) {
-		(emit_one_binding<Ts>(out), ...);
-	}(Pack{});
 	return out;
+}
+
+auto gse::shaders::emit_bindless_texture_table() -> std::string {
+	assert(gpu::active_backend != gpu::backend_kind::webgpu, "the bindless texture table has no WGSL form; systems that sample it are unregistered on webgpu");
+	return "public struct textures_table { public __subscript(uint i) -> Texture2D<float4> { get { return (Texture2D<float4>.Handle)i; } } }\npublic textures_table textures;\n";
+}
+
+template <typename Args>
+auto gse::shaders::emit_binding_struct_layouts(std::vector<struct_layout>& out) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		if constexpr (member_t::form == binding_form::uniform_block) {
+			out.push_back(wgsl_struct_layout<typename member_t::element>(std::format("{}_ubo_data", std::meta::identifier_of(m))));
+		}
+	}
 }

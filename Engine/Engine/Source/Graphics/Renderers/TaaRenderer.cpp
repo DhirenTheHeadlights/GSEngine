@@ -23,19 +23,12 @@ import gse.math;
 import gse.meta;
 
 namespace gse::renderer::taa {
-	struct [[= shaders::texture2d]] hdr_color {
-		using element = vec4f;
+	struct taa_bindings {
+		shaders::texture2d<vec4f> hdr_color;
+		shaders::texture2d<vec4f> velocity_color;
+		shaders::texture2d<vec4f> history_color;
+		shaders::sampler_state color_sampler;
 	};
-
-	struct [[= shaders::texture2d]] velocity_color {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::texture2d]] history_color {
-		using element = vec4f;
-	};
-
-	struct [[= shaders::sampler_state]] color_sampler {};
 
 	struct [[= shaders::shader_struct]] push_constants {
 		float blend_alpha;
@@ -43,13 +36,17 @@ namespace gse::renderer::taa {
 		vec2f inv_allocated_extent;
 		vec2f screen_uv_scale;
 		vec2f screen_uv_max;
+		vec2f active_extent;
+		float motion_blend_alpha;
+		float motion_full_pixels;
 	};
 
-	using shader_binding_types = type_pack<hdr_color, velocity_color, history_color, color_sampler>;
+	constexpr float motion_blend_alpha = 0.4f;
+	constexpr float motion_full_pixels = 16.0f;
 
 	using entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/Taa">,
-		gpu::bindings<shader_binding_types>,
+		gpu::bindings<taa_bindings>,
 		gpu::helpers<"Screen/screen_pass", "Screen/screen_target">,
 		gpu::vertex_stage<"vs_main">,
 		gpu::fragment_stage<"fs_main">,
@@ -193,6 +190,9 @@ auto gse::renderer::taa::frame(const context& ctx, shared_view<gpu::context::dat
 			.inv_allocated_extent = vec2f{ 1.0f / static_cast<float>(allocated.x()), 1.0f / static_cast<float>(allocated.y()) },
 			.screen_uv_scale = gpu_s.render_graph->screen_uv_scale(),
 			.screen_uv_max = gpu_s.render_graph->screen_uv_max(),
+			.active_extent = vec2f{ static_cast<float>(ext.x()), static_cast<float>(ext.y()) },
+			.motion_blend_alpha = std::max(d.blend_alpha, motion_blend_alpha),
+			.motion_full_pixels = motion_full_pixels,
 		},
 		{
 			.hdr_color = d.hdr_view.slot(),

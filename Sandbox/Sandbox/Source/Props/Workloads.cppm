@@ -18,10 +18,10 @@ export namespace sandbox {
 		gse::scene& s
 	) -> void;
 
-	auto spawn_grass_field(
+	auto spawn_rigid_grass_field(
 		gse::scene& s,
 		const gse::vec3<gse::position>& origin,
-		const grass_field_params& params
+		const rigid_grass_field_params& params
 	) -> void;
 }
 
@@ -56,7 +56,7 @@ auto sandbox::spawn_joint_test(gse::scene& s) -> void {
 	s.spawn("Joint Test Sphere", sphere(gse::vec3<gse::position>(gse::meters(0.f, 6.f, -8.f)), gse::meters(1.f)));
 }
 
-auto sandbox::spawn_grass_field(gse::scene& s, const gse::vec3<gse::position>& origin, const grass_field_params& params) -> void {
+auto sandbox::spawn_rigid_grass_field(gse::scene& s, const gse::vec3<gse::position>& origin, const rigid_grass_field_params& params) -> void {
 	const auto side = static_cast<float>(params.blades_per_side);
 	const auto extent = params.spacing * side;
 	const auto plate_size = gse::vec3<gse::length>(extent, gse::meters(0.1f), extent);

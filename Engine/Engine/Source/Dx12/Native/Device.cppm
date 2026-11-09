@@ -425,7 +425,8 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto create_blas(
 			const gpu::acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			gpu::build_acceleration_structure_flags flags
 		) -> gpu::blas;
 
 		[[nodiscard]] auto create_tlas(
@@ -434,7 +435,8 @@ export namespace gse::dx12 {
 
 		[[nodiscard]] auto query_blas_build_sizes(
 			const gpu::acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			gpu::build_acceleration_structure_flags flags
 		) const -> gpu::acceleration_structure_build_sizes;
 
 		[[nodiscard]] auto acceleration_structure_scratch_alignment() const -> gpu::device_size;

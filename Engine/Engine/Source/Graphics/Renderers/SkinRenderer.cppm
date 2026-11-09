@@ -3,6 +3,7 @@ export module gse.graphics:skin_renderer;
 import std;
 
 import :animation_components;
+import :deformed_target;
 import :skinned_model;
 
 import gse.os;
@@ -40,13 +41,6 @@ export namespace gse::renderer::skin {
 		std::uint32_t bone_offset = 0;
 		std::uint32_t vertex_offset = 0;
 		std::uint32_t vertex_count = 0;
-	};
-
-	struct deformed_target {
-		std::array<gpu::buffer, 2> vertices;
-		std::size_t capacity = 0;
-		std::uint32_t write_index = 0;
-		std::uint32_t writes = 0;
 	};
 
 	using deformed_target_map = std::flat_map<std::pair<id, std::uint32_t>, deformed_target>;
@@ -96,11 +90,6 @@ export namespace gse::renderer::skin {
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;
-
-	struct deformed_slots {
-		gpu::bindless_slot current;
-		gpu::bindless_slot previous;
-	};
 
 	auto deformed_slots_for(
 		const deformed_target_map& targets,
