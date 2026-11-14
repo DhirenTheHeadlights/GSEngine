@@ -321,6 +321,11 @@ namespace gse::task {
 		blocking_lane& lane
 	) -> std::optional<job_entry>;
 
+	auto try_pop_lane_for(
+		blocking_lane& lane,
+		const group& owner
+	) -> std::optional<job_entry>;
+
 	auto io_thread_count() -> std::size_t;
 
 	auto submit_async(
@@ -404,7 +409,7 @@ auto gse::task::group::wait() const -> void {
 	trace::scope_guard _{ trace_id<"task::fanout_wait">(), trace::span_kind::wait };
 	while (m_counter.load(std::memory_order_acquire) > 0) {
 		if (t_lane) {
-			if (auto entry = try_pop_lane(*t_lane)) {
+			if (auto entry = try_pop_lane_for(*t_lane, *this)) {
 				run_job(*entry);
 			}
 			else {
@@ -936,6 +941,17 @@ auto gse::task::try_pop_lane(blocking_lane& lane) -> std::optional<job_entry> {
 	}
 	std::optional<job_entry> entry{ std::move(lane.entries.front()) };
 	lane.entries.pop_front();
+	return entry;
+}
+
+auto gse::task::try_pop_lane_for(blocking_lane& lane, const group& owner) -> std::optional<job_entry> {
+	std::lock_guard _(lane.mutex);
+	const auto owned = std::ranges::find(lane.entries, &owner, &job_entry::gp);
+	if (owned == lane.entries.end()) {
+		return std::nullopt;
+	}
+	std::optional<job_entry> entry{ std::move(*owned) };
+	lane.entries.erase(owned);
 	return entry;
 }
 

@@ -424,6 +424,9 @@ auto gse::dx12::commands::push_data(const std::uint32_t offset, const std::span<
 	}
 	const auto num_values = static_cast<std::uint32_t>(data.size() / 4);
 	const auto push_size = active_device->list_push_size(m_cmd);
+	if (offset >= push_size && active_device->push_spilled_bindings(m_cmd, offset - push_size, data)) {
+		return;
+	}
 	const bool compute_bound = active_device->compute_pso_bound(m_cmd);
 	const bool graphics_bound = !directx::is_compute_command_list(list) && active_device->graphics_pso_bound(m_cmd);
 	const std::uint32_t parameter = offset < push_size ? 1 : 0;
@@ -545,10 +548,18 @@ auto gse::dx12::commands::copy_buffer(const gpu::handle<gpu::buffer> src, const 
 }
 
 auto gse::dx12::commands::fill_buffer(const gpu::handle<gpu::buffer> dst, const gpu::device_size offset, const gpu::device_size size, const std::uint32_t data) const -> void {
-	assert(data == 0, "dx12 fill_buffer only implements zero fills; got {:#x}", data);
+	constexpr gpu::device_size max_immediate_fill_bytes = 256;
 	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(m_cmd);
 	auto* dst_res = std::bit_cast<directx::ID3D12Resource*>(dst);
 	if (!list || !dst_res || !active_device) {
+		return;
+	}
+	if (data != 0) {
+		assert(size <= max_immediate_fill_bytes && size % 4 == 0, "dx12 fill_buffer writes non-zero values one dword at a time, so it takes at most {} B in whole dwords; got {} B of {:#x}", max_immediate_fill_bytes, size, data);
+		const auto base = directx::gpu_address(dst_res) + offset;
+		for (gpu::device_size word = 0; word < size; word += 4) {
+			directx::write_buffer_immediate(list, base + word, data);
+		}
 		return;
 	}
 	auto* src = active_device->fill_source_buffer();

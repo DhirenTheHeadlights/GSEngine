@@ -8,8 +8,8 @@ static const float3 light_cone_kernel[6] = {
 };
 
 float3 reconstruct_world_ray(float2 ndc) {
-    float4 wn = mul(cloud_view_ubo.inv_view_proj, float4(ndc, 1.0, 1.0));
-    float4 wf = mul(cloud_view_ubo.inv_view_proj, float4(ndc, 0.0, 1.0));
+    float4 wn = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
     return normalize(wf.xyz / wf.w - wn.xyz / wn.w);
 }
 
@@ -24,15 +24,17 @@ float3 sample_sky(float3 dir) {
     return sky_view_in.SampleLevel(sky_view_sampler_binding, sky_view_dir_to_uv(dir), 0).rgb;
 }
 
-bool scene_occludes_footprint(float2 screen_uv, float2 texel) {
-    float nearest = 1.0;
-    for (int y = 0; y < 4; ++y) {
-        for (int x = 0; x < 4; ++x) {
-            float2 tap = screen_uv + (float2(x, y) - 1.5) * texel;
-            nearest = min(nearest, scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(tap, pc.depth_uv_scale, pc.depth_uv_max), 0).r);
+bool scene_occludes_footprint(float2 screen_uv) {
+    int taps = int(pc.footprint_taps);
+    for (int y = 0; y < taps; ++y) {
+        for (int x = 0; x < taps; ++x) {
+            float2 tap = screen_uv + (float2(x, y) + 0.5 - 0.5 * float(taps)) * pc.screen_texel;
+            if (scene_depth_in.SampleLevel(scene_depth_sampler, screen_target_uv(tap, pc.depth_uv_scale, pc.depth_uv_max), 0).r <= scene_background_depth) {
+                return false;
+            }
         }
     }
-    return nearest > scene_background_depth;
+    return true;
 }
 
 static const float3x3 detail_rotation = {
@@ -41,8 +43,8 @@ static const float3x3 detail_rotation = {
     float3(-0.32982770, 0.44274920, 0.83376350)
 };
 
-float sample_cloud_full(float3 world_pos_km, float height_fraction, float base, float ray_distance, float step_length) {
-    float erosion = cloud_ubo.detail_erosion * (1.0 - smoothstep(detail_fade_start, detail_fade_end, ray_distance));
+float sample_cloud_full(float3 world_pos_km, float height_fraction, float base, float ray_distance, float step_length, bool reference) {
+    float erosion = cloud_ubo.detail_erosion * (reference ? 1.0 : 1.0 - smoothstep(detail_fade_start, detail_fade_end, ray_distance));
     if (erosion <= 0.0) {
         return base;
     }
@@ -51,13 +53,13 @@ float sample_cloud_full(float3 world_pos_km, float height_fraction, float base, 
     return cloud_erode(base, cloud_detail_resolvable(detail, cloud_ubo.detail_scale, step_length), height_fraction, erosion);
 }
 
-float light_optical_depth(float3 world_pos_km, float3 sun_dir, float layer_thickness_km, int samples) {
+float light_optical_depth(float3 world_pos_km, float3 sun_dir, float layer_thickness_km) {
     float total = layer_thickness_km;
-    float normaliser = 1.0 / (exp2(float(samples)) - 1.0);
+    float normaliser = 1.0 / (exp2(float(light_cone_samples)) - 1.0);
     float optical_depth = 0.0;
     float previous = 0.0;
 
-    for (int i = 0; i < samples; ++i) {
+    for (int i = 0; i < light_cone_samples; ++i) {
         float boundary = total * (exp2(float(i + 1)) - 1.0) * normaliser;
         float segment = boundary - previous;
         float along = previous + segment * 0.5;
@@ -75,38 +77,28 @@ float light_optical_depth(float3 world_pos_km, float3 sun_dir, float layer_thick
 }
 
 void cloud_raymarch(uint3 dispatch_id) {
-    uint stride = pc.interleave_stride;
-    uint phase = (pc.interleave_offset.x + pc.interleave_offset.y * stride + dispatch_id.z) % (stride * stride);
-    uint2 pixel = dispatch_id.xy * stride + uint2(phase % stride, phase / stride);
-
-    uint2 size = max(uint2(pc.full_extent) / pc.target_divisor, uint2(1, 1));
-    if (pixel.x >= size.x || pixel.y >= size.y) {
+    uint2 cell = dispatch_id.xy;
+    if (any(cell >= pc.trace_extent)) {
         return;
     }
 
-    float2 screen_uv = (float2(pixel) + pc.subpixel_offset) / float2(size);
-    float3 view_dir = reconstruct_world_ray(screen_uv * 2.0 - 1.0);
+    uint2 pixel = cloud_trace_pixel(cell, pc.block_size, pc.sample_offset, pc.resolve_extent);
+    float2 screen_uv = (float2(pixel) + 0.5) / float2(pc.resolve_extent);
+    float3 view_dir = reconstruct_world_ray(screen_uv * 2.0 - 1.0 - pc.jitter_ndc);
 
-    if (view_dir.y < 0.01) {
-        cloud_out[pixel] = float4(0.0, 0.0, 0.0, 1.0);
+    float camera_radius = atmosphere_ubo.bottom_radius + pc.camera_altitude;
+
+    if (ray_occluded_by_ground(camera_radius, view_dir.y)) {
+        cloud_out[cell] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    if (dispatch_id.z != 0) {
-        float4 previous_clip = mul(cloud_view_ubo.prev_view_proj, float4(view_dir, 0.0));
-        float2 previous_uv = (previous_clip.xy / previous_clip.w) * 0.5 + 0.5;
-        if (previous_clip.w > 1e-6 && screen_uv_inside(previous_uv)) {
-            cloud_out[pixel] = cloud_history_in.SampleLevel(cloud_history_sampler, screen_target_uv(previous_uv + (0.5 - cloud_view_ubo.history_subpixel_offset) / float2(size), pc.low_uv_scale, pc.low_uv_max), 0);
-            return;
-        }
-    }
-
-    if (scene_occludes_footprint(screen_uv, 1.0 / float2(size))) {
-        cloud_out[pixel] = float4(0.0, 0.0, 0.0, 1.0);
+    if (scene_occludes_footprint(screen_uv)) {
+        cloud_out[cell] = float4(0.0, 0.0, 0.0, cloud_skipped_transmittance);
         return;
     }
 
-    float3 camera_pos = float3(0.0, atmosphere_ubo.bottom_radius + pc.camera_altitude, 0.0);
+    float3 camera_pos = float3(0.0, camera_radius, 0.0);
     float layer_thickness = cloud_ubo.cloud_top - cloud_ubo.cloud_bottom;
 
     float2 t_bottom = ray_layer_intersect(camera_pos, view_dir, atmosphere_ubo.bottom_radius + cloud_ubo.cloud_bottom);
@@ -126,79 +118,95 @@ void cloud_raymarch(uint3 dispatch_id) {
     }
 
     if (t_enter < 0.0 || t_exit <= t_enter) {
-        cloud_out[pixel] = float4(0.0, 0.0, 0.0, 1.0);
+        cloud_out[cell] = float4(0.0, 0.0, 0.0, 1.0);
         return;
     }
 
     t_exit = min(t_exit, t_enter + cloud_ubo.max_distance);
 
     float cos_theta = dot(view_dir, pc.sun_direction);
-    float3 sun_radiance = pc.sun_irradiance * sample_atmosphere_transmittance(atmosphere_ubo.bottom_radius + pc.camera_altitude, pc.sun_direction.y);
+    float3 view_to_top = sample_atmosphere_transmittance(camera_radius, view_dir.y);
+    float3 sky_radiance = sample_sky(view_dir) * pc.sun_irradiance;
     float3 sky_zenith = sample_sky(float3(0.0, 1.0, 0.0)) * pc.sun_irradiance;
     float2 horizontal = view_dir.xz / max(length(view_dir.xz), 1e-4);
     float3 sky_horizon = sample_sky(float3(horizontal.x, 0.0, horizontal.y)) * pc.sun_irradiance;
 
-    float jitter = interleaved_gradient_noise(float2(pixel), pc.frame_index);
-    float t = t_enter + coarse_step * jitter;
+    bool reference = pc.march_quality != 0;
+    int iterations = reference ? reference_max_iterations : max_iterations;
+    float entry_scale = 1.0 + t_enter / step_growth_distance;
+    float first_step = reference ? fine_step : skip_step * entry_scale;
+
+    float jitter = neighbour_decorrelated_noise(float2(pixel), pc.frame_index);
+    float t = t_enter + first_step * jitter;
 
     float3 radiance = float3(0.0, 0.0, 0.0);
     float transmittance = 1.0;
     float light_od = 0.0;
-    bool coarse = true;
-    int empty_steps = 0;
-    int density_steps = 0;
+    bool skipping = !reference;
+    float fine_from = t_enter + fmod(first_step * jitter, fine_step * entry_scale);
+    float fine_until = t_enter;
 
-    for (int i = 0; i < max_iterations; ++i) {
+    float lobes[multi_scatter_octaves];
+    cloud_scatter_lobes(cos_theta, cloud_ubo.phase_g_forward, cloud_ubo.phase_g_back, cloud_ubo.phase_blend, cloud_ubo.multi_scatter_strength, lobes);
+
+    for (int i = 0; i < iterations; ++i) {
         if (t >= t_exit || transmittance < view_march_min_transmittance) {
             break;
         }
 
-        float step_scale = 1.0 + t / step_growth_distance;
+        float step_scale = reference ? 1.0 : 1.0 + t / step_growth_distance;
         float3 sample_pos = camera_pos + view_dir * t;
         float h = cloud_height_fraction(sample_pos);
-        float base = sample_cloud_base(sample_pos, h, pc.wind_offset);
+        cloud_weather weather = sample_cloud_weather(sample_pos, pc.wind_offset);
+        bool possible = cloud_base_possible(weather.coverage, weather.cloud_type, h);
 
-        if (coarse) {
-            if (base > 0.0) {
-                coarse = false;
-                empty_steps = 0;
-                t = max(t_enter, t - coarse_step * step_scale);
-            } else {
-                t += coarse_step * step_scale;
+        if (!reference) {
+            if (!possible && t >= fine_until) {
+                fine_from = t + fine_step * step_scale;
+                t += skip_step * step_scale;
+                skipping = true;
+                continue;
             }
-            continue;
+            if (skipping) {
+                skipping = false;
+                fine_until = t;
+                t = fine_from;
+                continue;
+            }
         }
 
-        float dt = fine_step * step_scale * lerp(thin_step_scale, 1.0, saturate(base / thin_density));
-        float density = base > 0.0 ? sample_cloud_full(sample_pos, h, base, t, dt) : 0.0;
+        float base = possible ? sample_cloud_shape(sample_pos, h, pc.wind_offset, weather) : 0.0;
+        float dt = fine_step * step_scale;
+        float density = base > 0.0 ? sample_cloud_full(sample_pos, h, base, t, dt, reference) : 0.0;
 
         if (density > 0.0) {
-            empty_steps = 0;
             float sigma_t = density * cloud_ubo.extinction;
-            float light_lod = saturate(t / light_lod_distance);
-            int light_reuse = light_lod >= 1.0 ? 2 : 1;
 
-            if (transmittance > light_march_min_transmittance && density_steps % light_reuse == 0) {
-                int samples = int(round(lerp(float(light_cone_samples), float(light_far_cone_samples), light_lod)));
-                light_od = light_optical_depth(sample_pos, pc.sun_direction, layer_thickness, samples);
+            if (transmittance > light_march_min_transmittance) {
+                light_od = light_optical_depth(sample_pos, pc.sun_direction, layer_thickness);
             }
-            ++density_steps;
 
-            float scatter = cloud_multi_scatter(light_od, cos_theta, cloud_ubo.phase_g_forward, cloud_ubo.phase_g_back, cloud_ubo.phase_blend, cloud_ubo.multi_scatter_strength, cloud_ubo.multi_scatter_extinction, multi_scatter_octaves);
+            float scatter = cloud_scatter_through(lobes, light_od, cloud_ubo.multi_scatter_extinction);
             float powder = cloud_powder(sigma_t * powder_depth, cloud_ubo.powder_strength);
             float ambient_occlusion = exp(-sigma_t * ambient_depth * (1.0 - h));
             float3 ambient = lerp(sky_horizon, sky_zenith, h) * (cloud_ubo.ambient_strength * ambient_occlusion);
 
+            float sample_radius = length(sample_pos);
+            float3 sample_up = sample_pos / sample_radius;
+            float3 sun_radiance = pc.sun_irradiance * sample_atmosphere_transmittance(sample_radius, dot(sample_up, pc.sun_direction));
+
+            float3 air = segment_transmittance(view_to_top, sample_atmosphere_transmittance(sample_radius, dot(sample_up, view_dir)));
+            float3 haze = segment_in_scatter(sky_radiance, view_to_top, air);
+
             float3 source = cloud_ubo.albedo * sigma_t * (sun_radiance * scatter * powder + ambient);
             float step_transmittance = exp(-sigma_t * dt);
-            radiance += transmittance * (source - source * step_transmittance) / sigma_t;
+            float3 scattered = (source - source * step_transmittance) / sigma_t;
+            radiance += transmittance * (scattered * air + (1.0 - step_transmittance) * haze);
             transmittance *= step_transmittance;
-        } else if (++empty_steps >= empty_steps_to_coarse) {
-            coarse = true;
         }
 
         t += dt;
     }
 
-    cloud_out[pixel] = float4(radiance, transmittance);
+    cloud_out[cell] = float4(radiance, transmittance);
 }

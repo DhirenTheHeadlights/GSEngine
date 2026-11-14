@@ -205,7 +205,8 @@ namespace gse::ide::agent {
 	auto hold_for(
 		const data& d,
 		const queued_build& queued,
-		bool building
+		bool building,
+		bool game_attached
 	) -> build_hold_state;
 
 	auto blocker_name(
@@ -254,6 +255,10 @@ namespace gse::ide::agent {
 	auto force_queued(
 		data& d,
 		std::string_view id
+	) -> void;
+
+	auto retire_dispatch(
+		data& d
 	) -> void;
 
 	auto hand_off_builds(
@@ -306,7 +311,8 @@ namespace gse::ide::agent {
 	auto poll_build_inbox(
 		data& d,
 		channel_write<build_runner::build_request> builds,
-		bool building
+		bool building,
+		bool game_attached
 	) -> bool;
 
 	auto publish_inbox_result(

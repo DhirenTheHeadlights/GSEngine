@@ -1,5 +1,7 @@
 export module gse.time:interval_timer;
 
+import std;
+
 import gse.assert;
 import gse.math;
 
@@ -14,15 +16,13 @@ export namespace gse {
 			time_t<T> interval
 		);
 
-		auto tick(
-			time_t<T> dt = system_clock::dt<time_t<T>>()
-		) -> bool;
+		auto tick() -> bool;
 
 		auto reset() -> void;
 
 	private:
 		time_t<T> m_interval;
-		time_t<T> m_accumulated = time_t<T>{};
+		std::optional<time_t<double, seconds>> m_deadline;
 	};
 }
 
@@ -32,19 +32,24 @@ gse::interval_timer<T>::interval_timer(const time_t<T> interval) : m_interval(in
 }
 
 template <typename T>
-auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
-	assert(dt >= time_t<T>{}, "Delta time must be non-negative");
+auto gse::interval_timer<T>::tick() -> bool {
+	const auto now = system_clock::now<time_t<double, seconds>>();
+	if (!m_deadline) {
+		m_deadline = now + m_interval;
+	}
 
-	m_accumulated += dt;
-	if (m_accumulated >= m_interval) {
-		m_accumulated -= m_interval;
+	if (now >= *m_deadline) {
+		*m_deadline += m_interval;
+		if (*m_deadline <= now) {
+			m_deadline = now + m_interval;
+		}
 		return true;
 	}
-	frame_demand::request_frame_at(system_clock::now<time_t<double, seconds>>() + (m_interval - m_accumulated));
+	frame_demand::request_frame_at(*m_deadline);
 	return false;
 }
 
 template <typename T>
 auto gse::interval_timer<T>::reset() -> void {
-	m_accumulated = {};
+	m_deadline = system_clock::now<time_t<double, seconds>>() + m_interval;
 }

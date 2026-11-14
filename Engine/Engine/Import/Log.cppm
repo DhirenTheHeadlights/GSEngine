@@ -42,7 +42,6 @@ export namespace gse::log {
 		background,
 		watchdog,
 		network,
-		build,
 		terminal
 	};
 

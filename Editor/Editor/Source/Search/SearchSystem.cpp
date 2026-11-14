@@ -87,7 +87,7 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 
 auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in, const channel_write<build_runner::source_changed> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
-	build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
+	build_runner::report_analysis_busy(search::index_busy(d.index->phase.load(std::memory_order_acquire)));
 
 	search::publish_file_build(*d.index);
 	search::publish_symbol_build(*d.index);
@@ -133,7 +133,7 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 		d.symbols_dirty = true;
 		d.last_index_change = {};
 	}
-	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
+	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !search::index_busy(d.index->phase.load(std::memory_order_acquire))) {
 		d.symbols_dirty = false;
 		search::request_symbol_build(*d.index);
 	}

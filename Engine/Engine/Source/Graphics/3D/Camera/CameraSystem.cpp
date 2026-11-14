@@ -90,7 +90,7 @@ auto gse::camera::scripted_requester_id() -> id {
 	return find_or_generate_id("gse::camera::scripted");
 }
 
-auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update, temporal_reset_request> requests_in, read<follow_component> cameras) -> async::task<> {
+auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update, temporal_reset_request> requests_in, read<follow_component> cameras, const shared_view<input::data> input_s) -> async::task<> {
 	const time dt = system_clock::dt();
 
 	for (const auto& [focus] : requests_in.of<ui_focus_request>()) {
@@ -122,6 +122,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 	int highest_priority = -1;
 	id best_controller{};
 	target best_target{};
+	latch best_latch{};
 	time best_blend_duration = milliseconds(300.f);
 
 	const auto camera_ids = cameras.owner_ids();
@@ -141,6 +142,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 			best_target.fov = degrees(45.0f);
 			best_target.near_plane = meters(0.1f);
 			best_target.far_plane = meters(10000.0f);
+			best_latch = cam.latch;
 		}
 	}
 
@@ -149,6 +151,7 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 		best_controller = d.scripted_requester;
 		best_blend_duration = d.scripted_blend_duration;
 		best_target = d.scripted_target;
+		best_latch = {};
 	}
 
 	if (best_controller.exists() && best_controller != d.active_controller_entity) {
@@ -192,6 +195,9 @@ auto gse::camera::run(context& ctx, data& d, const channel_read<ui_focus_request
 		d.active_controller_entity = {};
 		d.active_priority = -1;
 	}
+
+	d.latch = d.blending || d.ui_focus ? latch{} : best_latch;
+	d.latch_consumed = input_s.latch_consumed;
 
 	const vec3f forward = rotate_vector(d.current.orientation, vec3f(0.f, 0.f, -1.f));
 	d.yaw = radians(std::atan2(-forward.x(), -forward.z()));

@@ -14,6 +14,3 @@ auto gse::open_editor_pipe(std::string_view) -> std::expected<void*, std::string
 auto gse::command_line_arguments() -> std::vector<std::wstring> {
 	return {};
 }
-
-auto gse::close_os_handle(void*) -> void {
-}

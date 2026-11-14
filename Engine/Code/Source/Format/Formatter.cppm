@@ -7,6 +7,7 @@ export namespace gse::format {
 	struct options {
 		int indent_width = 4;
 		bool indent_with_spaces = false;
+		int column_limit = 100;
 	};
 
 	struct line_edit {
@@ -39,6 +40,27 @@ export namespace gse::format {
 		std::vector<std::string>& lines,
 		const block_edit& edit
 	) -> bool;
+
+	auto compute_annotations(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<block_edit>;
+
+	auto compute_initializers(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<block_edit>;
+
+	struct format_result {
+		std::vector<block_edit> blocks;
+		std::vector<line_edit> edits;
+		std::size_t reindented = 0;
+	};
+
+	auto format_lines(
+		std::vector<std::string>& lines,
+		const options& opts
+	) -> format_result;
 }
 
 namespace gse::format {
@@ -56,6 +78,7 @@ namespace gse::format {
 		int content_indent = 0;
 		bool switch_body = false;
 		std::uint32_t open_line = 0;
+		int angle_level = 0;
 	};
 
 	struct formatter_state {
@@ -126,6 +149,109 @@ namespace gse::format {
 	auto parse_import(
 		std::string_view s
 	) -> std::optional<import_line>;
+
+	struct source_position {
+		std::uint32_t line = 0;
+		std::uint32_t column = 0;
+	};
+
+	struct literal_list {
+		source_position open_end;
+		source_position close;
+		std::vector<std::string_view> literals;
+	};
+
+	struct annotation_item {
+		source_position start;
+		source_position end;
+		std::vector<literal_list> lists;
+	};
+
+	struct annotation_block {
+		std::uint32_t first_line = 0;
+		std::uint32_t last_line = 0;
+		std::vector<annotation_item> items;
+	};
+
+	auto opens_template(
+		std::span<const syntax::token> tokens,
+		std::size_t token_index
+	) -> bool;
+
+	auto parse_annotation(
+		std::span<const syntax::token> tokens,
+		std::size_t open_index
+	) -> std::optional<annotation_block>;
+
+	auto render_annotation(
+		std::span<const std::string> lines,
+		const annotation_block& block,
+		const options& opts
+	) -> std::vector<std::string>;
+
+	struct line_writer {
+		std::span<const std::string> lines;
+		bool keep_blank = false;
+		std::vector<std::string> out;
+		std::string current;
+
+		auto trim_end() -> void;
+		auto flush() -> void;
+
+		auto copy(
+			source_position from,
+			source_position to
+		) -> void;
+	};
+
+	struct designated_list;
+
+	struct designated_item {
+		source_position start;
+		source_position end;
+		std::vector<designated_list> children;
+	};
+
+	struct designated_list {
+		source_position open;
+		source_position close;
+		std::vector<designated_item> items;
+	};
+
+	auto advance_char(
+		std::span<const syntax::token> tokens,
+		std::size_t& token_index,
+		std::size_t& char_index
+	) -> void;
+
+	auto parse_designated(
+		std::span<const syntax::token> tokens,
+		std::size_t& token_index,
+		std::size_t& char_index
+	) -> std::optional<designated_list>;
+
+	auto visual_width(
+		std::string_view s,
+		int width
+	) -> int;
+
+	auto suffix_width(
+		std::span<const std::string> lines,
+		source_position close,
+		source_position limit
+	) -> int;
+
+	auto flat_designated(
+		std::span<const std::string> lines,
+		const designated_list& list
+	) -> std::optional<std::string>;
+
+	auto write_designated(
+		line_writer& writer,
+		const designated_list& list,
+		int suffix,
+		const options& opts
+	) -> void;
 }
 
 auto gse::format::is_opener(const char c) -> bool {
@@ -406,16 +532,32 @@ auto gse::format::compute(const std::span<const std::string> lines, const option
 		}
 
 		const char trigger = state.last_code;
-		const bool operator_start = first.type == syntax::token_type::punctuation && !punct_starts_statement(first.text, trigger);
+		const bool in_annotation = !state.stack.empty() && state.stack.back().kind == '[' && (trigger == '[' || trigger == ',');
+		const bool annotation_start = in_annotation && first.type == syntax::token_type::punctuation && first.text.front() == '=';
+		const bool operator_start = first.type == syntax::token_type::punctuation && !annotation_start && !punct_starts_statement(first.text, trigger);
 		const bool chain_start = first.type == syntax::token_type::punctuation
 			&& (first.text.front() == '.' || (first.text.size() > 1 && first.text[0] == '-' && first.text[1] == '>'));
-		const bool eligible = normal_start && !state.continuation && state.angle_depth == 0
-			&& starts_statement(trigger) && !is_comment(first.type) && !operator_start;
+		const bool angle_closer = first.type == syntax::token_type::punctuation && first.text.front() == '>';
+		const bool in_angle_block = !state.stack.empty() && state.stack.back().kind == '<' && state.angle_depth == state.stack.back().angle_level;
+		const bool angle_line = in_angle_block && normal_start && !is_comment(first.type)
+			&& (trigger == '<' || trigger == ',' || angle_closer || (trigger == '"' && first.type == syntax::token_type::string));
+		const bool eligible = angle_line || (normal_start && !state.continuation && state.angle_depth == 0
+			&& starts_statement(trigger) && !is_comment(first.type) && !operator_start);
+
+		const syntax::token* last_code_token = nullptr;
+		for (const syntax::token& t : line_tokens) {
+			if (!is_comment(t.type)) {
+				last_code_token = &t;
+			}
+		}
 
 		int effective = indent_of(ws, width);
 		if (eligible) {
 			int level = 0;
-			if (const int closers = leading_closer_count(line_tokens); closers > 0) {
+			if (angle_line) {
+				level = angle_closer ? state.stack.back().open_indent : state.stack.back().content_indent;
+			}
+			else if (const int closers = leading_closer_count(line_tokens); closers > 0) {
 				level = state.stack.empty() ? 0 : state.stack.back().open_indent;
 			}
 			else if (!state.stack.empty()) {
@@ -466,12 +608,25 @@ auto gse::format::compute(const std::span<const std::string> lines, const option
 				const char c = t.text[ci];
 				if (c == '<' && ci == 0 && t.text == "<" && after_ident && has_matching_angle(lex.tokens, static_cast<std::size_t>(&t - lex.tokens.data()))) {
 					++state.angle_depth;
+					if (&t == last_code_token) {
+						state.stack.push_back({
+							.kind = '<',
+							.open_indent = effective,
+							.content_indent = effective + 1,
+							.open_line = line,
+							.angle_level = state.angle_depth,
+						});
+					}
 				}
 				else if (c == '>' && state.angle_depth > 0 && !(ci > 0 && t.text[ci - 1] == '-')) {
+					if (!state.stack.empty() && state.stack.back().kind == '<' && state.stack.back().angle_level == state.angle_depth) {
+						state.stack.pop_back();
+					}
 					--state.angle_depth;
 				}
 				else if (c == ';' || c == '{' || c == '}') {
-					state.angle_depth = 0;
+					const auto block = std::ranges::find(state.stack | std::views::reverse, '<', &bracket::kind);
+					state.angle_depth = block == std::ranges::end(state.stack | std::views::reverse) ? 0 : block->angle_level;
 				}
 				if (is_opener(c)) {
 					const bool body = c == '{' && state.switch_pending && state.paren_depth == state.switch_paren_base;
@@ -644,6 +799,474 @@ auto gse::format::apply_block(std::vector<std::string>& lines, const block_edit&
 	return true;
 }
 
+auto gse::format::opens_template(const std::span<const syntax::token> tokens, const std::size_t token_index) -> bool {
+	const syntax::token& t = tokens[token_index];
+	if (t.type != syntax::token_type::punctuation || t.text != "<" || token_index == 0) {
+		return false;
+	}
+	const syntax::token& prev = tokens[token_index - 1];
+	return prev.type == syntax::token_type::identifier && prev.line == t.line && prev.end == t.start && has_matching_angle(tokens, token_index);
+}
+
+auto gse::format::parse_annotation(const std::span<const syntax::token> tokens, const std::size_t open_index) -> std::optional<annotation_block> {
+	annotation_block block{ .first_line = tokens[open_index].line };
+	annotation_item current;
+	std::vector<std::size_t> angles;
+	int depth = 0;
+	bool expect_item = true;
+
+	for (std::size_t i = open_index; i < tokens.size(); ++i) {
+		const syntax::token& t = tokens[i];
+		if (is_comment(t.type) || t.type == syntax::token_type::preprocessor) {
+			return std::nullopt;
+		}
+		if (t.type != syntax::token_type::punctuation) {
+			if (expect_item) {
+				return std::nullopt;
+			}
+			continue;
+		}
+		for (std::size_t ci = i == open_index ? 2 : 0; ci < t.text.size(); ++ci) {
+			const char c = t.text[ci];
+			const source_position here{
+				.line = t.line,
+				.column = t.start + static_cast<std::uint32_t>(ci),
+			};
+			if (expect_item) {
+				if (c != '=') {
+					return std::nullopt;
+				}
+				current = { .start = here };
+				expect_item = false;
+				continue;
+			}
+			if (c == '<' && opens_template(tokens, i)) {
+				angles.push_back(i);
+				continue;
+			}
+			if (c == '>' && !angles.empty() && !(ci > 0 && t.text[ci - 1] == '-')) {
+				const std::size_t open_angle = angles.back();
+				angles.pop_back();
+				const auto inner = tokens.subspan(open_angle + 1, i - open_angle - 1);
+				if (ci == 0 && inner.size() >= 2 && std::ranges::all_of(inner, [](const syntax::token& s) { return s.type == syntax::token_type::string; })) {
+					literal_list list{
+						.open_end = { .line = tokens[open_angle].line, .column = tokens[open_angle].end },
+						.close = here,
+					};
+					for (const syntax::token& s : inner) {
+						list.literals.push_back(s.text);
+					}
+					current.lists.push_back(std::move(list));
+				}
+				continue;
+			}
+			if (is_opener(c)) {
+				++depth;
+				continue;
+			}
+			if (c == ',' && depth == 0 && angles.empty()) {
+				current.end = here;
+				block.items.push_back(std::move(current));
+				expect_item = true;
+				continue;
+			}
+			if (!is_closer(c)) {
+				continue;
+			}
+			if (depth > 0) {
+				--depth;
+				continue;
+			}
+			if (c != ']' || !angles.empty() || ci + 2 != t.text.size() || t.text[ci + 1] != ']') {
+				return std::nullopt;
+			}
+			if (i + 1 < tokens.size() && tokens[i + 1].line == t.line) {
+				return std::nullopt;
+			}
+			current.end = here;
+			block.items.push_back(std::move(current));
+			block.last_line = t.line;
+			return block;
+		}
+	}
+	return std::nullopt;
+}
+
+auto gse::format::render_annotation(const std::span<const std::string> lines, const annotation_block& block, const options& opts) -> std::vector<std::string> {
+	const int width = std::max(1, opts.indent_width);
+	const std::string ws(leading_whitespace(lines[block.first_line]));
+	const int base = indent_of(ws, width);
+	const std::string item_indent = make_indent(base + 1, width, opts);
+	const std::string literal_indent = make_indent(base + 2, width, opts);
+
+	line_writer writer{ .lines = lines };
+	writer.out.push_back(ws + "[[");
+
+	for (std::size_t k = 0; k < block.items.size(); ++k) {
+		const annotation_item& item = block.items[k];
+		writer.current = item_indent;
+		source_position from = item.start;
+		for (const literal_list& list : item.lists) {
+			writer.copy(from, list.open_end);
+			writer.flush();
+			for (const std::string_view literal : list.literals) {
+				writer.out.push_back(literal_indent + std::string(literal));
+			}
+			writer.current = item_indent;
+			from = list.close;
+		}
+		writer.copy(from, item.end);
+		if (k + 1 < block.items.size()) {
+			writer.trim_end();
+			writer.current += ',';
+		}
+		writer.flush();
+	}
+	writer.out.push_back(ws + "]]");
+	return std::move(writer.out);
+}
+
+auto gse::format::line_writer::trim_end() -> void {
+	current.erase(current.find_last_not_of(" \t\r") + 1);
+}
+
+auto gse::format::line_writer::flush() -> void {
+	trim_end();
+	if (keep_blank || !trimmed(current).empty()) {
+		out.push_back(std::move(current));
+	}
+	current.clear();
+}
+
+auto gse::format::line_writer::copy(const source_position from, const source_position to) -> void {
+	const std::string_view first(lines[from.line]);
+	if (from.line == to.line) {
+		current += first.substr(from.column, to.column - from.column);
+		return;
+	}
+	current += first.substr(from.column);
+	flush();
+	for (std::uint32_t l = from.line + 1; l < to.line; ++l) {
+		current = lines[l];
+		flush();
+	}
+	current = std::string_view(lines[to.line]).substr(0, to.column);
+}
+
+auto gse::format::compute_annotations(const std::span<const std::string> lines, const options& opts) -> std::vector<block_edit> {
+	std::vector<std::string_view> views;
+	views.reserve(lines.size());
+	for (const std::string& l : lines) {
+		views.emplace_back(l);
+	}
+	const syntax::lex_result lex = syntax::tokenize(views);
+	const std::span<const syntax::token> tokens = lex.tokens;
+
+	std::vector<block_edit> edits;
+	for (std::size_t i = 0; i < tokens.size(); ++i) {
+		const syntax::token& t = tokens[i];
+		const bool line_start = i == 0 || tokens[i - 1].line != t.line;
+		if (t.type != syntax::token_type::punctuation || !t.text.starts_with("[[") || !line_start || lex.line_start_modes[t.line] != syntax::lex_mode::normal) {
+			continue;
+		}
+		const std::optional<annotation_block> block = parse_annotation(tokens, i);
+		if (!block || block->items.size() < 2) {
+			continue;
+		}
+		std::vector<std::string> replacement = render_annotation(lines, *block, opts);
+		const std::size_t span = block->last_line - block->first_line + 1;
+		if (replacement.size() != span || !std::ranges::equal(replacement, lines.subspan(block->first_line, span))) {
+			edits.push_back({
+				.first_line = block->first_line,
+				.last_line = block->last_line,
+				.replacement = std::move(replacement),
+			});
+		}
+		while (i + 1 < tokens.size() && tokens[i + 1].line <= block->last_line) {
+			++i;
+		}
+	}
+	std::ranges::reverse(edits);
+	return edits;
+}
+
+auto gse::format::advance_char(const std::span<const syntax::token> tokens, std::size_t& token_index, std::size_t& char_index) -> void {
+	const syntax::token& t = tokens[token_index];
+	if (t.type == syntax::token_type::punctuation && char_index + 1 < t.text.size()) {
+		++char_index;
+		return;
+	}
+	++token_index;
+	char_index = 0;
+}
+
+auto gse::format::parse_designated(const std::span<const syntax::token> tokens, std::size_t& token_index, std::size_t& char_index) -> std::optional<designated_list> {
+	designated_list list{
+		.open = {
+			.line = tokens[token_index].line,
+			.column = tokens[token_index].start + static_cast<std::uint32_t>(char_index),
+		},
+	};
+	designated_item current;
+	source_position content_end;
+	std::vector<std::size_t> angles;
+	int depth = 0;
+	bool expect_item = true;
+
+	std::size_t ti = token_index;
+	std::size_t ci = char_index;
+	for (advance_char(tokens, ti, ci); ti < tokens.size(); advance_char(tokens, ti, ci)) {
+		const syntax::token& t = tokens[ti];
+		if (is_comment(t.type) || t.type == syntax::token_type::preprocessor) {
+			return std::nullopt;
+		}
+		if (t.type != syntax::token_type::punctuation) {
+			if (expect_item) {
+				return std::nullopt;
+			}
+			content_end = { .line = t.line, .column = t.end };
+			continue;
+		}
+		const char c = t.text[ci];
+		const source_position here{
+			.line = t.line,
+			.column = t.start + static_cast<std::uint32_t>(ci),
+		};
+		const source_position after{
+			.line = t.line,
+			.column = here.column + 1,
+		};
+		if (expect_item) {
+			if (c == '}' && !list.items.empty()) {
+				list.close = here;
+				token_index = ti;
+				char_index = ci;
+				return list;
+			}
+			const bool names_member = ci + 1 == t.text.size() && ti + 1 < tokens.size() && tokens[ti + 1].type == syntax::token_type::identifier;
+			if (c != '.' || !names_member) {
+				return std::nullopt;
+			}
+			current = { .start = here };
+			content_end = after;
+			expect_item = false;
+			continue;
+		}
+		if (c == '{') {
+			std::size_t child_ti = ti;
+			std::size_t child_ci = ci;
+			if (std::optional<designated_list> child = parse_designated(tokens, child_ti, child_ci)) {
+				content_end = {
+					.line = child->close.line,
+					.column = child->close.column + 1,
+				};
+				current.children.push_back(std::move(*child));
+				ti = child_ti;
+				ci = child_ci;
+				continue;
+			}
+		}
+		const bool top = depth == 0 && angles.empty();
+		if (c == ',' && top) {
+			current.end = content_end;
+			list.items.push_back(std::move(current));
+			current = {};
+			expect_item = true;
+			continue;
+		}
+		if (c == '}' && top) {
+			current.end = content_end;
+			list.items.push_back(std::move(current));
+			list.close = here;
+			token_index = ti;
+			char_index = ci;
+			return list;
+		}
+		content_end = after;
+		if (c == '<' && opens_template(tokens, ti)) {
+			angles.push_back(ti);
+			continue;
+		}
+		if (c == '>' && !angles.empty() && !(ci > 0 && t.text[ci - 1] == '-')) {
+			angles.pop_back();
+			continue;
+		}
+		if (is_opener(c)) {
+			++depth;
+			continue;
+		}
+		if (!is_closer(c)) {
+			continue;
+		}
+		if (depth == 0) {
+			return std::nullopt;
+		}
+		--depth;
+	}
+	return std::nullopt;
+}
+
+auto gse::format::visual_width(const std::string_view s, const int width) -> int {
+	const std::string_view ws = leading_whitespace(s);
+	return indent_of(ws, width) * width + static_cast<int>(s.size() - ws.size());
+}
+
+auto gse::format::suffix_width(const std::span<const std::string> lines, const source_position close, const source_position limit) -> int {
+	const std::string_view line(lines[close.line]);
+	const std::size_t from = std::min<std::size_t>(close.column + 1, line.size());
+	const std::size_t to = limit.line == close.line ? std::min<std::size_t>(limit.column, line.size()) : line.size();
+	const std::string_view rest = line.substr(from, to > from ? to - from : 0);
+	return static_cast<int>(rest.find_last_not_of(" \t\r") + 1);
+}
+
+auto gse::format::flat_designated(const std::span<const std::string> lines, const designated_list& list) -> std::optional<std::string> {
+	std::string out = "{ ";
+	for (std::size_t k = 0; k < list.items.size(); ++k) {
+		const designated_item& item = list.items[k];
+		if (k > 0) {
+			out += ", ";
+		}
+		source_position from = item.start;
+		for (const designated_list& child : item.children) {
+			if (child.open.line != from.line) {
+				return std::nullopt;
+			}
+			const std::optional<std::string> inner = flat_designated(lines, child);
+			if (!inner) {
+				return std::nullopt;
+			}
+			out += std::string_view(lines[from.line]).substr(from.column, child.open.column - from.column);
+			out += *inner;
+			from = {
+				.line = child.close.line,
+				.column = child.close.column + 1,
+			};
+		}
+		if (item.end.line != from.line) {
+			return std::nullopt;
+		}
+		out += std::string_view(lines[from.line]).substr(from.column, item.end.column - from.column);
+	}
+	out += " }";
+	return out;
+}
+
+auto gse::format::write_designated(line_writer& writer, const designated_list& list, const int suffix, const options& opts) -> void {
+	const int width = std::max(1, opts.indent_width);
+	if (const std::optional<std::string> flat = flat_designated(writer.lines, list)) {
+		if (visual_width(writer.current, width) + static_cast<int>(flat->size()) + suffix <= opts.column_limit) {
+			writer.current += *flat;
+			return;
+		}
+	}
+	const int level = indent_of(leading_whitespace(writer.current), width);
+	writer.current += '{';
+	writer.flush();
+	for (const designated_item& item : list.items) {
+		writer.current = make_indent(level + 1, width, opts);
+		source_position from = item.start;
+		for (std::size_t k = 0; k < item.children.size(); ++k) {
+			const designated_list& child = item.children[k];
+			writer.copy(from, child.open);
+			const bool next_on_line = k + 1 < item.children.size() && item.children[k + 1].open.line == child.close.line;
+			const source_position limit = next_on_line ? item.children[k + 1].open : item.end;
+			write_designated(writer, child, suffix_width(writer.lines, child.close, limit) + 1, opts);
+			from = {
+				.line = child.close.line,
+				.column = child.close.column + 1,
+			};
+		}
+		writer.copy(from, item.end);
+		writer.trim_end();
+		writer.current += ',';
+		writer.flush();
+	}
+	writer.current = make_indent(level, width, opts) + '}';
+}
+
+auto gse::format::compute_initializers(const std::span<const std::string> lines, const options& opts) -> std::vector<block_edit> {
+	std::vector<std::string_view> views;
+	views.reserve(lines.size());
+	for (const std::string& l : lines) {
+		views.emplace_back(l);
+	}
+	const syntax::lex_result lex = syntax::tokenize(views);
+	const std::span<const syntax::token> tokens = lex.tokens;
+
+	std::vector<block_edit> edits;
+	std::vector<designated_list> group;
+
+	const auto emit = [&] {
+		if (group.empty()) {
+			return;
+		}
+		const std::uint32_t first = group.front().open.line;
+		const std::uint32_t last = group.back().close.line;
+		const bool plain = std::ranges::all_of(std::views::iota(first, last + 1), [&](const std::uint32_t l) {
+			return lex.line_start_modes[l] == syntax::lex_mode::normal;
+		});
+		if (plain) {
+			line_writer writer{
+				.lines = lines,
+				.keep_blank = true,
+			};
+			source_position from{ .line = first };
+			for (std::size_t k = 0; k < group.size(); ++k) {
+				const designated_list& list = group[k];
+				writer.copy(from, list.open);
+				const bool next_on_line = k + 1 < group.size() && group[k + 1].open.line == list.close.line;
+				const source_position limit = next_on_line ? group[k + 1].open : source_position{ .line = last + 1 };
+				write_designated(writer, list, suffix_width(lines, list.close, limit), opts);
+				from = {
+					.line = list.close.line,
+					.column = list.close.column + 1,
+				};
+			}
+			writer.copy(from, {
+				.line = last,
+				.column = static_cast<std::uint32_t>(lines[last].size()),
+			});
+			writer.flush();
+
+			const std::size_t span = last - first + 1;
+			const auto same = [](const std::string& a, const std::string& b) {
+				return trimmed(a) == trimmed(b);
+			};
+			if (!std::ranges::equal(writer.out, lines.subspan(first, span), same)) {
+				edits.push_back({
+					.first_line = first,
+					.last_line = last,
+					.replacement = std::move(writer.out),
+				});
+			}
+		}
+		group.clear();
+	};
+
+	std::size_t ti = 0;
+	std::size_t ci = 0;
+	while (ti < tokens.size()) {
+		const syntax::token& t = tokens[ti];
+		if (t.type == syntax::token_type::punctuation && t.text[ci] == '{') {
+			std::size_t end_ti = ti;
+			std::size_t end_ci = ci;
+			if (std::optional<designated_list> list = parse_designated(tokens, end_ti, end_ci)) {
+				if (!group.empty() && list->open.line > group.back().close.line) {
+					emit();
+				}
+				group.push_back(std::move(*list));
+				ti = end_ti;
+				ci = end_ci;
+			}
+		}
+		advance_char(tokens, ti, ci);
+	}
+	emit();
+
+	std::ranges::reverse(edits);
+	return edits;
+}
+
 auto gse::format::apply(std::vector<std::string>& lines, const std::span<const line_edit> edits) -> std::size_t {
 	std::size_t applied = 0;
 	for (const line_edit& e : edits) {
@@ -658,4 +1281,24 @@ auto gse::format::apply(std::vector<std::string>& lines, const std::span<const l
 		++applied;
 	}
 	return applied;
+}
+
+auto gse::format::format_lines(std::vector<std::string>& lines, const options& opts) -> format_result {
+	format_result result;
+	if (std::optional<block_edit> imports = compute_imports(lines); imports && apply_block(lines, *imports)) {
+		result.blocks.push_back(std::move(*imports));
+	}
+	for (block_edit& block : compute_annotations(lines, opts)) {
+		if (apply_block(lines, block)) {
+			result.blocks.push_back(std::move(block));
+		}
+	}
+	for (block_edit& block : compute_initializers(lines, opts)) {
+		if (apply_block(lines, block)) {
+			result.blocks.push_back(std::move(block));
+		}
+	}
+	result.edits = compute(lines, opts);
+	result.reindented = apply(lines, result.edits);
+	return result;
 }

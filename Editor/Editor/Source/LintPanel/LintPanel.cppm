@@ -327,7 +327,7 @@ auto gse::ide::draw_lint_panel(gui::builder& ui, const rectf& rect, lint_panel_s
 		.texture = ctx.blank_texture,
 	});
 	const search::index_phase phase = index->phase.load(std::memory_order_acquire);
-	const bool analyzing = phase != search::index_phase::idle;
+	const bool analyzing = search::index_busy(phase);
 	const bool never_analyzed = !state.snapshot || state.snapshot->symbol_generation == 0;
 	const bool incomplete = analyzing || never_analyzed;
 	std::string summary;

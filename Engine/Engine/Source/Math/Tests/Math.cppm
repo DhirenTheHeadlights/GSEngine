@@ -3,6 +3,7 @@ export module gse.tests.math;
 import std;
 
 import gse.math;
+import gse.meta;
 import gse.test;
 
 export namespace gse::tests::math {
@@ -23,6 +24,11 @@ export namespace gse::tests::math {
 
 	[[= test::unit{ .tags = "math" }]]
 	auto degenerate_input_returns_zero(
+		test::context& ctx
+	) -> void;
+
+	[[= test::unit{ .tags = "math" }]]
+	auto vector_text_round_trips(
 		test::context& ctx
 	) -> void;
 }
@@ -67,4 +73,30 @@ auto gse::tests::math::degenerate_input_returns_zero(test::context& ctx) -> void
 	ctx.expect_eq(normalize(zero), zero);
 	ctx.expect_eq(project(a, zero), zero);
 	ctx.expect_eq(angle_between(a, zero), radians(0.f));
+}
+
+auto gse::tests::math::vector_text_round_trips(test::context& ctx) -> void {
+	const auto round_trips = [&ctx]<typename V>(const V& value) {
+		V parsed{};
+		if (ctx.expect(parse(std::format("{}", value), parsed))) {
+			ctx.expect_eq(parsed, value);
+		}
+	};
+
+	round_trips(vec3f{ 1.5f, -2.f, 0.25f });
+	round_trips(vec2i{ 3, -4 });
+	round_trips(vec3<length>{ meters(1.5f), meters(-2.f), meters(0.25f) });
+	round_trips(vec3<length_t<float, kilometers>>{ kilometers(1.5f), kilometers(-2.f), kilometers(0.25f) });
+	round_trips(vec2<angle>{ radians(0.5f), radians(-1.25f) });
+
+	vec2<length> mixed{};
+	if (ctx.expect(parse("(2 km, 3 m)", mixed))) {
+		ctx.expect_eq(mixed, vec2<length>{ kilometers(2.f), meters(3.f) });
+	}
+
+	vec3<length> rejected{};
+	ctx.expect(!parse("(1, 2, 3)", rejected));
+	ctx.expect(!parse("(1 m, 2 parsecs, 3 m)", rejected));
+	ctx.expect(!parse("(1 m, 2 m)", rejected));
+	ctx.expect(!parse("(1 m, 2 m, 3 m, 4 m)", rejected));
 }

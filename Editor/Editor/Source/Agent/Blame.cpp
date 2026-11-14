@@ -776,15 +776,18 @@ auto gse::ide::agent::retire_presence(data& d) -> void {
 	}
 }
 
-auto gse::ide::agent::hold_for(const data& d, const queued_build& queued, const bool building) -> build_hold_state {
+auto gse::ide::agent::hold_for(const data& d, const queued_build& queued, const bool building, const bool game_attached) -> build_hold_state {
 	const auto rebuilding_editor = [](const queued_build& active) {
 		return active.target == build_runner::build_target::editor;
 	};
 	if (std::ranges::any_of(d.inbox_active, rebuilding_editor)) {
 		return { .reason = build_hold::editor_restart };
 	}
-	if (building || !d.inbox_active.empty()) {
+	if (building || d.build_dispatch.state() != build_dispatch_stage::idle) {
 		return { .reason = build_hold::building };
+	}
+	if (game_attached && queued.run && !queued.standalone) {
+		return { .reason = build_hold::game_running };
 	}
 	if (queued.forced || queued.run_only) {
 		return {};
@@ -830,6 +833,8 @@ auto gse::ide::agent::hold_message(const build_hold_state& hold, const std::stri
 			return std::format("{} - your request is preserved across the restart and resumes automatically", style.label);
 		case build_hold::building:
 			return std::format("{} - you are queued behind it", style.label);
+		case build_hold::game_running:
+			return std::format("{} - an attached run would take its viewport mid-scenario, so yours starts when it exits. Call gse_hibernate and you will be woken with the result, or pass standalone to run beside it.", style.label);
 		case build_hold::none:
 			break;
 	}
@@ -1288,6 +1293,11 @@ auto gse::ide::agent::force_queued(data& d, const std::string_view id) -> void {
 	found->forced = true;
 }
 
+auto gse::ide::agent::retire_dispatch(data& d) -> void {
+	d.inbox_active.clear();
+	d.build_dispatch.enter(build_dispatch_stage::idle);
+}
+
 auto gse::ide::agent::hand_off_builds(data& d, const bool relaunching) -> void {
 	for (const queued_build& waiter : d.inbox_active) {
 		if (relaunching && waiter.target != build_runner::build_target::editor) {
@@ -1319,19 +1329,23 @@ auto gse::ide::agent::hand_off_builds(data& d, const bool relaunching) -> void {
 		log::println(log::level::info, log::category::task, "build inbox: handing {} queued request(s) to the relaunched editor", d.inbox_queue.size());
 	}
 
-	d.inbox_active.clear();
+	if (d.build_dispatch.state() != build_dispatch_stage::idle) {
+		retire_dispatch(d);
+	}
 	d.inbox_queue.clear();
 }
 
-auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building) -> bool {
+auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner::build_request> builds, const bool building, const bool game_attached) -> bool {
 	const time now = system_clock::now<time>();
 
-	if (!d.inbox_active.empty()) {
-		d.inbox_started = d.inbox_started || building;
-		if (!d.inbox_started && !building && now >= d.inbox_dispatch_deadline) {
-			log::println(log::level::info, log::category::task, "build inbox: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
+	if (d.build_dispatch.state() == build_dispatch_stage::dispatched) {
+		if (building) {
+			d.build_dispatch.enter(build_dispatch_stage::building);
+		}
+		else if (now >= d.inbox_dispatch_deadline) {
+			log::println(log::level::info, log::category::task, "build_dispatch: the editor took a different build, so {} request(s) go back in the queue", d.inbox_active.size());
 			d.inbox_queue.insert(d.inbox_queue.begin(), std::make_move_iterator(d.inbox_active.begin()), std::make_move_iterator(d.inbox_active.end()));
-			d.inbox_active.clear();
+			retire_dispatch(d);
 		}
 	}
 
@@ -1359,11 +1373,11 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 	}
 
 	for (queued_build& queued : d.inbox_queue) {
-		const build_hold_state hold = hold_for(d, queued, building);
+		const build_hold_state hold = hold_for(d, queued, building, game_attached);
 		report_hold(queued, hold, blocker_name(d, hold.blocker));
 	}
 
-	if (!d.inbox_active.empty()) {
+	if (d.build_dispatch.state() != build_dispatch_stage::idle) {
 		return recorded;
 	}
 
@@ -1410,7 +1424,7 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 		}
 	}
 
-	log::println(log::level::info, log::category::task, "build inbox: one {} build is answering {} queued request(s), {} deferred", target == build_runner::build_target::editor ? "editor" : "project", group.size(), deferred.size());
+	log::println(log::level::info, log::category::task, "build_dispatch: one {} build is answering {} queued request(s), {} deferred", target == build_runner::build_target::editor ? "editor" : "project", group.size(), deferred.size());
 
 	builds.push<build_runner::build_request>({
 		.target = target,
@@ -1427,13 +1441,13 @@ auto gse::ide::agent::poll_build_inbox(data& d, const channel_write<build_runner
 
 	d.inbox_active = std::move(group);
 	d.inbox_dispatch_deadline = now + seconds(5.f);
-	d.inbox_started = false;
+	d.build_dispatch.enter(build_dispatch_stage::dispatched);
 	d.inbox_queue = std::move(deferred);
 	return recorded;
 }
 
 auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_finished& finished) -> void {
-	if (d.inbox_active.empty()) {
+	if (d.build_dispatch.state() == build_dispatch_stage::idle) {
 		return;
 	}
 
@@ -1521,7 +1535,7 @@ auto gse::ide::agent::publish_inbox_result(data& d, const build_runner::build_fi
 		}
 		build_inbox::publish(outcome);
 	}
-	d.inbox_active.clear();
+	retire_dispatch(d);
 }
 
 auto gse::ide::agent::dispatch_blame(data& d, const std::uint32_t session_id) -> void {

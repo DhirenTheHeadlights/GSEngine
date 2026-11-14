@@ -3,25 +3,34 @@ module gse.runtime:bench;
 import std;
 
 import gse.core;
+import gse.diag;
 import gse.ecs;
 import gse.concurrency;
+import gse.log;
 import gse.scenario;
 
 import :engine;
 
 namespace gse {
 	enum class bench_phase : std::uint8_t {
-		settling,
-		warmup,
-		measuring,
-		done,
+		awaiting_scene,
+		settling [[
+			= entered_from({ awaiting_scene })
+		]],
+		warmup [[
+			= entered_from({ awaiting_scene, settling })
+		]],
+		measuring [[
+			= entered_from({ warmup })
+		]],
+		done [[
+			= entered_from({ awaiting_scene, settling, measuring })
+		]],
 	};
 
 	struct bench_state {
-		bench_phase phase = bench_phase::settling;
+		lifecycle<bench_phase> phase{ "bench", log::category::general };
 		int frames_in_phase = 0;
-		bool scene_requested = false;
-		bool scenario_started = false;
 		scenario::wait_gate gate;
 		std::optional<scenario::context> scenario_ctx;
 		async::task<> scenario_task;

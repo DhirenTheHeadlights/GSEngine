@@ -115,57 +115,39 @@ namespace gse::vbd {
 		shaders::ssbo_readonly<std::uint32_t> external_force_data;
 	};
 
-	template <fixed_string BodyPath>
-	using vbd_compute = gpu::compute_entry<
-		gpu::body_path<BodyPath>,
+	using solver_pass = gpu::specs<
 		gpu::types<shader_types>,
 		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
+		gpu::push_constant<vbd_push_constants>
+	>;
+
+	using caps_helpers = gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">;
+	using muscle_helpers = gpu::specs<caps_helpers, gpu::helpers<"VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor">>;
+	using lambda_helpers = gpu::specs<muscle_helpers, gpu::helpers<"Bodies/VBDPhysics/vbd_update_lambda">>;
+	using color_helpers = gpu::specs<lambda_helpers, gpu::helpers<"Bodies/VBDPhysics/vbd_solve_color">>;
+	using narrow_phase_helpers = gpu::specs<caps_helpers, gpu::helpers<"VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">>;
+
+	template <fixed_string BodyPath, typename Helpers = muscle_helpers>
+	using vbd_compute = gpu::compute_entry<
+		gpu::body_path<BodyPath>,
+		solver_pass,
+		Helpers,
+		gpu::threads<limits.workgroup_size>
+	>;
+
+	template <fixed_string BodyPath, typename Helpers = caps_helpers>
+	using adjacency_compute = gpu::compute_entry<
+		gpu::body_path<BodyPath>,
+		solver_pass,
+		Helpers,
+		gpu::threads<limits.adjacency_workgroup_size>
 	>;
 
 	using predict_entry = vbd_compute<"VBDPhysics/vbd_predict">;
-	using solve_color_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_solve_color">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
-
-	using solve_sweep_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_solve_sweep">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
-
-	using solve_islands_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_solve_islands">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
-
-	using build_island_levels_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_build_island_levels">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "VBDPhysics/vbd_muscle", "VBDPhysics/vbd_wrap", "VBDPhysics/vbd_muscle_floor", "Bodies/VBDPhysics/vbd_update_lambda", "Bodies/VBDPhysics/vbd_solve_color">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using solve_color_entry = vbd_compute<"VBDPhysics/vbd_solve_color", lambda_helpers>;
+	using solve_sweep_entry = vbd_compute<"VBDPhysics/vbd_solve_sweep", color_helpers>;
+	using solve_islands_entry = vbd_compute<"VBDPhysics/vbd_solve_islands", color_helpers>;
+	using build_island_levels_entry = vbd_compute<"VBDPhysics/vbd_build_island_levels", color_helpers>;
 
 	using update_lambda_entry = vbd_compute<"VBDPhysics/vbd_update_lambda">;
 	using derive_velocities_entry = vbd_compute<"VBDPhysics/vbd_derive_velocities">;
@@ -184,15 +166,7 @@ namespace gse::vbd {
 	using collision_grid_build_entry = vbd_compute<"VBDPhysics/collision_grid_build">;
 	using collision_broad_phase_entry = vbd_compute<"VBDPhysics/collision_broad_phase">;
 	using collision_narrow_phase_entry = vbd_compute<"VBDPhysics/collision_narrow_phase">;
-	using collision_narrow_phase_poly_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/collision_narrow_phase_poly">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
-		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using collision_narrow_phase_poly_entry = vbd_compute<"VBDPhysics/collision_narrow_phase_poly", narrow_phase_helpers>;
 	using update_joint_lambda_entry = vbd_compute<"VBDPhysics/vbd_update_joint_lambda">;
 	using freeze_jacobians_entry = vbd_compute<"VBDPhysics/vbd_freeze_jacobians">;
 	using apply_jacobi_entry = vbd_compute<"VBDPhysics/vbd_apply_jacobi">;
@@ -208,116 +182,22 @@ namespace gse::vbd {
 	using collision_color_round_entry = vbd_compute<"VBDPhysics/collision_color_round">;
 	using collision_color_commit_entry = vbd_compute<"VBDPhysics/collision_color_commit">;
 
-	using collision_scan_adjacency_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/collision_scan_adjacency">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+	using collision_scan_adjacency_entry = adjacency_compute<"VBDPhysics/collision_scan_adjacency">;
+	using collision_build_coloring_entry = adjacency_compute<"VBDPhysics/collision_build_coloring", gpu::helpers<"VBDPhysics/vbd_shared">>;
+	using hash_state_entry = adjacency_compute<"VBDPhysics/vbd_hash_state">;
+	using hash_warm_inputs_entry = adjacency_compute<"VBDPhysics/vbd_hash_warm_inputs">;
+	using hash_adjacency_entry = adjacency_compute<"VBDPhysics/vbd_hash_adjacency">;
+	using hash_colors_entry = adjacency_compute<"VBDPhysics/vbd_hash_colors">;
+	using hash_bodies_entry = adjacency_compute<"VBDPhysics/vbd_hash_bodies">;
+	using apply_restitution_serial_entry = adjacency_compute<"VBDPhysics/vbd_apply_restitution", narrow_phase_helpers>;
 
-	using collision_build_coloring_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/collision_build_coloring">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, solver_pass, caps_helpers, gpu::threads<1>>;
 
-	using hash_state_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_hash_state">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+	using prepare_contact_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">, solver_pass, caps_helpers, gpu::threads<1>>;
 
-	using hash_warm_inputs_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_hash_warm_inputs">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
+	using convergence_check_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_convergence_check">, solver_pass, caps_helpers, gpu::threads<1>>;
 
-	using hash_adjacency_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_hash_adjacency">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
-
-	using hash_colors_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_hash_colors">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
-
-	using hash_bodies_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_hash_bodies">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
-
-	using apply_restitution_serial_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_apply_restitution">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared", "VBDPhysics/vbd_curves", "Bodies/VBDPhysics/collision_narrow_phase">,
-		gpu::threads<limits.adjacency_workgroup_size>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id, gpu::group_thread_id>
-	>;
-
-	using prepare_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_indirect">, gpu::types<shader_types>, gpu::bindings<solver_bindings>, gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">, gpu::threads<1>, gpu::push_constant<vbd_push_constants>>;
-
-	using prepare_contact_indirect_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_prepare_contact_indirect">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<1>,
-		gpu::push_constant<vbd_push_constants>
-	>;
-
-	using convergence_check_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_convergence_check">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<1>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
-
-	using prepare_color_indirect_entry = gpu::compute_entry<
-		gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">,
-		gpu::types<shader_types>,
-		gpu::bindings<solver_bindings>,
-		gpu::helpers<"VBDPhysics/vbd_caps", "VBDPhysics/vbd_shared">,
-		gpu::threads<16>,
-		gpu::push_constant<vbd_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
-	>;
+	using prepare_color_indirect_entry = gpu::compute_entry<gpu::body_path<"VBDPhysics/vbd_prepare_color_indirect">, solver_pass, caps_helpers, gpu::threads<16>>;
 
 	using vbd_bindings = gpu::binding_args<solver_bindings>;
 
@@ -350,11 +230,9 @@ namespace gse::vbd {
 
 	using gather_snapshot_entry = gpu::compute_entry<
 		gpu::body_path<"VBDPhysics/vbd_gather_snapshot">,
-		gpu::types<type_pack<body_state, body_snapshot>>,
 		gpu::bindings<snapshot_bindings>,
 		gpu::threads<limits.workgroup_size>,
-		gpu::push_constant<gather_snapshot_push_constants>,
-		gpu::system_values<gpu::dispatch_thread_id>
+		gpu::push_constant<gather_snapshot_push_constants>
 	>;
 
 	template <typename Entry>
@@ -2073,7 +1951,6 @@ auto gse::vbd::gpu_solver::build_sized_resources(const shared_view<gpu::context:
 	m_compute.collision_build_coloring_pipeline = gpu::build_compute_program(
 		*gpu_s.device,
 		collision_build_coloring_entry::pod,
-		{},
 		shaders::emit_slang_constants(m_capacities)
 	);
 
@@ -2174,52 +2051,49 @@ auto gse::vbd::gpu_solver::build_compute(const shared_view<gpu::context::data> g
 		"the restitution sort key packs a 10-bit island slot, so an adjacency workgroup cannot exceed 1024 threads"
 	);
 
-	const auto build = [&](const auto& pod) {
-		return gpu::build_compute_program(*gpu_s.device, pod);
-	};
-
-	m_compute.predict_pipeline = build(predict_entry::pod);
-	m_compute.mark_active_pipeline = build(mark_active_entry::pod);
-	m_compute.compact_active_pipeline = build(compact_active_entry::pod);
-	m_compute.prepare_active_indirect_pipeline = build(prepare_active_indirect_entry::pod);
-	m_compute.solve_color_pipeline = build(solve_color_entry::pod);
-	m_compute.solve_sweep_pipeline = build(solve_sweep_entry::pod);
-	m_compute.solve_islands_pipeline = build(solve_islands_entry::pod);
-	m_compute.build_island_levels_pipeline = build(build_island_levels_entry::pod);
-	m_compute.update_lambda_pipeline = build(update_lambda_entry::pod);
-	m_compute.derive_velocities_pipeline = build(derive_velocities_entry::pod);
-	m_compute.finalize_pipeline = build(finalize_entry::pod);
-	m_compute.collision_reset_pipeline = build(collision_reset_entry::pod);
-	m_compute.collision_broad_phase_pipeline = build(collision_broad_phase_entry::pod);
-	m_compute.collision_narrow_phase_pipeline = build(collision_narrow_phase_entry::pod);
-	m_compute.collision_narrow_phase_poly_pipeline = build(collision_narrow_phase_poly_entry::pod);
-	m_compute.collision_grid_build_pipeline = build(collision_grid_build_entry::pod);
-	m_compute.collision_clear_adjacency_pipeline = build(collision_clear_adjacency_entry::pod);
-	m_compute.collision_count_adjacency_pipeline = build(collision_count_adjacency_entry::pod);
-	m_compute.collision_scan_adjacency_pipeline = build(collision_scan_adjacency_entry::pod);
-	m_compute.collision_scatter_adjacency_pipeline = build(collision_scatter_adjacency_entry::pod);
-	m_compute.collision_sort_adjacency_pipeline = build(collision_sort_adjacency_entry::pod);
-	m_compute.collision_color_round_pipeline = build(collision_color_round_entry::pod);
-	m_compute.collision_color_commit_pipeline = build(collision_color_commit_entry::pod);
-	m_compute.update_joint_lambda_pipeline = build(update_joint_lambda_entry::pod);
-	m_compute.prepare_indirect_pipeline = build(prepare_indirect_entry::pod);
-	m_compute.prepare_contact_indirect_pipeline = build(prepare_contact_indirect_entry::pod);
-	m_compute.prepare_color_indirect_pipeline = build(prepare_color_indirect_entry::pod);
-	m_compute.freeze_jacobians_pipeline = build(freeze_jacobians_entry::pod);
-	m_compute.apply_jacobi_pipeline = build(apply_jacobi_entry::pod);
-	m_compute.apply_restitution_pipeline = build(apply_restitution_serial_entry::pod);
-	m_compute.update_sticking_pipeline = build(update_sticking_entry::pod);
-	m_compute.apply_impulses_pipeline = build(apply_impulses_entry::pod);
-	m_compute.apply_body_inputs_pipeline = build(apply_body_inputs_entry::pod);
-	m_compute.apply_joint_inputs_pipeline = build(apply_joint_inputs_entry::pod);
-	m_compute.apply_joint_drive_inputs_pipeline = build(apply_joint_drive_inputs_entry::pod);
-	m_compute.convergence_check_pipeline = build(convergence_check_entry::pod);
-	m_compute.hash_state_pipeline = build(hash_state_entry::pod);
-	m_compute.hash_warm_inputs_pipeline = build(hash_warm_inputs_entry::pod);
-	m_compute.hash_adjacency_pipeline = build(hash_adjacency_entry::pod);
-	m_compute.hash_colors_pipeline = build(hash_colors_entry::pod);
-	m_compute.hash_bodies_pipeline = build(hash_bodies_entry::pod);
-	m_compute.gather_snapshot_pipeline = build(gather_snapshot_entry::pod);
+	gpu::program_batch batch(*gpu_s.device);
+	batch.add(m_compute.predict_pipeline, predict_entry::pod);
+	batch.add(m_compute.mark_active_pipeline, mark_active_entry::pod);
+	batch.add(m_compute.compact_active_pipeline, compact_active_entry::pod);
+	batch.add(m_compute.prepare_active_indirect_pipeline, prepare_active_indirect_entry::pod);
+	batch.add(m_compute.solve_color_pipeline, solve_color_entry::pod);
+	batch.add(m_compute.solve_sweep_pipeline, solve_sweep_entry::pod);
+	batch.add(m_compute.solve_islands_pipeline, solve_islands_entry::pod);
+	batch.add(m_compute.build_island_levels_pipeline, build_island_levels_entry::pod);
+	batch.add(m_compute.update_lambda_pipeline, update_lambda_entry::pod);
+	batch.add(m_compute.derive_velocities_pipeline, derive_velocities_entry::pod);
+	batch.add(m_compute.finalize_pipeline, finalize_entry::pod);
+	batch.add(m_compute.collision_reset_pipeline, collision_reset_entry::pod);
+	batch.add(m_compute.collision_broad_phase_pipeline, collision_broad_phase_entry::pod);
+	batch.add(m_compute.collision_narrow_phase_pipeline, collision_narrow_phase_entry::pod);
+	batch.add(m_compute.collision_narrow_phase_poly_pipeline, collision_narrow_phase_poly_entry::pod);
+	batch.add(m_compute.collision_grid_build_pipeline, collision_grid_build_entry::pod);
+	batch.add(m_compute.collision_clear_adjacency_pipeline, collision_clear_adjacency_entry::pod);
+	batch.add(m_compute.collision_count_adjacency_pipeline, collision_count_adjacency_entry::pod);
+	batch.add(m_compute.collision_scan_adjacency_pipeline, collision_scan_adjacency_entry::pod);
+	batch.add(m_compute.collision_scatter_adjacency_pipeline, collision_scatter_adjacency_entry::pod);
+	batch.add(m_compute.collision_sort_adjacency_pipeline, collision_sort_adjacency_entry::pod);
+	batch.add(m_compute.collision_color_round_pipeline, collision_color_round_entry::pod);
+	batch.add(m_compute.collision_color_commit_pipeline, collision_color_commit_entry::pod);
+	batch.add(m_compute.update_joint_lambda_pipeline, update_joint_lambda_entry::pod);
+	batch.add(m_compute.prepare_indirect_pipeline, prepare_indirect_entry::pod);
+	batch.add(m_compute.prepare_contact_indirect_pipeline, prepare_contact_indirect_entry::pod);
+	batch.add(m_compute.prepare_color_indirect_pipeline, prepare_color_indirect_entry::pod);
+	batch.add(m_compute.freeze_jacobians_pipeline, freeze_jacobians_entry::pod);
+	batch.add(m_compute.apply_jacobi_pipeline, apply_jacobi_entry::pod);
+	batch.add(m_compute.apply_restitution_pipeline, apply_restitution_serial_entry::pod);
+	batch.add(m_compute.update_sticking_pipeline, update_sticking_entry::pod);
+	batch.add(m_compute.apply_impulses_pipeline, apply_impulses_entry::pod);
+	batch.add(m_compute.apply_body_inputs_pipeline, apply_body_inputs_entry::pod);
+	batch.add(m_compute.apply_joint_inputs_pipeline, apply_joint_inputs_entry::pod);
+	batch.add(m_compute.apply_joint_drive_inputs_pipeline, apply_joint_drive_inputs_entry::pod);
+	batch.add(m_compute.convergence_check_pipeline, convergence_check_entry::pod);
+	batch.add(m_compute.hash_state_pipeline, hash_state_entry::pod);
+	batch.add(m_compute.hash_warm_inputs_pipeline, hash_warm_inputs_entry::pod);
+	batch.add(m_compute.hash_adjacency_pipeline, hash_adjacency_entry::pod);
+	batch.add(m_compute.hash_colors_pipeline, hash_colors_entry::pod);
+	batch.add(m_compute.hash_bodies_pipeline, hash_bodies_entry::pod);
+	batch.add(m_compute.gather_snapshot_pipeline, gather_snapshot_entry::pod);
 }
 
 auto gse::vbd::gpu_solver::capacities() const -> const vbd_capacities& {
@@ -2338,51 +2212,51 @@ auto gse::vbd::gpu_solver::build_solve_plan(solve_plan& out) -> void {
 	auto& other = m_frames[1 - m_dispatch_slot];
 
 	const vbd_bindings bindings{
-		.body_data = m_body_buffer.slot(),
-		.contact_data = f.contact_buffer.slot(),
-		.motor_data = m_motor_channel.current().slot(),
-		.color_data = f.color_buffer.slot(),
-		.contact_offsets = f.contact_offsets_buffer.slot(),
-		.solve_state = f.solve_state_buffer.slot(),
-		.collision_pairs = f.collision_pair_buffer.slot(),
-		.collision_state = f.collision_state_buffer.slot(),
-		.warm_starts = f.warm_start_buffer.slot(),
-		.joint_data = m_joint_buffer.slot(),
-		.contact_counts = f.contact_counts_buffer.slot(),
-		.contact_adjacency = f.contact_adjacency_buffer.slot(),
-		.motor_map = m_motor_map_channel.current().slot(),
-		.joint_offsets = f.joint_offsets_buffer.slot(),
-		.joint_counts = f.joint_counts_buffer.slot(),
-		.joint_adjacency = f.joint_adjacency_buffer.slot(),
-		.grid_data = f.grid_buffer.slot(),
-		.indirect_args = f.indirect_dispatch_buffer.slot(),
-		.frozen_jacobians = f.frozen_jacobian_buffer.slot(),
-		.solve_deltas = f.solve_deltas_buffer.slot(),
-		.grounded_bits = f.grounded_buffer.slot(),
-		.impulse_data = m_impulse_channel.current().slot(),
-		.solver_config_data = m_solver_config_channel.current().slot(),
-		.jointed_pairs_data = m_jointed_pairs_channel.current().slot(),
-		.body_input_data = m_body_input_channel.current().slot(),
-		.jointless_color_data = f.jointless_color_buffer.slot(),
-		.jointless_indirect_args = f.jointless_indirect_dispatch_buffer.slot(),
-		.island_data = m_island_channel.current().slot(),
-		.body_env_data = m_body_env_channel.current().slot(),
-		.static_bodies_data = m_static_bodies_channel.current().slot(),
-		.coloring_scratch = f.coloring_scratch_buffer.slot(),
-		.joint_input_data = m_joint_upload_channel.current().slot(),
-		.joint_drive_input_data = m_joint_drive_input_channel.current().slot(),
-		.unowned_contacts = f.unowned_contact_buffer.slot(),
-		.body_input_index_data = m_body_input_index_channel.current().slot(),
-		.joint_drive_input_index_data = m_joint_drive_input_index_channel.current().slot(),
-		.muscle_data = m_muscle_buffer.slot(),
-		.muscle_path_data = m_muscle_path_buffer.slot(),
-		.muscle_excitation_data = m_muscle_excitation_buffer.slot(),
-		.hull_data = m_hull_buffer.slot(),
-		.body_filter_data = m_body_filter_channel.current().slot(),
-		.active_list = m_active_list_buffer.slot(),
-		.active_data = m_active_data_buffer.slot(),
-		.active_args = m_active_args_buffer.slot(),
-		.external_force_data = m_external_force_buffer.slot(),
+		.body_data = m_body_buffer,
+		.contact_data = f.contact_buffer,
+		.motor_data = m_motor_channel.current(),
+		.color_data = f.color_buffer,
+		.contact_offsets = f.contact_offsets_buffer,
+		.solve_state = f.solve_state_buffer,
+		.collision_pairs = f.collision_pair_buffer,
+		.collision_state = f.collision_state_buffer,
+		.warm_starts = f.warm_start_buffer,
+		.joint_data = m_joint_buffer,
+		.contact_counts = f.contact_counts_buffer,
+		.contact_adjacency = f.contact_adjacency_buffer,
+		.motor_map = m_motor_map_channel.current(),
+		.joint_offsets = f.joint_offsets_buffer,
+		.joint_counts = f.joint_counts_buffer,
+		.joint_adjacency = f.joint_adjacency_buffer,
+		.grid_data = f.grid_buffer,
+		.indirect_args = f.indirect_dispatch_buffer,
+		.frozen_jacobians = f.frozen_jacobian_buffer,
+		.solve_deltas = f.solve_deltas_buffer,
+		.grounded_bits = f.grounded_buffer,
+		.impulse_data = m_impulse_channel.current(),
+		.solver_config_data = m_solver_config_channel.current(),
+		.jointed_pairs_data = m_jointed_pairs_channel.current(),
+		.body_input_data = m_body_input_channel.current(),
+		.jointless_color_data = f.jointless_color_buffer,
+		.jointless_indirect_args = f.jointless_indirect_dispatch_buffer,
+		.island_data = m_island_channel.current(),
+		.body_env_data = m_body_env_channel.current(),
+		.static_bodies_data = m_static_bodies_channel.current(),
+		.coloring_scratch = f.coloring_scratch_buffer,
+		.joint_input_data = m_joint_upload_channel.current(),
+		.joint_drive_input_data = m_joint_drive_input_channel.current(),
+		.unowned_contacts = f.unowned_contact_buffer,
+		.body_input_index_data = m_body_input_index_channel.current(),
+		.joint_drive_input_index_data = m_joint_drive_input_index_channel.current(),
+		.muscle_data = m_muscle_buffer,
+		.muscle_path_data = m_muscle_path_buffer,
+		.muscle_excitation_data = m_muscle_excitation_buffer,
+		.hull_data = m_hull_buffer,
+		.body_filter_data = m_body_filter_channel.current(),
+		.active_list = m_active_list_buffer,
+		.active_data = m_active_data_buffer,
+		.active_args = m_active_args_buffer,
+		.external_force_data = m_external_force_buffer,
 	};
 	auto jointless_bindings = bindings;
 	jointless_bindings.color_data = f.jointless_color_buffer.slot();
@@ -3159,11 +3033,11 @@ auto gse::vbd::gpu_solver::stage_gather_snapshot(const solve_plan& p, const std:
 			.sleep_threshold = limits.sleep_threshold,
 		},
 		gpu::binding_args<snapshot_bindings>{
-			.snapshot_source = m_body_buffer.slot(),
-			.snapshot_target = f.snapshot_buffer.slot(),
-			.snapshot_indices = f.snapshot_index_buffer.slot(),
-			.snapshot_count = f.snapshot_count_buffer.slot(),
-			.snapshot_linger = m_snapshot_linger_buffer.slot(),
+			.snapshot_source = m_body_buffer,
+			.snapshot_target = f.snapshot_buffer,
+			.snapshot_indices = f.snapshot_index_buffer,
+			.snapshot_count = f.snapshot_count_buffer,
+			.snapshot_linger = m_snapshot_linger_buffer,
 		},
 		vec3u{ p.body_workgroups, 1u, 1u }
 	);

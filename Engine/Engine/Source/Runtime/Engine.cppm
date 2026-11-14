@@ -55,6 +55,14 @@ export namespace gse {
 		scenario::body_fn scenario_body = nullptr;
 	};
 
+	struct state_digest {
+		std::uint64_t value = 0;
+		std::uint32_t step = 0;
+		bool taken = false;
+	};
+
+	struct state_digest_request {};
+
 	enum class loop_cadence {
 		continuous,
 		reactive
@@ -66,14 +74,7 @@ export namespace gse {
 		bool create_window = true;
 		bool render = true;
 		bool gpu = true;
-		bool dark_background = false;
-		bool video_encode = true;
 		bool simulate_world = true;
-		bool use_gpu_solver = false;
-		bool custom_chrome = false;
-		vec2i launcher_size{ 0, 0 };
-		bool scale_ui_with_resolution = true;
-		gui::theme default_theme = gui::theme::midnight;
 		bool load_settings = true;
 		bool persist_settings = true;
 		bool author_baked_assets = true;
@@ -81,10 +82,7 @@ export namespace gse {
 		bool dump_settings = false;
 		bool trace = true;
 		bool restart_on_device_lost = false;
-		bool simulate_device_lost = false;
 		bool restart_on_crash = false;
-		int restart_streak = 0;
-		std::filesystem::path gui_layout_path;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
 		std::string ipc_pipe_name;
@@ -94,13 +92,15 @@ export namespace gse {
 		time init_stall_dump{};
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
+		std::vector<settings::assignment> pins;
+		std::vector<settings::assignment> defaults;
 		bench_config bench;
 		test::config test;
 		network::config net;
 	};
 
 	constexpr std::uint32_t attached_surface_magic = 0x47535334;
-	constexpr std::size_t attached_ring_size = 3;
+	constexpr std::size_t attached_ring_size = gpu::shared_output_slots;
 
 	struct attached_surface_message {
 		std::uint32_t magic = 0;
@@ -139,6 +139,19 @@ export namespace gse {
 		char comment[attached_fatal_field] = {};
 	};
 
+	enum class window_reveal_stage : std::uint8_t {
+		hidden,
+		loading_frame_presented [[
+			= entered_from({ hidden })
+		]],
+		shown [[
+			= entered_from({ hidden, loading_frame_presented })
+		]],
+		hidden_for_bench [[
+			= entered_from({ hidden })
+		]],
+	};
+
 	class engine : public identifiable {
 	public:
 		using setup_fn = std::function<void(engine&)>;
@@ -165,17 +178,17 @@ export namespace gse {
 
 		auto world() -> world_system::data&;
 
+		auto presents() -> bool;
+
 		auto window_should_close() -> bool;
 
 		auto tick_window() -> void;
 
 		auto apply_pending_resizes() -> void;
 
-		auto attached_surface_ready() const -> bool;
-
 		auto abandon_attach() -> void;
 
-		auto attached_message() const -> const attached_surface_message&;
+		[[nodiscard]] auto shared_output() -> std::optional<gpu::shared_output_announcement>;
 
 		auto push_attached_input(
 			const input::event& event
@@ -201,21 +214,15 @@ export namespace gse {
 		) -> void;
 
 	private:
-		auto create_attached_surface(
-			gpu::context::data& gpu_state,
-			vec2u extent
-		) -> void;
-
-		auto close_attached_handles() -> void;
-
 		auto boot_immediately(
 			const setup_fn& app_setup
 		) -> void;
 
-		[[nodiscard]] auto windowless_render() const -> bool;
+		auto begin_app_setup() -> void;
 
 		auto reveal_window(
-			window::data& window_state
+			window::data& window_state,
+			const gpu::context::data& gpu_state
 		) -> void;
 
 		auto install_actions() -> void;
@@ -225,34 +232,22 @@ export namespace gse {
 		) -> void;
 
 		engine_config m_config;
+		bool m_simulate_device_lost = false;
 		scheduler m_scheduler;
 		save::registry m_save;
 		actions::registry m_actions;
 		primitives::data m_primitives;
 		gse::registry m_registry;
 		loading::state m_loading;
-		std::function<void()> m_deferred_boot;
-		std::atomic<bool> m_boot_tasks_done = false;
+		lifecycle<loading::boot_stage> m_boot{ "boot", log::category::runtime };
+		setup_fn m_app_setup;
+		task::pending<std::monostate> m_app_setup_job;
+		std::optional<std::uint32_t> m_progress_baseline;
 		std::size_t m_actions_revision = 0;
-		clock m_persist_clock;
-		clock m_uptime_clock;
-		std::uint32_t m_boot_init_baseline_settled = 0;
-		bool m_boot_init_baseline_captured = false;
-		bool m_settings_audited = false;
-		bool m_actions_logged = false;
-		std::uint32_t m_frames_since_rendered = 0;
-		bool m_window_shown = false;
-		bool m_headless_gpu = false;
+		interval_timer<> m_persist_timer{ seconds(1.f) };
+		lifecycle<window_reveal_stage> m_window_reveal{ "window_reveal", log::category::runtime };
 		bool m_frame_presented = false;
-		attached_surface_message m_attached_message{};
-		std::uint32_t m_attached_frames_presented = 0;
-		std::uint32_t m_attached_frames_withheld = 0;
-		interval_timer<> m_attached_report{ seconds(2.f) };
-		time m_attached_wait{};
-		std::uint32_t m_attached_revision = 0;
 		vec2u m_attached_requested_extent{ 0, 0 };
-		bool m_attached_surface_ready = false;
-		bool m_attached_surface_attempted = false;
 	};
 }
 

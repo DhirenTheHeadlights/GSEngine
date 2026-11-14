@@ -1,0 +1,106 @@
+export module gse.graphics:physics_debug_renderer;
+
+import std;
+
+import gse.physics;
+import gse.math;
+import gse.core;
+import gse.containers;
+import gse.concurrency;
+import gse.ecs;
+import gse.save;
+import gse.meta;
+import gse.gpu;
+import gse.assets;
+import gse.gpu_record;
+
+import :camera_latch_renderer;
+
+namespace gse::renderer::physics_debug {
+	struct [[= shaders::shader_struct]] debug_vertex {
+		vec3<position> position;
+		vec3f color;
+	};
+}
+
+export namespace gse::renderer::physics_debug {
+	struct [[= shaders::shader_struct]] shape_instance {
+		std::uint32_t body_index;
+		vec3<length> shape_scale;
+		vec3f color;
+	};
+
+	struct [[= system_state<"PhysicsDebug">{}, = gpu::requires_capability<^^gpu::backend_capabilities::shader_int64>{}, = settings::category<"Graphics">{}]] data {
+		[[
+			= settings::describe<"Draw collision shapes, contact points, and joint anchors over the scene.">{}
+		]]
+		bool enabled = false;
+
+		gpu::shader_program pipeline_instanced;
+		gpu::shader_program pipeline_lines;
+
+
+		gpu::buffer unit_box_vb;
+		gpu::buffer unit_sphere_vb;
+		gpu::buffer unit_capsule_vb;
+		std::uint32_t unit_box_vert_count = 0;
+		std::uint32_t unit_sphere_vert_count = 0;
+		std::uint32_t unit_capsule_vert_count = 0;
+
+		per_frame_resource<gpu::buffer> cpu_body_buffers;
+		per_frame_resource<std::size_t> cpu_body_capacity;
+		std::vector<vbd::body_state> cpu_body_staging;
+
+		per_frame_resource<gpu::buffer> box_instance_buffers;
+		per_frame_resource<gpu::buffer> sphere_instance_buffers;
+		per_frame_resource<gpu::buffer> capsule_instance_buffers;
+		per_frame_resource<std::size_t> box_instance_capacity;
+		per_frame_resource<std::size_t> sphere_instance_capacity;
+		per_frame_resource<std::size_t> capsule_instance_capacity;
+		std::vector<shape_instance> box_instances;
+		std::vector<shape_instance> sphere_instances;
+		std::vector<shape_instance> capsule_instances;
+		std::vector<id> instance_owners;
+		std::vector<id> instance_motion_owners;
+		bool instance_solver_indices = false;
+		std::uint64_t instance_shape_generation = 0;
+		std::uint64_t instance_body_index_generation = 0;
+		std::uint64_t instances_version = 0;
+		per_frame_resource<std::uint64_t> uploaded_instances_version;
+		std::uint32_t instance_body_span = 0;
+
+		bool draw_solver_bodies = false;
+		per_frame_resource<gpu::bindless_handle> solver_body_views;
+
+		per_frame_resource<gpu::buffer> line_vertex_buffers;
+		per_frame_resource<std::size_t> line_vertex_capacity;
+		std::vector<debug_vertex> line_vertices;
+	};
+
+	[[= system_init{}]]
+	auto init(
+		shared_view<gpu::context::data> gpu_s,
+		data& d
+	) -> async::task<>;
+
+	[[= system_run<1>{}]]
+	auto build(
+		context& ctx,
+		data& d,
+		shared_view<physics::data> ps,
+		read<physics::transform_component> transforms,
+		read<physics::motion_component> motions,
+		read<physics::collision_component> collisions,
+		read<physics::collision_result_component> results
+	) -> async::task<>;
+
+	[[= system_frame{}]]
+	auto frame(
+		const context& ctx,
+		shared_view<gpu::context::data> gpu_s,
+		data& d,
+		channel_write<gpu::render_pass_request> pass_out,
+		channel_read<physics::gpu_solver_frame_info> solver_in,
+		shared_view<camera_latch::data> latch_s
+	) -> async::task<>;
+}

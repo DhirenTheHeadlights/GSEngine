@@ -11,6 +11,7 @@ import :spawn_params;
 
 namespace sandbox::scenario_settings {
 	using window = gse::window::data;
+	using gui = gse::gui::data;
 	using physics_debug = gse::renderer::physics_debug::data;
 	using forward = gse::renderer::forward::data;
 	using tonemap = gse::renderer::tonemap::data;
@@ -474,6 +475,49 @@ export namespace sandbox::scenarios {
 	) -> gse::async::task<>;
 
 	[[= gse::scenario::info{
+		.name = "cloud_quality_probe",
+		.scene = "Sky",
+		.warmup_frames = 0,
+		.frames = 2600,
+	},
+		= gse::scenario::pin<^^ss::window::present_mode>{ gse::gpu::present_mode::immediate },
+		= gse::scenario::pin<^^ss::gui::visible>{ false },
+		= gse::scenario::pin<^^ss::physics_debug::enabled>{ false },
+		= gse::scenario::pin<^^ss::grid::enabled>{ false },
+		= gse::scenario::pin<^^ss::clouds::enabled>{ true },
+		= gse::scenario::pin<^^ss::clouds::cloud_bottom>{ gse::kilometers(1.5f) },
+		= gse::scenario::pin<^^ss::clouds::cloud_top>{ gse::kilometers(6.f) },
+		= gse::scenario::pin<^^ss::clouds::cloud_coverage>{ 0.5f },
+		= gse::scenario::pin<^^ss::clouds::cloud_type>{ 0.8f },
+		= gse::scenario::pin<^^ss::clouds::extinction>{ gse::per_kilometer(40.f) },
+		= gse::scenario::pin<^^ss::clouds::albedo>{ 0.99f },
+		= gse::scenario::pin<^^ss::clouds::multi_scatter_strength>{ 0.5f },
+		= gse::scenario::pin<^^ss::clouds::multi_scatter_extinction>{ 0.25f },
+		= gse::scenario::pin<^^ss::clouds::powder_strength>{ 0.5f },
+		= gse::scenario::pin<^^ss::clouds::shape_scale>{ gse::per_kilometer(0.3f) },
+		= gse::scenario::pin<^^ss::clouds::detail_scale>{ gse::per_kilometer(0.6f) },
+		= gse::scenario::pin<^^ss::clouds::detail_erosion>{ 0.35f },
+		= gse::scenario::pin<^^ss::clouds::phase_g_forward>{ 0.8f },
+		= gse::scenario::pin<^^ss::clouds::phase_g_back>{ -0.3f },
+		= gse::scenario::pin<^^ss::clouds::phase_blend>{ 0.65f },
+		= gse::scenario::pin<^^ss::clouds::ambient_strength>{ 1.f },
+		= gse::scenario::pin<^^ss::clouds::max_distance>{ gse::kilometers(80.f) },
+		= gse::scenario::pin<^^ss::clouds::wind_offset>{ { gse::kilometers(0.f), gse::kilometers(0.f), gse::kilometers(0.f) } },
+		= gse::scenario::pin<^^ss::clouds::weather_scale>{ gse::per_kilometer(0.015f) },
+		= gse::scenario::pin<^^ss::clouds::weather_phase>{ 0.f },
+		= gse::scenario::pin<^^ss::clouds::weather_contrast>{ 2.2f },
+		= gse::scenario::pin<^^ss::clouds::weather_type_influence>{ 0.6f },
+		= gse::scenario::pin<^^ss::clouds::shadow_strength>{ 1.f },
+		= gse::scenario::pin<^^ss::clouds::shadow_map_resolution>{ 512 },
+		= gse::scenario::pin<^^ss::clouds::shadow_extent>{ gse::kilometers(40.f) },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_bright>{ gse::seconds(0.05f) },
+		= gse::scenario::pin<^^ss::tonemap::adaptation_time_dark>{ gse::seconds(0.05f) }
+	]]
+	auto cloud_quality_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
 		.name = "hall_horizon_probe",
 		.scene = "LightHall",
 		.warmup_frames = 0,
@@ -596,6 +640,16 @@ export namespace sandbox::scenarios {
 		= gse::scenario::pin<^^ss::dev_spawn::characters, ^^character_spawn_params::count>{ 8 }
 	]]
 	auto locomotion(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "mouse_latch_look",
+		.scene = "Sandbox",
+		.warmup_frames = 120,
+		.frames = 240,
+	}]]
+	auto mouse_latch_look(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 

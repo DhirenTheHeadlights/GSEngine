@@ -37,7 +37,7 @@ Physics debug drawing becomes cheap enough to leave on while testing, and it no 
 8. **Builds:** the release build is clean, and `physics_stress`, `scene_reset`, `render_stress` and `grass_sleep_bench` all pass.
 
 ## Charter (no need to ask)
-- **Grass solver:** a new engine system for the grass field, at `Engine/Engine/Source/Physics/Grass/*` with shaders under `Engine/Resources/Shaders/Bodies/Grass/*`. Blades are pure GPU buffers, not entities. One component describes a field: extent, spacing, blade shape, stiffness and yield.
+- **Grass solver:** a game system for the grass field, at `Sandbox/Sandbox/Source/Foliage/Grass/*` with shaders under `Sandbox/Assets/Shaders/Bodies/Grass/*` and `Sandbox/Assets/Shaders/Grass/*`. Blades are pure GPU buffers, not entities. One component describes a field: extent, spacing, blade shape, stiffness and yield.
   - Contact uses a spatial grid over the field against nearby body shapes, read on the GPU from the solver's body buffer, with no CPU round trip.
   - Blade-to-blade contact through the grid is allowed if it is needed for the look.
 - **Coupling into the main solver:** add a per-body external-force input that the existing GPU solver path consumes (`vbd_apply_impulses` / predict) in `Physics/VBD/GpuSolver.*` and its shaders.

@@ -58,6 +58,7 @@ export {
 	using ::SlangParameterCategory;
 	using ::ISlangBlob;
 	using ::ISlangUnknown;
+	using ::spGetBuildTagString;
 
 	inline auto slang_succeeded(SlangResult r) -> bool {
 		return SLANG_SUCCEEDED(r);

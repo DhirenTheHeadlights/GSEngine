@@ -38,6 +38,8 @@ export namespace gse::ide {
 	namespace package_system {
 		struct [[= system_state<"Package SDK">{}]] data {
 			task::pending<std::expected<std::filesystem::path, std::string>> job;
+			task::pending<std::vector<build_inbox::package_request>> scan;
+			interval_timer<> poll{ milliseconds(100.f) };
 			std::string inbox_id;
 			sdk::pack_kind kind = sdk::pack_kind::sdk;
 		};
@@ -151,7 +153,8 @@ auto gse::ide::package_system::run(context& ctx, data& d, const channel_read<pac
 		requested = true;
 	}
 	std::string inbox_id;
-	for (const build_inbox::package_request& incoming : build_inbox::peek_package_requests()) {
+	const std::vector<build_inbox::package_request> scanned = d.scan.take().value_or(std::vector<build_inbox::package_request>{});
+	for (const build_inbox::package_request& incoming : scanned) {
 		if (!config::owns_request(incoming.cwd, incoming.project)) {
 			continue;
 		}
@@ -168,6 +171,11 @@ auto gse::ide::package_system::run(context& ctx, data& d, const channel_read<pac
 		kind = incoming.kind;
 		scenario = incoming.scenario;
 		requested = true;
+	}
+	if (!d.scan.active() && d.poll.tick()) {
+		d.scan.start([] {
+			return build_inbox::peek_package_requests();
+		}, trace_id<"package_system::scan">(), task::lane::io);
 	}
 
 	if (!requested || d.job.active()) {
@@ -200,6 +208,7 @@ auto gse::ide::package_system::run(context& ctx, data& d, const channel_read<pac
 
 auto gse::ide::package_system::shutdown(data& d) -> void {
 	d.job.cancel();
+	d.scan.cancel();
 	if (!d.inbox_id.empty()) {
 		build_inbox::publish({
 			.id = d.inbox_id,

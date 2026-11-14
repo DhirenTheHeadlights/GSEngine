@@ -182,13 +182,13 @@ auto gse::ide::agent::attach_runtime(session& s) -> void {
 	s.changes.filter = row_filter::changes;
 	s.everything.filter = row_filter::all;
 	s.followup.filter = row_filter::conversation;
-	s.live_scope.filter = row_filter::conversation;
+	s.live_run.filter = row_filter::conversation;
 
 	for (transcript_view* v : views_of(s)) {
 		v->log_id = generate_temp_id(hash_of("agent_log", s.id, v->filter));
 	}
 	s.followup.log_id = generate_temp_id(hash_of("agent_followup", s.id));
-	s.live_scope.log_id = generate_temp_id(hash_of("agent_live_scope", s.id));
+	s.live_run.log_id = generate_temp_id(hash_of("agent_live_run", s.id));
 }
 
 auto gse::ide::agent::inherited_handoffs() -> std::vector<handoff> {

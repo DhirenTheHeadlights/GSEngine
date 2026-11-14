@@ -1308,62 +1308,69 @@ auto gse::vbd::solver::update_dual(const float alpha, const int iteration) -> st
 			);
 		}
 	}
-	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
-	std::inplace_vector<length, 64> per_worker_max;
-	for (std::size_t i = 0; i < worker_count; ++i) {
-		per_worker_max.push_back(length{});
-	}
+	struct alignas(64) chunk_max {
+		length value;
+	};
+
+	constexpr std::size_t chunk_items = 512;
+	const auto contact_count = m_active_contacts.size();
+	const auto chunk_count = (contact_count + chunk_items - 1) / chunk_items;
+	std::vector<chunk_max> per_chunk_max(chunk_count);
 
 	task::coarse_parallel(
-		m_active_contacts.size(),
-		512,
-		[&, this](std::size_t k) {
-			auto& con = contacts[m_active_contacts[k]];
-			const auto& body_a = m_bodies[con.body_a];
-			const auto& body_b = m_bodies[con.body_b];
+		chunk_count,
+		1,
+		[&, this](const std::size_t chunk) {
+			length local_max{};
+			const auto end = std::min(contact_count, (chunk + 1) * chunk_items);
+			for (std::size_t k = chunk * chunk_items; k < end; ++k) {
+				auto& con = contacts[m_active_contacts[k]];
+				const auto& body_a = m_bodies[con.body_a];
+				const auto& body_b = m_bodies[con.body_b];
 
-			const vec3<lever_arm> rAW = rotate_vector(body_a.predicted_orientation, con.local_anchor_a);
-			const vec3<lever_arm> rBW = rotate_vector(body_b.predicted_orientation, con.local_anchor_b);
-			const vec3<predicted_position> pA = body_a.predicted_position + rAW;
-			const vec3<predicted_position> pB = body_b.predicted_position + rBW;
-			const vec3<displacement> d = pA - pB;
+				const vec3<lever_arm> rAW = rotate_vector(body_a.predicted_orientation, con.local_anchor_a);
+				const vec3<lever_arm> rBW = rotate_vector(body_b.predicted_orientation, con.local_anchor_b);
+				const vec3<predicted_position> pA = body_a.predicted_position + rAW;
+				const vec3<predicted_position> pB = body_b.predicted_position + rBW;
+				const vec3<displacement> d = pA - pB;
 
-			const vec3<gap> cn = { dot(con.normal, d) + m_config.collision_margin,
-				dot(con.tangent_u, d),
-				dot(con.tangent_v, d) };
-			const vec3<gap> c = cn - con.c0 * alpha;
+				const vec3<gap> cn = { dot(con.normal, d) + m_config.collision_margin,
+					dot(con.tangent_u, d),
+					dot(con.tangent_v, d) };
+				const vec3<gap> c = cn - con.c0 * alpha;
 
-			con.lambda[0] = std::min<force>(
-				contact_normal_penalty(con) * c[0] + con.lambda[0],
-				force{}
-			);
+				con.lambda[0] = std::min<force>(
+					contact_normal_penalty(con) * c[0] + con.lambda[0],
+					force{}
+				);
 
-			const force friction_bound = abs(con.lambda[0]) * con.friction_coeff;
+				const force friction_bound = abs(con.lambda[0]) * con.friction_coeff;
 
-			con.lambda[1] = std::clamp<force>(con.penalty[1] * c[1] + con.lambda[1], -friction_bound, friction_bound);
-			con.lambda[2] = std::clamp<force>(con.penalty[2] * c[2] + con.lambda[2], -friction_bound, friction_bound);
+				con.lambda[1] = std::clamp<force>(con.penalty[1] * c[1] + con.lambda[1], -friction_bound, friction_bound);
+				con.lambda[2] = std::clamp<force>(con.penalty[2] * c[2] + con.lambda[2], -friction_bound, friction_bound);
 
-			if (con.lambda[0] < force{}) {
-				con.penalty[0] = std::min(con.penalty[0] + m_config.beta * abs(c[0]), m_config.penalty_max);
-				const auto worker_idx = task::current_worker().value_or(0);
-				per_worker_max[worker_idx] = std::max<length>(per_worker_max[worker_idx], abs(c[0]));
-			}
-
-			if (friction_bound > newtons(1e-10f)) {
-				if (abs(con.lambda[1]) < friction_bound) {
-					con.penalty[1] = std::min(con.penalty[1] + m_config.beta * abs(c[1]), m_config.penalty_max);
+				if (con.lambda[0] < force{}) {
+					con.penalty[0] = std::min(con.penalty[0] + m_config.beta * abs(c[0]), m_config.penalty_max);
+					local_max = std::max<length>(local_max, abs(c[0]));
 				}
-				if (abs(con.lambda[2]) < friction_bound) {
-					con.penalty[2] = std::min(con.penalty[2] + m_config.beta * abs(c[2]), m_config.penalty_max);
+
+				if (friction_bound > newtons(1e-10f)) {
+					if (abs(con.lambda[1]) < friction_bound) {
+						con.penalty[1] = std::min(con.penalty[1] + m_config.beta * abs(c[1]), m_config.penalty_max);
+					}
+					if (abs(con.lambda[2]) < friction_bound) {
+						con.penalty[2] = std::min(con.penalty[2] + m_config.beta * abs(c[2]), m_config.penalty_max);
+					}
 				}
 			}
+			per_chunk_max[chunk].value = local_max;
 		},
 		trace_id<"vbd::contact_dual_update">()
 	);
 
 	step_delta max_violation;
-	for (const auto& m : per_worker_max) {
-		max_violation.linear = std::max(max_violation.linear, m);
+	for (const auto& m : per_chunk_max) {
+		max_violation.linear = std::max(max_violation.linear, m.value);
 	}
 	return max_violation;
 }

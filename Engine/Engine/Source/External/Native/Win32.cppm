@@ -178,6 +178,12 @@ export namespace gse::win32 {
 	constexpr DWORD rim_type_mouse = RIM_TYPEMOUSE;
 	constexpr USHORT mouse_move_absolute = MOUSE_MOVE_ABSOLUTE;
 	constexpr DWORD ridev_remove = RIDEV_REMOVE;
+	constexpr DWORD ridev_inputsink = RIDEV_INPUTSINK;
+	constexpr UINT wm_app = WM_APP;
+	using ::GetMessageW;
+	using ::PostMessageW;
+	using ::PostQuitMessage;
+	inline const HWND hwnd_message = HWND_MESSAGE;
 	constexpr USHORT hid_usage_page_generic = 0x01;
 	constexpr USHORT hid_usage_generic_mouse = 0x02;
 	constexpr UINT raw_input_header_size = sizeof(RAWINPUTHEADER);

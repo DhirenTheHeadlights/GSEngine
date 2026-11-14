@@ -9,8 +9,21 @@ import :present_pacer;
 import gse.gpu_backend;
 import gse.os;
 import gse.core;
+import gse.diag;
+import gse.log;
 
 export namespace gse::gpu {
+	enum class present_target_stage : std::uint8_t {
+		presenting,
+		minimized [[
+			= entered_from({ presenting })
+		]],
+		awaiting_restore [[
+			= entered_from({ minimized }),
+			= returns_to({ presenting, minimized })
+		]],
+	};
+
 	struct present_target {
 		id window_id;
 		swap_chain* swapchain = nullptr;
@@ -19,9 +32,7 @@ export namespace gse::gpu {
 		std::uint32_t image_index = 0;
 		std::uint64_t next_present_id = 1;
 		std::array<std::uint64_t, max_frames_in_flight> present_ids_in_flight{};
-		bool minimized_last = false;
-		std::uint64_t minimized_frames = 0;
-		bool restore_pending = false;
+		lifecycle<present_target_stage> stage{ "present_target", log::category::render };
 		bool acquired = false;
 	};
 

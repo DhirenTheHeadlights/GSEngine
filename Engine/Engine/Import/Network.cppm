@@ -4,6 +4,7 @@ import std;
 
 import gse.core;
 import gse.containers;
+import gse.diag;
 import gse.math;
 import gse.meta;
 import gse.time;
@@ -94,6 +95,16 @@ export namespace gse::network {
 		std::string entry;
 	};
 
+	enum class auto_connect_stage : std::uint8_t {
+		unattempted,
+		attempted [[
+			= entered_from({ unattempted })
+		]],
+		rejected [[
+			= entered_from({ unattempted, attempted })
+		]],
+	};
+
 	struct [[= system_state<"Network">{}, = settings::category<"Network">{}]] data {
 		[[= settings::describe<"Servers remembered by the Network screen, comma separated host:port entries.">{}]]
 		std::string saved_servers;
@@ -109,8 +120,7 @@ export namespace gse::network {
 		id announced_scene{};
 		std::vector<std::shared_ptr<discovery_provider>> providers;
 		std::vector<std::move_only_function<void(const entities&)>> deferred;
-		bool auto_connect_pending = true;
-		bool auto_connect_rejected = false;
+		lifecycle<auto_connect_stage> auto_connect{ "auto_connect", log::category::network };
 		interval_timer<> auto_connect_timer{ seconds(2.f) };
 		interval_timer<> stats_timer{ seconds(2.f) };
 		std::uint32_t stat_messages = 0;
@@ -183,16 +193,19 @@ template <typename MessagePack, typename... Components>
 auto gse::network::run(const shared_view<asset::data> assets_d, data& d, const config& net_cfg, const outbound_channel_t<MessagePack, connect_request, disconnect_request, add_provider_request, clear_providers_request, refresh_servers_request, refresh_server_info_request, ping_request, remember_server_request, forget_server_request> requests_in, const channel_write<set_networked_request, set_authoritative_request, set_local_controller_id_request, deactivate_active_scene_request, activate_scene_request> requests_out, const inbound_channel_t<MessagePack> messages_out, entities ents) -> async::task<> {
 	(ents.template ensure_storage<Components>(), ...);
 
-	if (!net_cfg.connect.empty() && !d.auto_connect_rejected) {
+	if (!net_cfg.connect.empty() && d.auto_connect.state() != auto_connect_stage::rejected) {
 		const bool retry_due = d.auto_connect_timer.tick();
 		const bool idle = !d.client_ptr || d.client_ptr->current_state() == client::state::disconnected;
+		const bool first_attempt = d.auto_connect.state() == auto_connect_stage::unattempted;
 
-		if (idle && (d.auto_connect_pending || retry_due)) {
-			d.auto_connect_pending = false;
-
+		if (idle && (first_attempt || retry_due)) {
 			const auto parsed = parse_address(net_cfg.connect, default_port);
 			const auto addr = parsed ? resolve_address(*parsed) : std::nullopt;
 			if (addr) {
+				if (first_attempt) {
+					d.auto_connect.enter(auto_connect_stage::attempted);
+				}
+
 				const time timeout = seconds(5.f);
 				const time retry = seconds(1.f);
 
@@ -210,7 +223,7 @@ auto gse::network::run(const shared_view<asset::data> assets_d, data& d, const c
 				}
 			}
 			else {
-				d.auto_connect_rejected = true;
+				d.auto_connect.enter(auto_connect_stage::rejected);
 				if (parsed) {
 					log::println(
 						log::level::error,

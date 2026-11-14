@@ -45,9 +45,3 @@ auto gse::command_line_arguments() -> std::vector<std::wstring> {
 	win32::LocalFree(arguments);
 	return out;
 }
-
-auto gse::close_os_handle(void* const handle) -> void {
-	if (win32::valid_handle(handle)) {
-		win32::CloseHandle(handle);
-	}
-}

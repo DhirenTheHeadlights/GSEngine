@@ -6,11 +6,8 @@ description: >
   produce is still there for the caller's own build, package and verify steps.
 
 inputs:
-  token:
-    description: A token with contents:read, used to find the newest published gcc-trunk-v* release
-    required: true
   toolchain:
-    description: Toolchain release tag to build with (blank resolves the newest published one)
+    description: Toolchain release tag to build with (blank uses the tag pinned in toolchain.txt)
     required: false
     default: ""
   toolchain-archive:
@@ -37,23 +34,27 @@ runs:
   using: composite
   steps:
     # The toolchain the image is built with and stamped against. Resolved before the caches so
-    # the toolchain cache can be keyed on it.
+    # the toolchain cache can be keyed on it. The default is the committed pin, not the newest
+    # release: a published toolchain that cannot build the tree must not reach every run.
+    # CMAKE_VERSION is the one copy of the pinned CMake version; see the pin step below.
     - id: resolve
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.token }}
         INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+        CMAKE_VERSION: "4.3.3"
       run: |
         set -euo pipefail
         toolchain="${INPUT_TOOLCHAIN:-}"
         if [[ -z "$toolchain" ]]; then
-          latest=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[] | select(.draft == false) | .tag_name' \
-            | sed -nE 's/^gcc-trunk-v([0-9]+)$/\1/p' | sort -n | tail -1)
-          [[ -n "$latest" ]] || { echo "no published gcc-trunk-v* release to build with"; exit 1; }
-          toolchain="gcc-trunk-v$latest"
+          [[ -f toolchain.txt ]] || { echo "toolchain.txt is missing; it pins the toolchain the tree builds with"; exit 1; }
+          toolchain=$(tr -d '[:space:]' < toolchain.txt)
         fi
-        echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
-        echo "building with $toolchain"
+        [[ "$toolchain" =~ ^gcc-trunk-v[0-9]+$ ]] || { echo "'$toolchain' is not a gcc-trunk-vN tag"; exit 1; }
+        {
+          echo "toolchain=$toolchain"
+          echo "cmake=$CMAKE_VERSION"
+        } >> "$GITHUB_OUTPUT"
+        echo "building with $toolchain and CMake $CMAKE_VERSION"
 
     - uses: actions/setup-python@v5
       with:
@@ -129,18 +130,18 @@ runs:
     # runner image ships whatever is current, so the version is pinned here to match the
     # UUID in the tree. Bumping one means bumping the other.
     # The release CDN answers 504 often enough to fail whole runs, so the zip is cached by
-    # version and a cold download retries. The key's version must match CMAKE_VERSION below.
+    # version and a cold download retries. The version comes from the resolve step.
     - name: Cache the pinned CMake
       id: cmake-cache
       uses: actions/cache@v4
       with:
         path: ~/.cmake-pinned
-        key: cmake-4.3.3-windows-x86_64
+        key: cmake-${{ steps.resolve.outputs.cmake }}-windows-x86_64
 
     - name: Pin CMake to the version the import-std UUID targets
       shell: pwsh
       env:
-        CMAKE_VERSION: "4.3.3"
+        CMAKE_VERSION: ${{ steps.resolve.outputs.cmake }}
         CMAKE_CACHED: ${{ steps.cmake-cache.outputs.cache-hit }}
       run: |
         $name = "cmake-$env:CMAKE_VERSION-windows-x86_64"

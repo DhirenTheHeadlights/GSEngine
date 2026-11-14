@@ -334,6 +334,7 @@ game = {0}
 		? std::format(R"(import std;
 
 import gse;
+import gse.gpu;
 import gse.system_manifest;
 
 import {1}.app;
@@ -345,9 +346,11 @@ auto main() -> int {{
 		}},
 		{{
 			.title = "{0}",
-			.dark_background = true,
-			.video_encode = false,
 			.simulate_world = false,
+			.pins = {{
+				gse::settings::assign<^^gse::gpu::context::data::dark_background>(true),
+				gse::settings::assign<^^gse::gpu::context::data::device_settings, ^^gse::gpu::device_settings::video_encode>(false),
+			}},
 		}}
 	);
 	return 0;

@@ -1,8 +1,10 @@
 export module gse.graphics:loading_screen;
 
 import gse.core;
+import gse.diag;
 import gse.log;
 import gse.math;
+import gse.meta;
 import gse.time;
 import std;
 
@@ -18,8 +20,9 @@ import :widget_skin;
 export namespace gse::gui {
 	class loading_screen : public screen {
 	public:
-		explicit loading_screen(
-			const loading::state& state
+		loading_screen(
+			const lifecycle<loading::boot_stage>& boot,
+			loading::state& state
 		);
 
 		auto build(
@@ -36,22 +39,16 @@ export namespace gse::gui {
 		auto should_dismiss() const -> bool override;
 
 	private:
-		const loading::state* m_state;
-		bool m_logged_first_build = false;
+		const lifecycle<loading::boot_stage>* m_boot;
+		loading::state* m_state;
 		interval_timer<float> m_log_timer{ milliseconds(250.f) };
 	};
 }
 
-gse::gui::loading_screen::loading_screen(const loading::state& state) : m_state(&state) {
-}
+gse::gui::loading_screen::loading_screen(const lifecycle<loading::boot_stage>& boot, loading::state& state) : m_boot(&boot), m_state(&state) {}
 
 auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
-	if (!m_logged_first_build) {
-		m_logged_first_build = true;
-		log::println(log::category::runtime, "boot: loading_screen first build()");
-	}
-
-	const_cast<loading::state*>(m_state)->mark_rendered();
+	m_state->awaiting_first_draw = false;
 
 	const auto& ctx = ui.ctx;
 	if (!ctx.current_menu) {
@@ -66,26 +63,24 @@ auto gse::gui::loading_screen::build(builder& ui, nav& n) -> void {
 	const float row_h = text_view->line_height(font_sz);
 	const vec2f center = body.center();
 
-	const std::string phase = m_state->phase();
-	const std::uint32_t done = m_state->done();
-	const std::uint32_t total = m_state->total();
+	const std::uint32_t done = m_state->done;
+	const std::uint32_t total = m_state->total;
 
 	if (m_log_timer.tick()) {
 		log::println(
 			log::category::runtime,
-			"loading_screen::build read done={} total={} phase=\"{}\"",
+			"loading_screen::build read done={} total={}",
 			done,
-			total,
-			phase
+			total
 		);
 	}
 
-	const std::string_view label = phase.empty() ? std::string_view("Loading...") : std::string_view(phase);
+	const loading::boot_stage_info stage = annotation_from_enum<loading::boot_stage_info>(m_boot->state(), {});
 
 	draw::label(
 		ctx,
 		rectf::from_position_size({ body.left(), center.y() + row_h * 2.f }, { body.width(), row_h }),
-		label,
+		stage.label,
 		ctx.style.progress.label,
 		{ .color = ctx.style.progress.label_color }
 	);
@@ -146,5 +141,5 @@ auto gse::gui::loading_screen::captures_input() const -> bool {
 }
 
 auto gse::gui::loading_screen::should_dismiss() const -> bool {
-	return m_state->finished();
+	return m_boot->state() == loading::boot_stage::ready;
 }

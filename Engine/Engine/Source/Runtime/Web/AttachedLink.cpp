@@ -2,6 +2,8 @@ module gse.runtime:attached_link_impl;
 
 import std;
 
+import gse.gpu;
+
 import :attached_link;
 import :engine;
 
@@ -11,7 +13,7 @@ auto gse::report_fatal_to_editor(const std::source_location& loc, const std::str
 
 auto gse::drain_editor_pipe(void*& editor_pipe, attached_pipe_reader& reader, engine& e) -> void {}
 
-auto gse::announce_attached_surface(void* const editor_pipe, const attached_surface_message& message) -> void {}
+auto gse::announce_attached_surface(void* const editor_pipe, const gpu::shared_output_announcement& announcement) -> void {}
 
 auto gse::attached_process_id() -> std::uint32_t {
 	return 0;

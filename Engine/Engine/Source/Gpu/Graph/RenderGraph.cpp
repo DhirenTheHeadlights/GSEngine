@@ -36,6 +36,23 @@ namespace gse::gpu {
 			default: return trace_id<"render_graph::record_round_tail">();
 		}
 	}
+
+	auto resolve_extensions(
+		std::span<render_pass_data> passes
+	) -> void;
+}
+
+auto gse::gpu::resolve_extensions(const std::span<render_pass_data> passes) -> void {
+	for (auto& extension : passes) {
+		for (const auto extended : extension.extends) {
+			extension.after_passes.push_back(extended);
+			for (auto& consumer : passes) {
+				if (&consumer != &extension && !std::ranges::contains(consumer.extends, extended) && std::ranges::contains(consumer.after_passes, extended)) {
+					consumer.after_passes.push_back(extension.pass_type);
+				}
+			}
+		}
+	}
 }
 
 int gse::gpu::render_graph::s_live_count = 0;
@@ -217,14 +234,12 @@ auto gse::gpu::render_graph::claim_output() -> bool {
 	return !offscreen->withheld;
 }
 
-auto gse::gpu::render_graph::offscreen_surfaces() const -> std::span<const shared_surface> {
+auto gse::gpu::render_graph::exported_output() const -> std::optional<gpu::exported_output> {
 	const auto* offscreen = std::get_if<offscreen_output>(&m_output);
-	return offscreen ? std::span<const shared_surface>(offscreen->shared) : std::span<const shared_surface>{};
-}
-
-auto gse::gpu::render_graph::offscreen_timelines() const -> gpu::offscreen_timelines {
-	const auto* offscreen = std::get_if<offscreen_output>(&m_output);
-	return offscreen ? offscreen->timelines : gpu::offscreen_timelines{};
+	if (!offscreen || !offscreen->exportable()) {
+		return std::nullopt;
+	}
+	return offscreen->exported();
 }
 
 auto gse::gpu::render_graph::on_resize(resize_callback callback) -> void {
@@ -929,6 +944,7 @@ auto gse::gpu::render_graph::execute(frame_request_drain drain) -> void {
 	};
 
 	auto passes = drain.drain_passes();
+	resolve_extensions(passes);
 	auto transient_images = drain.drain_images();
 	auto transient_buffers = drain.drain_buffers();
 

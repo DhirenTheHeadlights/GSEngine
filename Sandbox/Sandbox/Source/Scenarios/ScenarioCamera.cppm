@@ -51,6 +51,13 @@ export namespace sandbox::scenario_camera {
 		float progress
 	) -> gse::camera::target;
 
+	auto cloud_probe_target(
+		gse::angle pitch,
+		gse::angle yaw_from_sun
+	) -> gse::camera::target;
+
+	auto cloud_probe_sun() -> gse::renderer::atmosphere::sun_request;
+
 	auto sun_at(
 		float progress
 	) -> gse::renderer::atmosphere::sun_request;
@@ -158,6 +165,23 @@ auto sandbox::scenario_camera::cloud_sun_at(const float progress) -> gse::render
 auto sandbox::scenario_camera::cloud_weather_at(const float progress) -> gse::renderer::cloud::weather_request {
 	return {
 		.phase = progress,
+	};
+}
+
+auto sandbox::scenario_camera::cloud_probe_sun() -> gse::renderer::atmosphere::sun_request {
+	return {
+		.elevation = gse::degrees(30.f),
+		.azimuth = gse::degrees(45.f),
+	};
+}
+
+auto sandbox::scenario_camera::cloud_probe_target(const gse::angle pitch, const gse::angle yaw_from_sun) -> gse::camera::target {
+	const auto toward_sun = gse::degrees(-90.f) - cloud_probe_sun().azimuth;
+
+	return {
+		.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(4.f), gse::meters(70.f)),
+		.orientation = gse::from_axis_angle(gse::axis_y, toward_sun + yaw_from_sun) * gse::from_axis_angle(gse::axis_x, pitch),
+		.fov = gse::degrees(60.f),
 	};
 }
 

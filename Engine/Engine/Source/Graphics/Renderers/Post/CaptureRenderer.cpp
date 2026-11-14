@@ -1,0 +1,502 @@
+module gse.graphics:capture_renderer_impl;
+
+import gse.assets;
+import gse.concurrency;
+import gse.config;
+import gse.core;
+import gse.diag;
+import gse.ecs;
+import gse.gpu;
+import gse.gpu_record;
+import gse.log;
+import gse.math;
+import gse.os;
+import gse.save;
+import gse.time;
+import std;
+
+import :capture_renderer;
+import :capture_ring;
+import :mp4_muxer;
+import :shared_shaders;
+import :ui_renderer;
+import :settings;
+import :tonemap_renderer;
+
+namespace gse::renderer::capture {
+	struct [[= shaders::shader_struct]] push_constants {
+		vec2u extent;
+		std::uint32_t rgba_index;
+	};
+
+	struct convert_bindings {
+		shaders::storage_image<float> output_y;
+		shaders::storage_image<vec2f> output_uv;
+	};
+
+	using entry = gpu::compute_entry<gpu::body_path<"Compute/rgba_to_nv12">, gpu::bindings<convert_bindings, shaders::bindless::sampler>, gpu::bindless_textures, gpu::threads<16, 16, 1>, gpu::push_constant<push_constants>>;
+}
+
+auto gse::renderer::capture::init(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d) -> async::task<> {
+	const auto ext = gpu_s.render_graph->extent();
+	auto encoder = gpu_s.device->make_video_encoder({
+		.extent = ext,
+		.average_bitrate = d.capture_bitrate,
+		.frame_interval = d.capture_interval
+	});
+	if (!gpu_s.device->video_encode_enabled()) {
+		log::println(log::category::render, "Video encode not available, capture limited to screenshots");
+	}
+	else if (!encoder) {
+		log::println(log::category::render, "Video encode probe failed, capture limited to screenshots");
+	}
+	else {
+		d.convert_pipeline = gpu::build_compute_program(*gpu_s.device, entry::pod);
+
+		d.sampler = gpu_s.device->register_sampler(gpu::linear_clamp_sampler);
+
+		constexpr gpu::sampler_desc capture_sampler_desc{
+			.min = gpu::sampler_filter::nearest,
+			.mag = gpu::sampler_filter::nearest,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+		};
+
+		for (std::size_t i = 0; i < per_frame_resource<gpu::image>::frames_in_flight; ++i) {
+			d.rgba_captures[i] = gpu_s.device->create_image(
+				{
+					.size = ext,
+					.format = gpu_s.render_graph->current_target().format,
+					.usage = { gpu::image_flag::sampled, gpu::image_flag::transfer_dst },
+				}
+			);
+
+			d.rgba_slots[i] = gpu_s.device->register_texture(d.rgba_captures[i], capture_sampler_desc);
+		}
+
+		d.encoder = std::move(*encoder);
+
+		d.clip_ring.set_budget(d.ring_budget);
+		d.applied_ring_budget = d.ring_budget;
+		d.applied_capture_bitrate = d.capture_bitrate;
+
+		d.encode_active = true;
+	}
+
+	return {};
+}
+
+auto gse::renderer::capture::run(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<actions::data> sys, data& d, const channel_write<save_clip_request, toggle_recording_request> capture_out, const channel_read<screenshot_request> screenshot_in) -> async::task<> {
+	const auto& action_state = actions::current_state(sys);
+
+	if (actions::pressed(action_state, sys, d.screenshot_action)) {
+		d.screenshot_queue.emplace_back();
+	}
+	for (const auto& [path] : screenshot_in.of<screenshot_request>()) {
+		d.screenshot_queue.push_back(path);
+	}
+	if (actions::pressed(action_state, sys, d.save_clip_action)) {
+		capture_out.push<save_clip_request>({});
+	}
+	if (actions::pressed(action_state, sys, d.toggle_recording_action)) {
+		log::println(log::category::render, "toggle_recording_action edge detected in run()");
+		capture_out.push<toggle_recording_request>({});
+	}
+
+	return {};
+}
+
+auto gse::renderer::capture::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<toggle_recording_request, start_recording_request, stop_recording_request, save_clip_request> capture_in) -> async::task<> {
+	const auto frame_index = gpu_s.render_graph->current_frame();
+
+	auto& shot = d.screenshots[frame_index];
+
+	if (shot.pending) {
+		shot.pending = false;
+
+		const auto w = shot.width;
+		const auto h = shot.height;
+		const auto dst_pitch = static_cast<std::size_t>(w) * 4;
+		std::vector<std::byte> pixels(dst_pitch * h);
+		const auto mapped = shot.staging.host_read();
+		for (std::uint32_t row = 0; row < h; ++row) {
+			memcpy(pixels.data() + row * dst_pitch, mapped.data() + row * shot.row_pitch, dst_pitch);
+		}
+
+		const bool needs_swizzle = gpu::is_bgra(gpu_s.render_graph->current_target().format);
+		const auto name = shot.path.empty()
+			? std::filesystem::path(std::format("screenshot_{}.png", system_clock::timestamp_filename()))
+			: std::move(shot.path);
+
+		task::post_io(
+			[pixels = std::move(pixels),
+				w,
+				h,
+				needs_swizzle,
+				path = config::captures_dir() / "screenshots" / name] mutable {
+				for (std::size_t i = 0; i < pixels.size(); i += 4) {
+					if (needs_swizzle) {
+						std::swap(pixels[i], pixels[i + 2]);
+					}
+					pixels[i + 3] = std::byte{ 0xFF };
+				}
+
+				std::filesystem::create_directories(path.parent_path());
+
+				if (image::write_png(path, w, h, 4, pixels.data())) {
+					log::println(log::category::render, "Screenshot saved: {}", path.generic_display_string());
+				}
+				else {
+					log::println(log::level::warning, log::category::render, "Failed to write screenshot to {}", path.generic_display_string());
+				}
+			},
+			trace_id<"capture::screenshot_write">()
+		);
+	}
+
+	if (d.ring_budget != d.applied_ring_budget) {
+		d.clip_ring.set_budget(d.ring_budget);
+		d.applied_ring_budget = d.ring_budget;
+	}
+
+	if (d.capture_bitrate != d.applied_capture_bitrate) {
+		d.applied_capture_bitrate = d.capture_bitrate;
+		if (d.encode_active && d.encoder.valid()) {
+			d.encoder.set_bitrate(d.capture_bitrate);
+			log::println(log::category::render, "Capture bitrate set to {:.1f:Mb/s}", d.capture_bitrate);
+		}
+	}
+
+	const auto capture_pts = system_clock::content_now<time>();
+	const bool encode_wanted = d.encode_enabled || d.recording->active.load();
+	const bool capture_due = encode_wanted && d.encode_active && d.encoder.valid() &&
+		gpu_s.render_graph->frame_in_progress() && gpu_s.render_graph->target_live() &&
+		(!d.captured_once || capture_pts - d.last_capture_pts >= d.capture_interval);
+
+	d.encode_target = {};
+
+	if (capture_due) {
+		d.encode_target = d.encoder.begin_capture(capture_pts);
+		if (!d.encode_target.valid && d.recording->active.load()) {
+			++d.recording->dropped_frames;
+		}
+		const auto overshoot = capture_pts - d.last_capture_pts;
+		d.last_capture_pts = d.captured_once && overshoot < d.capture_interval * 2.f
+			? d.last_capture_pts + d.capture_interval
+			: capture_pts;
+		d.captured_once = true;
+
+		if (auto unit = d.encoder.take_bitstream()) {
+			const bool was_keyframe = unit->keyframe;
+			const auto emitted = byte_count::from<gse::bytes>(unit->bytes.size());
+
+			if (d.recording->active.load()) {
+				enqueue_unit(*d.recording, {
+					.bytes = unit->bytes,
+					.pts = unit->pts,
+					.keyframe = unit->keyframe
+				});
+			}
+
+			d.clip_ring.push(std::move(*unit));
+			if (!d.first_ring_push_logged) {
+				d.first_ring_push_logged = true;
+				log::println(
+					log::category::render,
+					"First clip ring push: {:.0f:B}, keyframe={}",
+					emitted,
+					was_keyframe
+				);
+			}
+		}
+		d.encoder.submit_ready();
+	}
+
+	if (d.recording->active.load() && d.recording->stop_at && capture_pts >= *d.recording->stop_at) {
+		end_recording(d);
+	}
+
+	const auto toggle_requests = capture_in.of<toggle_recording_request>();
+	if (!toggle_requests.empty()) {
+		const auto now = std::chrono::steady_clock::now();
+		const auto since_last = now - d.recording->last_toggle;
+		log::println(
+			log::category::render,
+			"Toggle Recording: received {} request(s), {}ms since last toggle",
+			toggle_requests.size(),
+			std::chrono::duration_cast<std::chrono::milliseconds>(since_last).count()
+		);
+		if (since_last < std::chrono::milliseconds(300)) {
+			log::println(log::category::render, "Toggle Recording: debounced (within 300ms of last toggle)");
+		}
+		else {
+			d.recording->last_toggle = now;
+			if (d.recording->active.load()) {
+				end_recording(d);
+			}
+			else {
+				d.pending_start = start_recording_request{};
+			}
+		}
+	}
+
+	for (const auto& request : capture_in.of<start_recording_request>()) {
+		d.pending_start = request;
+	}
+
+	if (!capture_in.of<stop_recording_request>().empty()) {
+		d.pending_start.reset();
+		if (d.recording->active.load()) {
+			end_recording(d);
+		}
+	}
+
+	if (d.pending_start) {
+		try_begin_recording(d, capture_pts);
+	}
+
+	if (!capture_in.of<save_clip_request>().empty()) {
+		if (!d.encode_active || !d.encoder.valid()) {
+			log::println(log::category::render, "Save Clip pressed but video capture is unavailable");
+		}
+		else if (d.clip_save_in_progress->load()) {
+			log::println(log::category::render, "Clip save already in progress, ignoring request");
+		}
+		else if (d.encoder.stream_header().empty()) {
+			log::println(
+				log::level::warning,
+				log::category::render,
+				"Save Clip: encoder stream_header not yet available, skipping"
+			);
+		}
+		else {
+			auto snapshot = d.clip_ring.snapshot_from_earliest_keyframe();
+			if (snapshot.empty()) {
+				log::println(log::category::render, "Clip ring has no keyframe yet, skipping save");
+			}
+			else {
+				d.clip_save_in_progress->store(true);
+
+				const auto path =
+					config::captures_dir() / "clips" / std::format("clip_{}.mp4", system_clock::timestamp_filename());
+				std::filesystem::create_directories(path.parent_path());
+
+				std::vector<std::byte> stream_header_copy(
+					d.encoder.stream_header().begin(),
+					d.encoder.stream_header().end()
+				);
+
+				task::post_io(
+					[snap = std::move(snapshot),
+						codec = d.encoder.codec(),
+						extent = d.encoder.extent(),
+						stream_header = std::move(stream_header_copy),
+						path,
+						flag = d.clip_save_in_progress.get()] mutable -> void {
+						const auto ok = mp4::mux(
+							snap,
+							{ codec, extent },
+							stream_header,
+							path
+						);
+						if (ok) {
+							log::println(log::category::render, "Clip saved: {}", path.generic_display_string());
+						}
+						else {
+							log::println(
+								log::level::warning,
+								log::category::render,
+								"Failed to mux clip to {}",
+								path.generic_display_string()
+							);
+						}
+						flag->store(false);
+					},
+					trace_id<"capture::clip_mux">()
+				);
+			}
+		}
+	}
+
+	if (!gpu_s.render_graph->frame_in_progress() || !gpu_s.render_graph->target_live()) {
+		co_return;
+	}
+
+	const bool do_screenshot = !d.screenshot_queue.empty();
+
+	if (do_screenshot) {
+		const auto target = gpu_s.render_graph->current_target();
+		const auto layout = gpu_s.device->readback_layout(target.format, target.extent);
+
+		if (!shot.staging.valid() || shot.staging.size() < layout.size) {
+			shot.staging = gpu_s.device->create_buffer(
+				{
+					.size = layout.size,
+					.usage = gpu::buffer_flag::transfer_dst,
+					.readback = true,
+				}
+			);
+		}
+
+		shot.width = target.extent.x();
+		shot.height = target.extent.y();
+		shot.row_pitch = layout.row_pitch;
+	}
+	const bool do_encode = d.encode_target.valid;
+
+	if (!do_screenshot && !do_encode) {
+		co_return;
+	}
+
+	const auto ext = gpu_s.render_graph->extent();
+
+	const push_constants convert_pc{
+		.extent = ext,
+		.rgba_index = d.rgba_slots[frame_index].valid() ? d.rgba_slots[frame_index].slot().index : shaders::bindless::invalid_index,
+	};
+
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.convert_pipeline).after<^^tonemap::frame, ^^ui::frame>();
+
+	if (do_screenshot) {
+		rec.copy_target_to_buffer(gpu_s.render_graph->current_target(), shot.staging);
+		shot.path = std::move(d.screenshot_queue.front());
+		d.screenshot_queue.pop_front();
+		shot.pending = true;
+	}
+
+	if (do_encode) {
+		const auto capture_extent = d.rgba_captures[frame_index].extent();
+		rec.blit_target_to_image(
+			gpu_s.render_graph->current_target(),
+			d.rgba_captures[frame_index],
+			vec2u{ capture_extent.x(), capture_extent.y() }
+		);
+		rec.sample_image(d.rgba_captures[frame_index], gpu::pipeline_stage_flag::compute_shader);
+		rec.dispatch<entry>(
+			convert_pc,
+			{
+				.output_y = d.encode_target.y,
+				.output_uv = d.encode_target.uv,
+				.textures_sampler = d.sampler,
+			},
+			gpu::group_count<entry>(ext)
+		);
+	}
+}
+
+auto gse::renderer::capture::shutdown(data& d) -> void {
+	if (!d.recording) {
+		return;
+	}
+	if (!d.recording->active.load()) {
+		return;
+	}
+	stop_recording(*d.recording);
+	log::println(log::category::render, "Recording stopped on shutdown: {}", d.recording->path.generic_display_string());
+}
+
+auto gse::renderer::capture::enqueue_unit(recording_state& state, gpu::encoded_unit unit) -> void {
+	std::lock_guard _(state.mutex);
+	state.queue.push(std::move(unit));
+	if (state.draining) {
+		return;
+	}
+	state.draining = true;
+	task::post_io(
+		[&state] {
+			drain_recording(state);
+		},
+		trace_id<"capture::mux">()
+	);
+}
+
+auto gse::renderer::capture::drain_recording(recording_state& state) -> void {
+	std::unique_lock lock(state.mutex);
+	while (!state.queue.empty()) {
+		auto unit = std::move(state.queue.front());
+		state.queue.pop();
+		lock.unlock();
+		state.muxer->append(std::move(unit));
+		lock.lock();
+	}
+	state.draining = false;
+	state.drained.notify_all();
+}
+
+auto gse::renderer::capture::stop_recording(recording_state& state) -> void {
+	state.active.store(false);
+	std::unique_lock lock(state.mutex);
+	state.drained.wait(lock, [&state] {
+		return !state.draining;
+	});
+	state.muxer->close();
+	state.muxer.reset();
+	state.stop_at.reset();
+	state.finished.fetch_add(1);
+}
+
+auto gse::renderer::capture::try_begin_recording(data& d, const time now) -> void {
+	if (!d.encode_active || !d.encoder.valid()) {
+		log::println(log::level::warning, log::category::render, "Recording requested but video capture is unavailable");
+		d.pending_start.reset();
+		return;
+	}
+	if (d.recording->active.load()) {
+		log::println(log::level::warning, log::category::render, "Recording requested while {} is still recording, ignoring", d.recording->path.generic_display_string());
+		d.pending_start.reset();
+		return;
+	}
+	if (d.encoder.stream_header().empty()) {
+		return;
+	}
+
+	const auto request = std::move(*d.pending_start);
+	d.pending_start.reset();
+
+	const auto path = request.path.empty()
+		? config::captures_dir() / "recordings" / std::format("recording_{}.mp4", system_clock::timestamp_filename())
+		: request.path;
+	if (path.has_parent_path()) {
+		std::filesystem::create_directories(path.parent_path());
+	}
+
+	auto live = mp4::live_muxer::open(
+		path,
+		{ d.encoder.codec(), d.encoder.extent() },
+		d.encoder.stream_header()
+	);
+	if (!live) {
+		log::println(
+			log::level::warning,
+			log::category::render,
+			"Failed to open recording file at {}",
+			path.generic_display_string()
+		);
+		return;
+	}
+
+	d.recording->path = path;
+	{
+		std::lock_guard _(d.recording->mutex);
+		std::queue<gpu::encoded_unit> empty;
+		std::swap(d.recording->queue, empty);
+		d.recording->muxer.emplace(std::move(*live));
+	}
+	d.recording->stop_at = request.duration ? std::optional(now + *request.duration) : std::nullopt;
+	d.recording->dropped_frames = 0;
+	d.recording->active.store(true);
+	log::println(log::category::render, "Recording started: {}", path.generic_display_string());
+}
+
+auto gse::renderer::capture::end_recording(data& d) -> void {
+	const auto dropped = d.recording->dropped_frames;
+	stop_recording(*d.recording);
+	log::println(
+		dropped == 0 ? log::level::info : log::level::warning,
+		log::category::render,
+		"Recording stopped: {} ({} frames dropped)",
+		d.recording->path.generic_display_string(),
+		dropped
+	);
+}

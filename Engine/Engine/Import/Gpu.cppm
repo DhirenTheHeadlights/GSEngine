@@ -14,6 +14,7 @@ export import :graph_channel;
 export import :frame_output;
 export import :render_graph;
 export import :shader_codegen;
+export import :shared_output;
 export import :context;
 export import :buffer;
 export import :image;

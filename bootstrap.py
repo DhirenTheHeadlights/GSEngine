@@ -189,7 +189,8 @@ def main():
     parser.add_argument("--skip-build", action="store_true", help="Skip the CMake configure and editor build")
     parser.add_argument("--preset", default=DEFAULT_PRESET, help=f"CMake preset to configure and build (default: {DEFAULT_PRESET})")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
-    parser.add_argument("--tag", default=None, help="gcc-trunk release tag (default: latest gcc-trunk-v* release)")
+    parser.add_argument("--tag", default=None, help="gcc-trunk release tag to install and pin (default: the tag in toolchain.txt)")
+    parser.add_argument("--latest", action="store_true", help="Install the newest gcc-trunk-v* release and pin it in toolchain.txt")
     parser.add_argument("--sha256", default=None, help="Expected SHA256 of the toolchain zip")
     parser.add_argument("--url", default=None, help="Install the toolchain from this URL instead of the release")
     parser.add_argument("--persist", action="store_true", help="Persist MINGW_ROOT via setx")
@@ -205,6 +206,8 @@ def main():
         gcc_args = []
         if args.tag:
             gcc_args += ["--tag", args.tag]
+        if args.latest:
+            gcc_args.append("--latest")
         if args.sha256:
             gcc_args += ["--sha256", args.sha256]
         if args.url:

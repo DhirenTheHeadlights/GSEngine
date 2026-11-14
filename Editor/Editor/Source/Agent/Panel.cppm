@@ -43,7 +43,6 @@ namespace gse::ide::agent {
 	constexpr std::string_view cycle_back_label = "<<";
 	constexpr std::string_view cycle_forward_label = ">>";
 	constexpr std::string_view catch_up_label = "Catch up";
-	constexpr std::string_view live_scope_head = "scope \xC2\xB7 live transcript since this cycle began";
 	constexpr std::string_view fork_open_label = "Ask about this stage";
 	constexpr std::string_view fork_busy_label = "Ask (wait for the turn to end)";
 	constexpr std::string_view fork_ask_label = "Ask";

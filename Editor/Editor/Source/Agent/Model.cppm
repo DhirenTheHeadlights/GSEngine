@@ -430,6 +430,10 @@ export namespace gse::ide::agent {
 			.label = "the editor is rebuilding itself and will restart",
 			.brief = "until the editor restarts",
 		}]],
+		game_running [[= hold_style{
+			.label = "another chat's game is still running in the viewport",
+			.brief = "behind a running game",
+		}]],
 		tree_busy [[= hold_style{
 			.label = "another chat is still working in this tree",
 			.brief = "behind",
@@ -440,6 +444,18 @@ export namespace gse::ide::agent {
 	struct build_hold_state {
 		build_hold reason = build_hold::none;
 		std::string blocker;
+	};
+
+	enum class build_dispatch_stage : std::uint8_t {
+		idle,
+		dispatched [[
+			= entered_from({ idle }),
+			= returns_to({ idle })
+		]],
+		building [[
+			= entered_from({ dispatched }),
+			= returns_to({ idle })
+		]],
 	};
 
 	struct model_option {
@@ -583,6 +599,7 @@ export namespace gse::ide::agent {
 		phase_done [[= tool_flavor{ .match = "mcp__gse__gse_phase_done", .verb = "handing in the work" }]],
 		report_gap [[= tool_flavor{ .match = "mcp__gse__gse_report_gap", .verb = "filing a complaint" }]],
 		remove [[= tool_flavor{ .match = "mcp__gse__gse_delete_file", .verb = "taking out the trash" }]],
+		format [[= tool_flavor{ .match = "mcp__gse__gse_format", .verb = "tidying up" }]],
 		task [[= tool_flavor{ .match = "Task", .verb = "delegating" }]],
 		agent [[= tool_flavor{ .match = "Agent", .verb = "delegating" }]],
 		web_search [[= tool_flavor{ .match = "WebSearch", .verb = "consulting the internet" }]],
@@ -810,7 +827,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] transcript_view changes;
 		[[= archive_skip{}]] transcript_view everything;
 		[[= archive_skip{}]] transcript_view followup;
-		[[= archive_skip{}]] transcript_view live_scope;
+		[[= archive_skip{}]] transcript_view live_run;
 		[[= archive_skip{}]] transcript_mode mode = transcript_mode::summary;
 		bool changes_open = false;
 		float changes_ratio = 0.55f;
@@ -936,6 +953,7 @@ export namespace gse::ide::agent {
 		[[= archive_skip{}]] std::vector<queued_build> inbox_queue;
 		[[= archive_skip{}]] std::vector<queued_build> inbox_active;
 		[[= archive_skip{}]] time inbox_dispatch_deadline;
-		[[= archive_skip{}]] bool inbox_started = false;
+		[[= archive_skip{}]]
+		gse::lifecycle<build_dispatch_stage> build_dispatch{ "build_dispatch", log::category::task };
 	};
 }

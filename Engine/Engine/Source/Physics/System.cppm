@@ -410,13 +410,16 @@ export namespace gse::physics {
 		shadow_step_trace_settings shadow_step;
 	};
 
-	struct [[= system_state<"Physics">{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
+	struct [[= system_state<"Physics">{}, = requires_setting<^^launch::data::simulate_world, true>{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
 		[[= settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 		[[
 			= settings::describe<"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
 									  "buffers are built once during startup, so this requires a restart.">{},
 			= settings::restart_required{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::shader_target>>{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::shader_int64>>{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::untyped_atomics>>{},
 			= shared
 		]]
 		bool use_gpu_solver = false;
@@ -880,7 +883,7 @@ export namespace gse::physics {
 			bool valid = false;
 		};
 
-		struct [[= system_state<"Physics GPU Upload">{}, = deferred_system{}]] data {
+		struct [[= system_state<"Physics GPU Upload">{}, = requires_setting<^^physics::data::use_gpu_solver, true>{}, = deferred_system{}]] data {
 			std::uint64_t built_generation = 0;
 			std::uint64_t uploaded_joints_generation = 0;
 			std::uint64_t uploaded_joint_inputs_generation = 0;
@@ -1209,7 +1212,7 @@ export namespace gse::physics {
 		write<hull_definition> hull_definitions
 	) -> async::task<>;
 
-	[[= system_frame{}]]
+	[[= system_frame{}, = requires_setting<^^data::use_gpu_solver, true>{}]]
 	auto frame(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,

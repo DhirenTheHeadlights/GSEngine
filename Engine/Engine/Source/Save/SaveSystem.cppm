@@ -111,6 +111,10 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
+		auto retire(
+			const void* settings_ptr
+		) -> void;
+
 		auto for_each_entry(
 			auto&& fn
 		) const -> void;
@@ -142,6 +146,11 @@ export namespace gse::save {
 
 	private:
 		using doc = std::unordered_map<std::string, std::unordered_map<std::string, std::string>>;
+
+		struct dormant_category {
+			std::string category;
+			std::vector<settings::settings_key_info> keys;
+		};
 
 		static auto read_file(
 			const std::filesystem::path& path
@@ -191,7 +200,13 @@ export namespace gse::save {
 			std::string_view category
 		) const -> bool;
 
+		auto find_dormant_key(
+			std::string_view category,
+			std::string_view key
+		) const -> const settings::settings_key_info*;
+
 		std::vector<settings::register_settings_type> m_entries;
+		std::vector<dormant_category> m_dormant;
 		registry_paths m_paths;
 		bool m_auto_save = false;
 		std::function<void()> m_on_restart;
@@ -405,6 +420,11 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 		}
 	}
 
+	for (const auto& [gate, pin] : entry.fallbacks) {
+		set_pin(pin.category, pin.key, pin.value);
+		log::println(log::category::save_system, "setting {}.{} pinned to {}: requires {}", pin.category, pin.key, pin.value, gate.requirement);
+	}
+
 	if (entry.read && entry.settings_ptr) {
 		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::user);
 		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::project);
@@ -449,6 +469,19 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	m_entries.push_back(std::move(entry));
 }
 
+auto gse::save::registry::retire(const void* settings_ptr) -> void {
+	const auto owned = [settings_ptr](const settings::register_settings_type& entry) {
+		return entry.settings_ptr == settings_ptr;
+	};
+	for (const auto& entry : m_entries | std::views::filter(owned)) {
+		m_dormant.push_back({
+			.category = entry.category,
+			.keys = entry.keys,
+		});
+	}
+	std::erase_if(m_entries, owned);
+}
+
 auto gse::save::registry::find_key(const std::string_view category, const std::string_view key) const -> const settings::settings_key_info* {
 	for (const auto& entry : m_entries) {
 		if (entry.category != category) {
@@ -490,17 +523,33 @@ auto gse::save::registry::category_registered(const std::string_view category) c
 	);
 }
 
+auto gse::save::registry::find_dormant_key(const std::string_view category, const std::string_view key) const -> const settings::settings_key_info* {
+	for (const auto& dormant : m_dormant) {
+		if (dormant.category != category) {
+			continue;
+		}
+		const auto it = std::ranges::find(dormant.keys, key, &settings::settings_key_info::key);
+		if (it != dormant.keys.end()) {
+			return &*it;
+		}
+	}
+	return nullptr;
+}
+
 auto gse::save::registry::audit_files() const -> void {
 	const auto audit_file = [this](const doc& d, const std::filesystem::path& path) {
 		if (path.empty()) {
 			return;
 		}
 		for (const auto& [category, values] : d) {
-			if (!category_registered(category)) {
+			if (!category_registered(category) && !std::ranges::contains(m_dormant, category, &dormant_category::category)) {
 				continue;
 			}
 			for (const auto& key : std::views::keys(values)) {
 				const settings::settings_key_info* info = find_key(category, key);
+				if (!info) {
+					info = find_dormant_key(category, key);
+				}
 				if (!info) {
 					log::println(
 						log::level::warning,

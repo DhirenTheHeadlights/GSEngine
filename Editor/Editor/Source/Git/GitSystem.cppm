@@ -64,7 +64,7 @@ export namespace gse::ide::git_system {
 		std::vector<std::filesystem::path> repo_roots;
 		std::vector<std::filesystem::path> rootless;
 		git::status_snapshot status;
-		clock refresh_clock;
+		interval_timer<> refresh_timer{ seconds(30.f) };
 		file_watcher repo_watcher;
 		std::vector<std::filesystem::path> watched_repos;
 		bool refresh_requested = true;
@@ -314,7 +314,7 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 	if (d.repo_watcher.poll() > 0) {
 		d.refresh_requested = true;
 	}
-	if (d.refresh_clock.elapsed() >= seconds(30.f)) {
+	if (d.refresh_timer.tick()) {
 		d.refresh_requested = true;
 	}
 
@@ -350,7 +350,7 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_
 			}, trace_id<"git::status">(), task::lane::background);
 		}
 		d.refresh_requested = false;
-		d.refresh_clock.reset();
+		d.refresh_timer.reset();
 	}
 
 	return {};

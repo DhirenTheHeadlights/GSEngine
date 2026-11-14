@@ -3,6 +3,7 @@ module sandbox:run_modes_impl;
 import std;
 import gse;
 import gse.config;
+import gse.gpu;
 import gse.scenario;
 import gse.system_manifest;
 
@@ -18,7 +19,7 @@ auto sandbox::startup::run_game(const gse::engine_config& engine) -> int {
 	if (resolved.project_settings_path.empty()) {
 		resolved.project_settings_path = gse::config::project_settings_path();
 	}
-	resolved.default_theme = gse::gui::theme::blueprint;
+	resolved.defaults.push_back(gse::settings::assign<^^gse::gui::data::current_theme>(gse::gui::theme::blueprint));
 
 	const gse::network::session_role mode = gse::network::resolve_role(resolved.net);
 
@@ -56,9 +57,9 @@ auto sandbox::startup::run_physics_parity(const config& cfg) -> int {
 			.title = "Sandbox Physics Parity",
 			.create_window = false,
 			.render = false,
-			.use_gpu_solver = cfg.engine.use_gpu_solver,
 			.persist_settings = false,
 			.author_baked_assets = false,
+			.setting = cfg.engine.setting,
 		}
 	);
 	gse::system_clock::set_fixed_step_override(std::nullopt);
@@ -104,15 +105,9 @@ auto sandbox::startup::apply_scenario(config& cfg, const std::span<const std::st
 		own("create-window");
 		own("render");
 	}
-	if (selected->info.gpu_solver) {
-		cfg.engine.use_gpu_solver = true;
-		own("use-gpu-solver");
-	}
-	cfg.engine.video_encode = selected->info.video_encode;
-	own("video-encode");
-
 	std::vector<std::string> pinned;
 	pinned.push_back(gse::scenario::pin<^^gse::physics::data::use_gpu_solver>{ selected->info.gpu_solver }.assignment());
+	pinned.push_back(gse::scenario::pin<^^gse::gpu::context::data::device_settings, ^^gse::gpu::device_settings::video_encode>{ selected->info.video_encode }.assignment());
 	pinned.append_range(selected->settings);
 	cfg.engine.setting.insert(cfg.engine.setting.begin(), pinned.begin(), pinned.end());
 

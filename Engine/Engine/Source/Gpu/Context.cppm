@@ -17,10 +17,32 @@ import std;
 import :device;
 import :frame;
 import :render_graph;
+import :shared_output;
 import :swap_chain;
 
 export namespace gse::gpu {
 	struct gpu_resume_request;
+}
+
+export namespace gse::gpu::offscreen {
+	struct [[
+		= system_state<"Offscreen Output">{},
+		= requires_setting<^^launch::data::presents, false>{},
+		= requires_setting<^^launch::data::render, true>{},
+		= settings::category<"Graphics">{}
+	]] data {
+		[[
+			= settings::describe<"Width of the offscreen render target a windowless run draws into.">{},
+			= shared
+		]]
+		std::uint32_t offscreen_width = 1920;
+
+		[[
+			= settings::describe<"Height of the offscreen render target a windowless run draws into.">{},
+			= shared
+		]]
+		std::uint32_t offscreen_height = 1080;
+	};
 }
 
 export namespace gse::gpu::context {
@@ -88,13 +110,21 @@ export namespace gse::gpu::context {
 		bool lock_clocks = false;
 	};
 
-	struct [[= system_state<"Gpu">{}, = settings::category<"Graphics">{}]] data {
+	struct [[= system_state<"Gpu">{}, = requires_setting<^^launch::data::gpu, true>{}, = settings::category<"Graphics">{}]] data {
 		[[
 			= settings::describe<"Enable Vulkan validation layers. Catches API misuse but adds significant "
 									  "overhead. Requires a restart.">{},
 			= settings::restart_required{}
 		]]
 		bool validation_layers_enabled = false;
+
+		[[
+			= settings::describe<"Reuse compiled shader code from the per-user cache when a program's sources are "
+								  "unchanged. Off recompiles every program on every boot, for timing a cold boot or "
+								  "ruling the cache out when a shader misbehaves. Requires a restart.">{},
+			= settings::restart_required{}
+		]]
+		bool shader_cache_enabled = true;
 
 		[[
 			= settings::describe<"GPU backend to initialize on startup. Vulkan falls back to dx12 if it is unsupported. Requires a restart.">{},
@@ -123,27 +153,12 @@ export namespace gse::gpu::context {
 		]]
 		gpu_perf_metrics_settings gpu_perf_metrics;
 
-		[[
-			= settings::describe<"Render into an offscreen target when there is no window, so a windowless run can still record.">{},
-			= settings::app_scope{}
-		]]
-		bool offscreen = false;
-
-		[[
-			= settings::describe<"Width of the offscreen render target a windowless run draws into.">{}
-		]]
-		std::uint32_t offscreen_width = 1920;
-
-		[[
-			= settings::describe<"Height of the offscreen render target a windowless run draws into.">{}
-		]]
-		std::uint32_t offscreen_height = 1080;
-
 		[[= stable_shared]] std::unique_ptr<gpu::device> device;
 		[[= stable_shared]] std::unique_ptr<swap_chain> swapchain;
 		[[= stable_shared]] std::unique_ptr<gpu::frame> frame;
 		[[= stable_shared]] std::unique_ptr<gpu::render_graph> render_graph;
 		std::vector<std::unique_ptr<window_presentation>> secondaries;
+		shared_output_state shared_output;
 
 		[[
 			= settings::describe<"Clear the swapchain to a dark neutral tone instead of black.">{},
@@ -160,6 +175,7 @@ export namespace gse::gpu::context {
 
 	[[= system_init{}]] auto init(
 		std::optional<shared_view<window::data>> window_s,
+		std::optional<shared_view<offscreen::data>> offscreen_s,
 		data& d
 	) -> async::task<>;
 
@@ -210,6 +226,28 @@ export namespace gse::gpu::context {
 	auto wait_idle(
 		const data& d
 	) -> void;
+
+	auto request_shared_output(
+		data& d
+	) -> void;
+
+	auto abandon_shared_output(
+		data& d
+	) -> void;
+
+	auto await_shared_output_slot(
+		data& d
+	) -> void;
+
+	[[nodiscard]] auto shared_output(
+		const data& d
+	) -> std::optional<shared_output_announcement>;
+}
+
+namespace gse::gpu::context {
+	auto advance_shared_output(
+		data& d
+	) -> void;
 }
 
 export namespace gse::gpu {
@@ -233,6 +271,22 @@ export namespace gse::gpu {
 	[[nodiscard]] auto on_gpu(
 		channel_write<gpu_resume_request> channels
 	) -> on_gpu_awaitable;
+
+	template <std::meta::info Capability>
+	struct requires_capability : activation_gate_tag {
+		static constexpr std::meta::info gate_state = ^^context::data;
+		static constexpr std::string_view requirement = std::meta::identifier_of(Capability);
+
+		static auto holds(
+			const void* state
+		) -> bool;
+	};
+}
+
+template <std::meta::info Capability>
+auto gse::gpu::requires_capability<Capability>::holds(const void* state) -> bool {
+	const auto& device = static_cast<const context::data*>(state)->device;
+	return !device || device->capabilities().[:Capability:];
 }
 
 auto gse::gpu::on_gpu_awaitable::await_ready() const noexcept -> bool {

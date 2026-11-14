@@ -8,6 +8,9 @@ import :crosshair_system;
 import :dev_spawn_menu;
 import :dev_spawn_system;
 import :game_systems;
+import :grass_probe;
+import :grass_renderer;
+import :grass_system;
 import :hud;
 import :net_directory;
 import :orbit_camera;
@@ -69,6 +72,23 @@ namespace sandbox {
 		^^player_state_broadcast::data,
 		^^player_state_broadcast::run
 	>;
+
+	using grass_systems = gse::system_manifest<
+		^^grass::data,
+		^^grass::init,
+		^^grass::collect,
+		^^grass::frame,
+		^^grass::probe::data,
+		^^grass::probe::init,
+		^^grass::probe::update,
+		^^grass::probe::frame
+	>;
+
+	using grass_render_systems = gse::system_manifest<
+		^^grass::render::data,
+		^^grass::render::init,
+		^^grass::render::frame
+	>;
 }
 
 auto sandbox::register_client_systems(gse::engine& e, const bool render) -> void {
@@ -77,9 +97,12 @@ auto sandbox::register_client_systems(gse::engine& e, const bool render) -> void
 	gse::system_manifest<^^net_directory::init>{}.register_with(e);
 	gse::register_systems<^^gse::free_camera::system>(e);
 
+	grass_systems{}.register_with(e);
+
 	if (render) {
 		client_ui_systems{}.register_with(e);
 		gse::register_systems<^^gse::gui::popout_system>(e);
+		grass_render_systems{}.register_with(e);
 	}
 }
 

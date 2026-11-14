@@ -757,6 +757,7 @@ auto gse::dx12::device::cmd_bind_graphics_shaders(const gpu::command_buffer_hand
 	auto& state = graphics_state(list);
 	state.pending = tmpl;
 	state.push_size = tmpl ? tmpl->push_size : 0;
+	state.bindings_in_cbv = tmpl && tmpl->bindings_in_cbv;
 	state.resolved_pso = nullptr;
 	if (tmpl && tmpl->root_signature) {
 		directx::ID3D12DescriptorHeap* heaps[]{ m_resource_heap.get(), m_sampler_heap.get() };
@@ -852,6 +853,7 @@ auto gse::dx12::device::note_compute_push_size(const gpu::command_buffer_handle 
 	}
 	auto& state = graphics_state(list);
 	state.push_size = layout.push_size;
+	state.bindings_in_cbv = layout.bindings_in_cbv;
 	state.compute_pso_bound = true;
 	if (layout.root_signature) {
 		directx::ID3D12DescriptorHeap* heaps[]{ m_resource_heap.get(), m_sampler_heap.get() };
@@ -882,6 +884,46 @@ auto gse::dx12::device::list_push_size(const gpu::command_buffer_handle cmd) -> 
 		return 0;
 	}
 	return graphics_state(list).push_size;
+}
+
+auto gse::dx12::device::push_spilled_bindings(const gpu::command_buffer_handle cmd, const std::uint32_t offset, const std::span<const std::byte> data) -> bool {
+	constexpr std::uint64_t cbv_alignment = 256;
+	constexpr std::uint64_t arena_chunk_bytes = 64 * 1024;
+
+	auto* list = std::bit_cast<directx::ID3D12GraphicsCommandList*>(cmd);
+	auto& state = graphics_state(list);
+	if (!state.bindings_in_cbv) {
+		return false;
+	}
+
+	if (state.binding_shadow.size() < offset + data.size()) {
+		state.binding_shadow.resize(offset + data.size());
+	}
+	std::memcpy(state.binding_shadow.data() + offset, data.data(), data.size());
+
+	auto& arena = state.binding_arena;
+	const auto block_bytes = (state.binding_shadow.size() + cbv_alignment - 1) / cbv_alignment * cbv_alignment;
+	if (arena.cursor + block_bytes > arena.capacity) {
+		const auto chunk_bytes = std::max(arena_chunk_bytes, block_bytes);
+		auto chunk = directx::create_upload_buffer(m_device.get(), chunk_bytes);
+		arena.mapped = static_cast<std::byte*>(directx::map_buffer(chunk.get()));
+		arena.base_address = directx::gpu_address(chunk.get());
+		arena.cursor = 0;
+		arena.capacity = chunk_bytes;
+		arena.chunks.push_back(std::move(chunk));
+	}
+
+	std::memcpy(arena.mapped + arena.cursor, state.binding_shadow.data(), state.binding_shadow.size());
+	const auto address = arena.base_address + arena.cursor;
+	arena.cursor += block_bytes;
+
+	if (state.compute_pso_bound) {
+		list->SetComputeRootConstantBufferView(0, address);
+	}
+	if (!directx::is_compute_command_list(list) && state.pending) {
+		list->SetGraphicsRootConstantBufferView(0, address);
+	}
+	return true;
 }
 
 auto gse::dx12::device::cmd_set_viewport(const gpu::command_buffer_handle cmd, const gpu::viewport& viewport) -> void {
@@ -1290,6 +1332,12 @@ auto gse::dx12::device::reset_acquired_list(directx::ID3D12GraphicsCommandList* 
 	state.pending = nullptr;
 	state.resolved_pso = nullptr;
 	state.push_size = 0;
+	state.bindings_in_cbv = false;
+	state.binding_shadow.clear();
+	if (state.binding_arena.chunks.size() > 1) {
+		state.binding_arena.chunks.erase(state.binding_arena.chunks.begin(), state.binding_arena.chunks.end() - 1);
+	}
+	state.binding_arena.cursor = 0;
 	const std::lock_guard _(m_unclosed_mutex);
 	m_unclosed_lists.erase(list);
 }
@@ -1323,7 +1371,7 @@ auto gse::dx12::device::list_unclosed(directx::ID3D12GraphicsCommandList* list) 
 
 auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_info& info) -> gpu::shader_program {
 	const std::lock_guard _(m_mutex);
-	auto* root_signature = m_root_signatures.acquire(m_device.get(), {
+	const auto [root_signature, bindings_in_cbv] = m_root_signatures.acquire(m_device.get(), {
 		.push_bytes = info.push_offset_start,
 		.binding_bytes = info.binding_args_size,
 	});
@@ -1338,6 +1386,7 @@ auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_i
 			m_compute_layouts[pso.get()] = {
 				.push_size = info.push_offset_start,
 				.root_signature = root_signature,
+				.bindings_in_cbv = bindings_in_cbv,
 			};
 			m_owned_psos.push_back(std::move(pso));
 		}
@@ -1354,6 +1403,7 @@ auto gse::dx12::device::create_shader_program(const gpu::shader_program_create_i
 		tmpl.is_mesh = info.is_mesh;
 		tmpl.push_size = info.push_offset_start;
 		tmpl.root_signature = root_signature;
+		tmpl.bindings_in_cbv = bindings_in_cbv;
 		for (const auto& stage : info.stages) {
 			const auto* bytes = reinterpret_cast<const std::byte*>(stage.spirv.data());
 			std::vector<std::byte> blob(bytes, bytes + stage.spirv.size() * sizeof(std::uint32_t));
@@ -1582,6 +1632,7 @@ auto gse::dx12::device::create_tlas(const std::uint32_t max_instances) -> gpu::t
 	auto instance_buffer = create_buffer(
 		gpu::buffer_desc{
 			.size = static_cast<gpu::device_size>(max_instances) * sizeof(gpu::acceleration_structure_instance),
+			.stride = sizeof(gpu::acceleration_structure_instance),
 			.usage = { gpu::buffer_flag::acceleration_structure_build_input, gpu::buffer_flag::storage },
 		},
 		"tlas.instances",

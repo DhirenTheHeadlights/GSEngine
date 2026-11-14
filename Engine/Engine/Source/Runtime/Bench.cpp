@@ -22,7 +22,7 @@ import :world_system;
 
 namespace gse {
 	constexpr int bench_settle_frame_limit = 6000;
-	constexpr int grass_digest_lead_frames = 8;
+	constexpr int state_digest_lead_frames = 8;
 
 	auto world_body_order(
 		std::span<const id> owners
@@ -40,7 +40,7 @@ namespace gse {
 		const test::failure& f
 	) -> void;
 
-	auto report_grass_digests(
+	auto report_state_digests(
 		registry& reg,
 		bench_state& state
 	) -> void;
@@ -83,17 +83,13 @@ auto gse::world_state_hash(registry& reg) -> std::uint64_t {
 		writer & *motion;
 	}
 
-	const auto field_owners = reg.owner_ids<physics::grass_field>();
-	for (const std::size_t index : world_body_order(field_owners)) {
-		const id owner = field_owners[index];
-		const auto* probe = reg.try_component<physics::grass::probe_state>(owner);
-		if (!probe) {
-			continue;
-		}
-		const std::uint64_t number = owner.number();
+	const auto digest_owners = reg.owner_ids<state_digest>();
+	const auto digests = reg.components<state_digest>();
+	for (const std::size_t index : world_body_order(digest_owners)) {
+		const std::uint64_t number = digest_owners[index].number();
 		writer & number;
-		writer & probe->digest;
-		writer & probe->digest_step;
+		writer & digests[index].value;
+		writer & digests[index].step;
 	}
 
 	return stable_id(buffer.view());
@@ -140,17 +136,18 @@ auto gse::report_scenario_failure(const test::failure& f) -> void {
 	);
 }
 
-auto gse::report_grass_digests(registry& reg, bench_state& state) -> void {
-	const auto field_owners = reg.owner_ids<physics::grass_field>();
-	for (const std::size_t index : world_body_order(field_owners)) {
-		const id owner = field_owners[index];
-		const auto* probe = reg.try_component<physics::grass::probe_state>(owner);
-		if (!probe || !probe->digested) {
-			log::println(log::level::error, log::category::general, "bench: grass field {} produced no state digest, so the world-state hash does not cover its blades", owner.number());
-			state.failures.push_back(std::format("grass field {} produced no state digest", owner.number()));
+auto gse::report_state_digests(registry& reg, bench_state& state) -> void {
+	const auto digest_owners = reg.owner_ids<state_digest>();
+	const auto digests = reg.components<state_digest>();
+	for (const std::size_t index : world_body_order(digest_owners)) {
+		const id owner = digest_owners[index];
+		const auto& digest = digests[index];
+		if (!digest.taken) {
+			log::println(log::level::error, log::category::general, "bench: owner {} produced no state digest, so the world-state hash does not cover it", owner.number());
+			state.failures.push_back(std::format("owner {} produced no state digest", owner.number()));
 			continue;
 		}
-		log::println(log::category::general, "bench: grass field {} digest {:#018x} at step {}", owner.number(), probe->digest, probe->digest_step);
+		log::println(log::category::general, "bench: owner {} digest {:#018x} at step {}", owner.number(), digest.value, digest.step);
 	}
 }
 
@@ -159,8 +156,7 @@ auto gse::drive_scenario(const bench_config& config, bench_state& state, engine&
 		return;
 	}
 
-	if (!state.scenario_started) {
-		state.scenario_started = true;
+	if (!state.scenario_ctx) {
 		state.scenario_ctx.emplace(e.make_channel_writer(), &state.gate, &e.registry(), &report_scenario_failure);
 		state.scenario_task = config.scenario_body(*state.scenario_ctx);
 		state.scenario_task.start();
@@ -272,26 +268,26 @@ auto gse::begin_bench(const bench_config& config) -> void {
 auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) -> bool {
 	drive_scenario(config, state, e);
 
-	switch (state.phase) {
+	switch (state.phase.state()) {
+		case bench_phase::awaiting_scene:
 		case bench_phase::settling: {
-			if (!state.scene_requested) {
+			if (state.phase.state() == bench_phase::awaiting_scene) {
 				if (config.scene.empty()) {
-					state.scene_requested = true;
+					state.phase.enter(bench_phase::settling);
 				}
 				else if (const auto scene_id = find_or_generate_id(config.scene); find_scene(e.world(), scene_id)) {
-					state.scene_requested = true;
 					activate_scene(e.world(), scene_id);
 					log::println(log::category::general, "bench: requested scene '{}'", config.scene);
+					state.phase.enter(bench_phase::settling);
 				}
 			}
 
 			if (bench_world_ready(config, e)) {
-				state.phase = bench_phase::warmup;
+				state.phase.enter(bench_phase::warmup);
 				state.frames_in_phase = 0;
 				if (config.pacing != scenario::pacing::wall_clock) {
 					system_clock::set_fixed_step_override(1);
 				}
-				log::println(log::category::general, "bench: world settled, warming up");
 				break;
 			}
 
@@ -299,16 +295,16 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 				log::println(
 					log::level::error,
 					log::category::general,
-					"bench: world never became ready within {} frames (scene '{}' registered={} activated={} populated={} settled={}); aborting without a measurement",
+					"bench: world never became ready within {} frames (phase {}, scene '{}' registered={} populated={} settled={}); aborting without a measurement",
 					bench_settle_frame_limit,
+					state.phase.state(),
 					config.scene,
 					config.scene.empty() || find_scene(e.world(), find_or_generate_id(config.scene)) != nullptr,
-					state.scene_requested,
 					world_populated(e.registry()),
 					e.all_settled()
 				);
 				state.failures.push_back(std::format("the world never became ready within {} frames", bench_settle_frame_limit));
-				state.phase = bench_phase::done;
+				state.phase.enter(bench_phase::done);
 				return true;
 			}
 			break;
@@ -316,7 +312,7 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 		case bench_phase::warmup: {
 			if (++state.frames_in_phase >= config.warmup_frames) {
 				profile::reset();
-				state.phase = bench_phase::measuring;
+				state.phase.enter(bench_phase::measuring);
 				state.frames_in_phase = 0;
 				if (!config.state_dump_out.empty()) {
 					state.state_dump.open(config.state_dump_out, std::ios::binary | std::ios::trunc);
@@ -328,7 +324,6 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 						log::println(log::level::error, log::category::general, "bench: could not open {} for the state dump; this run records timings only", config.state_dump_out);
 					}
 				}
-				log::println(log::category::general, "bench: warmup complete, measuring");
 			}
 			break;
 		}
@@ -336,11 +331,11 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 			if (state.state_dump.is_open()) {
 				write_state_frame(e.registry(), state.state_dump, static_cast<std::uint32_t>(state.frames_in_phase));
 			}
-			if (state.frames_in_phase == std::max(config.frames - grass_digest_lead_frames, 0)) {
-				e.make_channel_writer().push(physics::grass::probe_request{ .kind = physics::grass::probe_kind::digest });
+			if (state.frames_in_phase == std::max(config.frames - state_digest_lead_frames, 0)) {
+				e.make_channel_writer().push(state_digest_request{});
 			}
 			if (++state.frames_in_phase >= config.frames) {
-				state.phase = bench_phase::done;
+				state.phase.enter(bench_phase::done);
 				state.state_dump.close();
 				finish_bench(config, state, e);
 				return true;
@@ -390,7 +385,7 @@ auto gse::finish_bench(const bench_config& config, bench_state& state, engine& e
 		}
 	}
 
-	report_grass_digests(e.registry(), state);
+	report_state_digests(e.registry(), state);
 
 	if (summary.frames == 0) {
 		log::println(
@@ -415,12 +410,12 @@ auto gse::finish_bench(const bench_config& config, bench_state& state, engine& e
 }
 
 auto gse::bench_exit_code(const bench_state& state) -> int {
-	if (state.phase != bench_phase::done) {
+	if (state.phase.state() != bench_phase::done) {
 		log::println(
 			log::level::error,
 			log::category::general,
 			"bench: the run ended during the {} phase, so it measured nothing, ran no expectation and compared against no baseline",
-			state.phase == bench_phase::settling ? "settling" : state.phase == bench_phase::warmup ? "warmup" : "measuring"
+			state.phase.state()
 		);
 		return 1;
 	}

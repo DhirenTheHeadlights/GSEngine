@@ -672,8 +672,8 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		field(out, "opening", std::format("cycle {} page {}/{} {}", opening.position, landed.page, landed.pages, page_name(landed.shown)));
 		field(out, "waiting", chat.wait_shown.empty() ? std::string("none") : chat.wait_shown);
 		const agent::lifecycle newest = agent::lifecycle_at(chat, std::nullopt);
-		field(out, "scope", newest.live_from ? "transcript" : "plan");
-		field(out, "from", newest.live_from ? std::format("{}", *newest.live_from) : std::string("none"));
+		field(out, "live", newest.live ? enum_to_string(newest.live->phase) : std::string_view("none"));
+		field(out, "from", newest.live ? std::format("{}", newest.live->from) : std::string("none"));
 	}
 
 	std::uint32_t tracked = 0;

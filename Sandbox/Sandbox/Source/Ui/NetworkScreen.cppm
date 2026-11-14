@@ -60,9 +60,9 @@ export namespace sandbox {
 		std::string m_entry;
 		gse::gui::text_input_state m_entry_state;
 		std::uint32_t m_ping_seq = 0;
-		gse::clock m_refresh_clock;
-
 		static constexpr gse::time refresh_interval = gse::seconds(1.f);
+
+		gse::interval_timer<> m_refresh_timer{ refresh_interval };
 		static constexpr gse::time discovery_timeout = gse::seconds(1.f);
 		static constexpr gse::time connect_timeout = gse::seconds(5.f);
 		static constexpr gse::time connect_retry = gse::seconds(1.f);
@@ -283,11 +283,10 @@ auto sandbox::network_screen::build(gse::gui::builder& ui, gse::gui::nav& n) -> 
 	auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 
-	if (m_refresh_clock.elapsed() > refresh_interval) {
+	if (m_refresh_timer.tick()) {
 		m_channels.push<gse::network::refresh_servers_request>({
 			.timeout = discovery_timeout,
 		});
-		m_refresh_clock.reset();
 	}
 
 	const gse::rect_t<gse::vec2f> content = lo::inset_per_side(

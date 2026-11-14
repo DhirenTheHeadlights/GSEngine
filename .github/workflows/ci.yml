@@ -49,7 +49,6 @@ jobs:
 
       - uses: ./.github/actions/gse-build-setup
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           toolchain: ${{ inputs.toolchain }}
           toolchain-archive: ${{ inputs.toolchain-artifact != '' && format('{0}/candidate/gcc-trunk-windows-x64.zip', runner.temp) || '' }}
 

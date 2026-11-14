@@ -8,6 +8,7 @@ import gse.math;
 import gse.log;
 
 import :registries;
+import :system_anno;
 
 export namespace gse::settings {
 	struct change_request {
@@ -142,6 +143,17 @@ export namespace gse::settings {
 		scope_kind scope = scope_kind::user;
 	};
 
+	struct assignment {
+		std::string category;
+		std::string key;
+		std::string value;
+	};
+
+	struct settings_fallback {
+		activation_gate gate;
+		assignment pin;
+	};
+
 	struct register_settings_type {
 		std::string category;
 		id type_id;
@@ -152,6 +164,7 @@ export namespace gse::settings {
 		read_settings_thunk read = nullptr;
 		reset_to_defaults_thunk reset_to_defaults = nullptr;
 		draw_page_thunk draw_page = nullptr;
+		std::vector<settings_fallback> fallbacks;
 	};
 
 	template <typename T>
@@ -233,6 +246,11 @@ export namespace gse::settings {
 		static constexpr std::string_view key = member_path_key<Path...>();
 	};
 
+	template <std::meta::info... Path>
+	auto assign(
+		const typename member_path<Path...>::value_type& value
+	) -> assignment;
+
 	template <typename T>
 	consteval auto scope_of() -> scope_kind;
 
@@ -250,6 +268,12 @@ export namespace gse::settings {
 
 	template <typename F>
 	constexpr bool is_dimensioned_field = internal::is_quantity<F>;
+
+	template <typename F>
+	constexpr bool is_unit_suffixed_field = is_dimensioned_field<F>;
+
+	template <internal::is_vec_element T, std::size_t N>
+	constexpr bool is_unit_suffixed_field<vec<T, N>> = is_dimensioned_field<T>;
 
 	template <typename F>
 	auto field_unit_names() -> std::span<const std::string_view>;
@@ -329,7 +353,7 @@ auto gse::settings::warn_ordinal_field(const std::string_view category, const st
 
 template <typename F>
 auto gse::settings::warn_unparsed_field(const std::string_view category, const std::string_view key, const std::string_view text) -> void {
-	if constexpr (is_dimensioned_field<F>) {
+	if constexpr (is_unit_suffixed_field<F>) {
 		std::string units;
 		for (const auto name : field_unit_names<F>()) {
 			if (!units.empty()) {
@@ -505,6 +529,16 @@ consteval auto gse::settings::member_path_key() -> std::string_view {
 	return std::define_static_string(key);
 }
 
+template <std::meta::info... Path>
+auto gse::settings::assign(const typename member_path<Path...>::value_type& value) -> assignment {
+	using path = member_path<Path...>;
+	return {
+		.category = std::string(path::category),
+		.key = std::string(path::key),
+		.value = meta::write_field(value),
+	};
+}
+
 template <typename T>
 consteval auto gse::settings::category_of() -> std::string_view {
 	constexpr auto cat = meta::find_category(^^T);
@@ -561,6 +595,9 @@ template <typename F>
 auto gse::settings::field_unit_names() -> std::span<const std::string_view> {
 	if constexpr (is_dimensioned_field<F>) {
 		return internal::unit_names<typename F::quantity_tag>();
+	}
+	else if constexpr (is_unit_suffixed_field<F>) {
+		return field_unit_names<typename F::value_type>();
 	}
 	else {
 		return {};

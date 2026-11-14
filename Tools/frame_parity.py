@@ -93,11 +93,25 @@ def read_png(path: Path) -> image:
     return image(width, height, bytes(out))
 
 
-def compare(a_path: Path, b_path: Path) -> comparison:
+def crop(source: image, region: tuple[int, int, int, int]) -> image:
+    x0, y0, x1, y1 = region
+    x0, x1 = max(0, x0), min(source.width, x1)
+    y0, y1 = max(0, y0), min(source.height, y1)
+    if x0 >= x1 or y0 >= y1:
+        sys.exit(f"region {region} is empty inside a {source.width}x{source.height} frame")
+    stride = source.width * 3
+    rows = [source.rgb[y * stride + x0 * 3:y * stride + x1 * 3] for y in range(y0, y1)]
+    return image(x1 - x0, y1 - y0, b"".join(rows))
+
+
+def compare(a_path: Path, b_path: Path, region: tuple[int, int, int, int] | None = None) -> comparison:
     a = read_png(a_path)
     b = read_png(b_path)
     if (a.width, a.height) != (b.width, b.height):
         return comparison(str(a_path), str(b_path), a.width, a.height, 255, 255.0, 1.0, 0.0, False, f"size mismatch: {a.width}x{a.height} vs {b.width}x{b.height}")
+    if region is not None:
+        a = crop(a, region)
+        b = crop(b, region)
     max_error = 0
     total = 0
     squared = 0
@@ -182,6 +196,98 @@ def region_breakdown(a_path: Path, b_path: Path, regions: dict[str, tuple[int, i
     return [region_error(n, t[0], t[1] / (t[0] * 3) if t[0] else 0.0, t[2], t[2] / frame_pixels) for n, t in totals.items()]
 
 
+@dataclass
+class sharpness_result:
+    frame: str
+    width: int
+    height: int
+    mean_gradient: float
+
+
+def luma_of(source: image) -> list[float]:
+    rgb = source.rgb
+    return [(rgb[i] * 299 + rgb[i + 1] * 587 + rgb[i + 2] * 114) / 1000.0 for i in range(0, len(rgb), 3)]
+
+
+def sharpness(path: Path, region: tuple[int, int, int, int] | None = None) -> sharpness_result:
+    source = read_png(path)
+    if region is not None:
+        source = crop(source, region)
+    if source.width < 2 or source.height < 2:
+        sys.exit(f"{path}: sharpness needs at least a 2x2 frame")
+    luma = luma_of(source)
+    width = source.width
+    total = 0.0
+    for y in range(source.height - 1):
+        row = y * width
+        for x in range(width - 1):
+            here = luma[row + x]
+            total += math.hypot(luma[row + x + 1] - here, luma[row + width + x] - here)
+    return sharpness_result(str(path), source.width, source.height, total / ((source.width - 1) * (source.height - 1)))
+
+
+@dataclass
+class lattice_result:
+    frame: str
+    width: int
+    height: int
+    period: int
+    peak_to_peak: float
+    phase_rms: float
+    highpass_rms: float
+
+
+def lattice(path: Path, period: int, region: tuple[int, int, int, int] | None = None) -> lattice_result:
+    source = read_png(path)
+    if region is not None:
+        source = crop(source, region)
+    width, height = source.width, source.height
+    if period < 2 or width < 2 * period or height < 2 * period:
+        sys.exit(f"{path}: lattice needs a period of at least 2 and a frame of at least two periods on each side")
+    luma = luma_of(source)
+    stride = width + 1
+    integral = [0.0] * (stride * (height + 1))
+    for y in range(height):
+        running = 0.0
+        above = y * stride
+        here = above + stride
+        row = y * width
+        for x in range(width):
+            running += luma[row + x]
+            integral[here + x + 1] = integral[above + x + 1] + running
+    before = period // 2
+    after = period - before
+    area = period * period
+    sums = [0.0] * area
+    counts = [0] * area
+    squared = 0.0
+    for y in range(before, height - after + 1):
+        top = (y - before) * stride
+        bottom = (y + after) * stride
+        row = y * width
+        phase_row = (y % period) * period
+        for x in range(before, width - after + 1):
+            left = x - before
+            right = x + after
+            box = (integral[bottom + right] - integral[top + right] - integral[bottom + left] + integral[top + left]) / area
+            residual = luma[row + x] - box
+            phase = phase_row + x % period
+            sums[phase] += residual
+            counts[phase] += 1
+            squared += residual * residual
+    means = [s / c for s, c in zip(sums, counts)]
+    centre = sum(means) / area
+    return lattice_result(
+        str(path),
+        width,
+        height,
+        period,
+        max(means) - min(means),
+        math.sqrt(sum((m - centre) * (m - centre) for m in means) / area),
+        math.sqrt(squared / sum(counts)),
+    )
+
+
 def write_report(path: Path | None, results: list[comparison]) -> None:
     if path is None:
         return
@@ -212,13 +318,33 @@ def main() -> int:
     diff.add_argument("a", type=Path)
     diff.add_argument("b", type=Path)
     diff.add_argument("--report", type=Path)
+    diff.add_argument("--region", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"), help="compare only this pixel rectangle; X1 and Y1 are exclusive")
     noise = sub.add_parser("noise")
     noise.add_argument("frames", type=Path, nargs="+")
     noise.add_argument("--report", type=Path)
+    sharp = sub.add_parser("sharpness")
+    sharp.add_argument("frames", type=Path, nargs="+")
+    sharp.add_argument("--region", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"), help="measure only this pixel rectangle; X1 and Y1 are exclusive")
+    grid = sub.add_parser("lattice")
+    grid.add_argument("frames", type=Path, nargs="+")
+    grid.add_argument("--period", type=int, default=8, help="side of the repeating pixel block to look for")
+    grid.add_argument("--region", type=int, nargs=4, metavar=("X0", "Y0", "X1", "Y1"), help="measure only this pixel rectangle; X1 and Y1 are exclusive")
     args = parser.parse_args()
 
+    if args.command == "lattice":
+        for frame in args.frames:
+            g = lattice(frame, args.period, tuple(args.region) if args.region else None)
+            print(f"{Path(g.frame).parent.name}/{Path(g.frame).name}: {g.width}x{g.height} period {g.period} peak-to-peak {g.peak_to_peak:.4f} phase rms {g.phase_rms:.4f} highpass rms {g.highpass_rms:.4f}")
+        return 0
+
+    if args.command == "sharpness":
+        for frame in args.frames:
+            s = sharpness(frame, tuple(args.region) if args.region else None)
+            print(f"{Path(s.frame).parent.name}/{Path(s.frame).name}: {s.width}x{s.height} mean gradient {s.mean_gradient:.4f}")
+        return 0
+
     if args.command == "diff":
-        results = [compare(args.a, args.b)]
+        results = [compare(args.a, args.b, tuple(args.region) if args.region else None)]
     else:
         if len(args.frames) < 2:
             sys.exit("noise needs at least two frames")

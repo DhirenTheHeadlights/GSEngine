@@ -194,6 +194,17 @@ auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared
 
 		cam_follow->position = camera_pos;
 		cam_follow->orientation = orientation;
+		cam_follow->latch = looking
+			? gse::camera::latch{
+				.model = gse::camera::latch_model::orbit,
+				.yaw = o.yaw,
+				.pitch = o.pitch,
+				.min_pitch = gse::degrees(-89.f),
+				.max_pitch = gse::degrees(89.f),
+				.per_count = gse::vec2<gse::angle>(-o.mouse_sensitivity, -o.mouse_sensitivity),
+				.distance = gse::magnitude(camera_pos - target_pos),
+			}
+			: gse::camera::latch{};
 	}
 
 	std::erase_if(

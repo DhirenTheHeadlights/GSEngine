@@ -13,6 +13,7 @@ import std;
 
 import :input_events;
 import :input_state;
+import :mouse_latch;
 import :window;
 
 namespace gse::detail {
@@ -29,7 +30,7 @@ namespace gse::detail {
 export namespace gse::input {
 	struct [[= system_state<"Input">{}]] data {
 		[[= shared]] double_buffer<state> states;
-		bool was_focused = true;
+		[[= shared]] mouse_totals latch_consumed;
 	};
 
 	[[= system_run<>{}]]
@@ -62,7 +63,11 @@ auto gse::input::run(context& ctx, data& d, const channel_read<synthetic_input_r
 	}
 
 	for (const auto& request : synthetic_in.of<synthetic_input_request>()) {
-		drained.push_back(request.value);
+		auto value = request.value;
+		if (auto* raw = std::get_if<mouse_raw_moved>(&value)) {
+			raw->latch_total = advance_mouse_latch(static_cast<std::int32_t>(raw->x_delta), static_cast<std::int32_t>(raw->y_delta));
+		}
+		drained.push_back(value);
 	}
 
 	for (const auto& evt : drained) {
@@ -86,20 +91,20 @@ auto gse::input::run(context& ctx, data& d, const channel_read<synthetic_input_r
 			})
 			.else_if_is([&](const mouse_raw_moved& arg) {
 				persistent_state.on_mouse_raw_moved(static_cast<float>(arg.x_delta), static_cast<float>(arg.y_delta), tok);
+				if (arg.latch_total) {
+					d.latch_consumed = *arg.latch_total;
+				}
 			})
 			.else_if_is([&](const mouse_scrolled& arg) {
 				persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);
 			})
 			.else_if_is([&](const text_entered& arg) {
 				persistent_state.append_codepoint(arg.codepoint, tok);
+			})
+			.else_if_is([&](const focus_lost&) {
+				persistent_state.release_all_held(tok);
 			});
 	}
-
-	const bool focused = !win || win->primary.focused;
-	if (d.was_focused && !focused) {
-		persistent_state.release_all_held(tok);
-	}
-	d.was_focused = focused;
 
 	persistent_state.end_frame(tok);
 

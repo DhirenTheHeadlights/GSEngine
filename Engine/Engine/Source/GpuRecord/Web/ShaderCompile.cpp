@@ -43,8 +43,8 @@ auto gse::gpu::load_wgsl(const std::string_view body_path, const std::string_vie
 	return words;
 }
 
-auto gse::gpu::compile_compute_spirv(const shader_compile_inputs& inputs, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
-	return load_wgsl(inputs.body_path, "main", wrapper_source);
+auto gse::gpu::compile_compute_spirv(const compute_entry_pod& pod, const std::string_view wrapper_source) -> std::vector<std::uint32_t> {
+	return load_wgsl(pod.body_path, "main", wrapper_source);
 }
 
 auto gse::gpu::compile_graphics_program(const graphics_entry_pod& pod, const std::string_view wrapper_source) -> compiled_graphics_program {

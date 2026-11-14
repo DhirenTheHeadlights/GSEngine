@@ -1032,3 +1032,26 @@ window; attachment added; model or effort changed mid-turn; a canvas drawn by `g
   target case has not been seen. Verdict: met in source. Criterion 18 needs one real follow-up
   to 91, 100 or 102 from the owner. Still unruled: the gate-in-Transcript fix on wgpu, and
   approve off the scope page.
+- **2026-11-13 — owner: every unfinished phase shows its own live transcript.** No explicit
+  ruling on the follow-up live transcript, the wgpu gate fix or approve off the scope page;
+  the owner moved to a generalisation. Direction: while a chat is in a phase whose Summary page
+  has no content yet, that phase's page shows a live transcript of *that phase only*, from the
+  phase run's first row. When the phase reports, the page switches to its summary. Today only
+  the scope page does this (the `live_from` path in `lifecycle_at`, `Agent/Chrome.cpp`); review,
+  revise, summarize and steer still show "no screen for this stage yet". Verdict: the next task
+  generalises the live-scope transcript to every stage, through the same renderer.
+- **2026-11-13 — steering after every unfinished phase gets its own live transcript.** Task
+  report: in Summary, any running phase that has not reported shows a live transcript of that
+  run only ("<stage> · live transcript"), until it reports. This covers scope, review, revise
+  (on the review page), summarize and steer. Apply goes live only when scope gave no steps;
+  build-error chats keep their errors page. The query field `plans[].live <stage>|none` with
+  `from` replaces `plans[].scope`. There are 8 gallery cells and a doc event row. Review found
+  0 findings; a green build covered the edits, and no agent read it. A shell rename left 3
+  files off the touched list. Observed live this run: chats 115 and 119, both mid-review, read
+  `live review` from rows 2021 and 614. This chat, mid-steer, reads `live steer` from 4888.
+  Chat 116, first-cycle scope, reads `live scope` from 0. Chat 112, applying with steps, reads
+  `none`, as do the gated (95) and settled (91, 111) chats, all as the rule predicts. Not
+  observed: `live summarize`/`revise`, and none of it has been seen on screen. Two
+  decisions are the owner's: while review runs, its page hides earlier cycles' findings, and
+  apply without steps hides its changes page. Verdict: met in source and by query. Criterion
+  18 needs the owner's eye on 115 or 119 while they review.

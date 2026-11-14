@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import :character_controller;
+import :grass_field;
 import :orbit_camera;
 import :sidearm;
 
@@ -118,7 +119,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 			.max_force = gse::newtons(3900.f),
 			.compliance = 0.02f,
 		})
-		.with<gse::physics::grass_passthrough>({})
+		.with<sandbox::grass_passthrough>({})
 		.identify();
 
 	gse::log::println(
@@ -178,7 +179,7 @@ auto sandbox::spawn_character(gse::scene& s, const gse::id owner, const gse::res
 				.position = body.position,
 				.orientation = body.orientation,
 			})
-			.with<gse::physics::grass_reaction_target>({
+			.with<sandbox::grass_reaction_target>({
 				.body = proxy_id,
 			})
 			.identify();

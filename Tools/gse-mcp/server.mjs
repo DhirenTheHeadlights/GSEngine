@@ -1119,6 +1119,53 @@ const parse_panel_answer = (body) => {
 	return out;
 };
 
+const format_file = async (args) => {
+	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
+	const requested = String(args.file_path ?? '').trim();
+	if (!requested) {
+		return text_result(header(project, { error: 'pass `file_path`: the file to format.' }), true);
+	}
+	const path = windows_path(requested);
+	const roots = [project, engine_root].filter(Boolean);
+	const rel = roots.map((root) => inside(root, path)).find((found) => found !== undefined);
+	if (rel === undefined) {
+		return text_result(header(project, { file_path: path, error: 'outside the project and the engine tree; this tool only formats source-tree files.', roots }), true);
+	}
+	if (owned_by_tree.includes(rel.split('/')[0])) {
+		return text_result(header(project, { file_path: path, error: `'${rel.split('/')[0]}/' is owned by the editor or git, not by chats.` }), true);
+	}
+	const id = new_id();
+	const timeout = Math.min(60, Math.max(1, Number(args.timeout ?? 15)));
+
+	rmSync(join(inbox, 'results', `${id}.txt`), { force: true });
+	write_atomically(join(inbox, 'formats'), id, [
+		`id ${id}`,
+		`agent ${agent}`,
+		`file ${path}`,
+		`cwd ${windows_path(process.cwd())}`,
+		`project ${project}`,
+		`dry ${args.dry_run === true ? 1 : 0}`,
+		'',
+	].join('\n'));
+
+	const deadline = Date.now() + timeout * 1000;
+	while (Date.now() < deadline) {
+		const result = read_result(id);
+		if (result) {
+			result.remove();
+			const answer = parse_panel_answer(result.body);
+			return text_result(header(project, answer), Boolean(answer.error));
+		}
+		await sleep(50);
+	}
+	rmSync(join(inbox, 'formats', `${id}.txt`), { force: true });
+	return text_result(header(project, {
+		file_path: path,
+		outcome: 'no_editor',
+		error: `no editor answered within ${timeout}s - it is not running, none is open on this project, or it predates gse_format.`,
+	}), true);
+};
+
 const panel_query = async (args) => {
 	const project = args.project ? windows_path(args.project) : project_of(process.cwd());
 	const panel = String(args.panel ?? '').trim();
@@ -1682,6 +1729,21 @@ const tools = {
 		},
 		run: delete_file,
 	},
+	gse_format: {
+		description:
+			'Run the code panel\'s Format pipeline (import sort, annotation blocks, indentation) on one source file and write the result back, exactly as Format/format-on-save would, using the editor\'s indent settings. The editor runs the pipeline a second time on its own output and reports blocks/reindented for the first pass and second_blocks/second_reindented for the second, with idempotent 1 when the second pass would change nothing. dry_run reports without writing. Refuses a file open in a code panel with unsaved changes, and anything outside the project and engine roots. The write is attributed to you like an Edit.',
+		schema: {
+			type: 'object',
+			properties: {
+				file_path: { type: 'string', description: 'The file to format, absolute or relative to your cwd.' },
+				dry_run: { type: 'boolean', description: 'Report what the format would do without writing the file.' },
+				project: { type: 'string', description: 'Project directory; defaults to the nearest .gseproj above the current directory.' },
+				timeout: { type: 'number', description: 'Seconds to wait for the editor (default 15).' },
+			},
+			required: ['file_path'],
+		},
+		run: format_file,
+	},
 	gse_report_gap: {
 		description:
 			'Record that your tools did not cover something you needed, then carry on. Two kinds. `kind: "lookup"` (the default) is when a lookup falls back to Grep, Read or a shell because no gse_* tool fits - not for a tool that exists and merely returned nothing. `kind: "capability"` is when the phase you are in withheld something the task genuinely needed: you could not run the exe to observe a failure, could not build to check a claim, could not edit to test a hypothesis. That is how the owner learns which restrictions are costing them evidence. Returns immediately and grants nothing - it is a note for the humans, not a request, so nothing waits on it and no answer comes back. Do not use it to argue for an exception or to stall: record it, continue with what the phase does allow, and say in your phase summary what you could not determine.',
@@ -1823,7 +1885,7 @@ const tools = {
 	},
 	gse_run: {
 		description:
-			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Blocks until the game exits, then returns each process\'s exit code, the last lines of its output (stderr included) and the exe/run key of its log for gse_log_query - so a crash, an _Exit or an early abort is visible here. Pass `detach: true` to return as soon as the game starts instead. Pass `standalone: true` to launch it as its own window rather than embedded in the editor viewport - needed for fullscreen, display-mode or window-level behaviour, and for timing without the editor\'s embed cost; it opens a real window on the owner\'s desktop, so only use it when the attached form cannot show what you need. Only the game can be launched - the editor is the process answering you.',
+			'Launch the existing game executable through the editor, without building it. Use it to observe real behaviour - a crash, a log, a startup failure - rather than reasoning about it from source. Every run must be bounded, so pass either `scenario` or `seconds`. A scenario is the form to reach for: it is a named script that settles the world, drives it through a fixed sequence on a fixed-step clock, and exits on its own with a profile, a percentile summary and a world-state hash - a launch with nobody at the keyboard otherwise just sits in an empty scene until something kills it. Read Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm for the catalogue; a scenario run is hermetic, so it reads neither ini. `seconds` is the escape hatch for the two things a scenario cannot do: a crash during boot, and a bug that only appears under the owner\'s saved settings. It does NOT build: whatever is on disk is what runs, so if you have edited since the last build, call gse_build first or you will be watching stale code. If a build is already in flight your run waits for it and then starts the new executable, so you never race a half-written binary. An attached run also waits while another chat\'s attached game is still running, since taking the viewport would wreck that run; a standalone run starts beside it. `settings` applies setting overrides to this run only, as command-line arguments - nothing is written to the ini and the next run is unaffected, so this is how you turn on a diagnostic like validation for one reproduction. Blocks until the game exits, then returns each process\'s exit code, the last lines of its output (stderr included) and the exe/run key of its log for gse_log_query - so a crash, an _Exit or an early abort is visible here. Pass `detach: true` to return as soon as the game starts instead. Pass `standalone: true` to launch it as its own window rather than embedded in the editor viewport - needed for fullscreen, display-mode or window-level behaviour, and for timing without the editor\'s embed cost; it opens a real window on the owner\'s desktop, so only use it when the attached form cannot show what you need. Only the game can be launched - the editor is the process answering you.',
 		schema: {
 			type: 'object',
 			properties: {

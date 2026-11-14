@@ -14,5 +14,5 @@ void cloud_shape_bake(uint3 dispatch_id) {
     float worley_mid = worley_3d(p * 4.0, tiling * 4.0);
     float worley_high = worley_3d(p * 8.0, tiling * 8.0);
 
-    cloud_shape_out[dispatch_id] = float4(base, worley_low, worley_mid, worley_high);
+    cloud_shape_out[dispatch_id] = float4(cloud_billow_signal(base, float3(worley_low, worley_mid, worley_high)), 0.0, 0.0, 0.0);
 }

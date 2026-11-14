@@ -234,7 +234,7 @@ auto gse::gui::begin_viewport_frame(data& d, viewport_state& vp, const shared_vi
 
 	vp.fstate = {
 		.sty = frame_sty,
-		.active = d.fonts.text.valid()
+		.active = d.visible && d.fonts.text.valid()
 	};
 
 	vp.rect = usable_screen_rect(d.reserve_top_bar ? frame_sty.title_bar_height : 0.f, vp.frame_rect);

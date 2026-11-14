@@ -6,6 +6,7 @@ import :attached_link;
 import :engine;
 
 import gse.core;
+import gse.gpu;
 import gse.log;
 import gse.stacktrace;
 import gse.win32;
@@ -100,7 +101,19 @@ auto gse::drain_editor_pipe(void*& editor_pipe, attached_pipe_reader& reader, en
 	}
 }
 
-auto gse::announce_attached_surface(void* const editor_pipe, const attached_surface_message& message) -> void {
+auto gse::announce_attached_surface(void* const editor_pipe, const gpu::shared_output_announcement& announcement) -> void {
+	attached_surface_message message{
+		.magic = attached_surface_magic,
+		.pid = win32::GetCurrentProcessId(),
+		.revision = announcement.revision,
+		.extent = announcement.output.extent,
+		.format = announcement.output.format,
+		.backend = gpu::active_backend,
+		.produced_semaphore_handle = announcement.output.produced_semaphore,
+		.consumed_semaphore_handle = announcement.output.consumed_semaphore,
+	};
+	std::ranges::transform(announcement.output.surfaces, std::ranges::begin(message.surface_handles), &gpu::shared_surface::handle);
+
 	win32::DWORD written = 0;
 	win32::WriteFile(editor_pipe, &message, sizeof(message), &written, nullptr);
 }

@@ -125,12 +125,16 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	}
 
 	d.primary.display_scale = window_s.primary.content_scale;
-	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
+	if (d.restore_layout) {
+		d.ui_scale_by_monitor = load_ui_scales(d.file_path);
+	}
 	sync_monitor_scale(d, d.primary, window_s.primary.monitor_key);
 
 	const auto viewport_size = vec2f(window::viewport(window_s.primary.handle));
 	d.primary.frame_rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
-	d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
+	if (d.restore_layout) {
+		d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
+	}
 
 	d.last_ui_font = d.ui_font.value;
 	d.last_code_font = d.code_font.value;
@@ -272,6 +276,14 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		d.last_code_font = d.code_font.value;
 	}
 
+	if (!d.primary.fstate.active) {
+		d.primary.fstate = {};
+		for (const auto& vp : d.secondaries) {
+			vp->fstate = {};
+		}
+		co_return;
+	}
+
 	update_viewport_interaction(d, d.primary, window_s, input_state);
 	for (const auto& vp : d.secondaries) {
 		update_viewport_interaction(d, *vp, window_s, input_state);
@@ -280,14 +292,6 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	resolve_image_paste(d.primary.image_paste, assets_s);
 	for (const auto& vp : d.secondaries) {
 		resolve_image_paste(vp->image_paste, assets_s);
-	}
-
-	if (!d.primary.fstate.active) {
-		d.primary.fstate = {};
-		for (const auto& vp : d.secondaries) {
-			vp->fstate = {};
-		}
-		co_return;
 	}
 
 	const input::state& input_st = input::current_state(input_state);
@@ -446,6 +450,9 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 }
 
 auto gse::gui::persist(const data& d) -> void {
+	if (!d.persist_layout) {
+		return;
+	}
 	save(d.primary.menus, d.file_path, d.primary.previous_viewport_size, scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y()));
 	save_ui_scales(d.ui_scale_by_monitor, d.file_path);
 }

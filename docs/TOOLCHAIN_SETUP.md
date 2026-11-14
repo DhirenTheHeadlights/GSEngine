@@ -16,15 +16,53 @@ cmake --preset x64-mingw-gcc-Release
 cmake --build --preset x64-mingw-gcc-Release
 ```
 
+### What `bootstrap.py` does
+
+In order:
+
+- initializes submodules recursively (`--update-vcpkg` also pulls vcpkg master)
+- runs `Tools/install_gcc_trunk.py`, passing `--tag`, `--latest`, `--sha256`, `--url`,
+  `--persist` and `--force` through to it
+- installs Ninja into `~/.gcc-trunk/ninja/`, falling back to
+  `winget install Ninja-build.Ninja` when the direct download is unreachable
+- builds the cppreference hover index used by the editor; if that fails the editor
+  falls back to header doc-comments
+- configures the preset and builds the `Editor` target into
+  `.generated/out/build/<preset>/Editor/Editor.exe`
+
+`--preset <name>` targets a configuration other than `x64-mingw-gcc-Release`, and
+`--skip-submodules`, `--skip-gcc`, `--skip-ninja`, `--skip-cppref` and `--skip-build`
+narrow the run.
+
+The build step refuses to start when CMake, the gcc-trunk toolchain, or `VULKAN_SDK` is
+missing, and names which one. A build directory whose cached compiler or Ninja path no
+longer exists (a tree copied from another machine, or a renamed user profile) is removed
+and reconfigured instead of failing.
+
+A toolchain bump invalidates every previously built module BMI, so reconfigure from a
+clean build directory after one. vcpkg's manifest mode (`vcpkg.json`) installs
+dependencies when CMake configures; the first configure rebuilds the dependency tree
+under the MinGW triplet and takes 30-60 minutes.
+
 `install_gcc_trunk.py`:
 
-1. Resolves the latest `gcc-trunk-v*` GitHub release.
+1. Installs the tag pinned in `toolchain.txt` at the repo root.
 2. Downloads `gcc-trunk-windows-x64.zip` and extracts it to `~/.gcc-trunk/<tag>`.
 3. With `--persist`, sets the user env vars; the CMake presets resolve the compiler as
    `$env{USERPROFILE}/.gcc-trunk/current/bin/g++.exe` and prepend that `bin` to PATH.
 
-Pin a specific build with `--tag gcc-trunk-v3`, verify integrity with
-`--sha256 <hash>` (printed in each release body), reinstall with `--force`.
+Verify integrity with `--sha256 <hash>` (printed in each release body), reinstall
+with `--force`.
+
+### The toolchain pin
+
+`toolchain.txt` names the toolchain the tree is known to build with, and CI
+(`.github/actions/gse-build-setup`) builds with exactly that tag. A newly
+published release therefore reaches no build until the pin moves. Don't edit the
+file by hand: `--tag gcc-trunk-vN` or `--latest` (newest published release)
+installs that toolchain and rewrites the pin. Commit the new pin together with any
+source fixes the new compiler needed, and that commit's CI run is the check that
+the tree builds with it.
 
 No Visual Studio, no MSYS2, no libc++/compiler-rt side-build — the zip is a
 self-contained toolchain (gcc + binutils + mingw-w64 runtime + libstdc++ `std`

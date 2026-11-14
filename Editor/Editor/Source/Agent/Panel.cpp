@@ -2736,9 +2736,9 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 		const std::optional<std::size_t> group = s.plan_selected ? std::optional<std::size_t>(*s.plan_selected) : std::nullopt;
 		sync_step_diffs(ctx, s.step_diffs, s.step_rows, edits_in_group(life.edits, life.steps.size(), group), group, laid.files_w);
 	}
-	const bool live = paging.shown.phase == task_phase::scope && life.live_from.has_value();
+	const bool live = life.live && paging.shown.phase == life.live->page;
 	if (live) {
-		laid.head = live_scope_head;
+		laid.head = live_head(life.live->phase);
 	}
 	if (fresh_page(paging.shown, s.arrived)) {
 		laid.head += " \xC2\xB7 new";
@@ -2749,11 +2749,11 @@ auto gse::ide::agent::draw_lifecycle(gui::builder& ui, data& d, session& s, cons
 	draw_plan(ui, s, columns, area, laid, s.lifecycle_page, "agent_lifecycle_page", jump_out);
 
 	if (live && area.height() > laid.extent) {
-		if (s.live_scope.first_row != *life.live_from) {
-			s.live_scope.first_row = *life.live_from;
-			reset_view(s.live_scope);
+		if (s.live_run.first_row != life.live->from) {
+			s.live_run.first_row = life.live->from;
+			reset_view(s.live_run);
 		}
-		draw_transcript(ui, s, s.live_scope,rectf::from_position_size({ area.left(), area.top() - laid.extent }, { area.width(), area.height() - laid.extent }), body, jump_out);
+		draw_transcript(ui, s, s.live_run,rectf::from_position_size({ area.left(), area.top() - laid.extent }, { area.width(), area.height() - laid.extent }), body, jump_out);
 	}
 
 	if (life.cycle.shown && area.height() >= laid.extent) {

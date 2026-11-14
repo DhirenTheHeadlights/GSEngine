@@ -140,6 +140,10 @@ float4 shade_surface(MeshOutput input) {
         LightSample ls = evaluate_light(l, l.position, l.direction, pos_vs);
         float3 L = ls.direction;
         float attenuation = ls.attenuation;
+        float NdotL = max(dot(normal_vs, L), 0.0);
+        if (attenuation <= 0.0 || NdotL <= 0.0) {
+            continue;
+        }
         float3 shadow_dir_world = float3(0, 0, 0);
         float shadow_t_max = 1000.0;
 
@@ -153,14 +157,13 @@ float4 shade_surface(MeshOutput input) {
             shadow_t_max = dist - 1.0;
         }
 
-        float NdotL = max(dot(normal_vs, L), 0.0);
         bool shadow_worth_tracing = l.light_type == light_type::directional
             || light_intensity * attenuation >= pc.shadow_cutoff;
         float shadow = 1.0;
-        if (scfg.max_samples > 0 && NdotL > 0.0 && shadow_worth_tracing) {
+        if (scfg.max_samples > 0 && shadow_worth_tracing) {
             shadow = lighting_technique::shadow_visibility(uint(i), l, pos_world, world_n, shadow_dir_world, shadow_t_max, pixel, scfg, view_dist);
         }
-        if (l.light_type == light_type::directional && NdotL > 0.0) {
+        if (l.light_type == light_type::directional) {
             shadow *= cloud_shadow_at(pos_world, cam_world);
         }
 

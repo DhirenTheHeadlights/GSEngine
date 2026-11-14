@@ -36,6 +36,8 @@ namespace gse::gui {
 }
 
 export namespace gse::gui {
+	struct [[= namespace_gates{}, = requires_setting<^^launch::data::render, true>{}, = gpu::requires_capability<^^gpu::backend_capabilities::shader_target>{}]] gates {};
+
 	struct viewport_chrome {
 		float caption_height = 0.f;
 		float controls_width = 0.f;
@@ -123,6 +125,16 @@ export namespace gse::gui {
 		bool show_dev_overlays = false;
 
 		[[
+			= settings::describe<"Build and draw the UI. Off drops every panel, screen, HUD and overlay together "
+									  "with their input, so the presented frame, and any screenshot or recording of "
+									  "it, holds the scene alone. Pinned off by scenarios that compare captures. "
+									  "App scope, because turning it off from a settings file would leave no UI to "
+									  "turn it back on with.">{},
+			= settings::app_scope{}
+		]]
+		bool visible = true;
+
+		[[
 			= settings::describe<"Derive UI scale from viewport height instead of the monitor display scale.">{},
 			= settings::app_scope{}
 		]]
@@ -145,6 +157,21 @@ export namespace gse::gui {
 			= settings::app_scope{}
 		]]
 		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
+
+		[[
+			= settings::describe<"Restore the dock layout and per-monitor UI scale from the layout file at startup. "
+									  "Off starts from the layout the code builds. The engine pins it to whether the "
+									  "run loads settings, so a hermetic run does not inherit saved panels.">{},
+			= settings::app_scope{}
+		]]
+		bool restore_layout = true;
+
+		[[
+			= settings::describe<"Write the dock layout and per-monitor UI scale back to the layout file. The "
+									  "engine pins it to whether the run persists settings.">{},
+			= settings::app_scope{}
+		]]
+		bool persist_layout = true;
 
 		draw_context* context = nullptr;
 

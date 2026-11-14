@@ -418,20 +418,10 @@ auto gse::physics::shadow_step::resolve_retired(data& d) -> void {
 	d.pending.erase(d.pending.begin(), d.pending.begin() + static_cast<std::ptrdiff_t>(consumed));
 }
 
-auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, const shared_view<physics::data> phys, data& d) -> async::task<> {
-	d.enabled = phys.trace.shadow_step.enabled;
+auto gse::physics::shadow_step::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<physics::data> phys, data& d) -> async::task<> {
 	d.detail_step = phys.trace.shadow_step.detail_step;
 
-	if (!d.enabled) {
-		co_return;
-	}
-
-	if (!gpu_s) {
-		log::println(log::level::error, log::category::physics, "shadow step: there is no gpu context, so the harness cannot run");
-		co_return;
-	}
-
-	co_await d.solver.initialize_compute(ctx, *gpu_s, { .full_snapshot = true, .debug_dumps = true });
+	co_await d.solver.initialize_compute(ctx, gpu_s,{ .full_snapshot = true, .debug_dumps = true });
 	d.solver.set_preserve_warm_starts(true);
 
 	log::println(
@@ -443,19 +433,7 @@ auto gse::physics::shadow_step::init(context& ctx, const std::optional<shared_vi
 }
 
 auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> phys, read<transform_component> transform, read<motion_component> motion, read<collision_component> collision, read<motor_component> motor, read<joint_drive_component> drives, read<muscle_component> muscles) -> async::task<> {
-	if (!d.enabled || !d.solver.compute_initialized() || motion.empty()) {
-		co_return;
-	}
-
-	if (gpu_solver_driving(phys)) {
-		if (!d.conflict_reported) {
-			d.conflict_reported = true;
-			log::println(
-				log::level::error,
-				log::category::physics,
-				"shadow step: physics is running on the gpu solver, so there is no cpu reference to compare against. Disable Physics.use_gpu_solver for this run"
-			);
-		}
+	if (!d.solver.compute_initialized() || motion.empty()) {
 		co_return;
 	}
 
@@ -583,19 +561,15 @@ auto gse::physics::shadow_step::run(data& d, const shared_view<physics::data> ph
 	co_return;
 }
 
-auto gse::physics::shadow_step::frame(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
-	if (!d.enabled || !gpu_s) {
-		co_return;
-	}
-
-	d.solver.ensure_capacity(*gpu_s);
+auto gse::physics::shadow_step::frame(context& ctx, const shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out) -> async::task<> {
+	d.solver.ensure_capacity(gpu_s);
 	if (!d.solver.buffers_created() || !d.solver.pending_dispatch()) {
 		co_return;
 	}
 
-	if (gpu_s->device) {
+	{
 		trace::scope_guard _{ trace_id<"vbd_shadow::wait_idle">(), trace::span_kind::wait };
-		gpu_s->device->wait_idle();
+		gpu_s.device->wait_idle();
 	}
 
 	d.solver.commit_upload();

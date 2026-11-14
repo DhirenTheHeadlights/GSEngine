@@ -111,6 +111,11 @@ export namespace gse::meta {
 		std::meta::info template_reflection
 	) -> std::meta::info;
 
+	consteval auto find_class_template_annotations(
+		std::meta::info m,
+		std::meta::info template_reflection
+	) -> std::vector<std::meta::info>;
+
 	consteval auto find_range(
 		std::meta::info m
 	) -> std::meta::info;
@@ -163,6 +168,17 @@ consteval auto gse::meta::find_class_template_annotation(const std::meta::info m
 		}
 	}
 	return std::meta::info{};
+}
+
+consteval auto gse::meta::find_class_template_annotations(const std::meta::info m, const std::meta::info template_reflection) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	for (auto ann : std::meta::annotations_of(std::meta::dealias(m))) {
+		const auto t = std::meta::dealias(std::meta::type_of(ann));
+		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == template_reflection) {
+			out.push_back(t);
+		}
+	}
+	return out;
 }
 
 consteval auto gse::meta::find_range(const std::meta::info m) -> std::meta::info {

@@ -4,17 +4,31 @@ import std;
 
 import gse.core;
 import gse.assert;
+import gse.diag;
 
 import :asset_format;
 
 export namespace gse::resource {
 	enum struct state {
 		unloaded,
-		queued,
-		loading,
-		loaded,
-		reloading,
-		failed
+		queued [[
+			= entered_from({ unloaded })
+		]],
+		loading [[
+			= entered_from({ queued }),
+			= returns_to({ queued })
+		]],
+		loaded [[
+			= entered_from({ loading })
+		]],
+		reloading [[
+			= entered_from({ loaded }),
+			= returns_to({ loaded })
+		]],
+		failed [[
+			= entered_from({ loading }),
+			= returns_to({ queued })
+		]]
 	};
 
 	template <typename T>
@@ -34,12 +48,11 @@ export namespace gse::resource {
 		std::unique_ptr<T> pending_resource;
 		std::atomic<std::shared_ptr<const generation<T>>> current;
 		std::atomic<std::shared_ptr<const asset_error>> error;
-		std::atomic<state> current_state = state::unloaded;
+		atomic_lifecycle<state> current_state;
 		std::filesystem::path path;
 		std::uint32_t next_version = 0;
 		std::uint64_t requested_reload = 0;
 		std::uint64_t started_reload = 0;
-		bool load_in_flight = false;
 
 		resource_slot(
 			std::unique_ptr<T>&& resource,
@@ -138,7 +151,7 @@ auto gse::resource::handle<T>::resolve() const -> std::shared_ptr<const T> {
 
 template <typename T>
 auto gse::resource::handle<T>::state() const -> resource::state {
-	return m_slot ? m_slot->current_state.load(std::memory_order_acquire) : state::unloaded;
+	return m_slot ? m_slot->current_state.state() : state::unloaded;
 }
 
 template <typename T>

@@ -5,6 +5,7 @@ import std;
 import gse.core;
 import gse.gpu_backend;
 import gse.math;
+import gse.os;
 
 import :device;
 import :frame;
@@ -21,6 +22,14 @@ export namespace gse::gpu {
 	struct offscreen_timelines {
 		handle<semaphore> produced;
 		handle<semaphore> consumed;
+	};
+
+	struct exported_output {
+		vec2u extent;
+		image_format format = image_format::r8g8b8a8_unorm;
+		std::span<const shared_surface> surfaces;
+		void* produced_semaphore = nullptr;
+		void* consumed_semaphore = nullptr;
 	};
 }
 
@@ -52,6 +61,8 @@ namespace gse::gpu {
 		std::vector<image> images;
 		std::vector<shared_surface> shared;
 		offscreen_timelines timelines;
+		os::unique_handle produced_export;
+		os::unique_handle consumed_export;
 		image withheld_target;
 		std::uint64_t published = 0;
 		bool withheld = false;
@@ -67,6 +78,8 @@ namespace gse::gpu {
 		[[nodiscard]] auto frame_number() const -> std::uint64_t;
 
 		[[nodiscard]] auto exportable() const -> bool;
+
+		[[nodiscard]] auto exported() const -> exported_output;
 	};
 
 	using frame_output = std::variant<no_output, present_output, offscreen_output>;
@@ -151,6 +164,16 @@ auto gse::gpu::offscreen_output::exportable() const -> bool {
 	return !shared.empty();
 }
 
+auto gse::gpu::offscreen_output::exported() const -> exported_output {
+	return {
+		.extent = extent(),
+		.format = images.front().format(),
+		.surfaces = shared,
+		.produced_semaphore = produced_export.handle(),
+		.consumed_semaphore = consumed_export.handle(),
+	};
+}
+
 auto gse::gpu::create_offscreen_output(device& dev, const offscreen_output_desc& desc) -> std::expected<offscreen_output, std::string> {
 	const auto format = dev.surface_format();
 	offscreen_output output;
@@ -210,6 +233,20 @@ auto gse::gpu::create_offscreen_output(device& dev, const offscreen_output_desc&
 		.produced = dev.create_exportable_semaphore(),
 		.consumed = dev.create_exportable_semaphore(),
 	};
+
+	const auto produced_export = dev.export_semaphore_handle(output.timelines.produced);
+	if (!produced_export) {
+		destroy_offscreen_output(dev, output);
+		return std::unexpected(std::format("produced semaphore export failed: {}", produced_export.error()));
+	}
+	output.produced_export = os::unique_handle(*produced_export);
+
+	const auto consumed_export = dev.export_semaphore_handle(output.timelines.consumed);
+	if (!consumed_export) {
+		destroy_offscreen_output(dev, output);
+		return std::unexpected(std::format("consumed semaphore export failed: {}", consumed_export.error()));
+	}
+	output.consumed_export = os::unique_handle(*consumed_export);
 	return output;
 }
 
@@ -227,4 +264,6 @@ auto gse::gpu::destroy_offscreen_output(device& dev, offscreen_output& output) -
 		dev.retire(output.timelines.consumed);
 	}
 	output.timelines = {};
+	output.produced_export = {};
+	output.consumed_export = {};
 }

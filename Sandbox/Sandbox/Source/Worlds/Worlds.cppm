@@ -4,6 +4,7 @@ import std;
 import gse;
 
 import :archetypes;
+import :grass_field;
 import :joints;
 import :machines;
 import :spawn_params;
@@ -331,19 +332,19 @@ auto sandbox::swings_scene_setup(gse::scene& s) -> void {
 auto sandbox::grass_scene_setup(gse::scene& s) -> void {
 	spawn_outdoor_ground(s, { .prefix = "Grass" });
 
-	const gse::physics::grass_field field{
+	const sandbox::grass_field field{
 		.blades_per_side = 2000,
 		.spacing = gse::meters(0.05f),
 		.blade_height = gse::meters(0.36f),
 	};
-	const auto extent = gse::physics::grass::field_extent(field);
+	const auto extent = sandbox::grass::field_extent(field);
 	s.spawn("Grass Plate", static_box(gse::vec3<gse::position>(gse::meters(0.f), gse::meters(-0.05f), gse::meters(0.f)), gse::vec3<gse::length>(extent, gse::meters(0.102f), extent),gse::quat(1.f, 0.f, 0.f, 0.f), gse::vec3f(0.22f, 0.16f, 0.1f)));
 
 	s.build("Grass Field")
 		.with<gse::physics::transform_component>({
 			.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(0.f), gse::meters(0.f)),
 		})
-		.with<gse::physics::grass_field>(field);
+		.with<sandbox::grass_field>(field);
 
 	s.build("Grass Camera")
 		.with<gse::free_camera::component>({

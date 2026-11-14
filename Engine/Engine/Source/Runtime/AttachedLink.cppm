@@ -3,6 +3,7 @@ module gse.runtime:attached_link;
 import std;
 
 import gse.core;
+import gse.gpu;
 
 import :engine;
 
@@ -31,7 +32,7 @@ namespace gse {
 
 	auto announce_attached_surface(
 		void* editor_pipe,
-		const attached_surface_message& message
+		const gpu::shared_output_announcement& announcement
 	) -> void;
 
 	[[nodiscard]] auto attached_process_id() -> std::uint32_t;

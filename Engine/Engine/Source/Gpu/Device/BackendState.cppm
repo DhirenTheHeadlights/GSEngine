@@ -4,4 +4,5 @@ import gse.gpu_backend;
 
 export namespace gse::gpu {
 	inline backend_kind active_backend = backend_kind::vulkan;
+	inline bool shader_cache_enabled = true;
 }

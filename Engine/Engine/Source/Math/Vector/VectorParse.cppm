@@ -7,7 +7,9 @@ import gse.meta;
 import :vector;
 
 export template <gse::internal::is_vec_element T, std::size_t N>
-requires std::is_arithmetic_v<T>
+requires requires(std::string_view raw, T& out) {
+	{ gse::parser<T>::parse(raw, out) } -> std::same_as<bool>;
+}
 struct gse::parser<gse::vec<T, N>> {
 	static auto parse(
 		std::string_view raw,
@@ -32,7 +34,9 @@ auto gse::internal::strip_vector_padding(std::string_view text) -> std::string_v
 }
 
 template <gse::internal::is_vec_element T, std::size_t N>
-requires std::is_arithmetic_v<T>
+requires requires(std::string_view raw, T& out) {
+	{ gse::parser<T>::parse(raw, out) } -> std::same_as<bool>;
+}
 auto gse::parser<gse::vec<T, N>>::parse(const std::string_view raw, vec<T, N>& out) -> bool {
 	std::size_t index = 0;
 

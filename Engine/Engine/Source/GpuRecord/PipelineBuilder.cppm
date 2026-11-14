@@ -6,6 +6,7 @@ import gse.assert;
 import gse.log;
 import gse.core;
 import gse.config;
+import gse.concurrency;
 
 import gse.gpu_backend;
 import gse.gpu;
@@ -50,11 +51,33 @@ export namespace gse::gpu {
 	template <typename T>
 	struct push_constant;
 
+	template <typename... Specs>
+	struct specs {};
+
+	consteval auto append_flat_specs(std::vector<std::meta::info>& out, const std::meta::info spec) -> void {
+		const auto entity = std::meta::dealias(spec);
+		if (!specializes(entity, ^^specs)) {
+			out.push_back(entity);
+			return;
+		}
+		for (const auto inner : std::meta::template_arguments_of(entity)) {
+			append_flat_specs(out, inner);
+		}
+	}
+
+	consteval auto flat_specs(const std::meta::info holder) -> std::vector<std::meta::info> {
+		std::vector<std::meta::info> out;
+		for (const auto spec : std::meta::template_arguments_of(std::meta::dealias(holder))) {
+			append_flat_specs(out, spec);
+		}
+		return out;
+	}
+
 	template <typename Entry>
 	consteval auto entry_bindings_info() -> std::meta::info {
-		for (const auto a : std::meta::template_arguments_of(^^Entry)) {
-			if (std::meta::has_template_arguments(a) && std::meta::template_of(a) == ^^bindings) {
-				return a;
+		for (const auto spec : flat_specs(^^Entry)) {
+			if (specializes(spec, ^^bindings)) {
+				return spec;
 			}
 		}
 		return {};
@@ -62,9 +85,9 @@ export namespace gse::gpu {
 
 	template <typename Entry>
 	consteval auto entry_push_constants_info() -> std::meta::info {
-		for (const auto a : std::meta::template_arguments_of(^^Entry)) {
-			if (std::meta::has_template_arguments(a) && std::meta::template_of(a) == ^^push_constant) {
-				return std::meta::template_arguments_of(a)[0];
+		for (const auto spec : flat_specs(^^Entry)) {
+			if (specializes(spec, ^^push_constant)) {
+				return std::meta::template_arguments_of(spec)[0];
 			}
 		}
 		return {};
@@ -79,50 +102,25 @@ export namespace gse::gpu {
 	template <typename Args>
 	auto binding_layout_of() -> std::vector<binding_layout_entry>;
 
-	template <typename Spec>
-	auto collect_spec_struct_layouts(
-		std::vector<shaders::struct_layout>& out
+	template <typename Spec, typename Visitor>
+	auto visit_spec_types(
+		Visitor& visit,
+		std::vector<std::string_view>& seen
 	) -> void;
 
-	struct compute_param_pod {
-		std::string_view name;
-		std::string_view slang_type;
-		std::string_view semantic;
-		bool is_function_param = false;
-	};
-
-	struct compute_entry_pod {
+	struct entry_pod {
 		std::string_view body_path;
-		std::string_view body_source;
-		std::uint32_t threads_x = 1;
-		std::uint32_t threads_y = 1;
-		std::uint32_t threads_z = 1;
+		std::string_view push_constant_type_name;
 		std::uint32_t push_constant_size = 0;
-		std::uint32_t required_subgroup_size = 0;
-		bool require_full_subgroups = false;
-		std::array<compute_param_pod, 8> params{};
-		std::size_t param_count = 0;
-		std::array<std::string_view, 8> helper_paths{};
-		std::size_t helper_count = 0;
-		std::array<std::string_view, 8> call_names{};
-		std::size_t call_count = 0;
-		std::uint32_t spec_data_size = 0;
 		std::uint32_t binding_args_size = 0;
 		bool bindless_textures = false;
-		std::string (
-			*emit_push_constant_struct
-		)() = nullptr;
+		std::array<std::string_view, 12> helper_paths{};
+		std::size_t helper_count = 0;
 		std::string (
 			*emit_types
 		)() = nullptr;
 		std::string (
 			*emit_bindings
-		)() = nullptr;
-		std::string (
-			*emit_spec_decls
-		)() = nullptr;
-		std::vector<specialization_entry> (
-			*build_spec_entries_fn
 		)() = nullptr;
 		std::vector<binding_layout_entry> (
 			*binding_layout_fn
@@ -132,11 +130,16 @@ export namespace gse::gpu {
 		)() = nullptr;
 	};
 
+	struct compute_entry_pod : entry_pod {
+		std::uint32_t threads_x = 1;
+		std::uint32_t threads_y = 1;
+		std::uint32_t threads_z = 1;
+	};
+
 	[[nodiscard]]
 	auto build_compute_program(
 		device& dev,
 		const compute_entry_pod& pod,
-		std::span<const std::byte> spec_data = {},
 		std::string_view runtime_constants = {}
 	) -> shader_program;
 
@@ -153,70 +156,52 @@ export namespace gse::gpu {
 		stage_flag stage_flag_value = stage_flag::vertex;
 	};
 
-	struct graphics_entry_pod {
+	struct graphics_entry_pod : entry_pod {
 		static constexpr std::size_t max_color_targets = 8;
 
-		std::string_view body_path;
-		std::string_view body_source;
-		std::string_view push_constant_type_name;
-		std::uint32_t push_constant_size = 0;
 		std::uint32_t push_constant_stages = 0;
 		std::array<graphics_stage_pod, 4> stages{};
 		std::size_t stage_count = 0;
-		std::array<std::string_view, 12> helper_paths{};
-		std::size_t helper_count = 0;
 		rasterization_state rasterization{};
 		depth_state depth{};
 		blend_preset blend = blend_preset::none;
 		topology topology_value = topology::triangle_list;
 		std::array<color_format, max_color_targets> colors{};
 		std::size_t color_count = 1;
-		depth_format depth_fmt = depth_format::d32_sfloat;
-		std::uint32_t spec_data_size = 0;
-		std::uint32_t binding_args_size = 0;
-		bool bindless_textures = false;
-		std::string (
-			*emit_push_constant_struct
-		)() = nullptr;
-		std::string (
-			*emit_types
-		)() = nullptr;
-		std::string (
-			*emit_bindings
-		)() = nullptr;
-		std::string (
-			*emit_spec_decls
-		)() = nullptr;
-		std::vector<specialization_entry> (
-			*build_spec_entries_fn
-		)() = nullptr;
-		std::vector<binding_layout_entry> (
-			*binding_layout_fn
-		)() = nullptr;
-		std::vector<shaders::struct_layout> (
-			*struct_layouts_fn
-		)() = nullptr;
 	};
 
 	[[nodiscard]]
 	auto build_graphics_program(
 		device& dev,
-		const graphics_entry_pod& pod,
-		std::span<const std::byte> spec_data = {}
+		const graphics_entry_pod& pod
 	) -> shader_program;
 
-	template <typename T>
-	auto as_spec_data(
-		const T& value
-	) -> std::span<const std::byte>;
+	class program_batch : non_copyable, non_movable {
+	public:
+		explicit program_batch(
+			device& dev
+		);
 
-	template <fixed_string V>
-	struct body_path {
-		static constexpr std::string_view value = V;
+		~program_batch();
+
+		auto add(
+			shader_program& out,
+			const compute_entry_pod& pod,
+			std::string_view runtime_constants = {}
+		) -> void;
+
+		auto add(
+			shader_program& out,
+			const graphics_entry_pod& pod
+		) -> void;
+
+	private:
+		device& m_device;
+		task::group m_group;
 	};
 
 	template <fixed_string V>
-	struct body_inline {
+	struct body_path {
 		static constexpr std::string_view value = V;
 	};
 
@@ -227,24 +212,12 @@ export namespace gse::gpu {
 		static constexpr std::uint32_t z = Z;
 	};
 
-	template <std::uint32_t N>
-	struct required_subgroup_size {
-		static constexpr std::uint32_t value = N;
-	};
-
-	struct full_subgroups {};
-
 	template <typename T>
 	struct push_constant {
 		static_assert(
 			shaders::push_constant_layout_is_portable<T>(),
 			"push-constant struct straddles a 16-byte boundary: its DX12 cbuffer layout will not match the C++/Vulkan scalar layout, so fields read garbage on DX12. Reorder members so no vec/mat crosses a 16-byte boundary (e.g. place a scalar right after a vec3 to fill the block)."
 		);
-		using type = T;
-	};
-
-	template <typename T>
-	struct spec_constants {
 		using type = T;
 	};
 
@@ -256,192 +229,28 @@ export namespace gse::gpu {
 	template <fixed_string... Paths>
 	struct helpers {};
 
-	template <fixed_string... Names>
-	struct calls {};
-
-	template <is_system_value... Ts>
-	struct system_values {};
-
-	template <typename T>
-	struct is_body_path : std::false_type {};
-
-	template <fixed_string V>
-	struct is_body_path<body_path<V>> : std::true_type {};
-
-	template <typename T>
-	struct is_body_inline : std::false_type {};
-
-	template <fixed_string V>
-	struct is_body_inline<body_inline<V>> : std::true_type {};
-
-	template <typename T>
-	struct is_threads : std::false_type {};
-
-	template <std::uint32_t X, std::uint32_t Y, std::uint32_t Z>
-	struct is_threads<threads<X, Y, Z>> : std::true_type {};
-
-	template <typename T>
-	struct is_required_subgroup_size : std::false_type {};
-
-	template <std::uint32_t N>
-	struct is_required_subgroup_size<required_subgroup_size<N>> : std::true_type {};
-
-	template <typename T>
-	struct is_full_subgroups : std::false_type {};
-
-	template <>
-	struct is_full_subgroups<full_subgroups> : std::true_type {};
-
-	template <typename T>
-	struct is_push_constant : std::false_type {};
-
-	template <typename T>
-	struct is_push_constant<push_constant<T>> : std::true_type {};
-
-	template <typename T>
-	struct is_spec_constants : std::false_type {};
-
-	template <typename T>
-	struct is_spec_constants<spec_constants<T>> : std::true_type {};
-
-	template <typename T>
-	struct is_system_values : std::false_type {};
-
-	template <is_system_value... Ts>
-	struct is_system_values<system_values<Ts...>> : std::true_type {};
-
-	template <typename T>
-	struct is_bindings : std::false_type {};
-
-	template <is_binding_set... Sets>
-	struct is_bindings<bindings<Sets...>> : std::true_type {};
-
-	template <typename T>
-	struct is_bindless_textures : std::false_type {};
-
-	template <>
-	struct is_bindless_textures<bindless_textures> : std::true_type {};
-
-	template <typename T>
-	struct is_types : std::false_type {};
-
-	template <typename... Packs>
-	struct is_types<types<Packs...>> : std::true_type {};
-
-	template <typename T>
-	struct is_helpers : std::false_type {};
-
-	template <fixed_string... Paths>
-	struct is_helpers<helpers<Paths...>> : std::true_type {};
-
-	template <typename T>
-	struct is_calls : std::false_type {};
-
-	template <fixed_string... Names>
-	struct is_calls<calls<Names...>> : std::true_type {};
-
-	template <typename Spec>
-	concept is_common_entry_spec = is_body_path<Spec>::value
-		|| is_body_inline<Spec>::value
-		|| is_spec_constants<Spec>::value
-		|| is_bindings<Spec>::value
-		|| is_bindless_textures<Spec>::value
-		|| is_types<Spec>::value
-		|| is_helpers<Spec>::value;
-
-	template <is_common_entry_spec Spec, typename Pod>
-	consteval auto apply_common_entry_spec(
-		Pod& e
-	) -> void;
-
-	template <typename... Specs>
-	struct compute_entry {
-		static constexpr compute_entry_pod pod = []() consteval {
-			compute_entry_pod e{};
-			auto apply = [&]<typename Spec>() consteval {
-				if constexpr (is_common_entry_spec<Spec>) {
-					apply_common_entry_spec<Spec>(e);
-				}
-				else if constexpr (is_threads<Spec>::value) {
-					e.threads_x = Spec::x;
-					e.threads_y = Spec::y;
-					e.threads_z = Spec::z;
-				}
-				else if constexpr (is_required_subgroup_size<Spec>::value) {
-					e.required_subgroup_size = Spec::value;
-				}
-				else if constexpr (is_full_subgroups<Spec>::value) {
-					e.require_full_subgroups = true;
-				}
-				else if constexpr (is_push_constant<Spec>::value) {
-					using T = typename Spec::type;
-					e.push_constant_size = static_cast<std::uint32_t>(sizeof(T));
-					e.params[e.param_count++] = {
-						.name = "pc",
-						.slang_type = shaders::slang_type<T>::name,
-						.semantic = {},
-						.is_function_param = false,
-					};
-					e.emit_push_constant_struct = &shaders::emit_slang_struct<T>;
-				}
-				else if constexpr (is_system_values<Spec>::value) {
-					[&]<is_system_value... SVs>(system_values<SVs...>) consteval {
-						(([&]() consteval {
-							 e.params[e.param_count++] = {
-								 .name = default_sv_name<SVs>(),
-								 .slang_type = system_value_type_name<SVs>(),
-								 .semantic = system_value_semantic<SVs>(),
-								 .is_function_param = true,
-							 };
-						 }()),
-						 ...);
-					}(Spec{});
-				}
-				else if constexpr (is_calls<Spec>::value) {
-					[&]<fixed_string... Names>(calls<Names...>) consteval {
-						((e.call_names[e.call_count++] = Names), ...);
-					}(Spec{});
-				}
-				else {
-					static_assert(sizeof(Spec) == 0, "unknown compute_entry spec");
-				}
-			};
-			(apply.template operator()<Specs>(), ...);
-			e.struct_layouts_fn = +[]() -> std::vector<shaders::struct_layout> {
-				std::vector<shaders::struct_layout> out;
-				(collect_spec_struct_layouts<Specs>(out), ...);
-				return out;
-			};
-			if (e.call_count == 0 && !e.body_path.empty()) {
-				const auto slash = e.body_path.find_last_of('/');
-				e.call_names[e.call_count++] = (slash == std::string_view::npos) ? e.body_path : e.body_path.substr(slash + 1);
-			}
-			return e;
-		}();
-	};
-
-	template <fixed_string EntryName>
+	template <fixed_string EntryName = "vs_main">
 	struct vertex_stage {
 		static constexpr std::string_view entry_point = EntryName;
 		static constexpr graphics_stage_kind kind = graphics_stage_kind::vertex;
 		static constexpr stage_flag flag = stage_flag::vertex;
 	};
 
-	template <fixed_string EntryName>
+	template <fixed_string EntryName = "fs_main">
 	struct fragment_stage {
 		static constexpr std::string_view entry_point = EntryName;
 		static constexpr graphics_stage_kind kind = graphics_stage_kind::fragment;
 		static constexpr stage_flag flag = stage_flag::fragment;
 	};
 
-	template <fixed_string EntryName>
+	template <fixed_string EntryName = "as_main">
 	struct amplification_stage {
 		static constexpr std::string_view entry_point = EntryName;
 		static constexpr graphics_stage_kind kind = graphics_stage_kind::amplification;
 		static constexpr stage_flag flag = stage_flag::task;
 	};
 
-	template <fixed_string EntryName>
+	template <fixed_string EntryName = "ms_main">
 	struct mesh_stage {
 		static constexpr std::string_view entry_point = EntryName;
 		static constexpr graphics_stage_kind kind = graphics_stage_kind::mesh;
@@ -476,126 +285,72 @@ export namespace gse::gpu {
 		static constexpr std::array<color_format, sizeof...(Fs)> values{ Fs... };
 	};
 
-	template <depth_format F = depth_format::d32_sfloat>
-	struct depth_target {
-		static constexpr depth_format value = F;
+	using fullscreen_pass = specs<
+		helpers<"Screen/screen_pass">,
+		vertex_stage<>,
+		fragment_stage<>,
+		rasterization<polygon_mode::fill, cull_mode::none>,
+		depth<false, false>
+	>;
+
+	template <typename Spec>
+	concept is_stage_spec = specializes(^^Spec, ^^vertex_stage)
+		|| specializes(^^Spec, ^^fragment_stage)
+		|| specializes(^^Spec, ^^amplification_stage)
+		|| specializes(^^Spec, ^^mesh_stage);
+
+	template <typename Spec, typename Pod>
+	consteval auto apply_entry_spec(
+		Pod& e
+	) -> void;
+
+	template <typename Pod, typename... Specs>
+	consteval auto make_entry_pod() -> Pod;
+
+	template <typename... Specs>
+	struct compute_entry {
+		static constexpr compute_entry_pod pod = make_entry_pod<compute_entry_pod, Specs...>();
 	};
-
-	template <typename T>
-	struct is_vertex_stage : std::false_type {};
-	template <fixed_string N>
-	struct is_vertex_stage<vertex_stage<N>> : std::true_type {};
-
-	template <typename T>
-	struct is_fragment_stage : std::false_type {};
-	template <fixed_string N>
-	struct is_fragment_stage<fragment_stage<N>> : std::true_type {};
-
-	template <typename T>
-	struct is_amplification_stage : std::false_type {};
-	template <fixed_string N>
-	struct is_amplification_stage<amplification_stage<N>> : std::true_type {};
-
-	template <typename T>
-	struct is_mesh_stage : std::false_type {};
-	template <fixed_string N>
-	struct is_mesh_stage<mesh_stage<N>> : std::true_type {};
-
-	template <typename T>
-	struct is_rasterization : std::false_type {};
-	template <polygon_mode P, cull_mode C>
-	struct is_rasterization<rasterization<P, C>> : std::true_type {};
-
-	template <typename T>
-	struct is_depth_spec : std::false_type {};
-	template <bool Te, bool W, compare_op O>
-	struct is_depth_spec<depth<Te, W, O>> : std::true_type {};
-
-	template <typename T>
-	struct is_blend_spec : std::false_type {};
-	template <blend_preset B>
-	struct is_blend_spec<blend<B>> : std::true_type {};
-
-	template <typename T>
-	struct is_primitive_topology : std::false_type {};
-	template <topology Tv>
-	struct is_primitive_topology<primitive_topology<Tv>> : std::true_type {};
-
-	template <typename T>
-	struct is_color_targets : std::false_type {};
-	template <color_format... Fs>
-	struct is_color_targets<color_targets<Fs...>> : std::true_type {};
-
-	template <typename T>
-	struct is_depth_target : std::false_type {};
-	template <depth_format F>
-	struct is_depth_target<depth_target<F>> : std::true_type {};
 
 	template <typename... Specs>
 	struct graphics_entry {
-		static constexpr graphics_entry_pod pod = []() consteval {
-			graphics_entry_pod e{};
-			auto apply = [&]<typename Spec>() consteval {
-				if constexpr (is_common_entry_spec<Spec>) {
-					apply_common_entry_spec<Spec>(e);
-				}
-				else if constexpr (is_push_constant<Spec>::value) {
-					using T = typename Spec::type;
-					e.push_constant_size = static_cast<std::uint32_t>(sizeof(T));
-					e.push_constant_type_name = shaders::slang_type<T>::name;
-					e.emit_push_constant_struct = &shaders::emit_slang_struct<T>;
-				}
-				else if constexpr (is_vertex_stage<Spec>::value || is_fragment_stage<Spec>::value || is_amplification_stage<Spec>::value || is_mesh_stage<Spec>::value) {
-					e.stages[e.stage_count++] = {
-						.entry_point = Spec::entry_point,
-						.kind = Spec::kind,
-						.stage_flag_value = Spec::flag,
-					};
-					e.push_constant_stages |= static_cast<std::uint32_t>(Spec::flag);
-				}
-				else if constexpr (is_rasterization<Spec>::value) {
-					e.rasterization.polygon = Spec::polygon;
-					e.rasterization.cull = Spec::cull;
-				}
-				else if constexpr (is_depth_spec<Spec>::value) {
-					e.depth.test = Spec::test;
-					e.depth.write = Spec::write;
-					e.depth.compare = Spec::op;
-				}
-				else if constexpr (is_blend_spec<Spec>::value) {
-					e.blend = Spec::value;
-				}
-				else if constexpr (is_primitive_topology<Spec>::value) {
-					e.topology_value = Spec::value;
-				}
-				else if constexpr (is_color_targets<Spec>::value) {
-					constexpr auto vals = Spec::values;
-					if constexpr (vals.size() == 1 && vals[0] == color_format::none) {
-						e.color_count = 0;
-					}
-					else {
-						for (std::size_t i = 0; i < vals.size(); ++i) {
-							e.colors[i] = vals[i];
-						}
-						e.color_count = vals.size();
-					}
-				}
-				else if constexpr (is_depth_target<Spec>::value) {
-					e.depth_fmt = Spec::value;
-				}
-				else {
-					static_assert(sizeof(Spec) == 0, "unknown graphics_entry spec");
-				}
-			};
-			(apply.template operator()<Specs>(), ...);
-			e.struct_layouts_fn = +[]() -> std::vector<shaders::struct_layout> {
-				std::vector<shaders::struct_layout> out;
-				(collect_spec_struct_layouts<Specs>(out), ...);
-				return out;
-			};
-			return e;
-		}();
+		static constexpr graphics_entry_pod pod = make_entry_pod<graphics_entry_pod, Specs...>();
 	};
+
+	template <typename Entry>
+	auto group_count(
+		vec3u extent
+	) -> vec3u;
+
+	template <typename Entry>
+	auto group_count(
+		vec2u extent
+	) -> vec3u;
+
+	template <typename Entry>
+	auto group_count(
+		std::uint32_t count
+	) -> vec3u;
+}
+
+template <typename Entry>
+auto gse::gpu::group_count(const vec3u extent) -> vec3u {
+	constexpr auto& pod = Entry::pod;
+	return {
+		(extent.x() + pod.threads_x - 1) / pod.threads_x,
+		(extent.y() + pod.threads_y - 1) / pod.threads_y,
+		(extent.z() + pod.threads_z - 1) / pod.threads_z,
+	};
+}
+
+template <typename Entry>
+auto gse::gpu::group_count(const vec2u extent) -> vec3u {
+	return group_count<Entry>(vec3u{ extent.x(), extent.y(), 1u });
+}
+
+template <typename Entry>
+auto gse::gpu::group_count(const std::uint32_t count) -> vec3u {
+	return group_count<Entry>(vec3u{ count, 1u, 1u });
 }
 
 template <typename T>
@@ -610,43 +365,105 @@ consteval auto gse::gpu::members_are_bindings() -> bool {
 	return all;
 }
 
-template <gse::gpu::is_common_entry_spec Spec, typename Pod>
-consteval auto gse::gpu::apply_common_entry_spec(Pod& e) -> void {
-	if constexpr (is_body_path<Spec>::value) {
+template <typename Spec, typename Pod>
+consteval auto gse::gpu::apply_entry_spec(Pod& e) -> void {
+	constexpr bool compute = std::same_as<Pod, compute_entry_pod>;
+	constexpr bool graphics = std::same_as<Pod, graphics_entry_pod>;
+	if constexpr (specializes(^^Spec, ^^body_path)) {
 		e.body_path = Spec::value;
 	}
-	else if constexpr (is_body_inline<Spec>::value) {
-		e.body_source = Spec::value;
-	}
-	else if constexpr (is_spec_constants<Spec>::value) {
-		using T = typename Spec::type;
-		e.spec_data_size = static_cast<std::uint32_t>(sizeof(T));
-		e.emit_spec_decls = &shaders::emit_slang_specialization_constants<T>;
-		e.build_spec_entries_fn = &shaders::build_spec_constant_entries<T>;
-	}
-	else if constexpr (is_bindings<Spec>::value) {
+	else if constexpr (specializes(^^Spec, ^^bindings)) {
 		using args = typename Spec::args;
 		e.binding_args_size = static_cast<std::uint32_t>(sizeof(args));
 		e.emit_bindings = &shaders::emit_bindings<args>;
 		e.binding_layout_fn = &binding_layout_of<args>;
 	}
-	else if constexpr (is_bindless_textures<Spec>::value) {
+	else if constexpr (std::same_as<Spec, bindless_textures>) {
 		e.bindless_textures = true;
 	}
-	else if constexpr (is_types<Spec>::value) {
-		e.emit_types = +[]() -> std::string {
-			std::string out;
-			[&]<typename... Packs>(types<Packs...>) {
-				((out.append(shaders::emit_pack_types<Packs>())), ...);
-			}(Spec{});
-			return out;
-		};
-	}
-	else if constexpr (is_helpers<Spec>::value) {
+	else if constexpr (specializes(^^Spec, ^^types)) {}
+	else if constexpr (specializes(^^Spec, ^^helpers)) {
 		[&]<fixed_string... Paths>(helpers<Paths...>) consteval {
 			((e.helper_paths[e.helper_count++] = Paths), ...);
 		}(Spec{});
 	}
+	else if constexpr (specializes(^^Spec, ^^push_constant)) {
+		using T = typename Spec::type;
+		e.push_constant_size = static_cast<std::uint32_t>(sizeof(T));
+		e.push_constant_type_name = shaders::slang_type<T>::name;
+	}
+	else if constexpr (compute && specializes(^^Spec, ^^threads)) {
+		e.threads_x = Spec::x;
+		e.threads_y = Spec::y;
+		e.threads_z = Spec::z;
+	}
+	else if constexpr (graphics && is_stage_spec<Spec>) {
+		e.stages[e.stage_count++] = {
+			.entry_point = Spec::entry_point,
+			.kind = Spec::kind,
+			.stage_flag_value = Spec::flag,
+		};
+		e.push_constant_stages |= static_cast<std::uint32_t>(Spec::flag);
+	}
+	else if constexpr (graphics && specializes(^^Spec, ^^rasterization)) {
+		e.rasterization.polygon = Spec::polygon;
+		e.rasterization.cull = Spec::cull;
+	}
+	else if constexpr (graphics && specializes(^^Spec, ^^depth)) {
+		e.depth.test = Spec::test;
+		e.depth.write = Spec::write;
+		e.depth.compare = Spec::op;
+	}
+	else if constexpr (graphics && specializes(^^Spec, ^^blend)) {
+		e.blend = Spec::value;
+	}
+	else if constexpr (graphics && specializes(^^Spec, ^^primitive_topology)) {
+		e.topology_value = Spec::value;
+	}
+	else if constexpr (graphics && specializes(^^Spec, ^^color_targets)) {
+		constexpr auto vals = Spec::values;
+		for (std::size_t i = 0; i < vals.size(); ++i) {
+			e.colors[i] = vals[i];
+		}
+		e.color_count = vals.size();
+	}
+	else {
+		static_assert(sizeof(Spec) == 0, "spec is not valid for this kind of shader entry");
+	}
+}
+
+template <typename Pod, typename... Specs>
+consteval auto gse::gpu::make_entry_pod() -> Pod {
+	Pod e{};
+	template for (constexpr auto spec : std::define_static_array(flat_specs(^^specs<Specs...>))) {
+		using spec_t = [:spec:];
+		apply_entry_spec<spec_t, Pod>(e);
+	}
+	e.emit_types = +[]() -> std::string {
+		std::string out;
+		std::vector<std::string_view> seen;
+		auto emit = [&]<typename T>() {
+			shaders::emit_user_type<T>(out);
+		};
+		template for (constexpr auto spec : std::define_static_array(flat_specs(^^specs<Specs...>))) {
+			using spec_t = [:spec:];
+			visit_spec_types<spec_t>(emit, seen);
+		}
+		return out;
+	};
+	e.struct_layouts_fn = +[]() -> std::vector<shaders::struct_layout> {
+		std::vector<shaders::struct_layout> out;
+		std::vector<std::string_view> seen;
+		auto collect = [&]<typename T>() {
+			shaders::collect_struct_layout<T>(out);
+		};
+		template for (constexpr auto spec : std::define_static_array(flat_specs(^^specs<Specs...>))) {
+			using spec_t = [:spec:];
+			visit_spec_types<spec_t>(collect, seen);
+		}
+		return out;
+	};
+	return e;
 }
 
 template <typename Args>
@@ -672,23 +489,17 @@ auto gse::gpu::binding_layout_of() -> std::vector<binding_layout_entry> {
 	return out;
 }
 
-template <typename Spec>
-auto gse::gpu::collect_spec_struct_layouts(std::vector<shaders::struct_layout>& out) -> void {
-	if constexpr (is_push_constant<Spec>::value) {
-		using T = typename Spec::type;
-		out.push_back(shaders::wgsl_struct_layout<T>(shaders::slang_type<T>::name));
-	}
-	else if constexpr (is_types<Spec>::value) {
-		[&]<typename... Packs>(types<Packs...>) {
-			(shaders::emit_pack_struct_layouts<Packs>(out), ...);
+template <typename Spec, typename Visitor>
+auto gse::gpu::visit_spec_types(Visitor& visit, std::vector<std::string_view>& seen) -> void {
+	if constexpr (specializes(^^Spec, ^^types)) {
+		[&]<typename... Roots>(types<Roots...>) {
+			(shaders::visit_shader_types<Roots>(visit, seen), ...);
 		}(Spec{});
 	}
-	else if constexpr (is_bindings<Spec>::value) {
-		shaders::emit_binding_struct_layouts<typename Spec::args>(out);
+	else if constexpr (specializes(^^Spec, ^^bindings)) {
+		shaders::visit_shader_types<typename Spec::args>(visit, seen);
 	}
-}
-
-template <typename T>
-auto gse::gpu::as_spec_data(const T& value) -> std::span<const std::byte> {
-	return std::span<const std::byte>(reinterpret_cast<const std::byte*>(&value), sizeof(T));
+	else if constexpr (specializes(^^Spec, ^^push_constant)) {
+		shaders::visit_shader_types<typename Spec::type>(visit, seen);
+	}
 }

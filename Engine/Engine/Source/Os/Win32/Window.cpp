@@ -16,6 +16,7 @@ import std;
 import :clipboard;
 import :input_events;
 import :keys;
+import :mouse_latch;
 import :window;
 
 namespace gse {
@@ -48,6 +49,30 @@ namespace gse {
 	std::atomic<DWORD> main_thread_id = 0;
 	cursor_shape current_cursor_shape = cursor_shape::arrow;
 	std::array<HCURSOR, enum_values<cursor_shape>().size()> cursor_cache{};
+
+	constexpr const wchar_t* raw_input_class_name = L"gse_raw_input";
+	constexpr UINT wm_raw_capture = wm_app + 1;
+
+	struct raw_input_thread {
+		std::thread thread;
+		std::atomic<HWND> window = nullptr;
+		window::window_surface* surface = nullptr;
+	};
+
+	raw_input_thread raw_input;
+
+	auto raw_input_proc(
+		HWND handle,
+		UINT msg,
+		WPARAM wparam,
+		LPARAM lparam
+	) -> LRESULT;
+
+	auto start_raw_input(
+		window::window_surface& surface
+	) -> void;
+
+	auto stop_raw_input() -> void;
 
 	auto to_hwnd(
 		native_window_handle handle
@@ -690,7 +715,67 @@ auto gse::handle_raw_input(window::window_surface& surface, const LPARAM lparam)
 	surface.input_events.push(input::mouse_raw_moved{
 		.x_delta = static_cast<double>(raw.data.mouse.lLastX),
 		.y_delta = static_cast<double>(raw.data.mouse.lLastY),
+		.latch_total = input::advance_mouse_latch(raw.data.mouse.lLastX, raw.data.mouse.lLastY),
 	});
+}
+
+auto gse::raw_input_proc(const HWND handle, const UINT msg, const WPARAM wparam, const LPARAM lparam) -> LRESULT {
+	switch (msg) {
+		case wm_raw_capture: {
+			const bool capture = wparam != 0;
+			const RAWINPUTDEVICE mouse{
+				.usUsagePage = hid_usage_page_generic,
+				.usUsage = hid_usage_generic_mouse,
+				.dwFlags = capture ? ridev_inputsink : ridev_remove,
+				.hwndTarget = capture ? handle : nullptr,
+			};
+			RegisterRawInputDevices(&mouse, 1, sizeof(mouse));
+			return 0;
+		}
+		case wm_input:
+			handle_raw_input(*raw_input.surface, lparam);
+			break;
+		case wm_destroy:
+			PostQuitMessage(0);
+			return 0;
+		default:
+			break;
+	}
+	return DefWindowProcW(handle, msg, wparam, lparam);
+}
+
+auto gse::start_raw_input(window::window_surface& surface) -> void {
+	raw_input.surface = &surface;
+	raw_input.thread = std::thread([] {
+		const WNDCLASSEXW description{
+			.cbSize = sizeof(WNDCLASSEXW),
+			.lpfnWndProc = reinterpret_cast<WNDPROC>(&raw_input_proc),
+			.hInstance = GetModuleHandleW(nullptr),
+			.lpszClassName = raw_input_class_name,
+		};
+		assert(RegisterClassExW(&description) != 0, "Failed to register the raw input window class");
+
+		const HWND handle = CreateWindowExW(0, raw_input_class_name, L"", 0, 0, 0, 0, 0, hwnd_message, nullptr, GetModuleHandleW(nullptr), nullptr);
+		assert(handle != nullptr, "Failed to create the raw input window");
+
+		raw_input.window.store(handle, std::memory_order_release);
+		raw_input.window.notify_all();
+
+		MSG msg{};
+		while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+			DispatchMessageW(&msg);
+		}
+	});
+	raw_input.window.wait(nullptr, std::memory_order_acquire);
+}
+
+auto gse::stop_raw_input() -> void {
+	if (!raw_input.thread.joinable()) {
+		return;
+	}
+	PostMessageW(raw_input.window.exchange(nullptr, std::memory_order_acq_rel), wm_close, 0, 0);
+	raw_input.thread.join();
+	raw_input.surface = nullptr;
 }
 
 auto gse::handle_calc_size(const HWND handle, const LPARAM lparam) -> bool {
@@ -807,6 +892,7 @@ auto gse::window_proc(const HWND handle, const UINT msg, const WPARAM wparam, co
 		case wm_killfocus:
 			surface->focused = false;
 			surface->mouse_button_mask = 0;
+			surface->input_events.push(input::focus_lost{});
 			if (surface->cursor_capture_active) {
 				ClipCursor(nullptr);
 			}
@@ -844,11 +930,6 @@ auto gse::window_proc(const HWND handle, const UINT msg, const WPARAM wparam, co
 			if (low_word(lparam) == ht_client) {
 				SetCursor(surface->cursor_capture_active ? nullptr : cursor_for_shape(current_cursor_shape));
 				return 1;
-			}
-			break;
-		case wm_input:
-			if (surface->cursor_capture_active) {
-				handle_raw_input(*surface, lparam);
 			}
 			break;
 		case wm_keydown:
@@ -1042,13 +1123,7 @@ auto gse::set_cursor_capture(window::window_surface& s, const bool capture) -> v
 	if (s.cursor_capture_active != capture) {
 		s.cursor_capture_active = capture;
 
-		const RAWINPUTDEVICE mouse{
-			.usUsagePage = hid_usage_page_generic,
-			.usUsage = hid_usage_generic_mouse,
-			.dwFlags = capture ? 0u : ridev_remove,
-			.hwndTarget = capture ? handle : nullptr,
-		};
-		RegisterRawInputDevices(&mouse, 1, sizeof(mouse));
+		PostMessageW(raw_input.window.load(std::memory_order_acquire), wm_raw_capture, capture ? 1 : 0, 0);
 
 		if (capture) {
 			SetCursor(nullptr);
@@ -1562,20 +1637,22 @@ auto gse::create_window(window::data& d) -> void {
 	d.primary.id = find_or_generate_id("primary_window");
 	const bool created = create_surface_window(d.primary, d.title, { initial.width, initial.height }, d.native_frame);
 	assert(created, "Failed to create the main window!");
+	start_raw_input(d.primary);
 
 	refresh_monitor_settings(d);
 	d.last_monitor_index = selected_monitor_index(d);
 	refresh_resolution_settings(d);
 
 	d.current_present_mode = desired_present_mode(d);
+	system_clock::set_display_snapping(true);
 
 	restore_window_geometry(d);
 
-	if (d.launch_launcher_size.x() > 0 && d.launch_launcher_size.y() > 0 && d.current_display_mode == display_mode::windowed) {
+	if (d.launcher_size.x() > 0 && d.launcher_size.y() > 0 && d.current_display_mode == display_mode::windowed) {
 		d.launcher_active = true;
 		apply_launcher_mode(d, {
-			static_cast<int>(static_cast<float>(d.launch_launcher_size.x()) * d.primary.content_scale),
-			static_cast<int>(static_cast<float>(d.launch_launcher_size.y()) * d.primary.content_scale),
+			static_cast<int>(static_cast<float>(d.launcher_size.x()) * d.primary.content_scale),
+			static_cast<int>(static_cast<float>(d.launcher_size.y()) * d.primary.content_scale),
 		});
 	}
 }
@@ -1893,7 +1970,7 @@ auto gse::window::route_input(data& d) -> void {
 
 	for (const auto& [surface, events] : drained) {
 		for (const auto& event : events) {
-			if (surface == (pointer_event_rank(event) > 0 ? pointer : focused)) {
+			if (std::holds_alternative<input::focus_lost>(event) || surface == (pointer_event_rank(event) > 0 ? pointer : focused)) {
 				d.primary.input_events.push(event);
 			}
 		}
@@ -1950,6 +2027,8 @@ auto gse::window::prompt_for_file(const window_surface& s, const window_open_fil
 }
 
 auto gse::window::shutdown(data& d) -> void {
+	stop_raw_input();
+
 	for (const auto& surface : d.secondaries) {
 		if (surface->handle) {
 			win32::DestroyWindow(to_hwnd(surface->handle));

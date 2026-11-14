@@ -5,6 +5,7 @@ export import :clipboard;
 export import :keys;
 export import :input;
 export import :input_events;
+export import :mouse_latch;
 export import :input_state;
 export import :image_loader;
 export import :actions;

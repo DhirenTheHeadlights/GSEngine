@@ -214,15 +214,15 @@ async function window_case ({ cdp, log, check, note }) {
   check ("boot minimized follows visibility", (first.match[3] === "true") === (state.visibility !== "visible"),
          `minimized ${first.match[3]}, visibilityState ${state.visibility}`);
 
-  const warm = await log.until (/bench: warmup complete, measuring/, 60000).catch (() => null);
+  const warm = await log.until (/bench: warmup -> measuring/, 60000).catch (() => null);
   if (warm === null) {
-    check ("warmup settled before resize", false, "no `bench: warmup complete, measuring` line within 60 s");
+    check ("warmup settled before resize", false, "no `bench: warmup -> measuring` line within 60 s");
     return;
   }
   const settled = await log.until (/scenario: web host frame (\d+)/, 10000, warm.index + 1).catch (() => null);
   check ("warmup settled before resize", settled !== null,
-         settled === null ? "no probe frame after `bench: warmup complete`"
-                          : `settle signal: \`bench: warmup complete, measuring\` then probe frame ${settled.match[1]}`);
+         settled === null ? "no probe frame after `bench: warmup -> measuring`"
+                          : `settle signal: \`bench: warmup -> measuring\` then probe frame ${settled.match[1]}`);
   if (settled === null) return;
 
   const mark = log.lines.length;
@@ -689,7 +689,7 @@ const report = [
   `Run ${stamp}, ${options.repeats} repeat(s), ${options.headed ? "headed" : "headless"} Chrome. `
   + `Verdict: **${required_pass ? "PASS" : "FAIL"}** (window, input, persist, render and textured required on every repeat; pointer is report-only).`, "",
   "Window: the expected viewport is the canvas devicePixelContentBoxSize (the backing size the page observes and publishes as gse_canvas_backing, since the canvas itself belongs to the gpu worker). "
-  + `The first resize waits for the engine line \`bench: warmup complete, measuring\` and the next probe frame; budget ${RESIZE_FRAME_BUDGET} ticks.`, "",
+  + `The first resize waits for the engine line \`bench: warmup -> measuring\` and the next probe frame; budget ${RESIZE_FRAME_BUDGET} ticks.`, "",
   "| case | " + Array.from ({ length: options.repeats }, (_, i) => `run ${i + 1}`).join (" | ") + " |",
   "|---|" + "---|".repeat (options.repeats),
   ...cases.map (c => `| ${c.key}${c.required ? "" : " (report)"} | `

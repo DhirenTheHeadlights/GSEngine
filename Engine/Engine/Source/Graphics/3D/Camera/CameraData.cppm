@@ -2,6 +2,7 @@ export module gse.graphics:camera_data;
 
 import gse.core;
 import gse.math;
+import std;
 
 export namespace gse::camera {
 	struct target {
@@ -18,5 +19,22 @@ export namespace gse::camera {
 		int priority = 0;
 		time blend_duration = milliseconds(300.f);
 		bool continuous = true;
+	};
+
+	enum class latch_model : std::uint32_t {
+		none = 0,
+		eye = 1,
+		orbit = 2,
+	};
+
+	struct latch {
+		latch_model model = latch_model::none;
+		angle yaw = degrees(0.f);
+		angle pitch = degrees(0.f);
+		angle min_pitch = degrees(-89.f);
+		angle max_pitch = degrees(89.f);
+		vec2<angle> per_count{};
+		vec3<position> pivot{};
+		length distance{};
 	};
 }

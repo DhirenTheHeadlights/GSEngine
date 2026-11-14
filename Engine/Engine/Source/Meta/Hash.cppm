@@ -15,6 +15,11 @@ export namespace gse {
 		std::uint64_t seed,
 		std::uint64_t value
 	) -> std::uint64_t;
+
+	consteval auto specializes(
+		std::meta::info type,
+		std::meta::info family
+	) -> bool;
 }
 
 namespace gse {
@@ -22,11 +27,6 @@ namespace gse {
 	constexpr auto hash_units(
 		std::basic_string_view<C> units
 	) -> std::uint64_t;
-
-	consteval auto specializes(
-		std::meta::info type,
-		std::meta::info family
-	) -> bool;
 
 	template <typename T>
 	concept hash_unordered =

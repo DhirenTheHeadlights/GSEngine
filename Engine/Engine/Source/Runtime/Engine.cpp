@@ -20,118 +20,19 @@ import gse.network;
 import gse.os;
 import gse.physics;
 import gse.save;
-import gse.stacktrace;
 import gse.system_manifest;
 import gse.time;
 import std;
 
-import :bootstrap;
-import :crash_report;
 import :engine;
 import :log_settings;
 import :profile_settings;
+import :restart_policy;
+import :settings_setup;
 import :world_system;
 
 namespace gse {
-	constexpr std::wstring_view simulate_device_lost_option = L"--engine-simulate-device-lost";
-	constexpr std::wstring_view restart_streak_option = L"--engine-restart-streak=";
-	constexpr int max_restart_streak = 5;
-
-	struct crash_restart_policy {
-		bool enabled = false;
-		int streak = 0;
-		clock since_launch;
-	};
-
-	crash_restart_policy crash_policy;
-
 	using game_assets = assets::append<graphics::asset_types, audio::asset_types>;
-
-	auto command_line_has(
-		std::wstring_view option
-	) -> bool;
-
-	auto restart_streak_from_command_line(
-	) -> int;
-
-	auto next_restart_streak(
-		int streak,
-		time uptime
-	) -> int;
-
-	auto hand_off_restart_streak(
-		int streak
-	) -> void;
-
-	auto respond_to_crash(
-		const crash_record& record
-	) -> void;
-}
-
-auto gse::command_line_has(const std::wstring_view option) -> bool {
-	const std::vector<std::wstring> arguments = command_line_arguments();
-	return std::ranges::contains(arguments | std::views::drop(1), option);
-}
-
-auto gse::restart_streak_from_command_line() -> int {
-	const std::vector<std::wstring> arguments = command_line_arguments();
-	for (const std::wstring& argument : arguments | std::views::drop(1)) {
-		if (argument.starts_with(restart_streak_option)) {
-			return static_cast<int>(std::wcstol(argument.c_str() + restart_streak_option.size(), nullptr, 10));
-		}
-	}
-	return 0;
-}
-
-auto gse::next_restart_streak(const int streak, const time uptime) -> int {
-	if (uptime >= seconds(120.f)) {
-		return 1;
-	}
-	return streak + 1;
-}
-
-auto gse::hand_off_restart_streak(const int streak) -> void {
-	app::drop_relaunch_arguments(std::wstring(restart_streak_option));
-	app::add_relaunch_handoff({}, std::format(L"{}{}", restart_streak_option, streak));
-}
-
-auto gse::respond_to_crash(const crash_record& record) -> void {
-	const std::filesystem::path report = write_crash_report(record);
-	if (!report.empty()) {
-		log::println(log::level::error, log::category::general, "crash: {} - report written to {}", record.reason, report);
-		log::flush();
-	}
-
-	if (!crash_policy.enabled) {
-		return;
-	}
-	const int attempt = next_restart_streak(crash_policy.streak, crash_policy.since_launch.elapsed());
-	if (attempt > max_restart_streak) {
-		log::println(
-			log::level::error,
-			log::category::general,
-			"crash: {::s} after {} consecutive restarts - not restarting again",
-			crash_policy.since_launch.elapsed(),
-			crash_policy.streak
-		);
-		log::flush();
-		return;
-	}
-
-	log::println(
-		log::level::error,
-		log::category::general,
-		"crash: restarting after {::s} of uptime ({}/{})",
-		crash_policy.since_launch.elapsed(),
-		attempt,
-		max_restart_streak
-	);
-	log::flush();
-
-	app::relaunch_self_on_exit();
-	app::drop_relaunch_arguments(std::wstring(simulate_device_lost_option));
-	hand_off_restart_streak(attempt);
-	app::run_pending_relaunch();
 }
 
 auto gse::bake_game_assets() -> int {
@@ -148,15 +49,8 @@ auto gse::bake_game_assets() -> int {
 }
 
 gse::engine::engine(const engine_config& config)
-	: identifiable(config.title), m_config(config) {
-	m_config.simulate_device_lost = m_config.simulate_device_lost || command_line_has(simulate_device_lost_option);
-	m_config.restart_streak = std::max(m_config.restart_streak, restart_streak_from_command_line());
-
-	crash_policy = {
-		.enabled = m_config.restart_on_crash,
-		.streak = m_config.restart_streak,
-	};
-	install_crash_responder(&respond_to_crash);
+	: identifiable(config.title), m_config(config), m_simulate_device_lost(device_lost_simulation_requested()) {
+	install_restart_policy(m_config.restart_on_crash);
 }
 
 auto gse::engine::handle_device_lost(const std::string_view cause) -> void {
@@ -170,33 +64,9 @@ auto gse::engine::handle_device_lost(const std::string_view cause) -> void {
 		return;
 	}
 
-	const int attempt = next_restart_streak(m_config.restart_streak, m_uptime_clock.elapsed());
-	if (attempt > max_restart_streak) {
-		log::println(
-			log::level::error,
-			log::category::render,
-			"Device lost during {} {::s} after launch, after {} consecutive restarts - terminating instead of restarting again",
-			cause,
-			m_uptime_clock.elapsed(),
-			m_config.restart_streak
-		);
-		log::flush();
+	if (!arm_restart(std::format("Device lost during {}", cause))) {
 		fatal_exit(3);
 	}
-
-	log::println(
-		log::level::error,
-		log::category::render,
-		"Device lost during {} {::s} after launch - restarting ({}/{})",
-		cause,
-		m_uptime_clock.elapsed(),
-		attempt,
-		max_restart_streak
-	);
-
-	app::relaunch_self_on_exit();
-	app::drop_relaunch_arguments(std::wstring(simulate_device_lost_option));
-	hand_off_restart_streak(attempt);
 	m_scheduler.make_channel_writer().push(window_close_request{});
 }
 
@@ -214,42 +84,6 @@ auto gse::engine::all_settled() const -> bool {
 
 auto gse::engine::frame_presented() const -> bool {
 	return m_frame_presented;
-}
-
-auto gse::engine::create_attached_surface(gpu::context::data& gpu_state, const vec2u extent) -> void {
-	close_attached_handles();
-	auto& graph = *gpu_state.render_graph;
-	const auto created = graph.set_offscreen_output({ .extent = extent, .slots = attached_ring_size, .exportable = true });
-	assert(created.has_value(), "attached: offscreen ring creation failed: {}", created ? std::string() : created.error());
-
-	const auto timelines = graph.offscreen_timelines();
-	const auto produced_semaphore_handle = gpu_state.device->export_semaphore_handle(timelines.produced);
-	const auto consumed_semaphore_handle = gpu_state.device->export_semaphore_handle(timelines.consumed);
-	assert(produced_semaphore_handle.has_value(), "attached: produced semaphore export failed: {}", produced_semaphore_handle ? std::string() : produced_semaphore_handle.error());
-	assert(consumed_semaphore_handle.has_value(), "attached: consumed semaphore export failed: {}", consumed_semaphore_handle ? std::string() : consumed_semaphore_handle.error());
-
-	const auto surfaces = graph.offscreen_surfaces();
-	m_attached_message = {
-		.magic = attached_surface_magic,
-		.revision = ++m_attached_revision,
-		.extent = extent,
-		.format = gpu_state.device->surface_format(),
-		.backend = gpu::active_backend,
-		.produced_semaphore_handle = *produced_semaphore_handle,
-		.consumed_semaphore_handle = *consumed_semaphore_handle,
-	};
-	for (std::size_t i = 0; i < attached_ring_size; ++i) {
-		m_attached_message.surface_handles[i] = surfaces[i].handle;
-	}
-	m_attached_surface_ready = true;
-	log::println(log::category::vulkan, "attached: created {}-surface ring at {}x{} on {} (revision {})", attached_ring_size, extent.x(), extent.y(), gpu::active_backend, m_attached_revision);
-}
-
-auto gse::engine::close_attached_handles() -> void {
-	close_os_handle(m_attached_message.produced_semaphore_handle);
-	close_os_handle(m_attached_message.consumed_semaphore_handle);
-	m_attached_message = {};
-	m_attached_surface_ready = false;
 }
 
 auto gse::engine::install_actions() -> void {
@@ -274,64 +108,16 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 
 	m_scheduler.set_registry(m_registry);
 
-	const std::filesystem::path shipped_settings = config::shipped_project_settings_path();
-	std::error_code shipped_ec;
-	if (!shipped_settings.empty() && !m_config.project_settings_path.empty() && std::filesystem::exists(shipped_settings, shipped_ec) && !std::filesystem::exists(m_config.project_settings_path, shipped_ec)) {
-		if (const auto seeded = fs::copy_file(shipped_settings, m_config.project_settings_path); seeded) {
-			log::println(log::category::save_system, "seeded project settings from {}", shipped_settings.generic_display_string());
-		}
-		else {
-			log::println(log::level::warning, log::category::save_system, "could not seed project settings from {}: {}", shipped_settings.generic_display_string(), seeded.error());
-		}
-	}
-
-	m_save.set_paths({
-		.user = config::user_config_dir() / std::format("{}.ini", config::executable_stem()),
-		.project = m_config.project_settings_path,
-	});
-	log::println(
-		log::category::save_system,
-		"Settings paths: user={} project={}",
-		m_save.user_path().generic_display_string(),
-		m_save.project_path().empty() ? std::string("<none>") : m_save.project_path().generic_display_string()
-	);
-	if (m_config.load_settings) {
-		m_save.load();
-	}
-	m_save.set_auto_save(m_config.persist_settings);
-
-	m_save.pin<^^window::data::title>(std::string(id().tag()));
-	m_save.pin<^^gpu::context::data::dark_background>(m_config.dark_background);
-	m_save.pin<^^gpu::context::data::device_settings, ^^gpu::device_settings::video_encode>(m_config.video_encode);
-	m_save.pin<^^gui::data::scale_with_resolution>(m_config.scale_ui_with_resolution);
-	m_save.pin<^^gui::data::reserve_top_bar>(m_config.custom_chrome);
-	m_save.default_for<^^gui::data::current_theme>(m_config.default_theme);
-
-	if (m_config.custom_chrome) {
-		m_save.pin<^^window::data::native_frame>(true);
-		m_save.pin<^^window::data::mouse_visible>(true);
-	}
-	if (m_config.attached) {
-		m_save.pin<^^window::data::cursor_suppressed>(true);
-		m_save.pin<^^window::data::attached>(true);
-	}
-	if (!m_config.gui_layout_path.empty()) {
-		m_save.pin<^^gui::data::file_path>(m_config.gui_layout_path);
-	}
-	if (m_config.use_gpu_solver) {
-		m_save.pin<^^physics::data::use_gpu_solver>(true);
-	}
-	if (windowless_render()) {
-		m_save.pin<^^gpu::context::data::offscreen>(true);
-	}
-
-	m_save.set_overrides(m_config.setting);
+	configure_settings(m_save, m_config, id().tag());
 	m_save.set_on_restart([this] {
 		app::relaunch_self_on_exit();
 		m_scheduler.make_channel_writer().push(window_close_request{});
 	});
 	m_scheduler.set_settings_register_hook([this](settings::register_settings_type entry) {
 		m_save.add(std::move(entry));
+	});
+	m_scheduler.set_settings_retire_hook([this](const void* settings_ptr) {
+		m_save.retire(settings_ptr);
 	});
 	m_scheduler.set_actions_register_hook([this](std::vector<actions::registration> entries, std::vector<actions::axis_registration> axes) {
 		m_actions.add(std::move(entries), std::move(axes));
@@ -344,44 +130,32 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	network::endpoint::set_simulation(m_config.net.simulated_latency_ms, m_config.net.simulated_loss_permille);
 	m_scheduler.set_init_stall_dump(m_config.init_stall_dump);
 	m_scheduler.set_stall_probe([this] {
-		const auto late = m_scheduler.drain_channel<gpu::render_pass_request>();
-		if (late.empty()) {
-			return;
-		}
-		std::string names;
-		for (const auto& req : late) {
-			names += std::format("{}#{} ", req.desc.pass_name, req.desc.chain_index);
-		}
-		log::println(
-			log::level::error,
-			log::category::runtime,
-			"{} render pass request(s) were pushed after this frame's record round closed and can never record: {}",
-			late.size(),
-			names
-		);
+		gpu::report_late_pass_requests(m_scheduler);
 	});
 
-	system_manifest<^^lighting::data>{}.register_with(*this);
+	system_manifest<^^launch::data>{}.register_with(*this);
+	m_scheduler.state<launch::data>() = {
+		.presents = m_config.render && m_config.create_window,
+		.render = m_config.render,
+		.gpu = m_config.gpu,
+		.simulate_world = m_config.simulate_world,
+	};
+	register_systems<^^window>(*this);
+	system_manifest<^^gpu::offscreen::data>{}.register_with(*this);
+	register_systems<^^gpu::context>(*this);
 
-	const bool window_active = m_config.render && !windowless_render();
-	if (window_active) {
-		register_systems<^^window>(*this);
-	}
-	if (m_config.gpu) {
-		register_systems<^^gpu::context>(*this);
-	}
-
-	std::optional<gpu::backend_capabilities> device_capabilities;
-	if (m_config.gpu) {
+	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 		std::optional<shared_view<window::data>> window_view;
-		if (window_active) {
+		if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
 			tick_window();
-			window_view.emplace(make_shared_view_live<window::data>(m_scheduler.state<window::data>()));
+			window_view.emplace(make_shared_view_live<window::data>(*window_state));
 		}
-		auto& gpu_state = m_scheduler.state<gpu::context::data>();
-		gpu::context::create_device(gpu_state, window_view, &m_save);
-		device_capabilities = gpu_state.device->capabilities();
+		gpu::context::create_device(*gpu_state, window_view, &m_save);
+		if (m_config.attached) {
+			gpu::context::request_shared_output(*gpu_state);
+		}
 	}
+	system_manifest<^^lighting::data>{}.register_with(*this);
 
 	m_scheduler.begin_staging();
 	system_manifest<^^save::override_system::run>{}.register_with(*this);
@@ -390,183 +164,60 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 	system_manifest<^^log_settings::data, ^^log_settings::run>{}.register_with(*this);
 	system_manifest<^^profile_settings::data, ^^profile_settings::run>{}.register_with(*this);
 	system_manifest<^^world_system::data, ^^world_system::init, ^^world_system::run, ^^world_system::shutdown>{}.register_with(*this);
-	if (!window_active) {
-		register_systems<^^window>(*this);
-	}
-	if (!m_config.gpu) {
-		register_systems<^^gpu::context>(*this);
-	}
 
-	auto& lighting_state = m_scheduler.state<lighting::data>();
-	if (device_capabilities && !device_capabilities->ray_queries && lighting_state.lighting_technique == lighting::technique::ray_traced) {
-		m_save.pin<^^lighting::data::lighting_technique>(lighting::technique::raster);
-		log::println(log::category::render, "lighting technique: ray_traced requested, but the {} device reports no ray queries; falling back to raster", gpu::active_backend);
-	}
-	else if (device_capabilities && !device_capabilities->mesh_shaders && lighting_state.lighting_technique == lighting::technique::ray_traced) {
-		m_save.pin<^^lighting::data::lighting_technique>(lighting::technique::raster);
-		log::println(log::category::render, "lighting technique: ray_traced requested, but the {} device reports no mesh shaders and the vertex-pulled forward path is raster-only; falling back to raster", gpu::active_backend);
-	}
-	if (device_capabilities && !device_capabilities->shader_target) {
-		m_save.pin<^^physics::data::use_gpu_solver>(false);
-		log::println(log::category::physics, "gpu solver disabled: the {} device has no shader target; physics runs on the cpu solver", gpu::active_backend);
-	}
-	else if (device_capabilities && (!device_capabilities->shader_int64 || !device_capabilities->untyped_atomics)) {
-		m_save.pin<^^physics::data::use_gpu_solver>(false);
-		log::println(log::category::physics, "gpu solver disabled: the {} device has no 64-bit shader integers or untyped buffer atomics; physics runs on the cpu solver", gpu::active_backend);
-	}
-	const auto lighting_technique = lighting_state.lighting_technique;
-	log::println(log::category::render, "lighting technique: {}", lighting_technique);
+	log::println(log::category::render, "lighting technique: {}", m_scheduler.state<lighting::data>().lighting_technique);
 
 	register_systems<^^asset>(*this);
 	register_systems<^^animation>(*this);
 	register_systems<^^physics>(*this);
 	register_systems<^^camera>(*this);
 	register_systems<^^audio>(*this);
-	if (m_config.render && (!device_capabilities || device_capabilities->shader_target)) {
-		register_systems<^^renderer>(*this);
-		register_systems<^^primitive_resolver>(*this);
-		register_systems<^^gui>(*this);
-	}
-	else if (m_config.render) {
-		log::println(log::category::render, "no shader target on the {} device: renderer, primitive resolver and gui systems are not registered; frames are cleared and presented only", gpu::active_backend);
-	}
+	register_systems<^^renderer>(*this);
+	register_systems<^^primitive_resolver>(*this);
+	register_systems<^^gui>(*this);
 
-	std::unordered_set<gse::id> disabled;
-	if (!m_config.render || windowless_render()) {
-		disabled.insert(id_of<window::data>());
-		disabled.insert(id_of<audio::data>());
-		system_clock::set_display_snapping(false);
-	}
-	if (!m_config.gpu) {
-		disabled.insert(id_of<gpu::context::data>());
-		log::println(log::category::runtime, "gpu disabled by config: no device will be created, graphics assets load CPU-side only, and every system that requires a device is dropped");
-	}
-	if (!m_config.simulate_world) {
-		disabled.insert(id_of<world_system::data>());
-		disabled.insert(id_of<physics::data>());
-		disabled.insert(id_of<camera::data>());
-		disabled.insert(id_of<audio::data>());
-		disabled.insert(id_of<renderer::scene_snapshot::data>());
-	}
-	if (lighting_technique == lighting::technique::ray_traced) {
-		disabled.insert(id_of<renderer::raster_shadow::data>());
-		disabled.insert(id_of<renderer::gtao::data>());
-		disabled.insert(id_of<renderer::ssr::data>());
-	}
-	else {
-		disabled.insert(id_of<renderer::rt_shadow::data>());
-	}
-	if (device_capabilities && !device_capabilities->mesh_shaders) {
-		disabled.insert(id_of<renderer::cull_compute::data>());
-		disabled.insert(id_of<renderer::oit::data>());
-		const bool vertex_pulled_gi = gpu::active_backend == gpu::backend_kind::webgpu;
-		if (!vertex_pulled_gi) {
-			disabled.insert(id_of<renderer::gi_probe::data>());
-		}
-		log::println(log::category::render, "no mesh shaders on the {} device: cull_compute, oit{} are disabled; depth_prepass, raster_shadow{} and forward draw vertex-pulled geometry", gpu::active_backend, vertex_pulled_gi ? "" : " and gi_probe", vertex_pulled_gi ? ", gi_probe capture" : "");
-	}
-	if (device_capabilities && !device_capabilities->bindless_texture_table) {
-		disabled.insert(id_of<renderer::world_text::data>());
-		log::println(log::category::render, "no bindless texture table on the {} device: world_text renderer is disabled; ui binds one texture per draw", gpu::active_backend);
-	}
-	if (device_capabilities && !device_capabilities->shader_int64) {
-		disabled.insert(id_of<renderer::physics_transform::data>());
-		disabled.insert(id_of<renderer::physics_debug::data>());
-		disabled.insert(id_of<physics::grass::data>());
-		disabled.insert(id_of<physics::grass::probe::data>());
-		log::println(log::category::render, "no 64-bit shader integers on the {} device: physics_transform and physics_debug renderers and the grass solver and probe are disabled", gpu::active_backend);
-	}
-	m_scheduler.resolve_activation(disabled);
+	m_scheduler.resolve_activation();
+
+	tick_window();
 
 	auto& asset_state = m_scheduler.state<asset::data>();
-
-	if (m_config.render) {
-		if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
-			window_state->launch_launcher_size = m_config.launcher_size;
-		}
-		tick_window();
-
-		asset::system_for<game_assets> assets{ asset_state };
-		assets.register_loaders();
+	asset::system_for<game_assets> assets{ asset_state };
+	assets.register_loaders();
+	if (m_config.render || m_config.author_baked_assets) {
 		assets.install_recompile_fns();
-		if (auto discovered = assets.discover_baked(); !discovered) {
-			assert(false, "Asset discovery failed: {}", discovered.error().detail);
-		}
-		primitives::initialize(m_primitives, asset_state);
-		assets.install_hot_reload_fns();
-
-		assets.verify_built_ins();
-
-		if (windowless_render()) {
-			m_scheduler.register_deferred();
-			if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
-				m_headless_gpu = shadow->enabled;
-			}
-			boot_immediately(app_setup);
-			return;
-		}
-
-		log::println(log::category::runtime, "boot: scheduler.initialize begin");
-		m_scheduler.initialize();
-		m_scheduler.enter_running();
-		log::println(log::category::runtime, "boot: scheduler.initialize end");
-
-		m_loading.set_phase("Initializing");
-		m_loading.set_progress(0, 0);
-
-		if (auto* gui_data = m_scheduler.try_state_of<gui::data>()) {
-			gui_data->primary.menu_stack.push<gui::loading_screen>(m_loading);
-			log::println(log::category::runtime, "boot: loading_screen pushed to menu stack");
-		}
-		else {
-			m_loading.mark_rendered();
-			log::println(log::category::runtime, "boot: no gui registered, deferred boot proceeds without a loading screen");
-		}
-
-		m_deferred_boot = [this, app_setup] {
-			log::println(log::category::runtime, "boot: deferred boot begin (loading screen rendered)");
-
-			m_scheduler.register_deferred();
-
-			if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
-				m_headless_gpu = shadow->enabled;
-			}
-
-			task::post_io([this, app_setup] {
-				if (app_setup) {
-					log::println(log::category::runtime, "boot: app_setup begin");
-					app_setup(
-						*this
-					);
-					log::println(log::category::runtime, "boot: app_setup end");
-				}
-
-				m_boot_tasks_done.store(true, std::memory_order_release);
-				log::println(log::category::runtime, "boot: task::post complete, waiting for systems to settle");
-			});
-		};
 	}
 	else {
-		m_scheduler.register_deferred();
-
-		if (const auto* shadow = m_scheduler.try_state_of<physics::shadow_step::data>()) {
-			m_headless_gpu = shadow->enabled;
-		}
-
-		asset::system_for<game_assets> assets{ asset_state };
-		assets.register_loaders();
-		if (m_config.author_baked_assets) {
-			assets.install_recompile_fns();
-		}
-		else {
-			assets.install_stale_checks();
-		}
-		if (auto discovered = assets.discover_baked(); !discovered) {
-			assert(false, "Asset discovery failed: {}", discovered.error().detail);
-		}
-
-		boot_immediately(app_setup);
+		assets.install_stale_checks();
 	}
+	if (auto discovered = assets.discover_baked(); !discovered) {
+		assert(false, "Asset discovery failed: {}", discovered.error().detail);
+	}
+	if (m_scheduler.try_state_of<primitive_resolver::data>()) {
+		primitives::initialize(m_primitives, asset_state);
+	}
+	assets.install_hot_reload_fns();
+	assets.verify_built_ins();
+
+	if (!presents()) {
+		m_scheduler.register_deferred();
+		boot_immediately(app_setup);
+		return;
+	}
+
+	m_boot.enter(loading::boot_stage::initializing);
+	m_scheduler.initialize();
+	m_scheduler.enter_running();
+	m_boot.enter(loading::boot_stage::presenting);
+
+	if (auto* gui_data = m_scheduler.try_state_of<gui::data>(); gui_data && gui_data->visible) {
+		m_loading.awaiting_first_draw = true;
+		gui_data->primary.menu_stack.push<gui::loading_screen>(m_boot, m_loading);
+	}
+	else {
+		log::println(log::category::runtime, "loading: no visible gui, app setup starts without a loading screen");
+	}
+
+	m_app_setup = app_setup;
 }
 
 auto gse::engine::boot_immediately(const setup_fn& app_setup) -> void {
@@ -578,20 +229,37 @@ auto gse::engine::boot_immediately(const setup_fn& app_setup) -> void {
 
 	install_actions();
 
+	m_boot.enter(loading::boot_stage::initializing);
 	m_scheduler.initialize();
 	m_scheduler.enter_running();
-	m_boot_tasks_done.store(true, std::memory_order_release);
-	m_loading.mark_finished();
+	m_boot.enter(loading::boot_stage::settling);
 }
 
-auto gse::engine::windowless_render() const -> bool {
-	return m_config.render && !m_config.create_window;
+auto gse::engine::begin_app_setup() -> void {
+	m_boot.enter(loading::boot_stage::app_setup);
+
+	m_scheduler.register_deferred();
+
+	m_app_setup_job.start(
+		[this, setup = std::move(m_app_setup)] {
+			if (setup) {
+				setup(*this);
+			}
+			return std::monostate{};
+		},
+		trace_id<"boot::app_setup">(),
+		task::lane::io
+	);
+
+	const auto stats = m_scheduler.settle_progress();
+	m_progress_baseline = stats.settled;
+	log::println(log::category::runtime, "loading: progress baseline settled={} total={}", stats.settled, stats.total);
 }
 
 auto gse::engine::update() -> void {
 	system_clock::update();
 
-	if (m_config.attached && m_attached_requested_extent.x() > 0 && m_attached_requested_extent.y() > 0) {
+	if (m_attached_requested_extent.x() > 0 && m_attached_requested_extent.y() > 0) {
 		m_scheduler.make_channel_writer().push<window_resize_request>({
 			.size = { static_cast<int>(m_attached_requested_extent.x()), static_cast<int>(m_attached_requested_extent.y()) },
 		});
@@ -600,78 +268,44 @@ auto gse::engine::update() -> void {
 
 	m_scheduler.update();
 
-	if (const time persist_interval = seconds(1.f); m_persist_clock.elapsed() > persist_interval) {
+	if (m_persist_timer.tick()) {
 		m_scheduler.persist();
 		m_save.save_now();
-		m_persist_clock.reset();
 	}
 
-	const auto* physics_state = m_scheduler.try_state_of<physics::data>();
-	const bool gpu_solver = physics_state && physics_state->use_gpu_solver;
-	if (!m_config.render && (gpu_solver || m_headless_gpu)) {
-		if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
-			if (gpu::context::begin_frame(*gpu_state, nullptr)) {
-				m_scheduler.render(
-					true,
-					[this, gpu_state] {
-						gpu::context::execute_frame(*gpu_state, m_scheduler);
-					}
-				);
-				gpu::context::end_frame(*gpu_state);
-			}
-		}
+	if (m_boot.state() == loading::boot_stage::presenting && !m_loading.awaiting_first_draw) {
+		begin_app_setup();
 	}
 
-	if (m_deferred_boot && m_loading.rendered_once()) {
-		auto deferred = std::move(m_deferred_boot);
-		m_deferred_boot = {};
-		deferred();
-	}
-
-	if (!m_loading.finished() && m_loading.rendered_once() && !m_deferred_boot) {
+	if (m_progress_baseline && m_boot.state() != loading::boot_stage::ready) {
 		const auto stats = m_scheduler.settle_progress();
-		if (!m_boot_init_baseline_captured) {
-			m_boot_init_baseline_settled = stats.settled;
-			m_boot_init_baseline_captured = true;
-			log::println(
-				log::category::runtime,
-				"boot: init baseline captured settled={} total={}",
-				stats.settled,
-				stats.total
-			);
-		}
-		if (stats.total > m_boot_init_baseline_settled) {
-			const std::uint32_t done = stats.settled >= m_boot_init_baseline_settled
-				? stats.settled - m_boot_init_baseline_settled
+		if (stats.total > *m_progress_baseline) {
+			const std::uint32_t done = stats.settled >= *m_progress_baseline
+				? stats.settled - *m_progress_baseline
 				: 0;
-			const std::uint32_t total = stats.total - m_boot_init_baseline_settled;
+			const std::uint32_t total = stats.total - *m_progress_baseline;
 			m_loading.set_progress(done, total);
 		}
 	}
 
 	install_actions();
 
-	if (!m_actions_logged && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
-		m_actions_logged = true;
+	if (m_boot.state() == loading::boot_stage::app_setup && m_app_setup_job.take()) {
+		m_boot.enter(loading::boot_stage::settling);
+	}
+
+	if (m_boot.state() == loading::boot_stage::settling && m_scheduler.all_settled()) {
 		if (auto* actions_state = m_scheduler.try_state_of<actions::data>()) {
 			actions::log_declared_bindings(*actions_state);
 		}
-	}
 
-	if (!m_settings_audited && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled()) {
-		m_settings_audited = true;
 		m_save.audit_overrides();
-		if (m_config.render && m_config.simulate_world) {
-			m_save.audit_files();
-		}
+		m_save.audit_files();
 		if (m_config.dump_settings) {
 			std::cout << m_save.dump();
 		}
-	}
 
-	if (!m_loading.finished() && m_boot_tasks_done.load(std::memory_order_acquire) && m_scheduler.all_settled() && m_loading.rendered_once()) {
-		m_loading.mark_finished();
-		log::println(log::category::runtime, "boot: loading.mark_finished (all settled + rendered)");
+		m_boot.enter(loading::boot_stage::ready);
 	}
 }
 
@@ -684,73 +318,34 @@ auto gse::engine::apply_pending_resizes() -> void {
 }
 
 auto gse::engine::render() -> void {
-	bool frame_ok = false;
 	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
+	if (!gpu_state || (!presents() && !m_scheduler.has_frame_work())) {
+		m_frame_presented = false;
+		return;
+	}
+
 	auto* asset_state = m_scheduler.try_state_of<asset::data>();
 
-	if (m_config.attached && gpu_state && gpu_state->device && gpu_state->render_graph && gpu_state->swapchain) {
-		if (const auto ext = gpu_state->swapchain->extent(); ext.x() > 0 && ext.y() > 0) {
-			if (!m_attached_surface_attempted) {
-				m_attached_surface_attempted = true;
-				if (gpu_state->device->capabilities().shared_surface_export) {
-					create_attached_surface(*gpu_state, ext);
-				}
-				else {
-					log::println(log::category::runtime, "attached: the {} device cannot export shared surfaces; presenting into the game's own window", gpu::active_backend);
-				}
-			}
-			else if (m_attached_surface_ready && ext != m_attached_message.extent) {
-				create_attached_surface(*gpu_state, ext);
-			}
-		}
+	if (m_config.bench.enabled && m_config.bench.pacing == scenario::pacing::lockstep && m_scheduler.all_settled()) {
+		gpu::context::await_shared_output_slot(*gpu_state);
 	}
 
-	if (m_attached_surface_ready && gpu_state && gpu_state->render_graph) {
-		if (m_config.bench.enabled && m_config.bench.pacing == scenario::pacing::lockstep && m_scheduler.all_settled()) {
-			const clock wait_timer;
-			(void)gpu_state->render_graph->wait_output_ready(seconds(2.f));
-			m_attached_wait += wait_timer.elapsed();
+	auto* window_state = m_scheduler.try_state_of<window::data>();
+	std::expected<gpu::frame_token, gpu::frame_status> result;
+	{
+		trace::scope_guard _{ trace_id<"render::begin_frame">() };
+		if (window_state) {
+			gpu::context::sync_present_targets(*gpu_state, *window_state);
 		}
-		if (gpu_state->render_graph->claim_output()) {
-			++m_attached_frames_presented;
-		}
-		else {
-			++m_attached_frames_withheld;
-		}
+		result = gpu::context::begin_frame(*gpu_state, window_state ? &window_state->primary : nullptr);
 	}
+	const bool frame_ok = result.has_value();
 
-	if (m_attached_report.tick() && m_attached_frames_presented + m_attached_frames_withheld > 0) {
-		log::println(
-			log::category::runtime,
-			"attached surface: {} frames handed to the editor, {} rendered but withheld because no slot was free, {:.1f:ms} blocked on the editor in the last window",
-			m_attached_frames_presented,
-			m_attached_frames_withheld,
-			m_attached_wait
-		);
-		m_attached_frames_presented = 0;
-		m_attached_frames_withheld = 0;
-		m_attached_wait = {};
+	if (m_simulate_device_lost) {
+		handle_device_lost("--engine-simulate-device-lost");
 	}
-
-	if (gpu_state) {
-		auto* window_state = m_scheduler.try_state_of<window::data>();
-		std::expected<gpu::frame_token, gpu::frame_status> result;
-		{
-			trace::scope_guard _{ trace_id<"render::begin_frame">() };
-			if (window_state) {
-				gpu::context::sync_present_targets(*gpu_state, *window_state);
-			}
-			result = gpu::context::begin_frame(*gpu_state, window_state ? &window_state->primary : nullptr);
-		}
-		frame_ok = result.has_value();
-
-		if (m_config.simulate_device_lost) {
-			handle_device_lost("--engine-simulate-device-lost");
-		}
-		else if (!result && result.error() == gpu::frame_status::device_lost) {
-			handle_device_lost("begin_frame");
-		}
-
+	else if (!result && result.error() == gpu::frame_status::device_lost) {
+		handle_device_lost("begin_frame");
 	}
 
 	m_frame_presented = frame_ok;
@@ -758,68 +353,69 @@ auto gse::engine::render() -> void {
 	m_scheduler.render(
 		frame_ok,
 		[this, gpu_state] {
-			if (gpu_state) {
-				trace::scope_guard _{ trace_id<"render::graph_execute">() };
-				gpu::context::execute_frame(*gpu_state, m_scheduler);
-			}
+			trace::scope_guard _{ trace_id<"render::graph_execute">() };
+			gpu::context::execute_frame(*gpu_state, m_scheduler);
 		}
 	);
 
-	if (frame_ok && gpu_state) {
+	if (frame_ok) {
 		{
 			trace::scope_guard _{ trace_id<"render::end_frame">() };
 			gpu::context::end_frame(*gpu_state);
 			if (asset_state) {
 				trace::scope_guard _{ trace_id<"end_frame::finalize_reloads">() };
-				for (const auto& l : std::views::values(asset_state->resource_loaders)) {
-					l->finalize_reloads();
-				}
+				asset::finalize_reloads(*asset_state);
 			}
-			if (auto* window_state = m_scheduler.try_state_of<window::data>()) {
-				reveal_window(*window_state);
+			if (window_state) {
+				reveal_window(*window_state, *gpu_state);
 			}
 		}
 	}
 }
 
-auto gse::engine::reveal_window(window::data& window_state) -> void {
-	const bool attach_abandoned = m_attached_surface_attempted && !m_attached_surface_ready;
+auto gse::engine::reveal_window(window::data& window_state, const gpu::context::data& gpu_state) -> void {
+	const bool attach_abandoned = gpu_state.shared_output.stage.state() == gpu::shared_output_stage::abandoned;
 	if (attach_abandoned && window_state.attached) {
 		window_state.attached = false;
 		window_state.cursor_suppressed = false;
 		window_state.primary.framebuffer_resized = true;
 	}
-	if (!m_window_shown && m_config.bench.enabled) {
-		m_window_shown = true;
-		log::println(log::category::runtime, "boot: window kept hidden (bench run)");
-	}
-	else if (!m_window_shown && (!m_config.attached || attach_abandoned)) {
-		if (m_loading.finished()) {
-			window::show(window_state);
-			m_window_shown = true;
-			log::println(log::category::runtime, "boot: window shown (loading finished)");
-		}
-		else if (m_loading.rendered_once()) {
-			++m_frames_since_rendered;
-			if (m_frames_since_rendered >= 2) {
-				window::show(window_state);
-				m_window_shown = true;
-				log::println(log::category::runtime, "boot: window shown (loading screen on swapchain)");
-			}
-		}
-	}
-}
 
-auto gse::engine::attached_surface_ready() const -> bool {
-	return m_attached_surface_ready;
+	const window_reveal_stage reveal = m_window_reveal.state();
+	if (reveal == window_reveal_stage::shown || reveal == window_reveal_stage::hidden_for_bench) {
+		return;
+	}
+	if (m_config.bench.enabled) {
+		m_window_reveal.enter(window_reveal_stage::hidden_for_bench);
+		return;
+	}
+	if (m_config.attached && !attach_abandoned) {
+		return;
+	}
+
+	const loading::boot_stage boot = m_boot.state();
+	const bool loading_on_screen = boot == loading::boot_stage::app_setup || boot == loading::boot_stage::settling;
+	if (boot == loading::boot_stage::ready || (loading_on_screen && reveal == window_reveal_stage::loading_frame_presented)) {
+		window::show(window_state);
+		m_window_reveal.enter(window_reveal_stage::shown);
+	}
+	else if (loading_on_screen) {
+		m_window_reveal.enter(window_reveal_stage::loading_frame_presented);
+	}
 }
 
 auto gse::engine::abandon_attach() -> void {
-	m_attached_surface_attempted = true;
+	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
+		gpu::context::abandon_shared_output(*gpu_state);
+	}
 }
 
-auto gse::engine::attached_message() const -> const attached_surface_message& {
-	return m_attached_message;
+auto gse::engine::shared_output() -> std::optional<gpu::shared_output_announcement> {
+	auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>();
+	if (!gpu_state) {
+		return std::nullopt;
+	}
+	return gpu::context::shared_output(*gpu_state);
 }
 
 auto gse::engine::push_attached_input(const input::event& event) -> void {
@@ -878,7 +474,6 @@ auto gse::engine::shutdown() -> void {
 	if (auto* gpu_state = m_scheduler.try_state_of<gpu::context::data>()) {
 		watchdog::section _{ trace_id<"shutdown::gpu_wait_idle">(), phase_budget };
 		gpu::context::wait_idle(*gpu_state);
-		close_attached_handles();
 	}
 
 	{
@@ -912,6 +507,10 @@ auto gse::engine::registry() -> gse::registry& {
 
 auto gse::engine::world() -> world_system::data& {
 	return m_scheduler.state<world_system::data>();
+}
+
+auto gse::engine::presents() -> bool {
+	return m_scheduler.try_state_of<window::data>() != nullptr;
 }
 
 auto gse::engine::window_should_close() -> bool {

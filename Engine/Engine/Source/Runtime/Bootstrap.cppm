@@ -21,10 +21,6 @@ namespace gse {
 
 	[[nodiscard]] auto command_line_arguments() -> std::vector<std::wstring>;
 
-	auto close_os_handle(
-		void* handle
-	) -> void;
-
 	[[nodiscard]] auto open_editor_pipe(
 		std::string_view name
 	) -> std::expected<void*, std::string>;

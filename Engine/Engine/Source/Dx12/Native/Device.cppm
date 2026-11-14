@@ -52,11 +52,21 @@ namespace gse::dx12 {
 		bool is_mesh = false;
 		std::uint32_t push_size = 0;
 		directx::ID3D12RootSignature* root_signature = nullptr;
+		bool bindings_in_cbv = false;
 	};
 
 	struct compute_pso_layout {
 		std::uint32_t push_size = 0;
 		directx::ID3D12RootSignature* root_signature = nullptr;
+		bool bindings_in_cbv = false;
+	};
+
+	struct binding_cbv_arena {
+		std::vector<directx::com_ptr<directx::ID3D12Resource>> chunks;
+		std::byte* mapped = nullptr;
+		std::uint64_t base_address = 0;
+		std::uint64_t cursor = 0;
+		std::uint64_t capacity = 0;
 	};
 
 	struct view_record {
@@ -74,6 +84,9 @@ namespace gse::dx12 {
 		const gfx_template* pending = nullptr;
 		std::uint32_t push_size = 0;
 		bool compute_pso_bound = false;
+		bool bindings_in_cbv = false;
+		std::vector<std::byte> binding_shadow;
+		binding_cbv_arena binding_arena;
 		directx::ID3D12PipelineState* resolved_pso = nullptr;
 	};
 
@@ -213,6 +226,12 @@ export namespace gse::dx12 {
 		[[nodiscard]] auto list_push_size(
 			gpu::command_buffer_handle cmd
 		) -> std::uint32_t;
+
+		[[nodiscard]] auto push_spilled_bindings(
+			gpu::command_buffer_handle cmd,
+			std::uint32_t offset,
+			std::span<const std::byte> data
+		) -> bool;
 
 		[[nodiscard]] auto compute_pso_bound(
 			gpu::command_buffer_handle cmd

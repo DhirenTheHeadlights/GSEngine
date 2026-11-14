@@ -20,3 +20,4 @@ export import gse.ide.git;
 export import gse.ide.graph;
 export import gse.ide.profile;
 export import gse.ide.panel_query;
+export import gse.ide.format_query;

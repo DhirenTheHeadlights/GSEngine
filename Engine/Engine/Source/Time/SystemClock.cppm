@@ -76,7 +76,7 @@ namespace gse::system_clock {
 	internal_time fixed_accumulator{};
 	internal_time refresh_interval{};
 	internal_time snap_error{};
-	bool display_snapping = true;
+	bool display_snapping = false;
 	std::optional<int> fixed_step_override;
 	std::optional<internal_time> external_display_interval;
 

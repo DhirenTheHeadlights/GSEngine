@@ -54,6 +54,8 @@ export namespace gse::vbd {
 			Fn&& fn
 		) const -> void;
 
+		auto prepare_pair_queries() -> void;
+
 		auto advance() -> void;
 
 		auto reserve(
@@ -89,6 +91,7 @@ export namespace gse::vbd {
 		std::vector<slot_key> m_keys;
 		std::vector<cached_lambda> m_payloads;
 		std::vector<std::uint32_t> m_index;
+		std::vector<std::uint32_t> m_tail_by_pair;
 		std::size_t m_sorted_count = 0;
 		std::uint32_t m_stamp = 1;
 		bool m_stored_since_advance = false;
@@ -223,6 +226,16 @@ auto gse::vbd::contact_cache::touch(const id body_a, const id body_b, const feat
 	return true;
 }
 
+auto gse::vbd::contact_cache::prepare_pair_queries() -> void {
+	m_tail_by_pair.clear();
+	for (std::size_t handle = m_sorted_count; handle < m_keys.size(); ++handle) {
+		m_tail_by_pair.push_back(static_cast<std::uint32_t>(handle));
+	}
+	std::ranges::stable_sort(m_tail_by_pair, std::ranges::less{}, [this](const std::uint32_t handle) {
+		return std::pair(m_keys[handle].key_lo, m_keys[handle].key_hi);
+	});
+}
+
 auto gse::vbd::contact_cache::advance() -> void {
 	++m_stamp;
 	if (m_stamp == 0) {
@@ -334,11 +347,11 @@ auto gse::vbd::contact_cache::for_each_pair(const id body_a, const id body_b, Fn
 		emit(static_cast<std::uint32_t>(it - m_keys.begin()));
 	}
 
-	for (std::size_t handle = m_sorted_count; handle < m_keys.size(); ++handle) {
-		const slot_key& k = m_keys[handle];
-		if (k.key_lo == key_lo && k.key_hi == key_hi) {
-			emit(static_cast<std::uint32_t>(handle));
-		}
+	const auto tail = std::ranges::equal_range(m_tail_by_pair, std::pair(key_lo, key_hi), std::ranges::less{}, [this](const std::uint32_t handle) {
+		return std::pair(m_keys[handle].key_lo, m_keys[handle].key_hi);
+	});
+	for (const auto handle : tail) {
+		emit(handle);
 	}
 
 	return emitted;

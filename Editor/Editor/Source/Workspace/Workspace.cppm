@@ -34,7 +34,6 @@ export namespace gse::ide {
 		std::uint32_t column = 0;
 		std::string ident;
 		deadline_timer reveal;
-		bool resolved = false;
 		bool has_card = false;
 		bool pending = false;
 		std::string title;
@@ -147,7 +146,6 @@ export namespace gse::ide {
 
 			std::optional<id> diagnostics_pending;
 			clock diagnostics_clock;
-			bool diagnostics_paused_for_build = false;
 			std::optional<document_prompt> pending_document_prompt;
 
 			std::vector<hover_state> hover_stack;

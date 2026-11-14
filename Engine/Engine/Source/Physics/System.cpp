@@ -1794,6 +1794,8 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 		id owner_a;
 	};
 
+	contact_cache.prepare_pair_queries();
+
 	const auto worker_count = std::max<std::size_t>(1, task::thread_count());
 	const std::size_t target_chunks = std::max<std::size_t>(1, worker_count * chunks_per_worker);
 	const std::size_t chunk_size = std::max<std::size_t>(1, (candidates.size() + target_chunks - 1) / target_chunks);
@@ -1811,6 +1813,7 @@ auto gse::physics::add_scene_contacts_to_solver(vbd::solver& solver, vbd::contac
 
 				const std::size_t chunk_begin = c * chunk_size;
 				const std::size_t chunk_end = std::min(chunk_begin + chunk_size, candidates.size());
+				pairs_bucket.reserve(chunk_end - chunk_begin);
 				for (std::size_t ci = chunk_begin; ci < chunk_end; ++ci) {
 					const auto& obj_a = objects[candidates[ci].a];
 					const auto& obj_b = objects[candidates[ci].b];

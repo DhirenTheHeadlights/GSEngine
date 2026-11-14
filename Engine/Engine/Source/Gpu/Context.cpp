@@ -9,6 +9,7 @@ import gse.os;
 import gse.save;
 import std;
 
+import :backend_state;
 import :context;
 import :device;
 import :frame;
@@ -17,13 +18,14 @@ import :swap_chain;
 
 auto gse::gpu::context::create_device(data& d, const std::optional<shared_view<window::data>> window_s, save::registry* const save_reg) -> void {
 	const auto requested_backend = d.backend;
+	gpu::shader_cache_enabled = d.shader_cache_enabled;
 	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
 	if (save_reg && d.backend != requested_backend) {
 		save_reg->save_now();
 	}
 }
 
-auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, data& d) -> async::task<> {
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const std::optional<shared_view<offscreen::data>> offscreen_s, data& d) -> async::task<> {
 	assert(d.device != nullptr, "gpu::context::init runs after the engine created the device; registration reads its capabilities first");
 
 	if (window_s) {
@@ -40,8 +42,8 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 	d.render_graph->set_output_clear(
 		d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
 	);
-	if (!window_s && d.offscreen) {
-		if (auto created = d.render_graph->set_offscreen_output({ .extent = { d.offscreen_width, d.offscreen_height } }); !created) {
+	if (offscreen_s) {
+		if (auto created = d.render_graph->set_offscreen_output({ .extent = { offscreen_s->offscreen_width, offscreen_s->offscreen_height } }); !created) {
 			log::println(log::level::error, log::category::render, "offscreen output creation failed: {}", created.error());
 		}
 	}
@@ -171,6 +173,7 @@ auto gse::gpu::context::apply_pending_resizes(data& d) -> void {
 }
 
 auto gse::gpu::context::begin_frame(data& d, window::window_surface* window_s) -> std::expected<frame_token, frame_status> {
+	advance_shared_output(d);
 	d.device->collect_garbage();
 	d.frame->set_present_target(window_s);
 

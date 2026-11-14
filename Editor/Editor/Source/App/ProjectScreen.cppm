@@ -111,7 +111,7 @@ export namespace gse::ide {
 		bool m_forced = false;
 		std::string m_engine_problem;
 		std::string m_notice;
-		clock m_probe;
+		interval_timer<> m_probe{ seconds(1.f) };
 	};
 }
 
@@ -515,7 +515,7 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 		}
 	}
 
-	if (m_probe.elapsed() >= seconds(1.f)) {
+	if (m_probe.tick()) {
 		refresh_elsewhere();
 	}
 

@@ -16,6 +16,8 @@ import :model;
 import :physics_debug_renderer;
 
 export namespace gse::renderer {
+	struct [[= namespace_gates{}, = requires_setting<^^launch::data::render, true>{}, = gpu::requires_capability<^^gpu::backend_capabilities::shader_target>{}]] gates {};
+
 	struct [[= system_state<"Renderer">{}, = settings::category<"Graphics">{}]] data {
 		[[
 			= settings::describe<"Watch shader sources on disk and reload pipelines when files change.">{}

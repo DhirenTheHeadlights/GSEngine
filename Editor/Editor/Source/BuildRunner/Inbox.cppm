@@ -149,6 +149,23 @@ export namespace gse::ide::build_inbox {
 		std::string_view id
 	) -> void;
 
+	struct format_request {
+		std::string id;
+		std::string agent;
+		std::filesystem::path file;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		bool dry_run = false;
+	};
+
+	auto formats_dir() -> std::filesystem::path;
+
+	auto peek_format_requests() -> std::vector<format_request>;
+
+	auto consume_format_request(
+		std::string_view id
+	) -> void;
+
 	struct package_request {
 		std::string id;
 		std::string agent;

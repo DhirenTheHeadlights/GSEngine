@@ -396,6 +396,12 @@ export namespace gse::ide::agent {
 		bool ended = false;
 	};
 
+	struct live_stage {
+		task_phase phase = task_phase::scope;
+		task_phase page = task_phase::scope;
+		std::uint32_t from = 0;
+	};
+
 	struct lifecycle {
 		std::string_view summary;
 		std::span<const build_inbox::plan_step> steps;
@@ -408,8 +414,12 @@ export namespace gse::ide::agent {
 		std::optional<ledger_entry> steered;
 		cycle_paging cycle;
 		std::vector<summary_page> pages;
-		std::optional<std::uint32_t> live_from;
+		std::optional<live_stage> live;
 	};
+
+	auto live_head(
+		task_phase phase
+	) -> std::string;
 
 	auto gate_summary(
 		const session& s

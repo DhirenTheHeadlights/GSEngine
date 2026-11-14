@@ -229,6 +229,7 @@ float fx_decode(int64_t v) {
 }
 
 void fx_add_vec3(inout int64_t acc[3], float3 v) {
+    [unroll]
     for (uint i = 0; i < 3; i++) {
         acc[i] += fx_encode(v[i]);
     }
@@ -239,7 +240,9 @@ float3 fx_load_vec3(int64_t acc[3]) {
 }
 
 void fx_add_mat3(inout int64_t acc[9], mat3 m) {
+    [unroll]
     for (uint i = 0; i < 3; i++) {
+        [unroll]
         for (uint j = 0; j < 3; j++) {
             acc[i * 3 + j] += fx_encode(m[i][j]);
         }
@@ -248,7 +251,9 @@ void fx_add_mat3(inout int64_t acc[9], mat3 m) {
 
 mat3 fx_load_mat3(int64_t acc[9]) {
     mat3 m;
+    [unroll]
     for (uint i = 0; i < 3; i++) {
+        [unroll]
         for (uint j = 0; j < 3; j++) {
             m[i][j] = fx_decode(acc[i * 3 + j]);
         }
@@ -259,8 +264,10 @@ mat3 fx_load_mat3(int64_t acc[9]) {
 float3 geometric_stiffness_diagonal(float3 r, float3 dir, float abs_force) {
     float rd = dot(r, dir);
     float3 diagonal;
+    [unroll]
     for (int j = 0; j < 3; j++) {
         float col_norm = 0.0;
+        [unroll]
         for (int i = 0; i < 3; i++) {
             float h = r[i] * dir[j];
             if (i == j) h -= rd;
@@ -333,9 +340,6 @@ struct coupled_newton {
 };
 
 coupled_frame shared_coupled_frame(inout coupled_newton newton, uint joint_words, uint body_a, uint body_b, float4 orientation_a, float4 orientation_b) {
-    if (curve_word(joint_words + coupled_newton_iterations_index) == 0) {
-        return coupled_frame_of(joint_words, orientation_a, orientation_b);
-    }
     if (newton.joint_words != joint_words || newton.body_a != body_a || newton.body_b != body_b) {
         newton.joint_words = joint_words;
         newton.body_a = body_a;
@@ -601,6 +605,7 @@ void accumulate_joint_for_body(
     else if (j.type == joint_type::fixed || j.type == joint_type::hinge || j.type == joint_type::ball || j.type == joint_type::universal || is_coupled) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
         float carried = joint_carried_fraction(j.pos_c0, pc.current_alpha, solver_config_data[0].joint_correction_speed, pc.dt);
+        [unroll]
         for (int k = 0; k < 3; k++) {
             float c = dot(dirs[k], d) - j.pos_c0[k] * carried;
             float penalty = muscle_floored_penalty(j.pos_penalty[k], j.body_a, j.body_b);
@@ -626,27 +631,34 @@ void accumulate_joint_for_body(
             float3 theta = to_axis_angle(q_error);
 
             if (j.type == joint_type::ball) {
+                [unroll]
                 for (int k = 0; k < 3; k++) {
-                    if (j.soft_ang_stiffness[k] <= 0.0) continue;
-                    float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
-                    float theta_k = dot(axis_world, theta);
-                    float f_soft = j.soft_ang_stiffness[k] * theta_k;
-                    float3 j_soft = axis_world * (-sign);
-                    ang_grad += j_soft * f_soft;
-                    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_soft, j_soft), j.soft_ang_stiffness[k]));
+                    if (!(j.soft_ang_stiffness[k] <= 0.0)) {
+                        float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
+                        float theta_k = dot(axis_world, theta);
+                        float f_soft = j.soft_ang_stiffness[k] * theta_k;
+                        float3 j_soft = axis_world * (-sign);
+                        ang_grad += j_soft * f_soft;
+                        ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_soft, j_soft), j.soft_ang_stiffness[k]));
+                    }
                 }
+                [unroll]
                 for (int k = 0; k < 3; k++) {
-                    if ((j.limited_rows & (1u << k)) == 0) continue;
-                    float3 limit_axis = rotate_vector(body_a.predicted_orientation, dirs[k]);
-                    accumulate_angular_limit(j, limit_axis, dot(limit_axis, theta), k, 1.0, sign, ang_grad, ang_hess);
+                    if ((j.limited_rows & (1u << k)) != 0) {
+                        float3 limit_axis = rotate_vector(body_a.predicted_orientation, dirs[k]);
+                        accumulate_angular_limit(j, limit_axis, dot(limit_axis, theta), k, 1.0, sign, ang_grad, ang_hess);
+                    }
                 }
+                [unroll]
                 for (int k = 0; k < 3; k++) {
-                    if (j.drive_stiffness[k] <= 0.0) continue;
-                    float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
-                    accumulate_joint_drive(j, body_a, body_b, axis_world, dot(axis_world, theta), k, sign, ang_grad, ang_hess);
+                    if (!(j.drive_stiffness[k] <= 0.0)) {
+                        float3 axis_world = rotate_vector(body_a.predicted_orientation, dirs[k]);
+                        accumulate_joint_drive(j, body_a, body_b, axis_world, dot(axis_world, theta), k, sign, ang_grad, ang_hess);
+                    }
                 }
             }
             else if (j.type == joint_type::fixed) {
+                [unroll]
                 for (int k = 0; k < 3; k++) {
                     float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
                     float f_ang = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
@@ -683,7 +695,7 @@ void accumulate_joint_for_body(
                     }
                     if (j.drive_stiffness[k] <= 0.0) continue;
                     if (!have_previous && j.drive_damping > 0.0) {
-                        previous = coupled_frame_of(j.curve_words, body_a.old_orientation, body_b.old_orientation).coordinates;
+                        previous = coupled_coordinates_of(j.curve_words, body_a.old_orientation, body_b.old_orientation);
                         have_previous = true;
                     }
                     accumulate_drive_row(j, coupled.coordinate_axes[k], coupled.coordinates[k], previous[k], int(k), sign, ang_grad, ang_hess);
@@ -721,6 +733,7 @@ void accumulate_joint_for_body(
     }
     else if (j.type == joint_type::slider) {
         float3 perps[2] = { body_perpendicular(body_a.predicted_orientation, j.local_axis_a.xyz, 0), body_perpendicular(body_a.predicted_orientation, j.local_axis_a.xyz, 1) };
+        [unroll]
         for (int k = 0; k < 2; k++) {
             float c = dot(perps[k], d) - j.pos_c0[k] * pc.current_alpha;
             float penalty = muscle_floored_penalty(j.pos_penalty[k], j.body_a, j.body_b);
@@ -745,6 +758,7 @@ void accumulate_joint_for_body(
             float3 theta = to_axis_angle(q_error);
             float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
 
+            [unroll]
             for (int k = 0; k < 3; k++) {
                 float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
                 float f_ang = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
@@ -855,29 +869,30 @@ void solve_body(uint bi, bool live_jac) {
         float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
         float3 my_r = is_a ? world_r_a : world_r_b;
 
+        [unroll]
         for (uint row = 0; row < 3; row++) {
-            if (row > 0 && friction_bound <= 1e-10) continue;
-            if (abs(force[row]) < 1e-12 && penalty[row] < 1e-6) continue;
-
-            float3 J_lin = dirs[row] * sign;
-            float3 J_ang;
-            if (live_jac) {
-                J_ang = cross(my_r, dirs[row]);
-            } else {
-                J_ang = is_a ? frozen_jacobians[ci].j_ang_a[row] : frozen_jacobians[ci].j_ang_b[row];
-            }
-            J_ang *= sign;
-
-            fx_add_vec3(fx_grad, J_lin * force[row]);
-            hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), penalty[row]));
-
-            if (update_orient) {
-                fx_add_vec3(fx_ang_grad, J_ang * force[row]);
-                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(J_ang, J_ang), penalty[row]));
-                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), penalty[row]));
-                has_cross_terms = true;
+            bool skipped = (row > 0 && friction_bound <= 1e-10) || (abs(force[row]) < 1e-12 && penalty[row] < 1e-6);
+            if (!skipped) {
+                float3 J_lin = dirs[row] * sign;
+                float3 J_ang;
                 if (live_jac) {
-                    accumulate_geometric_stiffness(my_r, dirs[row], abs(force[row]), ang_hess);
+                    J_ang = cross(my_r, dirs[row]);
+                } else {
+                    J_ang = is_a ? frozen_jacobians[ci].j_ang_a[row] : frozen_jacobians[ci].j_ang_b[row];
+                }
+                J_ang *= sign;
+
+                fx_add_vec3(fx_grad, J_lin * force[row]);
+                hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), penalty[row]));
+
+                if (update_orient) {
+                    fx_add_vec3(fx_ang_grad, J_ang * force[row]);
+                    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(J_ang, J_ang), penalty[row]));
+                    hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), penalty[row]));
+                    has_cross_terms = true;
+                    if (live_jac) {
+                        accumulate_geometric_stiffness(my_r, dirs[row], abs(force[row]), ang_hess);
+                    }
                 }
             }
         }
@@ -1163,6 +1178,7 @@ void fold_joint_lambda(uint ji) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
         float3 c_rows = float3(0, 0, 0);
         float carried = joint_carried_fraction(j.pos_c0, pc.current_alpha, solver_config_data[0].joint_correction_speed, pc.dt);
+        [unroll]
         for (int k = 0; k < 3; k++) {
             float c = dot(dirs[k], d) - j.pos_c0[k] * carried;
             c_rows[k] = c;
@@ -1186,6 +1202,7 @@ void fold_joint_lambda(uint ji) {
             float3 theta = to_axis_angle(q_error);
 
             if (j.type == joint_type::fixed) {
+                [unroll]
                 for (int k = 0; k < 3; k++) {
                     float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
                     j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
@@ -1194,11 +1211,13 @@ void fold_joint_lambda(uint ji) {
                 }
             }
             else if (j.type == joint_type::ball) {
+                [unroll]
                 for (int k = 0; k < 3; k++) {
-                    if ((j.limited_rows & (1u << k)) == 0) continue;
-                    float c_limit;
-                    if (angular_limit_dual(dot(rotate_vector(body_a.predicted_orientation, dirs[k]), theta), j.limit_lower[k], j.limit_upper[k], j.ang_c0[k] * pc.current_alpha, 1.0, solver_config_data[0].ang_beta, solver_config_data[0].ang_penalty_max, j.ang_lambda[k], j.ang_penalty[k], c_limit)) {
-                        note_angular_residual(c_limit);
+                    if ((j.limited_rows & (1u << k)) != 0) {
+                        float c_limit;
+                        if (angular_limit_dual(dot(rotate_vector(body_a.predicted_orientation, dirs[k]), theta), j.limit_lower[k], j.limit_upper[k], j.ang_c0[k] * pc.current_alpha, 1.0, solver_config_data[0].ang_beta, solver_config_data[0].ang_penalty_max, j.ang_lambda[k], j.ang_penalty[k], c_limit)) {
+                            note_angular_residual(c_limit);
+                        }
                     }
                 }
             }
@@ -1257,6 +1276,7 @@ void fold_joint_lambda(uint ji) {
     }
     else if (j.type == joint_type::slider) {
         float3 perps[2] = { body_perpendicular(body_a.predicted_orientation, j.local_axis_a.xyz, 0), body_perpendicular(body_a.predicted_orientation, j.local_axis_a.xyz, 1) };
+        [unroll]
         for (int k = 0; k < 2; k++) {
             float c = dot(perps[k], d) - j.pos_c0[k] * pc.current_alpha;
             j.pos_lambda[k] = muscle_floored_penalty(j.pos_penalty[k], j.body_a, j.body_b) * c + j.pos_lambda[k];
@@ -1267,6 +1287,7 @@ void fold_joint_lambda(uint ji) {
         float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
         float3 theta = to_axis_angle(q_error);
 
+        [unroll]
         for (int k = 0; k < 3; k++) {
             float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
             j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
@@ -1312,22 +1333,22 @@ void fold_push(uint item) {
 void fold_collect(uint bi, uint island) {
     uint joint_offset = joint_offsets[bi];
     uint joint_count_for_body = joint_counts[bi];
-    for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
-        uint ji = safe_load_uint(joint_adjacency, joint_offset + ji_idx, max_joint_adjacency());
-        if (ji >= max_joints()) continue;
-        if (joint_data[ji].body_a != bi) continue;
-        fold_push(ji);
-    }
-
-    if (body_data[bi].locked != 0) return;
-
     uint contact_offset = contact_offsets[bi];
-    uint contact_count = contact_counts[bi];
-    for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
-        uint ci = safe_load_uint(contact_adjacency, contact_offset + ci_idx, max_contact_adjacency());
-        if (ci >= max_contacts()) continue;
-        if (!island_owns_contact(ci, bi, island)) continue;
-        fold_push(ci | 0x80000000u);
+    uint contact_count = body_data[bi].locked != 0 ? 0 : contact_counts[bi];
+    for (uint k = 0; k < joint_count_for_body + contact_count; k++) {
+        uint item;
+        if (k < joint_count_for_body) {
+            item = safe_load_uint(joint_adjacency, joint_offset + k, max_joint_adjacency());
+            if (item >= max_joints()) continue;
+            if (joint_data[item].body_a != bi) continue;
+        }
+        else {
+            uint ci = safe_load_uint(contact_adjacency, contact_offset + k - joint_count_for_body, max_contact_adjacency());
+            if (ci >= max_contacts()) continue;
+            if (!island_owns_contact(ci, bi, island)) continue;
+            item = ci | 0x80000000u;
+        }
+        fold_push(item);
     }
 }
 

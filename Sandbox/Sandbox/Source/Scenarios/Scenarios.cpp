@@ -5,6 +5,9 @@ import gse;
 import gse.scenario;
 
 import :dev_spawn_system;
+import :grass_field;
+import :grass_probe;
+import :grass_system;
 import :scenario_camera;
 import :scenarios;
 
@@ -77,6 +80,17 @@ namespace sandbox::scenarios {
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 
+	auto hold_cloud_probe(
+		gse::scenario::context& ctx,
+		gse::camera::target target,
+		std::uint64_t frames
+	) -> gse::async::task<>;
+
+	auto capture_cloud_probe(
+		gse::scenario::context& ctx,
+		const std::filesystem::path& file
+	) -> void;
+
 	constexpr std::string_view persist_probe_category = "WebPersistProbe";
 	constexpr std::string_view persist_probe_key = "token";
 	constexpr std::string_view persist_probe_token = "7f3a9c";
@@ -148,16 +162,16 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 
 	co_await gse::scenario::wait_settled(ctx);
 
-	const auto fields = ctx.owners<gse::physics::grass_field>();
+	const auto fields = ctx.owners<sandbox::grass_field>();
 	if (!ctx.expect(fields.size() == 1)) {
 		co_return;
 	}
 	const auto field_owner = fields[0];
-	const auto* field = ctx.try_component<gse::physics::grass_field>(field_owner);
+	const auto* field = ctx.try_component<sandbox::grass_field>(field_owner);
 	if (!ctx.expect(field != nullptr)) {
 		co_return;
 	}
-	const auto half_extent = gse::physics::grass::field_extent(*field) * 0.5f;
+	const auto half_extent = sandbox::grass::field_extent(*field) * 0.5f;
 	const auto contact_stiffness = field->contact_stiffness;
 
 	ctx.channels().push<prefetch_character_request>({});
@@ -170,8 +184,8 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 	}
 	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
 
-	ctx.channels().push<gse::physics::grass::probe_request>({
-		.kind = gse::physics::grass::probe_kind::track_start,
+	ctx.channels().push<sandbox::grass::probe_request>({
+		.kind = sandbox::grass::probe_kind::track_start,
 		.recovery_window = recovery_window,
 		.flatten_ratio = flatten_ratio,
 		.reaction_body = *proxy_owner,
@@ -182,7 +196,7 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 	std::uint32_t outside_samples = 0;
 	std::uint32_t outside_pushed = 0;
 	auto peak_inside = no_force;
-	const auto sample_reaction = [&](const std::string_view when, const gse::physics::transform_component& walker, const gse::physics::grass::probe_state& sample) {
+	const auto sample_reaction = [&](const std::string_view when, const gse::physics::transform_component& walker, const sandbox::grass::probe_state& sample) {
 		const auto pushing = gse::magnitude(sample.reaction);
 		const bool pushed = pushing > no_force;
 		const auto z = walker.position.z();
@@ -200,7 +214,7 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 
 	co_await gse::scenario::wait(ctx, sample_interval);
 	if (const auto* walker = find_proxy(ctx); walker != nullptr) {
-		if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+		if (const auto* sample = ctx.try_component<sandbox::grass::probe_state>(field_owner)) {
 			sample_reaction("before walking", *walker, *sample);
 		}
 	}
@@ -214,7 +228,7 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 			if (walker == nullptr) {
 				break;
 			}
-			if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+			if (const auto* sample = ctx.try_component<sandbox::grass::probe_state>(field_owner)) {
 				max_awake_tiles = std::max(max_awake_tiles, sample->awake_tiles);
 				gse::log::println(gse::log::category::general, "grass_walk: z {} awake tiles {} slot overflow {}", walker->position.z(), sample->awake_tiles, sample->slot_overflow);
 				sample_reaction("walking", *walker, *sample);
@@ -234,17 +248,17 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 	co_await gse::scenario::wait(ctx, recovery_window + gse::seconds(0.5f));
 	bool recovered_pushed = true;
 	if (const auto* walker = find_proxy(ctx); walker != nullptr) {
-		if (const auto* sample = ctx.try_component<gse::physics::grass::probe_state>(field_owner)) {
+		if (const auto* sample = ctx.try_component<sandbox::grass::probe_state>(field_owner)) {
 			sample_reaction("after recovery", *walker, *sample);
 			recovered_pushed = gse::magnitude(sample->reaction) > no_force;
 		}
 	}
-	ctx.channels().push<gse::physics::grass::probe_request>({
-		.kind = gse::physics::grass::probe_kind::track_stop,
+	ctx.channels().push<sandbox::grass::probe_request>({
+		.kind = sandbox::grass::probe_kind::track_stop,
 	});
 	co_await gse::scenario::wait_frames(ctx, 30);
 
-	const auto* probe = ctx.try_component<gse::physics::grass::probe_state>(field_owner);
+	const auto* probe = ctx.try_component<sandbox::grass::probe_state>(field_owner);
 	const auto* proxy = find_proxy(ctx);
 	const auto* proxy_motion = ctx.try_component<gse::physics::motion_component>(*proxy_owner);
 	const auto* proxy_body = proxy_motion != nullptr ? std::get_if<gse::physics::dynamic_body>(&proxy_motion->body) : nullptr;
@@ -320,7 +334,7 @@ auto sandbox::scenarios::grass_walk(gse::scenario::context& ctx) -> gse::async::
 	ctx.expect(probe->recovery_min_tip_ratio >= recovered_ratio);
 	ctx.expect(probe->contact_recovery_checks >= probe->blades_touched);
 	ctx.expect(probe->contact_recovery_min_tip_ratio >= recovered_ratio);
-	ctx.expect(probe->max_cell_bodies <= gse::physics::grass::cell_capacity);
+	ctx.expect(probe->max_cell_bodies <= sandbox::grass::cell_capacity);
 	ctx.expect(proxy->position.z() > half_extent);
 }
 
@@ -337,23 +351,23 @@ auto sandbox::scenarios::grass_look(gse::scenario::context& ctx) -> gse::async::
 
 	co_await gse::scenario::wait_settled(ctx);
 	co_await gse::scenario::wait_frames(ctx, settle_frames);
-	ctx.channels().push<gse::physics::grass::probe_request>({
-		.kind = gse::physics::grass::probe_kind::track_start,
+	ctx.channels().push<sandbox::grass::probe_request>({
+		.kind = sandbox::grass::probe_kind::track_start,
 	});
 	co_await gse::scenario::wait_frames(ctx, converge_frames);
-	ctx.channels().push<gse::physics::grass::probe_request>({
-		.kind = gse::physics::grass::probe_kind::track_stop,
+	ctx.channels().push<sandbox::grass::probe_request>({
+		.kind = sandbox::grass::probe_kind::track_stop,
 	});
 	ctx.channels().push<gse::renderer::capture::screenshot_request>({});
 	co_await gse::scenario::wait_frames(ctx, flush_frames);
 	ctx.channels().push<gse::renderer::capture::screenshot_request>({});
 	co_await gse::scenario::wait_frames(ctx, flush_frames);
 
-	const auto fields = ctx.owners<gse::physics::grass_field>();
+	const auto fields = ctx.owners<sandbox::grass_field>();
 	if (!ctx.expect(fields.size() == 1)) {
 		co_return;
 	}
-	const auto* probe = ctx.try_component<gse::physics::grass::probe_state>(fields[0]);
+	const auto* probe = ctx.try_component<sandbox::grass::probe_state>(fields[0]);
 	if (!ctx.expect(probe != nullptr)) {
 		co_return;
 	}
@@ -425,15 +439,15 @@ auto sandbox::scenarios::grass_stride_look(gse::scenario::context& ctx) -> gse::
 
 	co_await gse::scenario::wait_settled(ctx);
 
-	const auto fields = ctx.owners<gse::physics::grass_field>();
+	const auto fields = ctx.owners<sandbox::grass_field>();
 	if (!ctx.expect(fields.size() == 1)) {
 		co_return;
 	}
-	const auto* field = ctx.try_component<gse::physics::grass_field>(fields[0]);
+	const auto* field = ctx.try_component<sandbox::grass_field>(fields[0]);
 	if (!ctx.expect(field != nullptr)) {
 		co_return;
 	}
-	const auto half_extent = gse::physics::grass::field_extent(*field) * 0.5f;
+	const auto half_extent = sandbox::grass::field_extent(*field) * 0.5f;
 
 	ctx.channels().push<prefetch_character_request>({});
 	co_await gse::scenario::wait(ctx, gse::seconds(2.f));
@@ -1240,6 +1254,83 @@ auto sandbox::scenarios::pitch_probe(gse::scenario::context& ctx) -> gse::async:
 	}
 }
 
+auto sandbox::scenarios::hold_cloud_probe(gse::scenario::context& ctx, const gse::camera::target target, const std::uint64_t frames) -> gse::async::task<> {
+	for (std::uint64_t i = 0; i < frames; ++i) {
+		ctx.channels().push<gse::camera::request>({
+			.target = target,
+			.priority = 100,
+			.blend_duration = {},
+		});
+		ctx.channels().push<gse::renderer::atmosphere::sun_request>(cloud_probe_sun());
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+}
+
+auto sandbox::scenarios::capture_cloud_probe(gse::scenario::context& ctx, const std::filesystem::path& file) -> void {
+	ctx.channels().push<gse::renderer::capture::screenshot_request>({
+		.path = file,
+	});
+	gse::log::println("scenario: cloud_quality_probe capture {} frame {}", file.generic_display_string(), ctx.frame());
+}
+
+auto sandbox::scenarios::cloud_quality_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t hold_frames = 120;
+	constexpr std::uint64_t recapture_frames = 30;
+	constexpr std::uint64_t flush_frames = 10;
+	constexpr std::uint64_t pan_settle_frames = 60;
+	constexpr std::uint64_t pan_frames = 240;
+	const auto pan_start = gse::degrees(50.f);
+	const auto pan_sweep = gse::degrees(80.f);
+
+	using named_angle = std::pair<std::string_view, gse::angle>;
+
+	const std::array<named_angle, 3> pitches = {
+		named_angle{ "pitch80", gse::degrees(80.f) },
+		named_angle{ "pitch35", gse::degrees(35.f) },
+		named_angle{ "pitch05", gse::degrees(5.f) },
+	};
+	const std::array<named_angle, 4> headings = {
+		named_angle{ "toward_sun", gse::degrees(0.f) },
+		named_angle{ "plus90", gse::degrees(90.f) },
+		named_angle{ "away_from_sun", gse::degrees(180.f) },
+		named_angle{ "minus90", gse::degrees(-90.f) },
+	};
+
+	const std::filesystem::path run_dir = std::format("cloud_quality_probe_{}", gse::system_clock::timestamp_filename());
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	for (const auto& [pitch_name, pitch] : pitches) {
+		for (const auto& [heading_name, heading] : headings) {
+			const auto target = cloud_probe_target(pitch, heading);
+
+			ctx.channels().push<gse::camera::temporal_reset_request>({});
+			co_await hold_cloud_probe(ctx, target, hold_frames);
+			capture_cloud_probe(ctx, run_dir / std::format("{}_{}_a.png", pitch_name, heading_name));
+			co_await hold_cloud_probe(ctx, target, recapture_frames);
+			capture_cloud_probe(ctx, run_dir / std::format("{}_{}_b.png", pitch_name, heading_name));
+			co_await hold_cloud_probe(ctx, target, flush_frames);
+		}
+	}
+
+	for (std::size_t index = 1; index < pitches.size(); ++index) {
+		const auto& [pitch_name, pitch] = pitches[index];
+
+		ctx.channels().push<gse::camera::temporal_reset_request>({});
+		co_await hold_cloud_probe(ctx, cloud_probe_target(pitch, pan_start), pan_settle_frames);
+
+		for (std::uint64_t i = 0; i < pan_frames; ++i) {
+			const auto yaw = pan_start + pan_sweep * (static_cast<float>(i) / static_cast<float>(pan_frames - 1));
+			if (i == pan_frames / 2) {
+				capture_cloud_probe(ctx, run_dir / std::format("{}_pan.png", pitch_name));
+			}
+			co_await hold_cloud_probe(ctx, cloud_probe_target(pitch, yaw), 1);
+		}
+
+		co_await hold_cloud_probe(ctx, cloud_probe_target(pitch, pan_start + pan_sweep), flush_frames);
+	}
+}
+
 auto sandbox::scenarios::lighting_showcase(gse::scenario::context& ctx) -> gse::async::task<> {
 	constexpr std::uint64_t settle_frames = 90;
 	constexpr std::uint64_t record_frames = 540;
@@ -1381,6 +1472,22 @@ auto sandbox::scenarios::locomotion(gse::scenario::context& ctx) -> gse::async::
 	ctx.channels().push<gse::input::synthetic_input_request>({
 		.value = gse::input::key_pressed{ .key_code = gse::key::w },
 	});
+}
+
+auto sandbox::scenarios::mouse_latch_look(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<spawn_character_request>({});
+	co_await gse::scenario::wait(ctx, gse::seconds(1.f));
+
+	for (int frame = 0; frame < 240; ++frame) {
+		ctx.channels().push<gse::input::synthetic_input_request>({
+			.value = gse::input::mouse_raw_moved{
+				.x_delta = frame < 120 ? 6.0 : -6.0,
+				.y_delta = frame % 60 < 30 ? 2.0 : -2.0,
+			},
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
 }
 
 auto sandbox::scenarios::character_gpu_bench(gse::scenario::context& ctx) -> gse::async::task<> {

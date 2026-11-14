@@ -347,7 +347,7 @@ template <typename R>
 auto gse::resource::loader<R>::state_of(const id resource_id) const -> state {
 	std::lock_guard lock(m_mutex);
 	if (const auto s = slot_ptr(resource_id)) {
-		return s->current_state.load(std::memory_order_acquire);
+		return s->current_state.state();
 	}
 	return state::unloaded;
 }
@@ -376,9 +376,8 @@ auto gse::resource::loader<R>::flush() -> void {
 	{
 		std::lock_guard lock(m_mutex);
 		for (const auto& slot : m_resources.items()) {
-			if (slot->current_state.load(std::memory_order_acquire) == state::queued && !slot->load_in_flight) {
-				slot->load_in_flight = true;
-				slot->current_state.store(state::loading, std::memory_order_release);
+			if (slot->current_state.state() == state::queued) {
+				slot->current_state.enter(state::loading);
 				ids_to_load.push_back(slot->pending_resource->id());
 			}
 		}
@@ -427,15 +426,14 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 		);
 		std::lock_guard lock(m_mutex);
 		slot->error.store(std::make_shared<const asset_error>(std::move(error)), std::memory_order_release);
-		if (!slot->current.load(std::memory_order_acquire) && slot->requested_reload > slot->started_reload) {
+		if (slot->requested_reload > slot->started_reload) {
 			slot->started_reload = slot->requested_reload;
 			slot->pending_resource = std::make_unique<R>(path);
-			slot->current_state.store(state::queued, std::memory_order_release);
+			slot->current_state.enter(state::queued);
 		}
 		else {
-			slot->current_state.store(slot->current.load(std::memory_order_acquire) ? state::loaded : state::failed, std::memory_order_release);
+			slot->current_state.enter(state::failed);
 		}
-		slot->load_in_flight = false;
 	};
 
 	if (auto prepared = prepare(path); !prepared) {
@@ -469,8 +467,7 @@ auto gse::resource::loader<R>::launch_load(const id rid) -> async::task<> {
 			std::memory_order_release
 		);
 		slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
-		slot->current_state.store(state::loaded, std::memory_order_release);
-		slot->load_in_flight = false;
+		slot->current_state.enter(state::loaded);
 	}
 }
 
@@ -480,15 +477,13 @@ auto gse::resource::loader<R>::register_by_path(const std::filesystem::path& bak
 
 	if (const auto found = m_path_to_id.find(baked_path); found != m_path_to_id.end()) {
 		if (auto slot = slot_ptr(found->second)) {
-			if (slot->current.load(std::memory_order_acquire)) {
+			const state slot_state = slot->current_state.state();
+			if (slot_state == state::loading || slot_state == state::loaded || slot_state == state::reloading) {
 				++slot->requested_reload;
 			}
-			else if (slot->load_in_flight) {
-				++slot->requested_reload;
-			}
-			else if (slot->current_state.load(std::memory_order_acquire) == state::failed) {
+			else if (slot_state == state::failed) {
 				slot->pending_resource = std::make_unique<R>(slot->path);
-				slot->current_state.store(state::queued, std::memory_order_release);
+				slot->current_state.enter(state::queued);
 				slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
 			}
 		}
@@ -518,12 +513,11 @@ auto gse::resource::loader<R>::finalize_reloads() -> void {
 	{
 		std::lock_guard lock(m_mutex);
 		for (const auto& slot : m_resources.items()) {
-			if (!slot->current.load(std::memory_order_acquire) || slot->load_in_flight || slot->requested_reload <= slot->started_reload) {
+			if (slot->current_state.state() != state::loaded || slot->requested_reload <= slot->started_reload) {
 				continue;
 			}
 			slot->started_reload = slot->requested_reload;
-			slot->load_in_flight = true;
-			slot->current_state.store(state::reloading, std::memory_order_release);
+			slot->current_state.enter(state::reloading);
 			const auto current = slot->current.load(std::memory_order_acquire);
 			reloads_to_process.emplace_back(current->resource->id(), slot->started_reload);
 		}
@@ -561,8 +555,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 		);
 		std::lock_guard lock(m_mutex);
 		slot->error.store(std::make_shared<const asset_error>(std::move(error)), std::memory_order_release);
-		slot->current_state.store(slot->current.load(std::memory_order_acquire) ? state::loaded : state::failed, std::memory_order_release);
-		slot->load_in_flight = false;
+		slot->current_state.enter(state::loaded);
 	};
 
 	if (auto prepared = prepare(path); !prepared) {
@@ -598,8 +591,7 @@ auto gse::resource::loader<R>::launch_reload(const id rid, const std::uint64_t r
 			std::memory_order_release
 		);
 		slot->error.store(std::shared_ptr<const asset_error>{}, std::memory_order_release);
-		slot->current_state.store(state::loaded, std::memory_order_release);
-		slot->load_in_flight = false;
+		slot->current_state.enter(state::loaded);
 		assert(slot->started_reload == revision, "Resource reload revision changed while in flight");
 	}
 
@@ -653,8 +645,7 @@ auto gse::resource::loader<R>::try_get(const std::string& filename_no_ext) const
 
 template <typename R>
 auto gse::resource::loader<R>::request_load(const std::shared_ptr<resource_slot<R>>& slot) const -> void {
-	auto expected = state::unloaded;
-	slot->current_state.compare_exchange_strong(expected, state::queued, std::memory_order_acq_rel, std::memory_order_relaxed);
+	slot->current_state.try_enter(state::unloaded, state::queued);
 }
 
 template <typename R>

@@ -734,7 +734,8 @@ export namespace gse::directx {
 	[[nodiscard]] auto create_bindless_root_signature(
 		ID3D12Device* device,
 		std::uint32_t push_constants,
-		std::uint32_t binding_constants
+		std::uint32_t binding_constants,
+		bool bindings_in_cbv
 	) -> com_ptr<ID3D12RootSignature>;
 
 	[[nodiscard]] auto create_gpu_upload_buffer(
@@ -2237,9 +2238,17 @@ auto gse::directx::create_sampler_descriptor(ID3D12Device* device, const sampler
 	device->CreateSampler(&desc, handle);
 }
 
-auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const std::uint32_t push_constants, const std::uint32_t binding_constants) -> com_ptr<ID3D12RootSignature> {
-	const D3D12_ROOT_PARAMETER params[2] = {
-		{
+auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const std::uint32_t push_constants, const std::uint32_t binding_constants, const bool bindings_in_cbv) -> com_ptr<ID3D12RootSignature> {
+	const D3D12_ROOT_PARAMETER binding_param = bindings_in_cbv
+		? D3D12_ROOT_PARAMETER{
+			.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
+			.Descriptor = {
+				.ShaderRegister = 0,
+				.RegisterSpace = 0,
+			},
+			.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
+		}
+		: D3D12_ROOT_PARAMETER{
 			.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
 			.Constants = {
 				.ShaderRegister = 0,
@@ -2247,7 +2256,9 @@ auto gse::directx::create_bindless_root_signature(ID3D12Device* device, const st
 				.Num32BitValues = binding_constants,
 			},
 			.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL,
-		},
+		};
+	const D3D12_ROOT_PARAMETER params[2] = {
+		binding_param,
 		{
 			.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
 			.Constants = {

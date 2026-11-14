@@ -2,6 +2,7 @@ export module gse.ecs:system_node;
 
 import gse.concurrency;
 import gse.core;
+import gse.diag;
 import gse.meta;
 import std;
 
@@ -9,6 +10,7 @@ import :context;
 import :registries;
 import :registry;
 import :settings;
+import :system_anno;
 
 export namespace gse {
 	template <typename T>
@@ -40,6 +42,23 @@ export namespace gse {
 		std::vector<dep_reason> reasons;
 
 		[[nodiscard]] auto kind() const -> dep_kind;
+	};
+
+	enum class system_stage : std::uint8_t {
+		awaiting_init,
+		init_in_slice [[
+			= entered_from({ awaiting_init })
+		]],
+		init_between_slices [[
+			= entered_from({ init_in_slice }),
+			= returns_to({ init_in_slice })
+		]],
+		initialized [[
+			= entered_from({ awaiting_init, init_in_slice, init_between_slices })
+		]],
+		ran [[
+			= entered_from({ initialized })
+		]],
 	};
 
 	struct system_node : non_copyable {
@@ -113,16 +132,15 @@ export namespace gse {
 		std::vector<id> channel_publishes;
 		std::vector<id> channel_consumes;
 		std::vector<id> lent_channels;
+		std::vector<activation_gate> activation_gates;
+		std::vector<activation_gate> frame_gates;
 
 		void* state_ptr = nullptr;
 		const void* state_snapshot_ptr = nullptr;
 
 		bool entity_structural = false;
 		bool deferred = false;
-		bool init_launched = false;
-		bool init_done = false;
-		bool init_in_flight = false;
-		bool ran_once = false;
+		atomic_lifecycle<system_stage> stage;
 
 		std::unique_ptr<init_yield> yield;
 		std::unique_ptr<context> init_ctx;
@@ -145,6 +163,10 @@ export namespace gse {
 		std::uint32_t def_column = 0;
 
 		[[nodiscard]] auto required_deps() const -> std::vector<id>;
+
+		[[nodiscard]] auto initialized() const -> bool;
+
+		[[nodiscard]] auto settled() const -> bool;
 	};
 
 }
@@ -169,6 +191,16 @@ auto gse::system_node::required_deps() const -> std::vector<id> {
 	deps.insert(deps.end(), init_state_deps.begin(), init_state_deps.end());
 	deps.insert(deps.end(), frame_state_deps.begin(), frame_state_deps.end());
 	return deps;
+}
+
+auto gse::system_node::initialized() const -> bool {
+	const system_stage current = stage.state();
+	return current == system_stage::initialized || current == system_stage::ran;
+}
+
+auto gse::system_node::settled() const -> bool {
+	const system_stage current = stage.state();
+	return current == system_stage::ran || (current == system_stage::initialized && !invoke_run_fn);
 }
 
 template <typename T>

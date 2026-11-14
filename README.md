@@ -10,87 +10,98 @@ for you. Keep clips under 10 MB and encode H.264 (yuv420p, +faststart) for playb
 everywhere; raw engine AV1 output is both too large and unsupported on Safari.
 -->
 
-GSEngine is a game engine written in modern C++ with C++26 reflection. It began as the foundation for a 3D shooter, but nothing in it is tied to that genre.
-
-**Windows only.** x64 Windows is the only supported platform — there is no Linux or macOS build, and none is planned. Both the Vulkan and DX12 backends are fully supported; Vulkan is the default and falls back to DX12 if it is unavailable. The build expects the MinGW-w64 GCC toolchain that `bootstrap.py` installs; MSVC is not supported.
-
-## Features
-
-**Rendering**
-
-* Bindless Forward+ light culling
-* Mesh-shader meshlet pipeline with GPU culling
-* Hardware ray tracing — RT shadows and GI probes
-* HDR pipeline with AgX tonemapping and bloom
-* Physically-based atmosphere and sky, with a procedural starfield
-* Volumetric clouds driven by an evolving weather field, casting shadows onto scene geometry
-* Procedural terrain — a snow-capped mountain ring generated at load from ridged noise
-* Temporal anti-aliasing
-* MSDF/MTSDF text rendering
-* Hardware-accelerated H.265/AV1 capture
-
-**Physics**
-
-* GPU-driven rigid-body pipeline — broad phase, narrow phase, solve, and transform writeback, all dispatched on-device
-* VBD (Vertex Block Descent) solver with graph-colored parallel constraint solving
-* Spatial-hash broad phase and SAT narrow-phase collision
-* Joints from hinge/ball/universal to activation-driven muscles
-* Physics-driven humanoid locomotion
-* Physics-aware camera
-
-**Engine**
-
-* C++26 reflection drives ECS registration, Slang shader/type emission, serialization, asset formats, networking, and a hot-reloadable settings UI
-* Compile-time dimensional analysis — `length / time` is a `velocity`, `length + time` is a compile error
-* Coroutine async on a lock-free work-stealing scheduler
-* Async render graph with automatic barrier insertion
-* Backend-agnostic RHI with two complete backends — Vulkan and DX12, selectable at startup
-* Built entirely from C++ modules
-
-### Atmosphere, volumetric clouds & terrain
+GSEngine is a game engine, and the editor it is built in, written from scratch in C++26. Reflection, modules and coroutines are the foundation rather than an add-on, and most of the simulation runs on the GPU.
 
 [<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/ea9750f8-6a56-477f-a37a-fd9d70db80dd)
 
-Everything in the clip above is generated at load and driven by live settings — no baked lighting, no authored heightmap, no skybox.
+Nothing in this clip is authored. There is no baked lighting, no heightmap and no skybox. The sky is a physically based atmosphere, the clouds are a raymarched volume grouped into masses by a weather field that evolves over time, and those masses shadow the terrain below them. The mountains are built from ridged noise at load, with snow placed by elevation and slope. Every parameter behind it can be changed while the engine runs.
 
-The sky is a physically-based atmosphere with aerial perspective, Henyey-Greenstein cloud scattering, and a procedural starfield that fades in as the sun drops. The cloud layer is grouped into discrete masses by a spatially varying weather field that evolves over time, and those masses cast real shadows onto the terrain through a sunward-marched shadow map. The mountains are a ridged-noise ring built at load, with snow placed by elevation and slope so it settles on crests and leaves the steep faces bare.
+## What it is built on
 
-Sun angles, planet radii, Rayleigh/Mie/ozone coefficients, cloud coverage, density, the weather cycle, and every terrain parameter are hot-reloadable.
+### Reflection does the wiring
 
-### HDR, bloom, AgX tonemap
+A type is described once, in C++, and the engine derives the rest from it. This is a complete, networked physics component:
 
-<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
+```cpp
+struct motor_component {
+    [[= networked]] vec3<velocity> velocity_drive_target;
+    [[= networked]] bool horizontal_only = true;
+    [[= networked]] bool requires_ground_contact = true;
+    [[= networked]] force max_force = newtons(1000.f);
+    [[= networked]] float compliance = 0.5f;
+};
+```
 
-R16G16B16A16 scene target end-to-end; AgX with input matrix → log-EV remap → contrast polynomial → punchy-look saturation → output matrix. Bloom downsamples 7 mips with Karis average, then tent-upsamples back into mip 0.
+There is no registration call and no schema file beside it. The same approach covers the rest of the engine. Systems, their schedule and the data they share are declared with annotations. Structs shared with shaders are emitted as Slang from their C++ definition, so the two sides cannot drift. A settings struct whose fields carry a description is a settings panel and a section of the config file, and any field can be overridden from the command line. Tests and scenarios are plain functions found by sweeping a namespace.
 
-### VBD physics solver
+### Units are types
+
+The component above stores a `vec3<velocity>` and a `force`, not floats. Dimensional analysis happens at compile time, across the whole engine:
+
+```cpp
+const velocity v = meters(10.f) / seconds(2.f);
+const area a = meters(3.f) * meters(4.f);
+const auto wrong = meters(3.f) + seconds(1.f);  // does not compile
+```
+
+Quantities stay typed through the physics solver and are only reduced to raw floats at the GPU boundary.
+
+### One renderer, three backends
+
+Render passes are written once, against a render graph that tracks resource use and inserts barriers, and a device interface with no API types in it. The backend is chosen at startup.
+
+|Backend|State|
+|-|-|
+|Vulkan|The default|
+|DirectX 12|At parity with Vulkan, and the automatic fallback when Vulkan is unavailable|
+|WebGPU|The newest, through wgpu-native. Not at parity: passes that need features WebGPU lacks are switched off|
+
+Vulkan and DX12 are held together by measurement. A parity gate replays physics scenarios on both and requires the GPU solver to produce the same world-state hash on every run, and to stay within tolerance of the CPU solver.
+
+## Physics on the GPU
 
 [<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/4ce56270-eaab-4d76-990e-6f52bfb4a710)
 
-GPU Vertex Block Descent with reflection-emitted shader constants and a custom narrow phase. Joints, contacts, and ragdolls converge in a fraction of the iterations of Gauss-Seidel.
+Four counter-rotating drums tumbling 13,824 dynamic bodies. Broad phase, narrow phase, solve and transform writeback all run on the device, with no per-body readback to the CPU.
 
-Above: four counter-rotating drums tumbling 13,824 dynamic bodies, solved entirely on the GPU — broad phase, narrow phase, solve, and transform writeback all dispatched on-device, with no per-body readback to the CPU.
+The solver is Vertex Block Descent, with a CPU implementation of the same solve kept alongside as the reference. It has grown past rigid bodies. Joints are driven by Hill-type muscles with compliant tendons, a humanoid walks under a locomotion policy that is trained on the GPU inside the engine, and grass is simulated as deformable blades that push back on whatever moves through them.
 
-### Forward+ light culling
+## Lighting
 
 [<video src="" autoplay muted loop playsinline width="100%"></video>](https://github.com/user-attachments/assets/2a7f8db8-5f31-4b46-a73b-e875408d9608)
 
-Above: 364 physically scaled point lights drifting through the light hall at night, tile-culled per 16 px tile with ray-traced shadows, probe GI accumulated across frames, and histogram auto exposure metering the lamps.
+364 physically scaled point lights drifting through a hall at night. Lights are culled per 16 px tile on the compute queue, shadows are ray traced, global illumination comes from probes accumulated across frames, and auto exposure meters the scene from a histogram.
 
-Bindless point/spot lights tile-culled on the compute queue; renderer dispatches via reflection-driven binding packs (`recording_context::dispatch<Entry>(pc, args, groups)`).
+## The editor
 
-## System Prerequisites
+The editor is an application of the engine. It is drawn by the same renderer and the same GUI that a game uses, and it is what `bootstrap.py` builds.
+
+It is a code editor first. Highlighting is semantic, driven by a GCC plugin that reads the same compile the build does, with completion, hover documentation, diagnostics and symbol search on top. Around that sit a build runner, a terminal, source control, and the game itself running in a docked viewport. Profiler, allocation and system-graph panels read the running game directly.
+
+It also hosts AI agents as a first-class panel. A chat works through scoping, applying and review phases, builds and launches the game through the editor, and reads logs, traces and panels through the same tools a person would.
+
+<!-- <video src="PASTE_CLIP_URL_HERE" autoplay muted loop playsinline width="100%"></video> -->
+
+## Testing and shipping
+
+Behaviour is checked by scenarios. A scenario is a short script that settles a world, drives it through a fixed sequence on a fixed-step clock, and exits with frame-time percentiles and a hash of the world state. The same scenario is a benchmark, a regression test and a determinism check. Unit tests and the headless scenarios run in CI on every push. [`docs/TESTING.md`](docs/TESTING.md) records what is verified and what is not.
+
+A game built on the engine ships through tools in this repository. A packer stages the game image, an installer installs it, and a launcher updates it against a release feed, verifying a SHA-256 before it extracts anything. The release workflow drives all three.
+
+## Status
+
+GSEngine runs on x64 Windows and builds with one compiler, GCC trunk, because that is where C++26 reflection is implemented. MSVC and Clang are not supported.
+
+A browser build is in progress and experimental. The engine compiles to wasm32 with a patched GCC and runs headless scenarios there. [`docs/wasm_pipeline_plan.md`](docs/wasm_pipeline_plan.md) records where it stands.
+
+## Building
 
 |Tool|Version|
 |-|-|
 |Git|2.45+|
-|CMake|3.28+|
+|CMake|4.2+|
 |Python|3.11+|
 |Vulkan SDK|1.4+|
-
-GCC and Ninja are not on that list — `bootstrap.py` installs both.
-
-## Quick Start
 
 ```
 git clone <repo>
@@ -98,49 +109,22 @@ cd GSEngine
 python bootstrap.py
 ```
 
-`bootstrap.py` does everything the build needs:
-
-* initializes submodules recursively
-* downloads the latest `gcc-trunk-v*` release into `~/.gcc-trunk/<tag>/` and points the `~/.gcc-trunk/current` junction at it
-* installs Ninja into `~/.gcc-trunk/ninja/`, falling back to `winget install Ninja-build.Ninja` when the direct download is unreachable
-* builds the cppreference hover index used by the editor
-* configures `x64-mingw-gcc-Release` and builds the `Editor` target into `.generated/out/build/x64-mingw-gcc-Release/Editor/Editor.exe`
-
-The build step refuses to start when CMake, the gcc-trunk toolchain, or `VULKAN_SDK` is missing, and names which one. A build directory whose cached compiler or Ninja path no longer exists — a tree copied from another machine, or a renamed user profile — is removed and reconfigured instead of failing.
-
-The CMake presets resolve the compiler and Ninja through `~/.gcc-trunk/current`, so no `MINGW_ROOT` or `PATH` edit is required. Re-run `python bootstrap.py` to pick up a newer toolchain release; `--force` reinstalls, `--tag gcc-trunk-vN` pins a specific one, `--preset <name>` targets a different configuration, and `--skip-gcc`/`--skip-ninja`/`--skip-cppref`/`--skip-build` narrow the run.
-
-A toolchain bump invalidates every previously built module BMI, so reconfigure from a clean build directory after one.
-
-vcpkg's manifest mode (`vcpkg.json`) auto-installs dependencies when CMake configures. First configure rebuilds the dep tree under the MinGW triplet — expect 30-60 minutes.
-
-### Available presets
+`bootstrap.py` initializes submodules, installs the pinned GCC trunk toolchain and Ninja under `~/.gcc-trunk`, then configures and builds the editor into `.generated/out/build/x64-mingw-gcc-Release/Editor/Editor.exe`. Nothing needs to be added to `PATH`. The first configure builds the vcpkg dependencies listed in `vcpkg.json` and takes 30 to 60 minutes.
 
 |Preset|Use|
 |-|-|
 |`x64-mingw-gcc-Debug`|Day-to-day debug build|
-|`x64-mingw-gcc-Release`|Optimized release|
-|`x64-mingw-gcc-RelWithDebInfo`|Release with debug info (profiling)|
-|`x64-mingw-gcc-Debug-asan`|Debug + AddressSanitizer|
+|`x64-mingw-gcc-Release`|Optimized release, the default|
+|`x64-mingw-gcc-RelWithDebInfo`|Release with debug info and contracts enabled|
+|`x64-mingw-gcc-Debug-asan`|Debug with AddressSanitizer|
+|`wasm32-wasi-gcc-Release`|The experimental browser build|
 
-## Dependencies (vcpkg manifest)
+[`docs/TOOLCHAIN_SETUP.md`](docs/TOOLCHAIN_SETUP.md) covers the bootstrap options, the toolchain pin, and building the toolchain yourself.
 
-Listed in `vcpkg.json` and auto-installed at configure time:
+## Contributing
 
-* [libpng](http://www.libpng.org/pub/png/libpng.html) — PNG decode
-* [libjpeg-turbo](https://libjpeg-turbo.org/) — JPEG decode
-* [miniaudio](https://github.com/mackron/miniaudio) — audio
-* [shader-slang](https://github.com/shader-slang/slang) — shader compiler
-* [concurrentqueue](https://github.com/cameron314/concurrentqueue) — lock-free MPMC queue used by the task scheduler
-* [freetype](https://github.com/freetype/freetype) — font rasterization
-* [msdfgen](https://github.com/Chlumsky/msdfgen) — multi-channel SDF font generation
-* [nsight-aftermath](https://developer.nvidia.com/nsight-aftermath) — GPU crash dumps (NVIDIA)
-
-## Code Style
-
-This project follows the standard library's coding conventions. See [`docs/STYLEGUIDE.md`](docs/STYLEGUIDE.md) for the full guide. The main branch is protected, so all contributions are made through pull requests.
+The code follows the standard library's conventions, set out in [`docs/STYLEGUIDE.md`](docs/STYLEGUIDE.md). The main branch is protected, so changes arrive through pull requests.
 
 ## License
 
-[MIT](LICENSE) — do whatever you want.
-
+[MIT](LICENSE). Do whatever you want.

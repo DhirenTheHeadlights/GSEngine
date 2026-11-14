@@ -38,11 +38,14 @@ export namespace gse::physics::shadow_step {
 		std::vector<body_sample> cpu_post;
 	};
 
-	struct [[= system_state<"Shadow Step">{}, = deferred_system{}]] data {
-		bool enabled = false;
+	struct [[
+		= system_state<"Shadow Step">{},
+		= requires_setting_path<true, ^^physics::data::trace, ^^trace_settings::shadow_step, ^^shadow_step_trace_settings::enabled>{},
+		= requires_setting<^^physics::data::use_gpu_solver, false>{},
+		= deferred_system{}
+	]] data {
 		int detail_step = -1;
 		std::uint32_t step_index = 0;
-		bool conflict_reported = false;
 		std::vector<pending_step> pending;
 		std::vector<joint_definition> joints;
 		std::vector<muscle_definition> muscles;
@@ -57,7 +60,7 @@ export namespace gse::physics::shadow_step {
 	[[= system_init{}]]
 	auto init(
 		context& ctx,
-		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<gpu::context::data> gpu_s,
 		shared_view<physics::data> phys,
 		data& d
 	) -> async::task<>;
@@ -77,7 +80,7 @@ export namespace gse::physics::shadow_step {
 	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
-		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;

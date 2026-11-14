@@ -618,6 +618,77 @@ auto gse::ide::build_inbox::peek_panel_queries() -> std::vector<panel_query> {
 	return out;
 }
 
+auto gse::ide::build_inbox::formats_dir() -> std::filesystem::path {
+	return directory() / "formats";
+}
+
+auto gse::ide::build_inbox::consume_format_request(const std::string_view id) -> void {
+	std::error_code ec;
+	std::filesystem::remove(formats_dir() / (std::string(id) + ".txt"), ec);
+}
+
+auto gse::ide::build_inbox::peek_format_requests() -> std::vector<format_request> {
+	const std::filesystem::path dir = formats_dir();
+	std::error_code ec;
+	if (!std::filesystem::exists(dir, ec) || ec) {
+		return {};
+	}
+
+	const auto abandoned = std::chrono::seconds(60);
+
+	std::vector<format_request> out;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(dir, std::filesystem::directory_options::skip_permission_denied, ec)) {
+		if (entry.path().extension() != ".txt") {
+			continue;
+		}
+
+		std::error_code stamp_ec;
+		const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(entry.path(), stamp_ec);
+		if (!stamp_ec && std::filesystem::file_time_type::clock::now() - stamp > abandoned) {
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+
+		format_request parsed;
+		{
+			std::ifstream in(entry.path(), std::ios::binary);
+			std::string line;
+			while (in && std::getline(in, line)) {
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				const auto [key, value] = split_field(line);
+				if (key == "id") {
+					parsed.id.assign(value);
+				}
+				else if (key == "agent") {
+					parsed.agent.assign(value);
+				}
+				else if (key == "file") {
+					parsed.file.assign(value);
+				}
+				else if (key == "cwd") {
+					parsed.cwd.assign(value);
+				}
+				else if (key == "project") {
+					parsed.project.assign(value);
+				}
+				else if (key == "dry") {
+					parsed.dry_run = value == "1" || value == "true";
+				}
+			}
+		}
+
+		if (parsed.id.empty() || parsed.id != entry.path().stem().generic_display_string() || parsed.file.empty()) {
+			log::println(log::level::warning, log::category::task, "build inbox: '{}' is not a usable format request", entry.path());
+			std::filesystem::remove(entry.path(), ec);
+			continue;
+		}
+		out.push_back(std::move(parsed));
+	}
+	return out;
+}
+
 auto gse::ide::build_inbox::packages_dir() -> std::filesystem::path {
 	return directory() / "package";
 }

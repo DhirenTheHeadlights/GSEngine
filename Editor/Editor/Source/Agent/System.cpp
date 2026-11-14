@@ -153,7 +153,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 	service_inquiry(d, events_out);
 
-	bool state_changed = poll_build_inbox(d, events_out, build_d.building);
+	bool state_changed = poll_build_inbox(d, events_out, build_d.building, build_d.agent_game_attached);
 	for (session& s : d.sessions) {
 		state_changed = service_phase(s, static_cast<std::uint32_t>(d.goal_steer_budget)) || state_changed;
 	}

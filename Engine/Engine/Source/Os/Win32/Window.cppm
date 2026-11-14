@@ -222,7 +222,7 @@ export namespace gse::window {
 		[[= shared]] task::concurrent_queue<input::event> input_events;
 	};
 
-	struct [[= settings::category<"Window">{}, = system_state<"Window">{}]] data {
+	struct [[= settings::category<"Window">{}, = system_state<"Window">{}, = requires_setting<^^launch::data::presents, true>{}]] data {
 		[[
 			= settings::
 				describe<"Windowed, borderless fullscreen, or exclusive fullscreen on the selected monitor.">{}
@@ -282,7 +282,13 @@ export namespace gse::window {
 		int last_monitor_index = 0;
 		int current_monitor_index = -1;
 		bool launcher_active = false;
-		vec2i launch_launcher_size{ 0, 0 };
+
+		[[
+			= settings::describe<"Size the window opens at as a small launcher before the app's content is ready, scaled "
+									  "by the monitor's content scale. Zero opens the window at its restored geometry.">{},
+			= settings::app_scope{}
+		]]
+		vec2i launcher_size{ 0, 0 };
 		std::optional<geometry> launcher_restore;
 
 		[[

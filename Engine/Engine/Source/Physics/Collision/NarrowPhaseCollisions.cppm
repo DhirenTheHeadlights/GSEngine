@@ -831,6 +831,10 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	sat_axis_choice best_axis;
 	sat_axis_choice best_face_axis;
 	bool all_positive = true;
+	const auto obb1 = bb1.obb();
+	const auto obb2 = bb2.obb();
+	const auto half = bb1.half_extents();
+	const auto half2 = bb2.half_extents();
 
 	auto test_axis = [&](vec3f axis, const sat_axis_source source, const length extent_scale) {
 		if (is_zero(axis)) {
@@ -838,17 +842,16 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 		}
 		axis = normalize(axis);
 
-		auto project = [&](const bounding_box& bb) {
+		auto project = [&](const gse::obb& box, const vec3<displacement>& he) {
 			length r = meters(0.f);
-			const auto he = bb.half_extents();
 			for (int i = 0; i < 3; ++i) {
-				r += abs(dot(axis, bb.obb().axes[i]) * he[i]);
+				r += abs(dot(axis, box.axes[i]) * he[i]);
 			}
 			return r;
 		};
 
-		const length r1 = project(bb1);
-		const length r2 = project(bb2);
+		const length r1 = project(obb1, half);
+		const length r2 = project(obb2, half2);
 		const length dist = abs(dot(axis, bb1.center() - bb2.center()));
 		const length overlap = r1 + r2 - dist;
 
@@ -867,20 +870,18 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 		return true;
 	};
 
-	auto half = bb1.half_extents();
-	auto half2 = bb2.half_extents();
 	for (int i = 0; i < 3; ++i) {
-		if (!test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i])) {
+		if (!test_axis(obb1.axes[i], sat_axis_source::face, half[i])) {
 			return std::nullopt;
 		}
-		if (!test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i])) {
+		if (!test_axis(obb2.axes[i], sat_axis_source::face, half2[i])) {
 			return std::nullopt;
 		}
 	}
 
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			if (!test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{})) {
+			if (!test_axis(cross(obb1.axes[i], obb2.axes[j]), sat_axis_source::cross, length{})) {
 				return std::nullopt;
 			}
 		}

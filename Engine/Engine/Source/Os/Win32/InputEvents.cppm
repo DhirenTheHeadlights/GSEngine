@@ -3,6 +3,7 @@ export module gse.os:input_events;
 import std;
 
 import :keys;
+import :mouse_latch;
 
 export namespace gse::input {
 	struct key_pressed {
@@ -42,9 +43,12 @@ export namespace gse::input {
 	struct mouse_raw_moved {
 		double x_delta;
 		double y_delta;
+		std::optional<mouse_totals> latch_total;
 	};
 
-	using event = std::variant<key_pressed, key_released, mouse_button_pressed, mouse_button_released, mouse_moved, mouse_scrolled, text_entered, mouse_raw_moved>;
+	struct focus_lost {};
+
+	using event = std::variant<key_pressed, key_released, mouse_button_pressed, mouse_button_released, mouse_moved, mouse_scrolled, text_entered, mouse_raw_moved, focus_lost>;
 
 	struct synthetic_input_request {
 		event value;

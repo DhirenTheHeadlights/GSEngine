@@ -23,26 +23,10 @@ float3 ycocg_to_rgb(float3 c) {
 }
 
 float3 sample_history(float2 uv) {
-    float2 texel = pc.inv_allocated_extent;
-    float2 position = uv / texel;
-    float2 center = floor(position - 0.5) + 0.5;
-    float2 f = position - center;
-    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
-    float2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
-    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
-    float2 w3 = f * f * (-0.5 + 0.5 * f);
-    float2 w12 = w1 + w2;
-    float2 uv0 = (center - 1.0) * texel;
-    float2 uv3 = (center + 2.0) * texel;
-    float2 uv12 = (center + w2 / w12) * texel;
-
-    float3 sum = history_color.Sample(color_sampler, screen_target_tap(float2(uv12.x, uv0.y), pc.screen_uv_max)).rgb * (w12.x * w0.y);
-    sum += history_color.Sample(color_sampler, screen_target_tap(float2(uv0.x, uv12.y), pc.screen_uv_max)).rgb * (w0.x * w12.y);
-    sum += history_color.Sample(color_sampler, screen_target_tap(uv12, pc.screen_uv_max)).rgb * (w12.x * w12.y);
-    sum += history_color.Sample(color_sampler, screen_target_tap(float2(uv3.x, uv12.y), pc.screen_uv_max)).rgb * (w3.x * w12.y);
-    sum += history_color.Sample(color_sampler, screen_target_tap(float2(uv12.x, uv3.y), pc.screen_uv_max)).rgb * (w12.x * w3.y);
-    float weight = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
-    return max(sum / weight, 0.0);
+    float4 tap_min;
+    float4 tap_max;
+    float4 filtered = screen_target_catmull_rom(history_color, color_sampler, uv / pc.inv_allocated_extent, pc.inv_allocated_extent, pc.screen_uv_max, tap_min, tap_max);
+    return max(filtered.rgb, 0.0);
 }
 
 struct FS_OUT {

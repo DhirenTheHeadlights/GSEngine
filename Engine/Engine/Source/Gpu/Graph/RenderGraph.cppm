@@ -63,6 +63,7 @@ export namespace gse::gpu {
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
+		std::vector<id> extends;
 		id chain_id;
 		std::uint32_t chain_index = 0;
 		bool early_signal = false;
@@ -163,9 +164,7 @@ export namespace gse::gpu {
 
 		auto claim_output() -> bool;
 
-		[[nodiscard]] auto offscreen_surfaces() const -> std::span<const shared_surface>;
-
-		[[nodiscard]] auto offscreen_timelines() const -> gpu::offscreen_timelines;
+		[[nodiscard]] auto exported_output() const -> std::optional<gpu::exported_output>;
 
 		using resize_callback = std::function<void()>;
 

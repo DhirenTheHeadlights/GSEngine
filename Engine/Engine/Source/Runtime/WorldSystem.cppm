@@ -51,7 +51,7 @@ export namespace gse::world_system {
 		std::uint32_t generation = 0;
 	};
 
-	struct [[= system_state<"World">{}]] data {
+	struct [[= system_state<"World">{}, = requires_setting<^^launch::data::simulate_world, true>{}]] data {
 		std::unordered_map<id, std::unique_ptr<scene>> scenes;
 		[[= shared]] std::vector<id> scene_ids;
 		[[= shared]] std::vector<trigger> triggers;

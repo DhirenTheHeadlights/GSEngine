@@ -53,6 +53,7 @@ spatial_sample sample_spatial(uint base, uint spatial, float3 coordinates) {
     spatial_sample result;
     result.rotation = float4(1, 0, 0, 0);
     result.translation = float3(0, 0, 0);
+    [unroll]
     for (uint c = 0; c < 3; c++) {
         result.rotation_rates[c] = float3(0, 0, 0);
         result.translation_rates[c] = float3(0, 0, 0);
@@ -92,12 +93,15 @@ float3 coupled_initial_coordinates(uint spatial, float4 relative, uint count) {
 
 void coupled_pseudo_inverse(float3 rates[3], out float3 rows[3]) {
     mat3 gram;
+    [unroll]
     for (uint c = 0; c < 3; c++) {
+        [unroll]
         for (uint r = 0; r < 3; r++) {
             gram[c][r] = dot(rates[r], rates[c]) + (r == c ? coupled_damping : 0.0);
         }
     }
     mat3 gram_inverse = mat3_inverse(gram);
+    [unroll]
     for (uint k = 0; k < 3; k++) {
         rows[k] = rates[0] * gram_inverse[k][0] + rates[1] * gram_inverse[k][1] + rates[2] * gram_inverse[k][2];
     }
@@ -163,6 +167,7 @@ coupled_frame coupled_frame_at(uint joint_words, float4 orientation_a, float4 or
     float3 local_axis = normalize(s.rotation_rates[0]);
     result.perpendiculars[0] = body_perpendicular(frame, local_axis, 0);
     result.perpendiculars[1] = body_perpendicular(frame, local_axis, 1);
+    [unroll]
     for (uint k = 0; k < 3; k++) {
         result.coordinate_axes[k] = rotate_vector(frame, rows[k]);
         result.translation_rates[k] = rotate_vector(frame, s.translation_rates[k]);
@@ -181,6 +186,7 @@ int coupled_slot(coupled_frame frame, uint coordinate) {
 
 float3 coupled_translation_lever(coupled_frame frame, float3 direction) {
     float3 lever = float3(0, 0, 0);
+    [unroll]
     for (uint k = 0; k < 3; k++) {
         lever += frame.coordinate_axes[k] * dot(direction, frame.translation_rates[k]);
     }
@@ -226,6 +232,7 @@ moving_point moving_point_in(moving_frame frame, float3 local_point) {
     float3 rotated = rotate_vector(frame.sample.rotation, local_point);
     moving_point result;
     result.offset = frame.anchor + rotate_vector(frame.placed, rotated + frame.sample.translation);
+    [unroll]
     for (uint k = 0; k < 3; k++) {
         result.coordinate_axes[k] = frame.coordinate_axes[k];
         result.rates[k] = rotate_vector(frame.placed, cross(frame.sample.rotation_rates[k], rotated) + frame.sample.translation_rates[k]);
@@ -239,6 +246,7 @@ moving_point moving_point_of(uint frame_words, float4 orientation_a, float4 orie
 
 float3 moving_point_lever(moving_point point, float3 direction) {
     float3 lever = float3(0, 0, 0);
+    [unroll]
     for (uint k = 0; k < 3; k++) {
         lever += point.coordinate_axes[k] * dot(direction, point.rates[k]);
     }

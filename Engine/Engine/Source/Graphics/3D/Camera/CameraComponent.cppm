@@ -2,6 +2,8 @@ export module gse.graphics:camera_component;
 
 import gse.math;
 
+import :camera_data;
+
 export namespace gse::camera {
 	struct follow_component {
 		vec3<length> offset{};
@@ -11,5 +13,6 @@ export namespace gse::camera {
 		bool use_entity_position = true;
 		vec3<position> position{};
 		quat orientation = identity<float>();
+		latch latch{};
 	};
 }

@@ -342,6 +342,15 @@ export namespace gse::gpu {
 			const std::source_location& loc = std::source_location::current()
 		) -> buffer;
 
+		template <typename T>
+		[[nodiscard]]
+		auto create_buffer(
+			std::size_t count,
+			buffer_desc desc,
+			std::string_view tag = "",
+			const std::source_location& loc = std::source_location::current()
+		) -> buffer;
+
 		[[nodiscard]]
 		auto create_image(
 			const image_desc& desc,
@@ -610,4 +619,11 @@ export namespace gse::gpu {
 
 		std::array<pass_marker_ring, pass_marker_domain_count> m_pass_marker_rings;
 	};
+}
+
+template <typename T>
+auto gse::gpu::device::create_buffer(const std::size_t count, buffer_desc desc, const std::string_view tag, const std::source_location& loc) -> buffer {
+	desc.size = count * sizeof(T);
+	desc.stride = sizeof(T);
+	return create_buffer(desc, tag, loc);
 }

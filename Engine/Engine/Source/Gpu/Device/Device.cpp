@@ -802,6 +802,10 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
+	if (!buf.handle()) {
+		report_device_lost(std::format("create_buffer '{}' ({} B) at {}:{}", tag, desc.size, loc.file_name(), loc.line()));
+		return buf;
+	}
 	if (gpu::takes_slot(desc)) {
 		assert(
 			buf.slot().valid() || m_device_lost_reported.load(std::memory_order_relaxed),

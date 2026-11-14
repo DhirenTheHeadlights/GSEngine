@@ -87,7 +87,6 @@ jobs:
       - id: setup
         uses: ./.github/actions/gse-build-setup
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           preset: ${{ env.PRESET }}
 
       # Not the Editor: it is the heaviest target in the tree and ships in neither image.

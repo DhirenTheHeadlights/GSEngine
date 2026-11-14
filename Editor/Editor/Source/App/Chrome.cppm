@@ -428,7 +428,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	vec4f pill_color = sty.input.area.fill;
 	vec4f pill_fg = sty.color_text_secondary;
 	const search::index_phase phase = m_index->phase.load(std::memory_order_acquire);
-	if (phase != search::index_phase::idle) {
+	if (search::index_busy(phase)) {
 		const search::index_phase_info info = annotation_from_enum<search::index_phase_info>(phase, {
 			.label = "Unknown indexing stage",
 			.detail = "No explanation was recorded for this indexing stage.",

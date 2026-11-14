@@ -34,6 +34,7 @@ export namespace gse::gpu {
 		std::vector<color_attachment> colors;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
+		std::vector<id> extends;
 		id chain_id;
 		std::uint32_t chain_index = 0;
 		bool early_signal = false;
@@ -123,6 +124,9 @@ export namespace gse::gpu {
 			std::span<const id> passes
 		) && -> pass_builder&&;
 
+		template <std::meta::info... Hooks>
+		auto extends() && -> pass_builder&&;
+
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
@@ -173,11 +177,21 @@ export namespace gse::gpu {
 	) -> depth_attachment;
 
 	auto load_depth() -> depth_attachment;
+
+	auto load_depth(
+		const image& target
+	) -> depth_attachment;
 }
 
 export namespace gse::gpu::context {
 	auto execute_frame(
 		data& d,
+		scheduler& s
+	) -> void;
+}
+
+export namespace gse::gpu {
+	auto report_late_pass_requests(
 		scheduler& s
 	) -> void;
 }
@@ -231,6 +245,15 @@ auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 	static constexpr std::array<std::string_view, sizeof...(Hooks)> names{ hook_name<Hooks>()... };
 	for (const auto pass_name : names) {
 		m_desc.after_deps.push_back(find_or_generate_id(pass_name));
+	}
+	return std::move(*this);
+}
+
+template <std::meta::info... Hooks>
+auto gse::gpu::pass_builder::extends() && -> pass_builder&& {
+	static constexpr std::array<std::string_view, sizeof...(Hooks)> names{ hook_name<Hooks>()... };
+	for (const auto pass_name : names) {
+		m_desc.extends.push_back(find_or_generate_id(pass_name));
 	}
 	return std::move(*this);
 }

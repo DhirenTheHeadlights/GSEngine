@@ -273,7 +273,23 @@ namespace gse::ide::agent {
 			out.steered = ledger_entry{ .started = steered.front().started, .verdict = *steered.front().verdict, .summary = steered.front().summary };
 		}
 		out.fix = latest && s.fix ? &*s.fix : nullptr;
-		out.pages = lifecycle_pages(route, out.summary, out.steps.size(), out.edits.size(), out.review.cycles.size(), !out.report.empty(), latest && s.kind == chat_kind::build_error, out.steered.has_value());
+		const bool fixing = latest && s.kind == chat_kind::build_error;
+		out.pages = lifecycle_pages(route, out.summary, out.steps.size(), out.edits.size(), out.review.cycles.size(), !out.report.empty(), fixing, out.steered.has_value());
+		if (latest && !runs.empty() && !s.runs.empty() && &runs.back() == &s.runs.back()) {
+			const phase_run& run = runs.back();
+			const bool reported = s.gate || s.pending_transition || !run.summary.empty() || run.findings > 0 || !run.steps.empty() || run.verdict;
+			const bool shown = run.phase != task_phase::settled && (run.phase != task_phase::apply || (out.steps.empty() && !fixing));
+			if (!reported && shown) {
+				const task_phase page = run.phase == task_phase::revise ? task_phase::review : run.phase;
+				out.live = live_stage{ .phase = run.phase, .page = page, .from = run.first_row };
+				const auto first = std::ranges::find(out.pages, page, &summary_page::phase);
+				if (first != out.pages.end()) {
+					const auto at = std::distance(out.pages.begin(), first);
+					std::erase_if(out.pages, [page](const summary_page& p) { return p.phase == page; });
+					out.pages.insert(out.pages.begin() + at, { .phase = page });
+				}
+			}
+		}
 		for (summary_page& page : out.pages) {
 			if (const auto found = std::ranges::find_last(runs, page.phase, &phase_run::phase); !found.empty()) {
 				page.run = &found.front();
@@ -318,11 +334,11 @@ auto gse::ide::agent::lifecycle_at(const session& s, const std::optional<std::ui
 	const std::vector<phase_step> route = phase_timeline(latest ? current_phase(s) : task_phase::settled, goal, runs);
 	lifecycle out = lifecycle_on(s, runs, latest, route);
 	out.cycle = { .position = at, .cycles = count, .first = first, .shown = true };
-	const auto scoping = std::ranges::find(out.pages, task_phase::scope, &summary_page::phase);
-	if (latest && current_phase(s) == task_phase::scope && scoping != out.pages.end() && scoping->kind == page_kind::empty) {
-		out.live_from = runs.front().first_row;
-	}
 	return out;
+}
+
+auto gse::ide::agent::live_head(const task_phase phase) -> std::string {
+	return std::format("{} \xC2\xB7 live transcript", std::string_view(policy_of(phase).label));
 }
 
 auto gse::ide::agent::lifecycle_of(const session& s) -> lifecycle {
@@ -1166,11 +1182,20 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 	const chrome_plan held_plan = plan_from(held);
 	draw_cell(std::format("view \xC2\xB7 gate held, transcript chosen mid-visit \xC2\xB7 {}, approve in the input row", enum_to_string(entry_mode(held_plan, transcript_mode::transcript, false, false))), held_plan);
 
+	const auto stage_page = [](const session& chat, const task_phase stage) {
+		const lifecycle life = lifecycle_at(chat, std::nullopt);
+		const task_phase page = stage == task_phase::revise ? task_phase::review : stage;
+		if (life.live && life.live->page == page) {
+			return std::format("{}, from row {}", live_head(life.live->phase), life.live->from);
+		}
+		const auto found = std::ranges::find(life.pages, page, &summary_page::phase);
+		return std::format("{} page {}", policy_of(page).label, found == life.pages.end() ? std::string_view("absent") : enum_to_string(found->kind));
+	};
 	const auto scoping_cell = [&](const std::string_view name, const session& scoping) {
 		chrome_facts facts = gallery_facts(chat_kind::chat, task_phase::scope, agent_state::working);
 		facts.summary_ready = summary_ready(scoping);
 		const chrome_plan plan = plan_from(facts);
-		draw_cell(std::format("view \xC2\xB7 {} \xC2\xB7 scoping \xC2\xB7 {}, toggle {}, scope page {}", name, plan.summary_ready ? "summary" : "transcript", plan.toggle_shown ? "shown" : "hidden", lifecycle_at(scoping, std::nullopt).live_from ? "live transcript" : "plan"), plan);
+		draw_cell(std::format("view \xC2\xB7 {} \xC2\xB7 scoping \xC2\xB7 {}, toggle {}, {}", name, plan.summary_ready ? "summary" : "transcript", plan.toggle_shown ? "shown" : "hidden", stage_page(scoping, task_phase::scope)), plan);
 	};
 	for (const bool met : { true, false }) {
 		session scoping;
@@ -1193,6 +1218,35 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 		{ .phase = task_phase::scope },
 	};
 	scoping_cell("follow-up next cycle", following);
+
+	const std::vector<phase_run> earlier = {
+		{ .phase = task_phase::scope, .first_row = 0, .summary = "the plan" },
+		{ .phase = task_phase::apply, .first_row = 12 },
+		{ .phase = task_phase::review, .first_row = 30, .summary = "found two", .findings = 2 },
+		{ .phase = task_phase::revise, .first_row = 41, .summary = "fixed both" },
+	};
+	const auto live_cell = [&](const std::string_view name, const std::size_t kept, const phase_run& running, const bool goal, const std::vector<build_inbox::plan_step>& steps) {
+		session chat;
+		chat.runs.assign(earlier.begin(), earlier.begin() + static_cast<std::ptrdiff_t>(kept));
+		if (!chat.runs.empty()) {
+			chat.runs.front().steps = steps;
+		}
+		chat.runs.push_back(running);
+		if (goal) {
+			chat.goal = goal_state{ .record = "docs/example_goal.md" };
+		}
+		chrome_facts facts = gallery_facts(chat_kind::chat, running.phase, agent_state::working);
+		facts.summary_ready = summary_ready(chat);
+		draw_cell(std::format("live \xC2\xB7 {} \xC2\xB7 {}", name, stage_page(chat, running.phase)), plan_from(facts));
+	};
+	live_cell("scope in progress", 0, { .phase = task_phase::scope, .first_row = 0 }, false, {});
+	live_cell("apply in progress, scope gave no steps", 1, { .phase = task_phase::apply, .first_row = 12 }, false, {});
+	live_cell("apply in progress, scope gave steps", 1, { .phase = task_phase::apply, .first_row = 12 }, false, plan_sample());
+	live_cell("review in progress", 2, { .phase = task_phase::review, .first_row = 30 }, false, {});
+	live_cell("review reported", 2, { .phase = task_phase::review, .first_row = 30, .summary = "found two", .findings = 2 }, false, {});
+	live_cell("revise in progress", 3, { .phase = task_phase::revise, .first_row = 41 }, false, {});
+	live_cell("summarize in progress", 4, { .phase = task_phase::summarize, .first_row = 55 }, false, {});
+	live_cell("steer in progress", 4, { .phase = task_phase::steer, .first_row = 55 }, true, {});
 
 	const auto build_cell = [&](const std::string& name, const agent_state state, const auto& adjust) {
 		chrome_facts facts = gallery_facts(chat_kind::chat, task_phase::apply, state);
@@ -1541,7 +1595,7 @@ auto gse::ide::agent::draw_chrome_gallery(const canvas_frame& frame, const drawa
 	plan_cell("follow-up \xC2\xB7 settled, one cycle, no pager", approved, follow_pages, follow_report, {}, {}, std::nullopt, revised, 0, nullptr, nullptr);
 	plan_cell("follow-up \xC2\xB7 cycle 2 of 2, << back to cycle 1", approved, pages, 0, {}, {}, std::nullopt, {}, 0, nullptr, nullptr, "cycle 2 of 2");
 
-	for (const std::string_view line : { std::string_view("cycle \xC2\xB7 scoping, no report yet \xC2\xB7 cycle 3 of 3"), live_scope_head }) {
+	for (const std::string_view line : { std::string_view("cycle \xC2\xB7 scoping, no report yet \xC2\xB7 cycle 3 of 3"), ctx.intern(live_head(task_phase::scope)) }) {
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = line,

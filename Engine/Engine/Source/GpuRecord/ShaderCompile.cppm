@@ -10,42 +10,6 @@ import gse.meta;
 import :pipeline_builder;
 
 namespace gse::gpu {
-	struct shader_param_decl {
-		std::string name;
-		std::string slang_type;
-		std::string semantic;
-		bool is_function_param = false;
-	};
-
-	struct shader_compile_inputs {
-		std::vector<shader_param_decl> params;
-		std::uint32_t threads_x = 1;
-		std::uint32_t threads_y = 1;
-		std::uint32_t threads_z = 1;
-		std::string body_path;
-		std::string inline_source;
-		std::string runtime_constants;
-		std::vector<std::string> helper_paths;
-		std::vector<std::string> call_names;
-		std::uint32_t push_constant_size = 0;
-		bool bindless_textures = false;
-		std::string (
-			*emit_push_constant_struct
-		)() = nullptr;
-		std::string (
-			*emit_types
-		)() = nullptr;
-		std::string (
-			*emit_bindings
-		)() = nullptr;
-		std::string (
-			*emit_spec_decls
-		)() = nullptr;
-		std::vector<shaders::struct_layout> (
-			*struct_layouts_fn
-		)() = nullptr;
-	};
-
 	struct parsed_body {
 		std::vector<std::string> imports;
 		std::string body;
@@ -64,7 +28,7 @@ namespace gse::gpu {
 
 	[[nodiscard]]
 	auto compile_compute_spirv(
-		const shader_compile_inputs& inputs,
+		const compute_entry_pod& pod,
 		std::string_view wrapper_source
 	) -> std::vector<std::uint32_t>;
 

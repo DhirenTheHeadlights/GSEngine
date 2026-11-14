@@ -377,6 +377,10 @@ export namespace gse::ide::search {
 		}]],
 	};
 
+	auto index_busy(
+		index_phase phase
+	) -> bool;
+
 	struct index_root {
 		std::filesystem::path path;
 		std::string name;
@@ -396,7 +400,6 @@ export namespace gse::ide::search {
 		std::filesystem::path plugin_dll;
 		std::vector<index_root> roots;
 		std::atomic<bool> symbols_ready = false;
-		std::atomic<bool> building = false;
 		loc_index loc;
 		std::atomic<std::size_t> progress_total = 0;
 		std::atomic<std::size_t> progress_done = 0;

@@ -933,7 +933,7 @@ auto gse::ide::agent::reset_view(transcript_view& v) -> void {
 }
 
 auto gse::ide::agent::views_of(session& s) -> std::array<transcript_view*, 5> {
-	return { &s.full, &s.changes, &s.everything, &s.followup, &s.live_scope };
+	return { &s.full, &s.changes, &s.everything, &s.followup, &s.live_run };
 }
 
 auto gse::ide::agent::sync_transcript(session& s, transcript_view& v, const gui::style& sty, const transcript_metrics& metrics) -> void {

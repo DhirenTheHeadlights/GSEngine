@@ -99,7 +99,7 @@ export namespace gse::audio {
 		percentage<float> vol;
 	};
 
-	struct [[= system_state<"Audio">{}, = deferred_system{}]] data {
+	struct [[= system_state<"Audio">{}, = requires_setting<^^launch::data::presents, true>{}, = requires_setting<^^launch::data::simulate_world, true>{}, = deferred_system{}]] data {
 		audio_engine* engine = nullptr;
 		bool engine_initialized = false;
 		percentage<float> master_vol = percentage<float>::one();

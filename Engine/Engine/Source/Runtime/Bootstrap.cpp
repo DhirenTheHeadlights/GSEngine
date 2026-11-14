@@ -84,7 +84,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 		attached_pipe_reader pipe_reader{};
 		frame_pacing pacing{};
 		bench_state bench{};
-		const bool dedicated = !config.create_window
+		const bool dedicated = !e.presents()
 			&& !config.bench.enabled
 			&& network::resolve_role(config.net) == network::session_role::dedicated;
 		if (!config.bench.enabled) {
@@ -117,7 +117,7 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 		const auto update_id = trace_id<"engine::update">();
 		const auto render_id = trace_id<"engine::render">();
 
-		const bool reactive = config.create_window && config.cadence == loop_cadence::reactive;
+		const bool reactive = e.presents() && config.cadence == loop_cadence::reactive;
 		const auto idle_floor = seconds(1.f);
 
 		const auto slow_frame_window = seconds(5.f);
@@ -131,32 +131,30 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 			frame_demand::install_waker(window::post_wake);
 		}
 
-		if (config.create_window && config.render) {
-			window::install_resize_pump([&e] {
-				const auto step_begin = system_clock::now<time_t<double, seconds>>();
-				e.apply_pending_resizes();
-				const auto recreate_end = system_clock::now<time_t<double, seconds>>();
-				e.update();
-				const auto update_end = system_clock::now<time_t<double, seconds>>();
-				e.render();
-				e.flip_channels();
-				const auto step_end = system_clock::now<time_t<double, seconds>>();
-				const auto pump = window::take_resize_pump_stats();
+		window::install_resize_pump([&e] {
+			const auto step_begin = system_clock::now<time_t<double, seconds>>();
+			e.apply_pending_resizes();
+			const auto recreate_end = system_clock::now<time_t<double, seconds>>();
+			e.update();
+			const auto update_end = system_clock::now<time_t<double, seconds>>();
+			e.render();
+			e.flip_channels();
+			const auto step_end = system_clock::now<time_t<double, seconds>>();
+			const auto pump = window::take_resize_pump_stats();
 
-				log::println(
-					log::category::render,
-					"[resize] step idle={:.2f:ms} wm_size={} throttled={} recreate={:.2f:ms} update={:.2f:ms} render={:.2f:ms} total={:.2f:ms} presented={}",
-					pump.idle,
-					pump.wm_size,
-					pump.throttled,
-					recreate_end - step_begin,
-					update_end - recreate_end,
-					step_end - update_end,
-					step_end - step_begin,
-					e.frame_presented()
-				);
-			});
-		}
+			log::println(
+				log::category::render,
+				"[resize] step idle={:.2f:ms} wm_size={} throttled={} recreate={:.2f:ms} update={:.2f:ms} render={:.2f:ms} total={:.2f:ms} presented={}",
+				pump.idle,
+				pump.wm_size,
+				pump.throttled,
+				recreate_end - step_begin,
+				update_end - recreate_end,
+				step_end - update_end,
+				step_end - step_begin,
+				e.frame_presented()
+			);
+		});
 
 		const auto exit_deadline = system_clock::now<time_t<double, seconds>>() + config.exit_after;
 
@@ -168,31 +166,27 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 					trace::scope_guard _{ pace_id };
 					pace_dedicated(pacing);
 				}
-				if (config.create_window) {
-					if (reactive && e.all_settled() && !frame_demand::active()) {
-						trace::scope_guard _{ wait_id };
-						window::wait_events(frame_demand::wait_budget(idle_floor));
-					}
-
-					{
-						trace::scope_guard _{ poll_id };
-						e.tick_window();
-					}
-
-					if (e.window_should_close()) {
-						shutdown();
-					}
-
-					frame_demand::consume_redraw();
+				if (reactive && e.all_settled() && !frame_demand::active()) {
+					trace::scope_guard _{ wait_id };
+					window::wait_events(frame_demand::wait_budget(idle_floor));
 				}
+
+				{
+					trace::scope_guard _{ poll_id };
+					e.tick_window();
+				}
+
+				if (e.window_should_close()) {
+					shutdown();
+				}
+
+				frame_demand::consume_redraw();
 
 				if (editor_pipe) {
 					drain_editor_pipe(editor_pipe, pipe_reader, e);
 				}
 
-				if (config.render) {
-					e.apply_pending_resizes();
-				}
+				e.apply_pending_resizes();
 
 				{
 					trace::scope_guard _{ e.id() };
@@ -204,12 +198,10 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 					}
 					const auto update_end = system_clock::now<time_t<double, seconds>>();
 
-					if (config.render) {
-						{
-							trace::scope_guard _{ render_id };
-							watchdog::section _{ render_id, seconds(3.f) };
-							e.render();
-						}
+					{
+						trace::scope_guard _{ render_id };
+						watchdog::section _{ render_id, seconds(3.f) };
+						e.render();
 					}
 
 					if (const auto render_end = system_clock::now<time_t<double, seconds>>(); render_end - update_begin > milliseconds(100.0)) {
@@ -238,12 +230,12 @@ auto gse::start(app_setup_fn setup, const engine_config& config) -> int {
 					slow_frame_worst_render = {};
 				}
 
-				if (editor_pipe && e.attached_surface_ready() && e.attached_message().revision != announced_revision) {
-					attached_surface_message msg = e.attached_message();
-					msg.pid = attached_process_id();
-					announce_attached_surface(editor_pipe, msg);
-					announced_revision = msg.revision;
-					log::println(log::category::general, "announced shared surface ring to editor: {}x{} (revision {})", msg.extent.x(), msg.extent.y(), msg.revision);
+				if (editor_pipe) {
+					if (const auto shared = e.shared_output(); shared && shared->revision != announced_revision) {
+						announce_attached_surface(editor_pipe, *shared);
+						announced_revision = shared->revision;
+						log::println(log::category::general, "announced shared surface ring to editor: {}x{} (revision {})", shared->output.extent.x(), shared->output.extent.y(), shared->revision);
+					}
 				}
 
 				if (!graph_dumped && !config.dump_system_graph_path.empty() && e.all_settled()) {

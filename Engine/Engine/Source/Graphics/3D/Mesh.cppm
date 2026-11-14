@@ -176,18 +176,16 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 			},
 			"mesh.meshlet.vertex_storage"
 		);
-		ml.descriptors = ctx.device->create_buffer(
+		ml.descriptors = ctx.device->create_buffer<meshlet_descriptor>(
+			m_meshlets.descriptors.size(),
 			{
-				.size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
-				.stride = sizeof(meshlet_descriptor),
 				.usage = storage_dst,
 			},
 			"mesh.meshlet.descriptors"
 		);
-		ml.vertices = ctx.device->create_buffer(
+		ml.vertices = ctx.device->create_buffer<std::uint32_t>(
+			m_meshlets.vertex_indices.size(),
 			{
-				.size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
-				.stride = sizeof(std::uint32_t),
 				.usage = storage_dst,
 			},
 			"mesh.meshlet.vertices"
@@ -200,10 +198,9 @@ auto gse::mesh::initialize(gpu::context::data& ctx) -> void {
 			},
 			"mesh.meshlet.triangles"
 		);
-		ml.bounds = ctx.device->create_buffer(
+		ml.bounds = ctx.device->create_buffer<meshlet_bounds>(
+			m_meshlets.bounds.size(),
 			{
-				.size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
-				.stride = sizeof(meshlet_bounds),
 				.usage = storage_dst,
 			},
 			"mesh.meshlet.bounds"

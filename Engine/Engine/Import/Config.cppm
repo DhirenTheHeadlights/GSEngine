@@ -54,6 +54,12 @@ export namespace gse::config {
 
 	auto content_roots() -> std::span<const content_root>;
 
+	auto shader_roots() -> std::span<const std::filesystem::path>;
+
+	auto shader_file(
+		const std::filesystem::path& relative
+	) -> std::filesystem::path;
+
 	auto project_assets_path() -> const std::filesystem::path&;
 
 	auto project_baked_path() -> const std::filesystem::path&;

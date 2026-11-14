@@ -108,7 +108,7 @@ namespace gse::ide {
 		std::span<const format::line_edit> edits
 	) -> void;
 
-	auto adjust_after_import_sort(
+	auto adjust_after_block(
 		gui::buffer_position& p,
 		const format::block_edit& edit
 	) -> void;
@@ -569,7 +569,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 		}
 		h.url = docs::cppref_url(cref->page);
 		h.from_cppref = true;
-		h.has_card = true;
 	}
 	else if (language_word) {
 		h.title = qualified;
@@ -580,7 +579,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			: "cpp/keyword/" + qualified;
 		h.url = docs::cppref_url(page);
 		h.from_cppref = true;
-		h.has_card = true;
 	}
 	else if (def && !def->path.empty()) {
 		if (const std::optional<docs::doc_card> card = docs::extract_definition(def->path, def->line, qualified, sym_kind == "function")) {
@@ -592,7 +590,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			}
 			h.body_is_code = true;
 			h.code_spans = highlight_code_body(*card, index);
-			h.has_card = true;
 		}
 		else {
 			append_issue(std::format("definition preview could not be extracted from {}", def->path.generic_display_string()));
@@ -1147,7 +1144,7 @@ auto gse::ide::adjust_after_format(gui::buffer_position& p, const std::span<cons
 	}
 }
 
-auto gse::ide::adjust_after_import_sort(gui::buffer_position& p, const format::block_edit& edit) -> void {
+auto gse::ide::adjust_after_block(gui::buffer_position& p, const format::block_edit& edit) -> void {
 	if (p.line < edit.first_line) {
 		return;
 	}
@@ -1160,30 +1157,22 @@ auto gse::ide::adjust_after_import_sort(gui::buffer_position& p, const format::b
 }
 
 auto gse::ide::apply_format(document& doc, const format::options& opts) -> void {
-	const std::optional<format::block_edit> imports = format::compute_imports(doc.buffer.lines);
-	std::vector<format::line_edit> edits = format::compute(doc.buffer.lines, opts);
-	if (!imports && edits.empty()) {
+	std::vector<std::string> before = doc.buffer.lines;
+	const format::format_result result = format::format_lines(doc.buffer.lines, opts);
+	if (result.blocks.empty() && result.reindented == 0) {
 		return;
 	}
-	doc.view.undo_stack.push_back({ doc.buffer.lines, doc.view.caret, doc.view.anchor });
+	doc.view.undo_stack.push_back({ std::move(before), doc.view.caret, doc.view.anchor });
 	doc.view.redo_stack.clear();
 	doc.view.last_edit_kind = format_edit_kind;
 
-	bool changed = false;
-	if (imports && format::apply_block(doc.buffer.lines, *imports)) {
-		adjust_after_import_sort(doc.view.caret, *imports);
-		adjust_after_import_sort(doc.view.anchor, *imports);
-		edits = format::compute(doc.buffer.lines, opts);
-		changed = true;
+	for (const format::block_edit& block : result.blocks) {
+		adjust_after_block(doc.view.caret, block);
+		adjust_after_block(doc.view.anchor, block);
 	}
-	if (format::apply(doc.buffer.lines, edits) > 0) {
-		adjust_after_format(doc.view.caret, edits);
-		adjust_after_format(doc.view.anchor, edits);
-		changed = true;
-	}
-	if (!changed) {
-		doc.view.undo_stack.pop_back();
-		return;
+	if (result.reindented > 0) {
+		adjust_after_format(doc.view.caret, result.edits);
+		adjust_after_format(doc.view.anchor, result.edits);
 	}
 	doc.view.caret = doc.buffer.clamp(doc.view.caret);
 	doc.view.anchor = doc.buffer.clamp(doc.view.anchor);
@@ -1425,8 +1414,6 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 			}
 		}
 	}
-
-	ws.diagnostics_paused_for_build = building;
 
 	if (ws.diagnostics_pending) {
 		const time stall_limit = seconds(90.f);
@@ -1943,7 +1930,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			text_left = spin_rect.right() + pad * 0.5f;
 			status_text = "analyzing...";
 		}
-		else if (ws.diagnostics_paused_for_build && doc.analysis_status == analysis::diagnostics_status::not_analyzed) {
+		else if (building && doc.analysis_status == analysis::diagnostics_status::not_analyzed) {
 			status_text = "analysis paused - build running";
 		}
 		else if (failing) {
@@ -2315,8 +2302,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				hv.ident = std::string(ident);
 				hv.reveal.arm(hover_reveal_delay);
 			}
-			else if (!hv.resolved && hv.reveal.due()) {
-				hv.resolved = true;
+			else if (!hv.has_card && hv.reveal.due()) {
 				std::string qualified;
 				std::string sym_kind;
 				std::string type;
@@ -2463,8 +2449,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				child.ident = ident;
 				child.reveal.arm(hover_reveal_delay);
 			}
-			else if (!child.resolved && child.reveal.due()) {
-				child.resolved = true;
+			else if (!child.has_card && child.reveal.due()) {
 				resolve_hover_card(child, ident, row_text, hit->start_col, !hit->member_access, index, ws.cppref, {}, {});
 				child.kind_color = ctx.style.color_text_secondary;
 				for (const gui::text_span& sp : ws.hover_stack[k].code_spans) {

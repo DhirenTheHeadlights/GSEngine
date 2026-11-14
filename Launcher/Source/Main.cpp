@@ -1,6 +1,7 @@
 import std;
 
 import gse;
+import gse.gpu;
 import gse.system_manifest;
 import gse.win32;
 import gse.win32.environment;
@@ -22,15 +23,19 @@ auto main(int argc, char** argv) -> int {
 		},
 		{
 			.title = title,
-			.dark_background = true,
-			.video_encode = false,
 			.simulate_world = false,
-			.custom_chrome = true,
-			.launcher_size = { static_cast<int>(launcher::window_width), 220 },
-			.scale_ui_with_resolution = false,
 			.load_settings = false,
 			.persist_settings = false,
 			.author_baked_assets = false,
+			.pins = {
+				gse::settings::assign<^^gse::gpu::context::data::dark_background>(true),
+				gse::settings::assign<^^gse::gpu::context::data::device_settings, ^^gse::gpu::device_settings::video_encode>(false),
+				gse::settings::assign<^^gse::gui::data::reserve_top_bar>(true),
+				gse::settings::assign<^^gse::gui::data::scale_with_resolution>(false),
+				gse::settings::assign<^^gse::window::data::native_frame>(true),
+				gse::settings::assign<^^gse::window::data::mouse_visible>(true),
+				gse::settings::assign<^^gse::window::data::launcher_size>({ static_cast<int>(launcher::window_width), 220 }),
+			},
 		}
 	);
 	return 0;

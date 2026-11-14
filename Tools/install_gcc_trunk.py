@@ -22,6 +22,26 @@ TAG_RE = re.compile(r"^gcc-trunk-v(\d+)$")
 # filesystem view than the Python process does.
 INSTALL_ROOT = Path.home() / ".gcc-trunk"
 
+# The committed pin: the toolchain the tree is known to build with. CI reads the same file,
+# so a newly published release never reaches a build until someone moves the pin.
+PIN_FILE = Path(__file__).resolve().parent.parent / "toolchain.txt"
+
+
+def read_pin() -> str:
+    if not PIN_FILE.exists():
+        raise SystemExit(f"{PIN_FILE} is missing. Pass --tag or --latest to install and write it.")
+    tag = PIN_FILE.read_text(encoding="utf-8").strip()
+    if not TAG_RE.match(tag):
+        raise SystemExit(f"{PIN_FILE} holds {tag!r}, not a gcc-trunk-vN tag.")
+    return tag
+
+
+def write_pin(tag: str) -> None:
+    if PIN_FILE.exists() and PIN_FILE.read_text(encoding="utf-8").strip() == tag:
+        return
+    PIN_FILE.write_text(tag + "\n", encoding="utf-8")
+    print(f"Pinned {tag} in {PIN_FILE}; commit it so CI builds with the same toolchain.")
+
 
 def resolve_latest_tag() -> str:
     # Filter to gcc-trunk-v* and pick the highest N. Do NOT use /releases/latest:
@@ -152,15 +172,20 @@ def persist_env_var(name: str, value: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download and install the prebuilt native-Windows GCC trunk toolchain")
-    parser.add_argument("--tag", default=None, help="Release tag to install (default: latest gcc-trunk-v* release)")
+    parser.add_argument("--tag", default=None, help="Release tag to install and pin (default: the tag in toolchain.txt)")
+    parser.add_argument("--latest", action="store_true", help="Install the newest gcc-trunk-v* release and pin it")
     parser.add_argument("--sha256", help="Expected SHA256 of the zip")
     parser.add_argument("--persist", action="store_true", help=f"Persist {ENV_VAR} via setx")
     parser.add_argument("--force", action="store_true", help="Reinstall even if already present")
     parser.add_argument("--url", help="Override the release URL entirely")
     args = parser.parse_args()
 
-    if args.tag is None:
+    if args.tag and args.latest:
+        raise SystemExit("--tag and --latest are mutually exclusive.")
+    if args.latest:
         args.tag = resolve_latest_tag()
+    elif args.tag is None:
+        args.tag = read_pin()
 
     target = install_path(args.tag)
     if already_installed(args.tag) and not args.force:
@@ -176,6 +201,7 @@ def main() -> None:
         print(f"Installed: {target}")
 
     current = link_current(args.tag)
+    write_pin(args.tag)
 
     print(
         "\nThe CMake presets resolve the toolchain via "

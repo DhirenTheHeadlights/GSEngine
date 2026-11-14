@@ -106,7 +106,7 @@ export namespace gse::ide {
 			std::uint32_t graph_game_gen = 0;
 			std::uint32_t graph_pending_gen = 0;
 			std::uint32_t graph_load_attempts = 0;
-			clock graph_load_clock;
+			interval_timer<> graph_load_timer{ milliseconds(100.f) };
 			[[= shared]] quick_search_state search;
 			[[= shared]] problems_view_state problems;
 			[[= shared]] search_panel_state search_panel;
@@ -169,7 +169,6 @@ namespace gse::ide {
 	constexpr std::string_view server_quadrant_name = "Server";
 	constexpr std::array<std::string_view, 3> client_quadrant_names{ "Client 1", "Client 2", "Client 3" };
 	constexpr float server_strip_ratio = 0.25f;
-	constexpr time system_graph_retry_interval = milliseconds(100.f);
 	constexpr std::uint32_t system_graph_max_attempts = 100;
 
 	constexpr std::uint32_t reset_layout_action = 0xFFFFFFFF;
@@ -511,7 +510,7 @@ auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::str
 	});
 
 	if (state.captured == instance) {
-		constexpr std::string_view release_hint = "Alt+Tab to release";
+		constexpr std::string_view release_hint = "Shift+F1 to release";
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = release_hint,
@@ -1919,12 +1918,12 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 			if (d.graph_pending_gen != game_gen) {
 				d.graph_pending_gen = game_gen;
 				d.graph_load_attempts = 0;
-				d.graph_load_clock.reset();
+				d.graph_load_timer.reset();
 			}
-			const bool load_due = d.graph_load_attempts == 0 || d.graph_load_clock.elapsed() >= system_graph_retry_interval;
+			const bool load_due = d.graph_load_attempts == 0 || d.graph_load_timer.tick();
 			if (load_due) {
 				++d.graph_load_attempts;
-				d.graph_load_clock.reset();
+				d.graph_load_timer.reset();
 				std::expected<graph_data, graph_load_error> loaded = build_graph_from_file(game_graph_file);
 				if (loaded) {
 					d.graph = std::move(*loaded);
@@ -1975,8 +1974,8 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 			const vec2f delta = input.mouse_delta();
 			d.ws.game_cursor += vec2f{ delta.x() * d.ws.game_input_scale.x(), delta.y() * d.ws.game_input_scale.y() };
 		}
-		const bool release_chord = input.key_held(key::left_alt) || input.key_held(key::right_alt);
-		const bool releasing = release_chord && input.key_pressed(key::tab);
+		const bool release_chord = input.key_held(key::left_shift) || input.key_held(key::right_shift);
+		const bool releasing = release_chord && input.key_pressed(key::f1);
 		forward_game_input(input, ui_out, d.ws.game_instance, d.ws.game_cursor, releasing);
 		if (releasing) {
 			d.ws.game_captured = false;

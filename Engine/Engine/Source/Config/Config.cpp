@@ -327,6 +327,31 @@ auto gse::config::content_roots() -> std::span<const content_root> {
 	return value;
 }
 
+auto gse::config::shader_roots() -> std::span<const std::filesystem::path> {
+	static const std::vector<std::filesystem::path> value = [] {
+		std::vector<std::filesystem::path> roots;
+		for (const content_root& root : content_roots()) {
+			if (auto shaders = root.source / "Shaders"; std::filesystem::is_directory(shaders)) {
+				roots.push_back(std::move(shaders));
+			}
+		}
+		return roots;
+	}();
+	return value;
+}
+
+auto gse::config::shader_file(const std::filesystem::path& relative) -> std::filesystem::path {
+	std::filesystem::path found;
+	for (const std::filesystem::path& root : shader_roots()) {
+		if (auto candidate = root / relative; std::filesystem::is_regular_file(candidate)) {
+			assert(found.empty(), "shader {} exists in more than one shader root", relative.generic_display_string());
+			found = std::move(candidate);
+		}
+	}
+	assert(!found.empty(), "shader {} is in no shader root", relative.generic_display_string());
+	return found;
+}
+
 auto gse::config::relative_tag(const std::filesystem::path& baked_path, const std::filesystem::path& base) -> std::string {
 	std::string result = baked_path.lexically_relative(base).generic_native_encoded_string();
 	if (const std::size_t dot = result.find_last_of('.'); dot != std::string::npos) {

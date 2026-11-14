@@ -30,6 +30,10 @@ auto gse::scheduler::set_settings_register_hook(std::function<void(settings::reg
 	m_settings_register_hook = std::move(fn);
 }
 
+auto gse::scheduler::set_settings_retire_hook(std::function<void(const void*)> fn) -> void {
+	m_settings_retire_hook = std::move(fn);
+}
+
 auto gse::scheduler::set_actions_register_hook(std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn) -> void {
 	m_actions_register_hook = std::move(fn);
 }
@@ -714,15 +718,7 @@ auto gse::scheduler::all_settled() const -> bool {
 			return false;
 		}
 	}
-	for (const auto& node : m_nodes) {
-		if (node.invoke_init_fn && !node.init_done) {
-			return false;
-		}
-		if (node.invoke_run_fn && !node.ran_once) {
-			return false;
-		}
-	}
-	return true;
+	return std::ranges::all_of(m_nodes, &system_node::settled);
 }
 
 auto gse::scheduler::settle_progress() const -> settle_stats {
@@ -740,21 +736,47 @@ auto gse::scheduler::settle_progress() const -> settle_stats {
 			continue;
 		}
 		++stats.total;
-		const bool init_ok = !node.invoke_init_fn || node.init_done;
-		const bool run_ok = !node.invoke_run_fn || node.ran_once;
-		if (init_ok && run_ok) {
+		if (node.settled()) {
 			++stats.settled;
 		}
 	}
 	return stats;
 }
 
-auto gse::scheduler::dep_init_done(const id dep) const -> bool {
+auto gse::scheduler::has_frame_work() const -> bool {
+	return std::ranges::any_of(m_nodes, [](const system_node& node) {
+		return node.invoke_frame_fn != nullptr;
+	});
+}
+
+auto gse::scheduler::dep_initialized(const id dep) const -> bool {
 	const auto it = m_node_index.find(dep);
 	if (it == m_node_index.end()) {
 		return true;
 	}
-	return m_nodes[it->second].init_done;
+	return m_nodes[it->second].initialized();
+}
+
+auto gse::scheduler::gate_state(const id state, const std::unordered_map<id, const void*>& staged) const -> const void* {
+	if (const void* live = m_states.state_ptr(state)) {
+		return live;
+	}
+	const auto it = staged.find(state);
+	return it != staged.end() ? it->second : nullptr;
+}
+
+auto gse::scheduler::gate_rejection(const std::span<const activation_gate> gates, const std::unordered_map<id, const void*>& staged) const -> std::optional<std::string> {
+	for (const auto& gate : gates) {
+		const void* state = gate_state(gate.state, staged);
+		if (!state) {
+			const auto gated = m_gated_out.find(gate.state);
+			return std::format("dependency '{}' is inactive", gated != m_gated_out.end() ? gated->second : std::string(gate.state.tag()));
+		}
+		if (!gate.holds(state)) {
+			return std::format("requires {}", gate.requirement);
+		}
+	}
+	return std::nullopt;
 }
 
 auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
@@ -770,7 +792,7 @@ auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
 		visited[idx] = dispatch_state::checking;
 
 		const auto& node = m_nodes[idx];
-		bool ready = node.init_done;
+		bool ready = node.initialized();
 		if (ready && node.invoke_run_fn) {
 			for (const auto& dep : node.run_deps) {
 				const auto it = m_node_index.find(dep.state);
@@ -793,19 +815,19 @@ auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
 }
 
 auto gse::scheduler::run_init_phase() -> void {
+	const auto progress = [this] {
+		std::size_t count = 0;
+		for (const auto& node : m_nodes) {
+			count += node.stage.state() != system_stage::awaiting_init ? 1 : 0;
+			count += node.initialized() ? 1 : 0;
+		}
+		return count;
+	};
+
 	while (true) {
-		std::size_t before = 0;
-		for (const auto& node : m_nodes) {
-			before += node.init_launched ? 1 : 0;
-			before += node.init_done ? 1 : 0;
-		}
+		const std::size_t before = progress();
 		advance_inits();
-		std::size_t after = 0;
-		for (const auto& node : m_nodes) {
-			after += node.init_launched ? 1 : 0;
-			after += node.init_done ? 1 : 0;
-		}
-		if (after == before) {
+		if (progress() == before) {
 			break;
 		}
 	}
@@ -814,13 +836,14 @@ auto gse::scheduler::run_init_phase() -> void {
 auto gse::scheduler::advance_inits() -> void {
 	std::vector<async::task<>> tasks;
 	for (auto& node : m_nodes) {
-		if (!node.invoke_init_fn || node.init_done || node.init_in_flight) {
+		const system_stage stage = node.stage.state();
+		if (stage != system_stage::awaiting_init && stage != system_stage::init_between_slices) {
 			continue;
 		}
-		if (!node.init_launched) {
+		if (stage == system_stage::awaiting_init) {
 			bool deps_ready = true;
 			for (const id& dep : node.init_state_deps) {
-				if (!dep_init_done(dep)) {
+				if (!dep_initialized(dep)) {
 					deps_ready = false;
 					break;
 				}
@@ -970,11 +993,26 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 	}
 
 	std::unordered_set<id> provided;
+	std::unordered_map<id, const void*> staged;
 	for (const auto& node : m_nodes) {
 		provided.insert(node.state_id);
 	}
-	for (const auto& node : drained) {
+	for (auto& node : drained) {
+		admit_settings(node);
 		provided.insert(node.state_id);
+		staged[node.state_id] = node.state_ptr;
+	}
+
+	for (auto it = drained.begin(); it != drained.end();) {
+		if (const auto rejection = gate_rejection(it->activation_gates, staged)) {
+			provided.erase(it->state_id);
+			staged.erase(it->state_id);
+			drop_node(std::move(*it), *rejection);
+			it = drained.erase(it);
+		}
+		else {
+			++it;
+		}
 	}
 
 	const auto missing_dep = [&](const system_node& node) -> std::optional<id> {
@@ -990,8 +1028,8 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 		changed = false;
 		for (auto it = drained.begin(); it != drained.end();) {
 			if (const auto dep = missing_dep(*it)) {
-				log::println(log::category::runtime, "system '{}' not registered: dependency {} is inactive", it->system_name, *dep);
 				provided.erase(it->state_id);
+				drop_node(std::move(*it), std::format("dependency {} is inactive", *dep));
 				it = drained.erase(it);
 				changed = true;
 			}
@@ -1015,12 +1053,14 @@ auto gse::scheduler::register_node(system_node node) -> void {
 		(m_registry->*ensure_storage)();
 	}
 
-	if (node.settings_record && m_settings_register_hook) {
-		m_settings_register_hook(std::move(*node.settings_record));
-	}
-
 	if ((!node.action_records.empty() || !node.axis_records.empty()) && m_actions_register_hook) {
 		m_actions_register_hook(std::move(node.action_records), std::move(node.axis_records));
+	}
+
+	if (const auto rejection = gate_rejection(node.frame_gates, {})) {
+		log::println(log::category::runtime, "system '{}' frame hook not wired: {}", node.system_name, *rejection);
+		node.invoke_frame_fn = nullptr;
+		node.frame_state_deps.clear();
 	}
 
 	m_update_graph.add_state(node.state_id, !node.invoke_run_fn);
@@ -1030,16 +1070,42 @@ auto gse::scheduler::register_node(system_node node) -> void {
 	m_nodes.push_back(std::move(node));
 }
 
+auto gse::scheduler::drop_node(system_node node, const std::string_view reason) -> void {
+	log::println(log::category::runtime, "system '{}' not registered: {}", node.system_name, reason);
+	if (m_settings_retire_hook) {
+		m_settings_retire_hook(node.state_ptr);
+	}
+}
+
+auto gse::scheduler::admit_settings(system_node& node) -> void {
+	if (!node.settings_record || !m_settings_register_hook) {
+		return;
+	}
+	std::erase_if(node.settings_record->fallbacks, [this](const settings::settings_fallback& fallback) {
+		const void* state = gate_state(fallback.gate.state, {});
+		return !state || fallback.gate.holds(state);
+	});
+	m_settings_register_hook(std::move(*node.settings_record));
+	node.settings_record.reset();
+}
+
 auto gse::scheduler::add_system_node(system_node node) -> void {
 	assert(m_registry != nullptr, "scheduler::set_registry must be called before add_system_node");
 	assert(m_phase != scheduler_phase::shutdown, "scheduler::add_system_node called during shutdown");
 
 	if (m_staging) {
+		admit_settings(node);
 		m_candidates.push_back(std::move(node));
 		return;
 	}
 
 	if (m_phase == scheduler_phase::boot) {
+		admit_settings(node);
+		if (const auto rejection = gate_rejection(node.activation_gates, {})) {
+			m_gated_out.emplace(node.state_id, node.system_name);
+			drop_node(std::move(node), *rejection);
+			return;
+		}
 		register_node(std::move(node));
 		return;
 	}
@@ -1053,16 +1119,20 @@ auto gse::scheduler::begin_staging() -> void {
 	m_staging = true;
 }
 
-auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_roots) -> void {
+auto gse::scheduler::resolve_activation() -> void {
 	std::unordered_set<id> provided;
 	std::unordered_map<id, std::string> name_of;
+	std::unordered_map<id, const void*> candidate_state;
 	for (const auto& n : m_nodes) {
 		provided.insert(n.state_id);
 	}
 	for (const auto& n : m_candidates) {
 		provided.insert(n.state_id);
 		name_of[n.state_id] = n.system_name;
+		candidate_state[n.state_id] = n.state_ptr;
 	}
+
+	std::unordered_map<id, std::string> failed_requirement;
 
 	std::unordered_set<id> published;
 	for (const auto& n : m_candidates) {
@@ -1072,6 +1142,13 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 	std::unordered_map<id, std::vector<id>> dependents;
 	std::unordered_set<id> inactive;
 	std::vector<id> work;
+
+	for (const auto& [state_id, system_name] : m_gated_out) {
+		provided.insert(state_id);
+		name_of.emplace(state_id, system_name);
+		inactive.insert(state_id);
+		work.push_back(state_id);
+	}
 
 	std::unordered_set<id> unproduced_channels;
 
@@ -1095,7 +1172,8 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 				}
 			}
 		}
-		if (disabled_roots.contains(n.state_id)) {
+		if (auto rejection = gate_rejection(n.activation_gates, candidate_state)) {
+			failed_requirement.emplace(n.state_id, std::move(*rejection));
 			if (inactive.insert(n.state_id).second) {
 				work.push_back(n.state_id);
 			}
@@ -1152,7 +1230,10 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 			}
 			continue;
 		}
-		std::string reason = disabled_roots.contains(n.state_id) ? std::string("disabled in this mode") : std::string{};
+		std::string reason;
+		if (const auto it = failed_requirement.find(n.state_id); it != failed_requirement.end()) {
+			reason = it->second;
+		}
 		if (reason.empty()) {
 			for (const id dep : n.required_deps()) {
 				if (inactive.contains(dep)) {
@@ -1165,7 +1246,7 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		if (reason.empty()) {
 			reason = "a required dependency is not provided by any registered system";
 		}
-		log::println(log::category::runtime, "system '{}' not registered: {}", n.system_name, reason);
+		drop_node(std::move(n), reason);
 	}
 
 	m_candidates.clear();
@@ -1174,15 +1255,23 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 
 auto gse::scheduler::register_deferred() -> void {
 	for (auto& n : m_deferred_nodes) {
-		add_system_node(std::move(n));
+		if (m_phase == scheduler_phase::boot) {
+			register_node(std::move(n));
+		}
+		else {
+			add_system_node(std::move(n));
+		}
 	}
 	m_deferred_nodes.clear();
 }
 
 auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<> {
-	node.init_in_flight = true;
+	const bool launching = node.stage.try_enter(system_stage::awaiting_init, system_stage::init_in_slice);
+	if (!launching) {
+		node.stage.try_enter(system_stage::init_between_slices, system_stage::init_in_slice);
+	}
 	auto _ = make_scope_exit([&node] {
-		node.init_in_flight = false;
+		node.stage.try_enter(system_stage::init_in_slice, system_stage::init_between_slices);
 	});
 
 	if (!node.init_ctx) {
@@ -1195,12 +1284,11 @@ auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<>
 		);
 	}
 
-	if (!node.init_launched) {
-		node.init_launched = true;
+	if (launching) {
 		node.init_task = wrap_run_task(
 			node.invoke_init_fn(*node.init_ctx, node.data.get()),
 			[&node] {
-				node.init_done = true;
+				node.stage.enter(system_stage::initialized);
 				node.yield->paused.set();
 			}
 		);
@@ -1221,7 +1309,9 @@ auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::
 	}
 
 	co_await node.invoke_run_fn(ctx, node.data.get());
-	node.ran_once = true;
+	if (node.stage.state() != system_stage::ran) {
+		node.stage.enter(system_stage::ran);
+	}
 
 	m_update_graph.notify_state_ready(node.state_id);
 }
@@ -1353,12 +1443,12 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 	}
 
 	for (const auto& node : m_nodes) {
-		if (!node.invoke_init_fn || node.init_done) {
+		if (node.initialized()) {
 			continue;
 		}
 		std::string pending;
 		for (const id& dep : node.init_state_deps) {
-			if (!dep_init_done(dep)) {
+			if (!dep_initialized(dep)) {
 				if (!pending.empty()) {
 					pending += ", ";
 				}
@@ -1368,19 +1458,18 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 		log::println(
 			log::level::warning,
 			log::category::runtime,
-			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (launched={} in_flight={} waiting on deps: {})",
+			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (stage={} waiting on deps: {})",
 			phase,
 			elapsed,
 			dump_count,
 			node.trace_id,
-			node.init_launched,
-			node.init_in_flight,
+			node.stage.state(),
 			pending.empty() ? "none" : pending
 		);
 	}
 
 	for (const auto& node : m_nodes) {
-		if (!node.invoke_run_fn || !node.init_done) {
+		if (!node.invoke_run_fn || !node.initialized()) {
 			continue;
 		}
 		if (m_update_graph.is_state_ready(node.state_id)) {
@@ -1388,7 +1477,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 		}
 		std::string missing;
 		for (const auto& dep : node.run_deps) {
-			if (!dep_init_done(dep.state)) {
+			if (!dep_initialized(dep.state)) {
 				continue;
 			}
 			if (!m_update_graph.is_state_ready(dep.state)) {
@@ -1434,9 +1523,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	context f_ctx(system_hook::frame, m_states, m_resources_store, m_channels_store, *m_registry);
 
 	for (auto& node : m_nodes) {
-		const bool run_satisfied = node.ran_once || !node.invoke_run_fn;
-		const bool frame_ready = node.invoke_frame_fn && node.init_done && run_satisfied;
-		if (frame_ready) {
+		if (node.invoke_frame_fn && node.settled()) {
 			continue;
 		}
 		m_frame_graph.notify_state_ready(node.state_id);
@@ -1448,7 +1535,7 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 		if (!node.invoke_frame_fn) {
 			continue;
 		}
-		if (!node.init_done || (node.invoke_run_fn && !node.ran_once)) {
+		if (!node.settled()) {
 			continue;
 		}
 		tasks.push_back(run_node_frame(f_ctx, node));
@@ -1502,7 +1589,7 @@ auto gse::scheduler::persist() const -> void {
 }
 
 auto gse::scheduler::persist_node(const system_node& node) -> void {
-	if (node.invoke_persist_fn && node.init_done && node.ran_once) {
+	if (node.invoke_persist_fn && node.stage.state() == system_stage::ran) {
 		node.invoke_persist_fn(node.data.get());
 	}
 }
@@ -1510,6 +1597,7 @@ auto gse::scheduler::persist_node(const system_node& node) -> void {
 auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
 	m_node_index.clear();
+	m_gated_out.clear();
 	m_run_contexts.clear();
 	m_states.clear();
 	m_resources_store.clear();

@@ -15,6 +15,7 @@ import :context;
 import :registries;
 import :registry;
 import :settings;
+import :system_anno;
 import :system_node;
 import :task_graph;
 
@@ -45,6 +46,10 @@ export namespace gse {
 			std::function<void(settings::register_settings_type)> fn
 		) -> void;
 
+		auto set_settings_retire_hook(
+			std::function<void(const void*)> fn
+		) -> void;
+
 		auto set_actions_register_hook(
 			std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn
 		) -> void;
@@ -63,6 +68,8 @@ export namespace gse {
 		};
 
 		[[nodiscard]] auto settle_progress() const -> settle_stats;
+
+		[[nodiscard]] auto has_frame_work() const -> bool;
 
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
@@ -103,9 +110,7 @@ export namespace gse {
 
 		auto begin_staging() -> void;
 
-		auto resolve_activation(
-			const std::unordered_set<id>& disabled_roots
-		) -> void;
+		auto resolve_activation() -> void;
 
 		auto register_deferred() -> void;
 
@@ -128,6 +133,11 @@ export namespace gse {
 
 		auto register_node(
 			system_node node
+		) -> void;
+
+		auto drop_node(
+			system_node node,
+			std::string_view reason
 		) -> void;
 
 		auto wire_component_deps() -> void;
@@ -158,13 +168,27 @@ export namespace gse {
 			system_node& node
 		) -> async::task<>;
 
-		[[nodiscard]] auto dep_init_done(
+		[[nodiscard]] auto dep_initialized(
 			id dep
 		) const -> bool;
+
+		[[nodiscard]] auto gate_state(
+			id state,
+			const std::unordered_map<id, const void*>& staged
+		) const -> const void*;
+
+		[[nodiscard]] auto gate_rejection(
+			std::span<const activation_gate> gates,
+			const std::unordered_map<id, const void*>& staged
+		) const -> std::optional<std::string>;
 
 		[[nodiscard]] auto dispatchable_nodes() const -> std::vector<bool>;
 
 		auto drain_hot_add_queue() -> void;
+
+		auto admit_settings(
+			system_node& node
+		) -> void;
 
 		auto snapshot_all_states() -> void;
 
@@ -184,6 +208,7 @@ export namespace gse {
 		std::vector<std::unique_ptr<context>> m_run_contexts;
 		std::vector<system_node> m_candidates;
 		std::vector<system_node> m_deferred_nodes;
+		std::unordered_map<id, std::string> m_gated_out;
 		bool m_staging = false;
 		scheduler_phase m_phase = scheduler_phase::boot;
 		state_registry m_states;
@@ -194,6 +219,7 @@ export namespace gse {
 		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
+		std::function<void(const void*)> m_settings_retire_hook;
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
 		std::function<void()> m_stall_probe;
 		time m_init_stall_dump{};

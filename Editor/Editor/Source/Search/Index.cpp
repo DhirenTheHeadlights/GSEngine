@@ -707,7 +707,6 @@ auto gse::ide::search::end_index_progress(index_state& idx) -> void {
 	idx.progress_done.store(0, std::memory_order_relaxed);
 	idx.phase_started.store(time_t<double>{}, std::memory_order_relaxed);
 	idx.phase.store(index_phase::idle, std::memory_order_release);
-	idx.building.store(false, std::memory_order_release);
 }
 
 auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx) -> std::vector<analysis::tu_symbols> {
@@ -829,6 +828,10 @@ auto gse::ide::search::is_pending(const lookup_error& error) -> bool {
 	return error.reason == lookup_failure::index_building;
 }
 
+auto gse::ide::search::index_busy(const index_phase phase) -> bool {
+	return phase != index_phase::idle;
+}
+
 auto gse::ide::search::report_lookup_failure(const index_state& index, const lookup_probe& probe, const std::span<const std::string> causes) -> void {
 	const std::uint64_t generation = index.generation.load(std::memory_order_acquire);
 	const std::string path = probe.file.generic_display_string();
@@ -863,11 +866,10 @@ auto gse::ide::search::report_lookup_failure(const index_state& index, const loo
 	log::println(
 		log::level::warning,
 		log::category::general,
-		"[semantic]   index: gen={} phase={} ready={} building={} file={} tu={}",
+		"[semantic]   index: gen={} phase={} ready={} file={} tu={}",
 		generation,
 		info.label,
 		index.symbols_ready.load(std::memory_order_acquire),
-		index.building.load(std::memory_order_acquire),
 		index.symbols.files.contains(fid) ? "indexed" : (index.pending_symbol_files.contains(fid) ? "pending" : "absent"),
 		failure == index.symbols.failures.end() ? std::string_view("ok") : std::string_view(failure->second)
 	);
@@ -1612,7 +1614,6 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		idx.symbols_ready.store(true, std::memory_order_release);
 		return;
 	}
-	idx.building.store(true, std::memory_order_release);
 	begin_index_phase(idx, index_phase::loading_database, idx.compile_commands.size());
 
 	std::vector<std::pair<std::filesystem::path, std::shared_ptr<const analysis::compilation_database>>> databases;
@@ -1851,11 +1852,11 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		std::unordered_set<file_id>(std::from_range, local.lints | std::views::transform(&lint_entry::file)).size()
 	);
 
+	begin_index_phase(idx, index_phase::publishing, 1);
 	{
 		std::lock_guard _(idx.build_mutex);
 		idx.completed_symbols.emplace(std::move(local));
 	}
-	begin_index_phase(idx, index_phase::publishing, 1);
 }
 
 auto gse::ide::search::build_symbol_overlay(const std::filesystem::path& canonical, const file_id file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params, const std::unordered_map<file_id, std::filesystem::path>& files) -> symbol_overlay {

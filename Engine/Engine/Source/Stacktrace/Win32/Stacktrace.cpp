@@ -11,7 +11,7 @@ namespace gse {
 
 	constexpr std::size_t max_trace_frames = 64;
 
-	std::atomic<bool> handler_active{ false };
+	std::atomic<std::thread::id> fatal_owner{};
 
 	enum class seh_code : std::uint32_t {
 		access_violation = exception_access_violation,
@@ -33,12 +33,6 @@ namespace gse {
 		priv_instruction = exception_priv_instruction,
 		stack_overflow = exception_stack_overflow,
 	};
-
-	constexpr DWORD cpp_exception_code = 0xE06D7363;
-	constexpr DWORD breakpoint_code = 0x80000003;
-	constexpr DWORD dbg_print_exception_code = 0x40010006;
-	constexpr DWORD dbg_print_exception_wide_c = 0x4001000A;
-	constexpr DWORD ms_thread_name_code = 0x406D1388;
 
 	std::atomic<crash_responder> installed_crash_responder = nullptr;
 	std::atomic<bool> crash_responded{ false };
@@ -105,72 +99,67 @@ namespace gse {
 		return true;
 	}
 
-	auto log_context_stacktrace(CONTEXT context) -> void {
-		std::size_t count = 0;
+	constexpr std::array<DWORD, 10> hard_fault_codes = {
+		exception_access_violation,
+		exception_illegal_instruction,
+		exception_priv_instruction,
+		exception_in_page_error,
+		exception_stack_overflow,
+		exception_int_divide_by_zero,
+		exception_array_bounds_exceeded,
+		exception_datatype_misalignment,
+		exception_noncontinuable_exception,
+		exception_invalid_disposition,
+	};
 
-		while (count < max_trace_frames) {
-			log::println(
-				log::level::error,
-				log::category::general,
-				"  #{:>2} 0x{:016x}  {}",
-				count,
-				static_cast<std::uint64_t>(context.Rip),
-				module_frame(context.Rip)
-			);
-			log::flush();
-			++count;
-
-			if (!step_context(context)) {
-				break;
+	auto respond_to_fatal_exception(const EXCEPTION_POINTERS* info) noexcept -> void {
+		const std::thread::id self = std::this_thread::get_id();
+		if (std::thread::id unowned{}; !fatal_owner.compare_exchange_strong(unowned, self)) {
+			if (unowned == self) {
+				std::_Exit(3);
+			}
+			while (true) {
+				std::this_thread::sleep_for(std::chrono::hours(1));
 			}
 		}
-	}
 
-	LONG vectored_handler(EXCEPTION_POINTERS* info) noexcept {
 		const auto* rec = info->ExceptionRecord;
 		const auto code = rec->ExceptionCode;
-		if (code == cpp_exception_code || code == breakpoint_code || code == dbg_print_exception_code || code == dbg_print_exception_wide_c || code == ms_thread_name_code) {
-			return exception_continue_search;
-		}
 
-		bool expected = false;
-		if (!handler_active.compare_exchange_strong(expected, true)) {
-			return exception_continue_search;
-		}
-
-		std::string detail;
+		std::string access;
 		if (code == exception_access_violation && rec->NumberParameters >= 2) {
 			const auto op = rec->ExceptionInformation[0];
-			const auto addr = rec->ExceptionInformation[1];
 			const std::string_view op_name = op == 0 ? "read" : op == 1 ? "write"
 				: op == 8												? "execute"
 																		: "unknown";
-			detail = std::format(" ({} at 0x{:016x})", op_name, addr);
+			access = std::format(" ({} at 0x{:016x})", op_name, rec->ExceptionInformation[1]);
 		}
 
-		const auto pc = reinterpret_cast<std::uintptr_t>(rec->ExceptionAddress);
-		std::uintptr_t module_offset = pc;
-		HMODULE module_handle = nullptr;
-		if (GetModuleHandleExW(get_module_handle_ex_flag_from_address | get_module_handle_ex_flag_unchanged_refcount, reinterpret_cast<const wchar_t*>(pc), &module_handle) && module_handle != nullptr) {
-			module_offset = pc - reinterpret_cast<std::uintptr_t>(module_handle);
-		}
+		const crash_record record{
+			.reason = std::format("{} (0x{:08x})", enum_to_string(static_cast<seh_code>(code)), static_cast<std::uint32_t>(code)),
+			.detail = std::format("at {}{}", module_frame(reinterpret_cast<std::uintptr_t>(rec->ExceptionAddress)), access),
+			.thread = std::format("{:#x}", std::hash<std::thread::id>{}(std::this_thread::get_id())),
+			.frames = context_frames(*info->ContextRecord),
+			.module_base = self_module_base(),
+		};
 
-		log::println(
-			log::level::error,
-			log::category::general,
-			"[SEH] code=0x{:08x} ({}){} at PC=0x{:016x} (module+0x{:x}) thread={:#x}\nStack:",
-			static_cast<std::uint32_t>(code),
-			enum_to_string(static_cast<seh_code>(code)),
-			detail,
-			pc,
-			module_offset,
-			std::hash<std::thread::id>{}(std::this_thread::get_id())
-		);
+		std::string stack;
+		for (const std::string& frame : record.frames) {
+			stack += std::format("  {}\n", frame);
+		}
+		log::println(log::level::error, log::category::general, "[SEH] {} {} thread={}\nStack:\n{}", record.reason, record.detail, record.thread, stack);
 		log::flush();
 
-		log_context_stacktrace(*info->ContextRecord);
+		run_crash_responder(record);
+		std::_Exit(3);
+	}
 
-		handler_active.store(false);
+	LONG vectored_handler(EXCEPTION_POINTERS* info) noexcept {
+		if (!std::ranges::contains(hard_fault_codes, info->ExceptionRecord->ExceptionCode)) {
+			return exception_continue_search;
+		}
+
+		respond_to_fatal_exception(info);
 		return exception_continue_search;
 	}
 }
@@ -203,14 +192,7 @@ auto gse::run_crash_responder(const crash_record& record) -> void {
 }
 
 auto gse::unhandled_handler(EXCEPTION_POINTERS* info) noexcept -> LONG {
-	const auto* rec = info->ExceptionRecord;
-	run_crash_responder({
-		.reason = std::format("{} (0x{:08x})", enum_to_string(static_cast<seh_code>(rec->ExceptionCode)), static_cast<std::uint32_t>(rec->ExceptionCode)),
-		.detail = std::format("at {}", module_frame(reinterpret_cast<std::uintptr_t>(rec->ExceptionAddress))),
-		.thread = std::format("{:#x}", std::hash<std::thread::id>{}(std::this_thread::get_id())),
-		.frames = context_frames(*info->ContextRecord),
-		.module_base = self_module_base(),
-	});
+	respond_to_fatal_exception(info);
 	return exception_execute_handler;
 }
 
