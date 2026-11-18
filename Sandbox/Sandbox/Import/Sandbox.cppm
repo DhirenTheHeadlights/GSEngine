@@ -1,7 +1,10 @@
 export module sandbox;
 
 
+export import :ambient_sound;
 export import :archetypes;
+export import :audio_fixtures;
+export import :camera_listener;
 export import :card_backdrop;
 export import :character_controller;
 export import :characters;
@@ -25,6 +28,7 @@ export import :orbit_camera;
 export import :parity_fixtures;
 export import :parity_harness;
 export import :pause_menu_system;
+export import :periodic_hop;
 export import :piston;
 export import :player_spawner;
 export import :player_state;

@@ -2,6 +2,7 @@ export module gse.graphics:light_culling_renderer;
 
 import std;
 
+import :camera_latch_renderer;
 import :camera_system;
 import :geometry_collector;
 import :atmosphere_renderer;
@@ -34,11 +35,14 @@ export namespace gse::renderer::light_culling {
 
 	constexpr light_culling_limits limits{};
 
+	struct light_view_pass {};
+
 	struct [[= system_state<"LightCulling">{}]] data {
 		[[= shared]] std::uint32_t current_width = 0;
 		[[= shared]] std::uint32_t current_height = 0;
 
 		gpu::shader_program pipeline;
+		gpu::shader_program view_pipeline;
 
 		per_frame_resource<gpu::buffer> culling_params_buffers;
 		per_frame_resource<gpu::buffer> light_buffers;
@@ -68,6 +72,7 @@ export namespace gse::renderer::light_culling {
 		channel_write<gpu::render_pass_request> pass_out,
 		channel_read<geometry_collector::render_data> geometry_in,
 		shared_view<camera::data> cam_state,
+		shared_view<camera_latch::data> latch_s,
 		shared_view<atmosphere::data> atm_state,
 		read<directional_light_component> dir_lights,
 		read<spot_light_component> spot_lights,

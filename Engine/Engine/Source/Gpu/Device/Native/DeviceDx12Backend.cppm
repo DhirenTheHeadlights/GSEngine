@@ -466,7 +466,7 @@ export namespace gse::gpu {
 		std::optional<shared_view<window::data>> win,
 		bool validation_layers_enabled,
 		device_settings& cfg
-	) -> dx12_backend_creation;
+	) -> expected<dx12_backend_creation>;
 }
 
 auto gse::gpu::dx12_device_backend::handle() const -> device_handle {
@@ -888,12 +888,16 @@ auto gse::gpu::dx12_device_backend::make_video_encoder_backend(const encode_desc
 	return nullptr;
 }
 
-auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> dx12_backend_creation {
-	auto backend = std::make_unique<dx12_device_backend>(std::make_unique<dx12::device>(win, validation_layers_enabled, cfg));
+auto gse::gpu::create_dx12_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> expected<dx12_backend_creation> {
+	auto created = dx12::device::create(win, validation_layers_enabled, cfg);
+	if (!created) {
+		return std::unexpected{ created.error() };
+	}
+	auto backend = std::make_unique<dx12_device_backend>(std::move(*created));
 	backend->pools.bind(backend->device.get());
 	backend->queue.bind(backend->device.get());
 	backend->swapchain.bind(backend->device.get());
-	return {
+	return dx12_backend_creation{
 		.backend = std::move(backend),
 		.commands = command_dispatch_for<dx12::commands>(),
 		.surface_format = image_format::b8g8r8a8_unorm,

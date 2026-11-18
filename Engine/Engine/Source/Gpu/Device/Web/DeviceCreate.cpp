@@ -15,7 +15,7 @@ import :video_encoder_impl;
 
 auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, bool, backend_kind& backend, device_settings&) -> std::unique_ptr<device> {
 	static constexpr gpu_dispatch dispatch = meta::build_dispatch<gpu_dispatch, device_backend_contract, meta::pointer_receiver<webgpu_device_backend>>();
-	auto created = create_webgpu_device_backend(win);
+	auto created = must(create_webgpu_device_backend(win));
 	backend = backend_kind::webgpu;
 	active_backend = backend_kind::webgpu;
 

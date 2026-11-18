@@ -1,5 +1,6 @@
 module gse.runtime:bench_impl;
 
+import gse.audio;
 import gse.concurrency;
 import gse.config;
 import gse.containers;
@@ -27,6 +28,10 @@ namespace gse {
 	auto world_body_order(
 		std::span<const id> owners
 	) -> std::vector<std::size_t>;
+
+	auto bench_run_dir(
+		const bench_config& config
+	) -> std::filesystem::path;
 
 	auto compare_against_baseline(
 		const bench_config& config,
@@ -190,6 +195,13 @@ auto gse::drive_scenario(const bench_config& config, bench_state& state, engine&
 	}
 }
 
+auto gse::bench_run_dir(const bench_config& config) -> std::filesystem::path {
+	const std::string stem = config.scenario.empty()
+		? std::format("{}_bench", config::executable_stem())
+		: config.scenario;
+	return config::profile_dir() / "bench" / stem;
+}
+
 auto gse::compare_against_baseline(const bench_config& config, const std::filesystem::path& run_dir, const std::string_view stamp, const profile::run_summary& summary, const std::filesystem::path& profile_path) -> bool {
 	const std::filesystem::path baseline_path = run_dir / "baseline.gsprof";
 
@@ -287,6 +299,9 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 				state.frames_in_phase = 0;
 				if (config.pacing != scenario::pacing::wall_clock) {
 					system_clock::set_fixed_step_override(1);
+					e.make_channel_writer().push<audio::offline_sink_request>({
+						.path = bench_run_dir(config) / std::format("{}.wav", system_clock::timestamp_filename()),
+					});
 				}
 				break;
 			}
@@ -359,10 +374,7 @@ auto gse::finish_bench(const bench_config& config, bench_state& state, engine& e
 		);
 	}
 
-	const std::string stem = config.scenario.empty()
-		? std::format("{}_bench", config::executable_stem())
-		: config.scenario;
-	const std::filesystem::path run_dir = config::profile_dir() / "bench" / stem;
+	const std::filesystem::path run_dir = bench_run_dir(config);
 	const std::string stamp = system_clock::timestamp_filename();
 	const std::filesystem::path profile_path = config.profile_out.empty()
 		? run_dir / std::format("{}.gsprof", stamp)

@@ -4,6 +4,8 @@ import std;
 import gse;
 import gse.scenario;
 
+import :ambient_sound;
+import :audio_fixtures;
 import :dev_spawn_system;
 import :grass_field;
 import :grass_probe;
@@ -18,6 +20,72 @@ namespace sandbox::scenarios {
 
 	auto build_stress_workload(
 		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto build_audio_stress_workload(
+		gse::scenario::context& ctx,
+		std::chrono::milliseconds frame_pause
+	) -> gse::async::task<>;
+
+	struct audio_probe_segment {
+		std::string_view kind;
+		gse::vec3<gse::position> from;
+		gse::vec3<gse::velocity> velocity;
+		std::uint64_t frames = 45;
+	};
+
+	auto audio_probe_segments() -> std::array<audio_probe_segment, 9>;
+
+	auto run_audio_spatial_script(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	struct audio_occlusion_segment {
+		std::string_view kind;
+		audio_occlusion_station station = audio_occlusion_station::wall;
+		gse::vec3<gse::displacement> from;
+		std::uint64_t lead_frames = 60;
+		std::uint64_t travel_frames = 0;
+		std::uint64_t tail_frames = 0;
+	};
+
+	auto run_audio_occlusion_script(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto wait_for_ambient_clips(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto run_audio_yard_solo(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto run_audio_contact_script(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	auto run_audio_modal_script(
+		gse::scenario::context& ctx,
+		audio_modal_material material
+	) -> gse::async::task<>;
+
+	struct audio_rub_probe {
+		std::string_view label;
+		std::string_view body;
+		gse::length reach;
+		std::array<gse::vec3<gse::velocity>, 3> launches;
+		std::uint64_t lead_frames = 0;
+	};
+
+	auto open_audio_rub_probe(
+		gse::scenario::context& ctx,
+		std::string_view label
+	) -> gse::async::task<>;
+
+	auto run_audio_rub_launches(
+		gse::scenario::context& ctx,
+		audio_rub_probe probe
 	) -> gse::async::task<>;
 
 	auto capture_parity_frame(
@@ -1509,4 +1577,745 @@ auto sandbox::scenarios::parity_shapes(gse::scenario::context& ctx) -> gse::asyn
 
 auto sandbox::scenarios::parity_domino(gse::scenario::context& ctx) -> gse::async::task<> {
 	co_await gse::scenario::wait_settled(ctx);
+}
+
+auto sandbox::scenarios::build_audio_stress_workload(gse::scenario::context& ctx, const std::chrono::milliseconds frame_pause) -> gse::async::task<> {
+	constexpr std::uint64_t clip_load_frames = 120;
+	constexpr std::uint64_t sustain_frames = 180;
+
+	constexpr std::chrono::milliseconds clip_load_pause(10);
+
+	const auto hold = [&](const std::uint64_t frames, const std::chrono::milliseconds pause) -> gse::async::task<> {
+		for (std::uint64_t frame = 0; frame < frames; ++frame) {
+			co_await gse::scenario::wait_frames(ctx, 1);
+			std::this_thread::sleep_for(pause);
+		}
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<prefetch_audio_stress_request>({});
+	co_await hold(clip_load_frames, std::max(frame_pause, clip_load_pause));
+	ctx.channels().push<spawn_audio_stress_request>({});
+	co_await hold(sustain_frames, frame_pause);
+	ctx.channels().push<cycle_audio_stress_request>({});
+}
+
+auto sandbox::scenarios::audio_stress(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await build_audio_stress_workload(ctx, std::chrono::milliseconds(0));
+}
+
+auto sandbox::scenarios::audio_stress_device(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::chrono::milliseconds frame_pause(16);
+
+	co_await build_audio_stress_workload(ctx, frame_pause);
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(frame_pause);
+	}
+}
+
+auto sandbox::scenarios::audio_probe_segments() -> std::array<audio_probe_segment, 9> {
+	constexpr std::uint64_t travel_frames = 120;
+	const auto speed = gse::meters_per_second(20.f);
+	const auto still = gse::meters_per_second(0.f);
+	const auto level = gse::meters(0.f);
+	const auto ahead = [level](const gse::length distance) {
+		return gse::vec3<gse::position>(level, level, -distance);
+	};
+
+	return {
+		audio_probe_segment{ .kind = "stationary", .from = ahead(gse::meters(2.f)) },
+		audio_probe_segment{ .kind = "stationary", .from = ahead(gse::meters(4.f)) },
+		audio_probe_segment{ .kind = "stationary", .from = ahead(gse::meters(8.f)) },
+		audio_probe_segment{ .kind = "stationary", .from = ahead(gse::meters(16.f)) },
+		audio_probe_segment{ .kind = "stationary", .from = ahead(gse::meters(32.f)) },
+		audio_probe_segment{ .kind = "side", .from = gse::vec3<gse::position>(gse::meters(4.f), level, level) },
+		audio_probe_segment{ .kind = "side", .from = gse::vec3<gse::position>(gse::meters(-4.f), level, level) },
+		audio_probe_segment{
+			.kind = "moving",
+			.from = ahead(gse::meters(60.f)),
+			.velocity = gse::vec3<gse::velocity>(still, still, speed),
+			.frames = travel_frames,
+		},
+		audio_probe_segment{
+			.kind = "moving",
+			.from = ahead(gse::meters(20.f)),
+			.velocity = gse::vec3<gse::velocity>(still, still, -speed),
+			.frames = travel_frames,
+		},
+	};
+}
+
+auto sandbox::scenarios::audio_spatial_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_spatial_script(ctx);
+}
+
+auto sandbox::scenarios::audio_binaural_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_spatial_script(ctx);
+}
+
+auto sandbox::scenarios::run_audio_spatial_script(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t settle_frames = 10;
+	constexpr std::uint64_t gap_frames = 15;
+	const auto pitch = gse::hertz(1000.f);
+	const auto gain = gse::percentage<float>::fraction(0.5f);
+	const auto emitter = gse::find_or_generate_id(audio_probe_emitter);
+
+	const auto stop = [&](const gse::channel_future<gse::voice_handle>& voice) {
+		const auto* handle = voice.try_get();
+		if (ctx.expect(handle != nullptr)) {
+			ctx.channels().push<gse::audio::stop_request>({
+				.handle = *handle,
+			});
+		}
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto* listener = ctx.try_component<gse::physics::transform_component>(listeners[0]);
+	if (!ctx.expect(listener != nullptr)) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"audio_spatial_probe: speed of sound {:.2f}, listener at {:.3f}, fixed step {:.6f:ms}",
+		gse::audio::speed_of_sound(),
+		listener->position,
+		gse::system_clock::fixed_dt()
+	);
+
+	gse::log::println(gse::log::category::general, "audio_spatial_probe: sync frame {} pitch {:.1f:Hz}", ctx.frame(), pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = pitch,
+		.gain = gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	stop(sync);
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	for (const auto& [kind, from, velocity, frames] : audio_probe_segments()) {
+		const auto move_to = [&](const std::uint64_t step) {
+			ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+				.target = emitter,
+				.value = from + velocity * (gse::system_clock::fixed_dt() * static_cast<float>(step)),
+			});
+		};
+
+		move_to(0);
+		co_await gse::scenario::wait_frames(ctx, settle_frames);
+
+		gse::log::println(
+			gse::log::category::general,
+			"audio_spatial_probe: segment {} frame {} position {:.3f} velocity {:.3f} pitch {:.1f:Hz} frames {}",
+			kind,
+			ctx.frame(),
+			from,
+			velocity,
+			pitch,
+			frames
+		);
+		const auto voice = ctx.channels().push<gse::audio::play_tone_request>({
+			.pitch = pitch,
+			.gain = gain,
+			.emitter = emitter,
+		});
+		for (std::uint64_t step = 1; step <= frames; ++step) {
+			move_to(step);
+			co_await gse::scenario::wait_frames(ctx, 1);
+		}
+		stop(voice);
+		co_await gse::scenario::wait_frames(ctx, gap_frames);
+	}
+}
+
+auto sandbox::scenarios::audio_occlusion_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_occlusion_script(ctx);
+}
+
+auto sandbox::scenarios::audio_occlusion_probe_headphones(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_occlusion_script(ctx);
+}
+
+auto sandbox::scenarios::run_audio_occlusion_script(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t settle_frames = 10;
+	constexpr std::uint64_t gap_frames = 15;
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto low = gse::hertz(200.f);
+	const auto high = gse::hertz(6000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+	const auto gain = gse::percentage<float>::fraction(0.25f);
+	const auto still = gse::meters_per_second(0.f);
+	const auto walk = gse::vec3<gse::velocity>(gse::meters_per_second(1.f), still, still);
+	const auto level = gse::meters(0.f);
+	const auto clear_side = gse::vec3<gse::displacement>(gse::meters(2.f), level, level);
+	const auto hidden_side = gse::vec3<gse::displacement>(gse::meters(-2.f), level, level);
+	const auto emitter = gse::find_or_generate_id(audio_probe_emitter);
+
+	const auto behind_emitter = gse::vec3<gse::displacement>(level, level, gse::meters(8.f));
+
+	using at = audio_occlusion_station;
+	const std::array segments{
+		audio_occlusion_segment{ .kind = "reference", .from = clear_side, .lead_frames = 30, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "occluded", .from = hidden_side, .lead_frames = 30, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "walk", .from = hidden_side, .lead_frames = 30, .travel_frames = 240, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "floor", .station = at::floor, .from = clear_side, .lead_frames = 30, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "sphere", .station = at::sphere, .from = clear_side, .lead_frames = 30, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "capsule", .station = at::capsule, .from = clear_side, .lead_frames = 30, .tail_frames = 30 },
+		audio_occlusion_segment{ .kind = "hull", .station = at::hull, .from = clear_side, .lead_frames = 30, .tail_frames = 30 },
+	};
+
+	const auto stop = [&](const gse::channel_future<gse::voice_handle>& voice) {
+		const auto* handle = voice.try_get();
+		if (ctx.expect(handle != nullptr)) {
+			ctx.channels().push<gse::audio::stop_request>({
+				.handle = *handle,
+			});
+		}
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto listener = listeners[0];
+	const auto* source = ctx.try_component<gse::physics::transform_component>(emitter);
+	if (!ctx.expect(source != nullptr)) {
+		co_return;
+	}
+	const auto* prism = ctx.try_component<gse::physics::collision_component>(gse::find_or_generate_id(audio_occlusion_hull));
+	if (!ctx.expect(prism != nullptr && std::holds_alternative<gse::physics::hull_shape>(prism->shape.value))) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"audio_occlusion_probe: emitter at {:.3f}, low {:.1f:Hz}, high {:.1f:Hz}, fixed step {:.6f:ms}",
+		source->position,
+		low,
+		high,
+		gse::system_clock::fixed_dt()
+	);
+
+	gse::log::println(gse::log::category::general, "audio_occlusion_probe: sync frame {} pitch {:.1f:Hz}", ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	stop(sync);
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	for (const auto& [kind, station, from, lead_frames, travel_frames, tail_frames] : segments) {
+		const auto emitter_position = audio_occlusion_emitter_position(station);
+		const auto start = emitter_position + behind_emitter + from;
+		const auto stand_at = [&](const std::uint64_t step) {
+			ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+				.target = listener,
+				.value = start + walk * (gse::system_clock::fixed_dt() * static_cast<float>(step)),
+			});
+		};
+
+		ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+			.target = emitter,
+			.value = emitter_position,
+		});
+		stand_at(0);
+		co_await gse::scenario::wait_frames(ctx, settle_frames);
+
+		gse::log::println(
+			gse::log::category::general,
+			"audio_occlusion_probe: segment {} frame {} listener {:.3f} emitter {:.3f} velocity {:.3f} lead {} travel {} tail {}",
+			kind,
+			ctx.frame(),
+			start,
+			emitter_position,
+			walk,
+			lead_frames,
+			travel_frames,
+			tail_frames
+		);
+		const auto low_voice = ctx.channels().push<gse::audio::play_tone_request>({
+			.pitch = low,
+			.gain = gain,
+			.emitter = emitter,
+		});
+		const auto high_voice = ctx.channels().push<gse::audio::play_tone_request>({
+			.pitch = high,
+			.gain = gain,
+			.emitter = emitter,
+		});
+		co_await gse::scenario::wait_frames(ctx, lead_frames);
+		for (std::uint64_t step = 1; step <= travel_frames; ++step) {
+			stand_at(step);
+			co_await gse::scenario::wait_frames(ctx, 1);
+		}
+		co_await gse::scenario::wait_frames(ctx, tail_frames);
+		stop(low_voice);
+		stop(high_voice);
+		co_await gse::scenario::wait_frames(ctx, gap_frames);
+	}
+}
+
+auto sandbox::scenarios::audio_occlusion_stress(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t spawn_frames = 30;
+	constexpr std::size_t voices = 64;
+	constexpr float tones_per_octave = 16.f;
+	const auto lowest = gse::hertz(110.f);
+	const auto gain = gse::percentage<float>::ratio(1.f, static_cast<float>(voices));
+
+	co_await build_stress_workload(ctx);
+	co_await gse::scenario::wait_frames(ctx, spawn_frames);
+
+	const auto owners = ctx.owners<gse::physics::motion_component>();
+	const auto motions = ctx.components<gse::physics::motion_component>();
+	std::size_t started = 0;
+	for (std::size_t index = 0; index < owners.size() && started < voices; ++index) {
+		if (!gse::physics::is_dynamic(motions[index])) {
+			continue;
+		}
+		ctx.channels().push<gse::audio::play_tone_request>({
+			.pitch = lowest * std::pow(2.f, static_cast<float>(started) / tones_per_octave),
+			.gain = gain,
+			.emitter = owners[index],
+		});
+		++started;
+	}
+	ctx.expect(started == voices);
+	gse::log::println(
+		gse::log::category::general,
+		"audio_occlusion_stress: frame {}, {} positioned voices on dynamic bodies, {} colliders, {} listeners",
+		ctx.frame(),
+		started,
+		ctx.owners<gse::physics::collision_component>().size(),
+		ctx.owners<gse::audio::listener_component>().size()
+	);
+}
+
+auto sandbox::scenarios::wait_for_ambient_clips(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t clip_load_frames = 120;
+	constexpr std::chrono::milliseconds clip_load_pause(10);
+
+	for (std::uint64_t frame = 0; frame < clip_load_frames; ++frame) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(clip_load_pause);
+	}
+}
+
+auto sandbox::scenarios::run_audio_yard_solo(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto emitters = ctx.owners<ambient_sound::component>();
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(emitters.size() == 1 && listeners.size() == 1)) {
+		co_return;
+	}
+	const auto* sound = ctx.try_component<ambient_sound::component>(emitters[0]);
+	const auto* source = ctx.try_component<gse::physics::transform_component>(emitters[0]);
+	const auto* listener = ctx.try_component<gse::physics::transform_component>(listeners[0]);
+	if (!ctx.expect(sound != nullptr && source != nullptr && listener != nullptr)) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"audio_yard_solo: frame {} emitter {:.3f} listener {:.3f} clip {} gain {:.3f}",
+		ctx.frame(),
+		source->position,
+		listener->position,
+		sound->clip,
+		sound->gain.value()
+	);
+
+	co_await wait_for_ambient_clips(ctx);
+}
+
+auto sandbox::scenarios::audio_yard_solo_open(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_yard_solo(ctx);
+}
+
+auto sandbox::scenarios::audio_yard_solo_wall(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_yard_solo(ctx);
+}
+
+auto sandbox::scenarios::audio_yard_solo_pillar(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_yard_solo(ctx);
+}
+
+auto sandbox::scenarios::audio_contact_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_contact_script(ctx);
+}
+
+auto sandbox::scenarios::audio_contact_probe_gpu(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_contact_script(ctx);
+}
+
+auto sandbox::scenarios::run_audio_contact_script(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t gap_frames = 15;
+	constexpr std::uint64_t fall_frames = 120;
+	constexpr std::uint64_t settle_frames = 60;
+	constexpr std::uint64_t rest_frames = 300;
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+	const auto falling = gse::meters_per_second(1.f);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto* listener = ctx.try_component<gse::physics::transform_component>(listeners[0]);
+	if (!ctx.expect(listener != nullptr)) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"audio_contact_probe: speed of sound {:.2f}, listener at {:.3f}, fixed step {:.6f:ms}, {} contact sounds",
+		gse::audio::speed_of_sound(),
+		listener->position,
+		gse::system_clock::fixed_dt(),
+		ctx.owners<gse::audio::contact_sound_component>().size()
+	);
+
+	co_await wait_for_ambient_clips(ctx);
+
+	gse::log::println(gse::log::category::general, "audio_contact_probe: sync frame {} pitch {:.1f:Hz}", ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	if (const auto* handle = sync.try_get(); ctx.expect(handle != nullptr)) {
+		ctx.channels().push<gse::audio::stop_request>({
+			.handle = *handle,
+		});
+	}
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	for (int index = 0; index < audio_contact_fallers; ++index) {
+		const auto faller = gse::find_or_generate_id(audio_contact_faller_name(index));
+		gse::log::println(
+			gse::log::category::general,
+			"audio_contact_probe: faller {} body {} spawned frame {} height {:.3f}",
+			index,
+			faller,
+			ctx.frame(),
+			audio_contact_faller_height(index)
+		);
+		ctx.channels().push<spawn_audio_contact_faller_request>({
+			.index = index,
+		});
+
+		gse::velocity fastest;
+		bool arrested = false;
+		for (std::uint64_t frame = 0; frame < fall_frames; ++frame) {
+			co_await gse::scenario::wait_frames(ctx, 1);
+			const auto* motion = ctx.try_component<gse::physics::motion_component>(faller);
+			if (arrested || motion == nullptr) {
+				continue;
+			}
+			const gse::velocity fall = -motion->current_velocity.y();
+			fastest = std::max(fastest, fall);
+			if (fastest > falling && fall < fastest * 0.5f) {
+				arrested = true;
+				gse::log::println(
+					gse::log::category::general,
+					"audio_contact_probe: faller {} arrested frame {} after falling at {:.4f}",
+					index,
+					ctx.frame(),
+					fastest
+				);
+			}
+		}
+		ctx.expect(arrested);
+	}
+
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	gse::log::println(gse::log::category::general, "audio_contact_probe: rest window frame {} frames {}", ctx.frame(), rest_frames);
+	co_await gse::scenario::wait_frames(ctx, rest_frames);
+	gse::log::println(gse::log::category::general, "audio_contact_probe: rest window closed frame {}", ctx.frame());
+}
+
+auto sandbox::scenarios::audio_contact_stress(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t spawn_frames = 30;
+
+	co_await build_stress_workload(ctx);
+	co_await gse::scenario::wait_frames(ctx, spawn_frames);
+	ctx.channels().push<add_contact_sounds_request>({});
+	co_await gse::scenario::wait_frames(ctx, spawn_frames);
+	gse::log::println(
+		gse::log::category::general,
+		"audio_contact_stress: frame {}, {} contact sounds, {} colliders, {} listeners",
+		ctx.frame(),
+		ctx.owners<gse::audio::contact_sound_component>().size(),
+		ctx.owners<gse::physics::collision_component>().size(),
+		ctx.owners<gse::audio::listener_component>().size()
+	);
+}
+
+auto sandbox::scenarios::audio_modal_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_modal_script(ctx, audio_modal_material::steel);
+}
+
+auto sandbox::scenarios::audio_modal_probe_wood(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_modal_script(ctx, audio_modal_material::wood);
+}
+
+auto sandbox::scenarios::audio_modal_probe_glass(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_modal_script(ctx, audio_modal_material::glass);
+}
+
+auto sandbox::scenarios::audio_modal_stress_device(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::chrono::milliseconds frame_pause(16);
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<prefetch_audio_modal_request>({});
+	co_await wait_for_ambient_clips(ctx);
+	ctx.channels().push<spawn_audio_modal_field_request>({});
+	gse::log::println(
+		gse::log::category::general,
+		"audio_modal_stress_device: frame {}, a field of {} hopping bars requested, {} listeners",
+		ctx.frame(),
+		audio_modal_field_bars,
+		ctx.owners<gse::audio::listener_component>().size()
+	);
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(frame_pause);
+	}
+}
+
+auto sandbox::scenarios::run_audio_modal_script(gse::scenario::context& ctx, const audio_modal_material material) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t gap_frames = 15;
+	constexpr std::uint64_t ring_frames = 300;
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto* listener = ctx.try_component<gse::physics::transform_component>(listeners[0]);
+	if (!ctx.expect(listener != nullptr)) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"audio_modal_probe: speed of sound {:.2f}, listener at {:.3f}, fixed step {:.6f:ms}",
+		gse::audio::speed_of_sound(),
+		listener->position,
+		gse::system_clock::fixed_dt()
+	);
+
+	ctx.channels().push<prefetch_audio_modal_request>({});
+	co_await wait_for_ambient_clips(ctx);
+
+	gse::log::println(gse::log::category::general, "audio_modal_probe: sync frame {} pitch {:.1f:Hz}", ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	if (const auto* handle = sync.try_get(); ctx.expect(handle != nullptr)) {
+		ctx.channels().push<gse::audio::stop_request>({
+			.handle = *handle,
+		});
+	}
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	for (int index = 0; index < audio_modal_bars; ++index) {
+		gse::log::println(
+			gse::log::category::general,
+			"audio_modal_probe: bar {} body {} spawned frame {} height {:.3f} tilt {:.1f:deg} at {:.4f}",
+			index,
+			gse::find_or_generate_id(audio_modal_bar_name(index)),
+			ctx.frame(),
+			audio_modal_bar_height(index),
+			audio_modal_bar_tilt(index),
+			audio_modal_bar_position(index)
+		);
+		ctx.channels().push<spawn_audio_modal_bar_request>({
+			.index = index,
+			.material = material,
+		});
+		co_await gse::scenario::wait_frames(ctx, ring_frames);
+	}
+	gse::log::println(gse::log::category::general, "audio_modal_probe: finished frame {}", ctx.frame());
+}
+
+auto sandbox::scenarios::audio_slide_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::string_view label = "audio_slide_probe";
+	const auto down_the_slope = audio_slide_direction();
+
+	co_await open_audio_rub_probe(ctx, label);
+	ctx.channels().push<spawn_audio_slide_plate_request>({});
+	co_await run_audio_rub_launches(
+		ctx,
+		{
+			.label = label,
+			.body = audio_slide_plate,
+			.reach = gse::meters(0.25f),
+			.launches = {
+				down_the_slope * gse::meters_per_second(1.f),
+				down_the_slope * gse::meters_per_second(2.f),
+				down_the_slope * gse::meters_per_second(3.f),
+			},
+			.lead_frames = 2,
+		}
+	);
+}
+
+auto sandbox::scenarios::audio_roll_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::string_view label = "audio_roll_probe";
+	const gse::vec3f along(1.f, 0.f, 0.f);
+
+	co_await open_audio_rub_probe(ctx, label);
+	ctx.channels().push<spawn_audio_roll_ball_request>({});
+	co_await run_audio_rub_launches(
+		ctx,
+		{
+			.label = label,
+			.body = audio_roll_ball,
+			.reach = audio_roll_ball_radius(),
+			.launches = {
+				along * gse::meters_per_second(1.f),
+				along * gse::meters_per_second(-1.4f),
+				along * gse::meters_per_second(1.75f),
+			},
+			.lead_frames = 8,
+		}
+	);
+}
+
+auto sandbox::scenarios::open_audio_rub_probe(gse::scenario::context& ctx, const std::string_view label) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t gap_frames = 15;
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto* listener = ctx.try_component<gse::physics::transform_component>(listeners[0]);
+	if (!ctx.expect(listener != nullptr)) {
+		co_return;
+	}
+	gse::log::println(
+		gse::log::category::general,
+		"{}: speed of sound {:.2f}, listener at {:.3f}, fixed step {:.6f:ms}",
+		label,
+		gse::audio::speed_of_sound(),
+		listener->position,
+		gse::system_clock::fixed_dt()
+	);
+
+	ctx.channels().push<prefetch_audio_modal_request>({});
+	co_await wait_for_ambient_clips(ctx);
+
+	gse::log::println(gse::log::category::general, "{}: sync frame {} pitch {:.1f:Hz}", label, ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	if (const auto* handle = sync.try_get(); ctx.expect(handle != nullptr)) {
+		ctx.channels().push<gse::audio::stop_request>({
+			.handle = *handle,
+		});
+	}
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+}
+
+auto sandbox::scenarios::run_audio_rub_launches(gse::scenario::context& ctx, const audio_rub_probe probe) -> gse::async::task<> {
+	constexpr std::uint64_t settle_frames = 90;
+	constexpr std::uint64_t quiet_frames = 30;
+	constexpr std::uint64_t longest_run_frames = 480;
+	const auto at_rest = gse::meters_per_second(0.01f);
+
+	const auto body = gse::find_or_generate_id(probe.body);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	gse::log::println(gse::log::category::general, "{}: body {} quiet frame {} frames {}", probe.label, body, ctx.frame(), quiet_frames);
+	co_await gse::scenario::wait_frames(ctx, quiet_frames);
+
+	for (std::size_t index = 0; index < probe.launches.size(); ++index) {
+		const auto* resting = ctx.try_component<gse::physics::motion_component>(body);
+		if (!ctx.expect(resting != nullptr)) {
+			co_return;
+		}
+		const auto& launch = probe.launches[index];
+		ctx.channels().push<gse::physics::impulse_request>({
+			.target = body,
+			.impulse = launch * gse::physics::mass_of(*resting),
+		});
+		gse::log::println(gse::log::category::general, "{}: launch {} frame {} velocity {:.3f}", probe.label, index, ctx.frame(), launch);
+
+		gse::velocity fastest;
+		gse::velocity summed;
+		std::uint64_t counted = 0;
+		std::uint64_t window_begin = 0;
+		bool arrested = false;
+		bool rested = false;
+		for (std::uint64_t frame = 0; frame < longest_run_frames && !rested; ++frame) {
+			co_await gse::scenario::wait_frames(ctx, 1);
+			const auto* motion = ctx.try_component<gse::physics::motion_component>(body);
+			if (!ctx.expect(motion != nullptr)) {
+				co_return;
+			}
+			const gse::velocity travel = gse::magnitude(motion->current_velocity);
+			const gse::velocity surface = gse::magnitude(motion->angular_velocity) * probe.reach / gse::rad;
+			if (!arrested && frame >= probe.lead_frames) {
+				fastest = std::max(fastest, travel);
+				if (travel < fastest * 0.5f) {
+					arrested = true;
+					if (ctx.expect(counted > 0)) {
+						gse::log::println(
+							gse::log::category::general,
+							"{}: launch {} window frames {} {} mean speed {:.4f}",
+							probe.label,
+							index,
+							window_begin,
+							ctx.frame(),
+							summed / static_cast<float>(counted)
+						);
+					}
+				}
+				else {
+					window_begin = counted == 0 ? ctx.frame() : window_begin;
+					summed += travel;
+					++counted;
+				}
+			}
+			rested = arrested && travel < at_rest && surface < at_rest;
+		}
+		if (ctx.expect(rested)) {
+			gse::log::println(gse::log::category::general, "{}: launch {} rest frame {}", probe.label, index, ctx.frame());
+		}
+		co_await gse::scenario::wait_frames(ctx, quiet_frames);
+	}
+	gse::log::println(gse::log::category::general, "{}: finished frame {}", probe.label, ctx.frame());
+}
+
+auto sandbox::scenarios::audio_yard_listen(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await gse::scenario::wait_settled(ctx);
+	co_await wait_for_ambient_clips(ctx);
+	gse::log::println(
+		gse::log::category::general,
+		"audio_yard_listen: frame {}, {} ambient emitters, {} listeners",
+		ctx.frame(),
+		ctx.owners<ambient_sound::component>().size(),
+		ctx.owners<gse::audio::listener_component>().size()
+	);
 }

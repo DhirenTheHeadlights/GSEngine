@@ -3,6 +3,7 @@ export module sandbox:dev_spawn_system;
 import std;
 import gse;
 
+import :audio_fixtures;
 import :characters;
 import :lights;
 import :spawn_params;
@@ -23,9 +24,36 @@ export namespace sandbox {
 	struct strike_pyramid_request {};
 
 	struct spawn_lights_request {};
+
+	struct prefetch_audio_stress_request {};
+
+	struct spawn_audio_stress_request {};
+
+	struct cycle_audio_stress_request {};
+
+	struct spawn_audio_contact_faller_request {
+		int index = 0;
+	};
+
+	struct add_contact_sounds_request {};
+
+	struct prefetch_audio_modal_request {};
+
+	struct spawn_audio_modal_bar_request {
+		int index = 0;
+		audio_modal_material material = audio_modal_material::steel;
+	};
+
+	struct spawn_audio_modal_field_request {};
+
+	struct spawn_audio_slide_plate_request {};
+
+	struct spawn_audio_roll_ball_request {};
 }
 
 export namespace sandbox::dev_spawn {
+	using audio_stress_out = gse::channel_write<gse::audio::play_request, gse::audio::play_tone_request, gse::audio::stop_request>;
+
 	struct [[= gse::system_state<"DevSpawn">{}, = gse::settings::category<"Dev Spawn">{}]] data {
 		[[
 			= gse::settings::describe<"Sizes of the workload built by the physics stress spawn, whether it is triggered "
@@ -84,23 +112,101 @@ export namespace sandbox::dev_spawn {
 		int pending_characters = 0;
 		bool character_warning_logged = false;
 		bool in_light_hall = false;
+		bool yard_ringers_pending = false;
+		std::vector<gse::channel_future<gse::voice_handle>> audio_stress_voices;
 	};
 
 	[[= gse::system_run<>{}]]
 	auto run(
 		gse::context& ctx,
 		data& state,
-		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in,
+		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request> spawn_in,
 		gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 		gse::channel_write<gse::physics::impulse_request> impulse_out,
 		gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
+		audio_stress_out audio_out,
 		gse::shared_view<gse::actions::data> actions_d,
 		gse::shared_view<gse::world_system::data> world_d,
 		gse::shared_view<gse::asset::data> assets_d
 	) -> gse::async::task<>;
 }
 
-auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
+namespace sandbox::dev_spawn {
+	constexpr std::size_t audio_stress_tones = 96;
+	constexpr std::size_t audio_stress_clips = 32;
+
+	auto audio_stress_clip(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> gse::resource::handle<gse::audio_clip>;
+
+	auto start_audio_stress_voice(
+		std::size_t index,
+		audio_stress_out audio_out,
+		gse::shared_view<gse::asset::data> assets_d
+	) -> gse::channel_future<gse::voice_handle>;
+
+	auto cycle_audio_stress(
+		data& state,
+		audio_stress_out audio_out,
+		gse::shared_view<gse::asset::data> assets_d
+	) -> void;
+
+	auto loaded_modal_materials(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> std::optional<audio_modal_material_set>;
+}
+
+auto sandbox::dev_spawn::loaded_modal_materials(const gse::shared_view<gse::asset::data> assets_d) -> std::optional<audio_modal_material_set> {
+	std::array<gse::resource::handle<gse::acoustic_material>, audio_modal_materials.size()> handles;
+	for (const auto [material, handle] : std::views::zip(audio_modal_materials, handles)) {
+		handle = gse::asset::get<gse::acoustic_material>(assets_d, audio_modal_material_tag(material));
+	}
+	if (!std::ranges::all_of(handles, &gse::resource::handle<gse::acoustic_material>::valid)) {
+		return std::nullopt;
+	}
+
+	audio_modal_material_set loaded;
+	for (const auto [handle, slot] : std::views::zip(handles, loaded)) {
+		slot = handle.resolve();
+	}
+	return loaded;
+}
+
+auto sandbox::dev_spawn::audio_stress_clip(const gse::shared_view<gse::asset::data> assets_d) -> gse::resource::handle<gse::audio_clip> {
+	return gse::asset::get<gse::audio_clip>(assets_d, "Audio/stress_sweep");
+}
+
+auto sandbox::dev_spawn::start_audio_stress_voice(const std::size_t index, const audio_stress_out audio_out, const gse::shared_view<gse::asset::data> assets_d) -> gse::channel_future<gse::voice_handle> {
+	constexpr float tones_per_octave = 16.f;
+	const auto lowest = gse::hertz(110.f);
+	const auto gain = gse::percentage<float>::ratio(1.f, static_cast<float>(audio_stress_tones + audio_stress_clips));
+
+	if (index < audio_stress_tones) {
+		return audio_out.push<gse::audio::play_tone_request>({
+			.pitch = lowest * std::pow(2.f, static_cast<float>(index) / tones_per_octave),
+			.gain = gain,
+		});
+	}
+	return audio_out.push<gse::audio::play_request>({
+		.clip = audio_stress_clip(assets_d),
+		.loop = true,
+		.gain = gain,
+	});
+}
+
+auto sandbox::dev_spawn::cycle_audio_stress(data& state, const audio_stress_out audio_out, const gse::shared_view<gse::asset::data> assets_d) -> void {
+	for (std::size_t index = 0; index < state.audio_stress_voices.size(); index += 2) {
+		auto& voice = state.audio_stress_voices[index];
+		if (const auto* handle = voice.try_get()) {
+			audio_out.push<gse::audio::stop_request>({
+				.handle = *handle,
+			});
+		}
+		voice = start_audio_stress_voice(index, audio_out, assets_d);
+	}
+}
+
+auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const audio_stress_out audio_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = world_d.active_scene_ptr;
 	const gse::scene::mutation_scope _(ctx);
@@ -121,6 +227,7 @@ auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_
 	if (entered_scene) {
 		state.possessed_character.reset();
 		state.in_light_hall = active_scene_id == gse::find_or_generate_id("LightHall");
+		state.yard_ringers_pending = active_scene_id == gse::find_or_generate_id("AudioYard");
 	}
 	const bool entered_pyramid_scene = entered_scene && active_scene_id == gse::find_or_generate_id("Pyramid");
 	const bool entered_light_hall_scene = entered_scene && state.in_light_hall;
@@ -166,6 +273,67 @@ auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_
 	}
 	if (scene != nullptr && (key_joints || req_joints)) {
 		spawn_joint_test(*scene);
+	}
+	if (scene != nullptr) {
+		for (const auto& req : spawn_in.of<spawn_audio_contact_faller_request>()) {
+			spawn_audio_contact_faller(*scene, req.index);
+		}
+		const auto modal_bars = spawn_in.of<spawn_audio_modal_bar_request>();
+		const bool modal_field = !spawn_in.of<spawn_audio_modal_field_request>().empty();
+		const bool slide_plate = !spawn_in.of<spawn_audio_slide_plate_request>().empty();
+		const bool roll_ball = !spawn_in.of<spawn_audio_roll_ball_request>().empty();
+		if (!modal_bars.empty() || modal_field || state.yard_ringers_pending || slide_plate || roll_ball) {
+			if (const auto materials = loaded_modal_materials(assets_d)) {
+				const auto& steel = *(*materials)[std::to_underlying(audio_modal_material::steel)];
+				for (const auto& req : modal_bars) {
+					spawn_audio_modal_bar(*scene, req.index, *(*materials)[std::to_underlying(req.material)]);
+				}
+				if (modal_field) {
+					spawn_audio_modal_field(*scene, *materials);
+				}
+				if (slide_plate) {
+					spawn_audio_slide_plate(*scene, steel);
+				}
+				if (roll_ball) {
+					spawn_audio_roll_ball(*scene, steel);
+				}
+				if (state.yard_ringers_pending) {
+					spawn_audio_yard_ringers(*scene, *materials);
+					state.yard_ringers_pending = false;
+				}
+			}
+			else if (!modal_bars.empty() || modal_field || slide_plate || roll_ball) {
+				gse::log::println(
+					gse::log::level::warning,
+					"dev_spawn: {} modal bars, {} modal fields, {} slide plates and {} roll balls were not spawned because the acoustic materials are not loaded yet",
+					modal_bars.size(),
+					modal_field ? 1 : 0,
+					slide_plate ? 1 : 0,
+					roll_ball ? 1 : 0
+				);
+			}
+		}
+		if (!spawn_in.of<add_contact_sounds_request>().empty()) {
+			const std::vector<gse::id> entities(std::from_range, scene->entities());
+			for (const gse::id entity : entities) {
+				scene->build(entity)
+					.with<gse::audio::contact_sound_component>(audio_contact_sound());
+			}
+		}
+	}
+	if (!spawn_in.of<prefetch_audio_stress_request>().empty()) {
+		audio_stress_clip(assets_d);
+	}
+	if (!spawn_in.of<prefetch_audio_modal_request>().empty()) {
+		loaded_modal_materials(assets_d);
+	}
+	if (!spawn_in.of<spawn_audio_stress_request>().empty()) {
+		for (std::size_t index = 0; index < audio_stress_tones + audio_stress_clips; ++index) {
+			state.audio_stress_voices.push_back(start_audio_stress_voice(index, audio_out, assets_d));
+		}
+	}
+	if (!spawn_in.of<cycle_audio_stress_request>().empty()) {
+		cycle_audio_stress(state, audio_out, assets_d);
 	}
 	if (!spawn_in.of<prefetch_character_request>().empty()) {
 		character_model(assets_d);

@@ -3,6 +3,7 @@ export module gse.graphics:cloud_renderer;
 import std;
 
 import :atmosphere_renderer;
+import :camera_latch_renderer;
 import :camera_system;
 
 import gse.gpu;
@@ -88,7 +89,6 @@ export namespace gse::renderer::cloud {
 	};
 
 	struct view_snapshot {
-		mat4f view_proj{};
 		vec2f jitter_ndc{};
 	};
 
@@ -408,6 +408,7 @@ export namespace gse::renderer::cloud {
 		channel_read<weather_request> weather_in,
 		shared_view<atmosphere::data> atm_state,
 		shared_view<camera::data> cam_state,
+		shared_view<camera_latch::data> latch_s,
 		channel_read<camera::temporal_reset_request> reset_in
 	) -> async::task<>;
 }

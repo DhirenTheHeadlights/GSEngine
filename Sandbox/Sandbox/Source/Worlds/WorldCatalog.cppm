@@ -3,6 +3,7 @@ export module sandbox:world_catalog;
 import std;
 import gse;
 
+import :audio_fixtures;
 import :parity_fixtures;
 import :world_diagrams;
 import :worlds;
@@ -18,6 +19,9 @@ export namespace sandbox {
 		}]],
 		parity [[= world_group_info{
 			.heading = "Parity fixtures",
+		}]],
+		probe [[= world_group_info{
+			.heading = "Probes",
 		}]]
 	};
 
@@ -34,7 +38,7 @@ export namespace sandbox {
 }
 
 auto sandbox::world_catalog() -> std::span<const world_entry> {
-	static const std::array<world_entry, 23> entries{
+	static const std::array<world_entry, 33> entries{
 		world_entry{
 			.name = "Sandbox",
 			.label = "Sandbox",
@@ -119,6 +123,13 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 			.blurb = "A corridor of clustered point lights for the culling pass",
 			.setup = &light_hall_scene_setup,
 			.diagram = &diagram::light_hall,
+			.group = world_group::world,
+		},
+		world_entry{
+			.name = "AudioYard",
+			.label = "Audio Yard",
+			.blurb = "Three looping sounds, one in the open and two behind cover to walk around",
+			.setup = &audio_yard_scene_setup,
 			.group = world_group::world,
 		},
 		world_entry{
@@ -246,6 +257,69 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 			.blurb = "Static brick-textured boxes for texture parity across backends",
 			.setup = &parity_textured_scene_setup,
 			.group = world_group::parity,
+		},
+		world_entry{
+			.name = "AudioProbe",
+			.label = "Audio Probe",
+			.blurb = "A listener and one emitter for the spatial audio measurements",
+			.setup = &audio_probe_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioOcclusion",
+			.label = "Audio Occlusion",
+			.blurb = "A listener, one emitter and a wall between them for the occlusion measurements",
+			.setup = &audio_occlusion_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioContact",
+			.label = "Audio Contact",
+			.blurb = "A floor, a listener and a resting stack for the contact sound measurements",
+			.setup = &audio_contact_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioModal",
+			.label = "Audio Modal",
+			.blurb = "A floor and a listener with drop points on an arc around it for the modal synthesis measurements",
+			.setup = &audio_modal_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioSlide",
+			.label = "Audio Slide",
+			.blurb = "A ramp and a listener for the sliding sound measurements",
+			.setup = &audio_slide_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioRoll",
+			.label = "Audio Roll",
+			.blurb = "A floor and a listener for the rolling sound measurements",
+			.setup = &audio_roll_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioYardSoloOpen",
+			.label = "Audio Yard Solo Open",
+			.blurb = "The Audio Yard's open emitter alone, with a listener one metre in front of it",
+			.setup = &audio_yard_solo_open_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioYardSoloWall",
+			.label = "Audio Yard Solo Wall",
+			.blurb = "The Audio Yard's emitter behind the wall alone, with a listener one metre in front of it",
+			.setup = &audio_yard_solo_wall_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioYardSoloPillar",
+			.label = "Audio Yard Solo Pillar",
+			.blurb = "The Audio Yard's emitter behind the pillar alone, with a listener one metre in front of it",
+			.setup = &audio_yard_solo_pillar_scene_setup,
+			.group = world_group::probe,
 		},
 	};
 	return entries;

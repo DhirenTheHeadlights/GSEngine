@@ -344,7 +344,7 @@ ctrl.parameters[key] = animation_parameter{
 
 For function call arguments where the type is needed for template deduction, keep the explicit type.
 
-Designated initializers are always one per line, regardless of how short the aggregate is — never pack `.field = value` pairs onto a single line.
+Designated initializers go inline `{ .a = x, .b = y }` when the whole list fits within 100 columns and has no nested multi-line braces; otherwise one `.member = value,` per line with a trailing comma and `}` at the opener's indent.
 
 ---
 

@@ -1071,6 +1071,273 @@ export namespace sandbox::scenarios {
 	auto parity_domino(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_stress",
+		.scene = "Sandbox",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_stress(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_stress_device",
+		.scene = "Sandbox",
+		.gpu_solver = false,
+		.pacing = gse::scenario::pacing::wall_clock,
+		.warmup_frames = 0,
+		.frames = 480,
+	}]]
+	auto audio_stress_device(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_spatial_probe",
+		.scene = "AudioProbe",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 900,
+	}]]
+	auto audio_spatial_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_binaural_probe",
+		.scene = "AudioProbe",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 900,
+	},
+		= gse::scenario::pin<^^gse::audio::data::listening>{ gse::audio::listening_mode::headphones }
+	]]
+	auto audio_binaural_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_occlusion_probe",
+		.scene = "AudioOcclusion",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 960,
+	}]]
+	auto audio_occlusion_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_occlusion_probe_headphones",
+		.scene = "AudioOcclusion",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 960,
+	},
+		= gse::scenario::pin<^^gse::audio::data::listening>{ gse::audio::listening_mode::headphones }
+	]]
+	auto audio_occlusion_probe_headphones(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_occlusion_stress",
+		.scene = "Sandbox",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
+	auto audio_occlusion_stress(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_yard_listen",
+		.scene = "AudioYard",
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_yard_listen(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_yard_solo_open",
+		.scene = "AudioYardSoloOpen",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_yard_solo_open(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_yard_solo_wall",
+		.scene = "AudioYardSoloWall",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_yard_solo_wall(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_yard_solo_pillar",
+		.scene = "AudioYardSoloPillar",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_yard_solo_pillar(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_contact_probe",
+		.scene = "AudioContact",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 1020,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true }
+	]]
+	auto audio_contact_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_contact_probe_gpu",
+		.scene = "AudioContact",
+		.headless = true,
+		.gpu_solver = true,
+		.warmup_frames = 0,
+		.frames = 1020,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true },
+		= gse::scenario::pin<^^ss::physics::gpu_contact_snapshot>{ true }
+	]]
+	auto audio_contact_probe_gpu(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_contact_stress",
+		.scene = "Sandbox",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	},
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+	]]
+	auto audio_contact_stress(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_modal_probe",
+		.scene = "AudioModal",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 2040,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true },
+		= gse::scenario::pin<^^gse::audio::data::rub_sounds>{ false }
+	]]
+	auto audio_modal_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_modal_probe_wood",
+		.scene = "AudioModal",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 2040,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true },
+		= gse::scenario::pin<^^gse::audio::data::rub_sounds>{ false }
+	]]
+	auto audio_modal_probe_wood(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_modal_probe_glass",
+		.scene = "AudioModal",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 2040,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true },
+		= gse::scenario::pin<^^gse::audio::data::rub_sounds>{ false }
+	]]
+	auto audio_modal_probe_glass(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_modal_stress_device",
+		.scene = "AudioModal",
+		.gpu_solver = false,
+		.pacing = gse::scenario::pacing::wall_clock,
+		.warmup_frames = 0,
+		.frames = 1000,
+	}]]
+	auto audio_modal_stress_device(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_slide_probe",
+		.scene = "AudioSlide",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 660,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true }
+	]]
+	auto audio_slide_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_roll_probe",
+		.scene = "AudioRoll",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 1200,
+	},
+		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true }
+	]]
+	auto audio_roll_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
 }
 
 export namespace sandbox::scenario_table {

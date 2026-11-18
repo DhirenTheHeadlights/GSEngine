@@ -35,13 +35,13 @@ export namespace gse::vulkan {
 		static auto create(
 			std::span<const char* const> required_extensions,
 			bool enable_validation
-		) -> instance;
+		) -> gpu::expected<instance>;
 
 		[[nodiscard]] static auto required_window_extensions() -> std::span<const char* const>;
 
-		auto create_surface(
+		[[nodiscard]] auto create_surface(
 			native_window_handle handle
-		) -> void;
+		) -> gpu::expected<void>;
 
 		auto destroy_surface() -> void;
 
@@ -96,7 +96,7 @@ namespace gse::vulkan {
 	auto create_window_surface(
 		vk::Instance instance,
 		native_window_handle handle
-	) -> vk::SurfaceKHR;
+	) -> gpu::expected<vk::SurfaceKHR>;
 
 	auto suppress_injected_layers() -> void;
 
@@ -153,13 +153,16 @@ auto gse::vulkan::instance::required_window_extensions() -> std::span<const char
 	return extensions;
 }
 
-auto gse::vulkan::create_window_surface(const vk::Instance instance, const native_window_handle handle) -> vk::SurfaceKHR {
+auto gse::vulkan::create_window_surface(const vk::Instance instance, const native_window_handle handle) -> gpu::expected<vk::SurfaceKHR> {
 	assert(handle.value != nullptr, "Failed to create window surface for Vulkan: window handle is null");
 
 	auto* const raw_instance = std::bit_cast<void*>(instance);
 	const auto get_proc_addr = reinterpret_cast<get_instance_proc_addr_fn>(vk::detail::defaultDispatchLoaderDynamic.vkGetInstanceProcAddr);
 	const auto create_surface = reinterpret_cast<create_win32_surface_fn>(get_proc_addr(raw_instance, "vkCreateWin32SurfaceKHR"));
-	assert(create_surface != nullptr, "Vulkan instance does not expose vkCreateWin32SurfaceKHR");
+	if (create_surface == nullptr) {
+		log::println(log::level::error, log::category::vulkan, "Vulkan instance does not expose vkCreateWin32SurfaceKHR");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
 
 	const win32_surface_create_info info{
 		.module_instance = reinterpret_cast<void*>(win32::GetModuleHandleW(nullptr)),
@@ -168,14 +171,21 @@ auto gse::vulkan::create_window_surface(const vk::Instance instance, const nativ
 
 	std::uint64_t surface = 0;
 	const std::int32_t result = create_surface(raw_instance, &info, nullptr, &surface);
-	assert(result == vulkan_success, "Failed to create window surface for Vulkan!");
+	if (result != vulkan_success) {
+		log::println(log::level::error, log::category::vulkan, "Failed to create window surface for Vulkan: {}", vk::to_string(static_cast<vk::Result>(result)));
+		return std::unexpected{ from_vk(static_cast<vk::Result>(result)) };
+	}
 	return std::bit_cast<vk::SurfaceKHR>(surface);
 }
 
-auto gse::vulkan::instance::create_surface(const native_window_handle handle) -> void {
+auto gse::vulkan::instance::create_surface(const native_window_handle handle) -> gpu::expected<void> {
 	const auto raw_surface = create_window_surface(*m_instance, handle);
-	m_surface = vk::raii::SurfaceKHR(m_instance, raw_surface);
+	if (!raw_surface) {
+		return std::unexpected{ raw_surface.error() };
+	}
+	m_surface = vk::raii::SurfaceKHR(m_instance, *raw_surface);
 	m_surface_window = handle;
+	return {};
 }
 
 auto gse::vulkan::instance::destroy_surface() -> void {
@@ -198,7 +208,7 @@ auto gse::vulkan::instance::surface() const -> gpu::surface {
 }
 
 auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) -> gpu::surface {
-	const auto surface = std::bit_cast<gpu::surface>(create_window_surface(*m_instance, handle));
+	const auto surface = std::bit_cast<gpu::surface>(gpu::must(create_window_surface(*m_instance, handle)));
 	m_owned_surface_windows.emplace_back(surface, handle);
 	return surface;
 }
@@ -233,16 +243,24 @@ auto gse::vulkan::instance::monitor_extent_of(const gpu::surface surface) const 
 	};
 }
 
-auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> instance {
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> gpu::expected<instance> {
 	suppress_injected_layers();
 	vk::detail::defaultDispatchLoaderDynamic.init();
+	if (!vk::detail::defaultDispatchLoaderDynamic.vkGetInstanceProcAddr) {
+		log::println(log::level::error, log::category::vulkan, "Vulkan loader not found");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
 
 	std::vector<const char*> validation_layers;
 	if (enable_validation) {
 		constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
-		const auto available = *vk::enumerateInstanceLayerProperties();
+		const auto available = vk::enumerateInstanceLayerProperties();
+		if (available.result != vk::Result::eSuccess) {
+			log::println(log::level::error, log::category::vulkan, "Failed to enumerate Vulkan instance layers: {}", vk::to_string(available.result));
+			return std::unexpected{ from_vk(available.result) };
+		}
 		const bool layer_present = std::ranges::any_of(
-			available,
+			available.value,
 			[&](const vk::LayerProperties& p) {
 				return std::string_view(p.layerName) == layer_name;
 			}
@@ -260,7 +278,12 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 		}
 	}
 
-	const std::uint32_t highest_supported_version = *vk::enumerateInstanceVersion();
+	const auto instance_version = vk::enumerateInstanceVersion();
+	if (instance_version.result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to query Vulkan instance version: {}", vk::to_string(instance_version.result));
+		return std::unexpected{ from_vk(instance_version.result) };
+	}
+	const std::uint32_t highest_supported_version = instance_version.value;
 	const vk::ApplicationInfo app_info{
 		.pApplicationName = "GSEngine",
 		.applicationVersion = 1,
@@ -272,10 +295,14 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	std::vector extensions(required_extensions.begin(), required_extensions.end());
 	extensions.push_back(vk::EXTDebugUtilsExtensionName);
 
-	const auto available_instance_extensions = *vk::enumerateInstanceExtensionProperties();
+	const auto available_instance_extensions = vk::enumerateInstanceExtensionProperties();
+	if (available_instance_extensions.result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to enumerate Vulkan instance extensions: {}", vk::to_string(available_instance_extensions.result));
+		return std::unexpected{ from_vk(available_instance_extensions.result) };
+	}
 	const auto has_instance_extension = [&](const std::string_view name) {
 		return std::ranges::any_of(
-			available_instance_extensions,
+			available_instance_extensions.value,
 			[&](const auto& p) {
 				return std::string_view(p.extensionName) == name;
 			}
@@ -379,7 +406,10 @@ auto gse::vulkan::instance::create(const std::span<const char* const> required_e
 	vk::raii::Context context;
 
 	auto [result, instance] = context.createInstance(create_info);
-	assert(result == vk::Result::eSuccess, "Failed to create Vulkan instance: {}", vk::to_string(result));
+	if (result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", vk::to_string(result));
+		return std::unexpected{ from_vk(result) };
+	}
 	log::println(
 		log::category::vulkan,
 		"Vulkan Instance Created{}!",

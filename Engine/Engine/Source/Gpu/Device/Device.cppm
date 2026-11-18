@@ -592,6 +592,12 @@ export namespace gse::gpu {
 			bool pass_checkpoints_enabled
 		);
 
+		template <typename B, typename Creation>
+		[[nodiscard]] static auto from_backend(
+			Creation&& created,
+			bool pass_checkpoints
+		) -> std::unique_ptr<device>;
+
 		auto set_slot_resource(
 			std::uint32_t slot_index,
 			const resource_ref& ref

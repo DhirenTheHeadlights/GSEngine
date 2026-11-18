@@ -41,14 +41,13 @@ auto gse::renderer::light_packing::reach(const vec3f& color, const irradiance in
 	return (sqrt(discriminant) - linear) / (2.f * quadratic);
 }
 
-auto gse::renderer::light_packing::pack(const std::span<shaders::forward::light> out, const view_matrix& view, const shared_view<atmosphere::data> atmosphere, const read<directional_light_component>& dir_lights, const read<spot_light_component>& spot_lights, const read<point_light_component>& point_lights, const read<physics::transform_component>& transforms) -> std::size_t {
+auto gse::renderer::light_packing::pack(const std::span<shaders::forward::light> out, const shared_view<atmosphere::data> atmosphere, const read<directional_light_component>& dir_lights, const read<spot_light_component>& spot_lights, const read<point_light_component>& point_lights, const read<physics::transform_component>& transforms) -> std::size_t {
 	std::size_t count = 0;
 
 	if (count < out.size()) {
 		const auto sun_to_surface = -atmosphere.sun_direction;
 		out[count] = {
 			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(sun_to_surface),
 			.world_direction = sun_to_surface,
 			.color = atmosphere.sun_color * atmosphere.sun_transmittance,
 			.intensity = atmosphere.sun_intensity,
@@ -64,7 +63,6 @@ auto gse::renderer::light_packing::pack(const std::span<shaders::forward::light>
 		}
 		out[count] = {
 			.light_type = shaders::forward::light_type::directional,
-			.direction = view.transform_direction(comp.direction),
 			.world_direction = comp.direction,
 			.color = comp.color,
 			.intensity = comp.intensity,
@@ -86,8 +84,6 @@ auto gse::renderer::light_packing::pack(const std::span<shaders::forward::light>
 		const auto& comp = spot_lights[i];
 		out[count] = {
 			.light_type = shaders::forward::light_type::spot,
-			.position = view.transform_point(tc->position),
-			.direction = view.transform_direction(comp.direction),
 			.world_position = tc->position,
 			.world_direction = comp.direction,
 			.color = comp.color,
@@ -116,7 +112,6 @@ auto gse::renderer::light_packing::pack(const std::span<shaders::forward::light>
 		const auto& comp = point_lights[i];
 		out[count] = {
 			.light_type = shaders::forward::light_type::point,
-			.position = view.transform_point(tc->position),
 			.world_position = tc->position,
 			.color = comp.color,
 			.intensity = comp.intensity,

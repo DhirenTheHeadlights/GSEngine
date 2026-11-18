@@ -16,6 +16,7 @@ import gse.time;
 import std;
 
 import :atmosphere_renderer;
+import :camera_latch_renderer;
 import :camera_system;
 import :depth_prepass_renderer;
 import :directional_light;
@@ -84,6 +85,8 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 			: gpu::build_graphics_program(*gpu_s.device, raster_entry::pod);
 	}
 
+	d.light_view_pipeline = gpu::build_compute_program(*gpu_s.device, light_packing::view_entry::pod);
+
 	constexpr std::size_t light_stride = sizeof(shaders::forward::light);
 	constexpr std::size_t light_buffer_size = light_stride * max_lights;
 
@@ -112,6 +115,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 				.size = light_buffer_size,
 				.stride = sizeof(shaders::forward::light),
 				.usage = gpu::buffer_flag::storage,
+				.writable = true,
 			},
 			"forward.lights"
 		);
@@ -120,7 +124,7 @@ auto gse::renderer::forward::init(context& ctx, const shared_view<gpu::context::
 	return {};
 }
 
-auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<camera_latch::data> latch_s, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, const std::optional<shared_view<gi_probe::data>> gi_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const channel_read<camera::temporal_reset_request> reset_in, const shared_view<lighting::data> lighting_s, const channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in) -> async::task<> {
+auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera_latch::data> latch_s, shared_view<geometry_collector::data> gc_r, shared_view<light_culling::data> lc_r, shared_view<atmosphere::data> atm_state, shared_view<cloud::data> cloud_state, const std::optional<shared_view<gi_probe::data>> gi_s, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms, const channel_read<camera::temporal_reset_request> reset_in, const shared_view<lighting::data> lighting_s, const channel_read<lighting_source::ray_traced_scene, lighting_source::raster_shadows, lighting_source::screen_ambient_occlusion, lighting_source::screen_reflections> lighting_in) -> async::task<> {
 	d.surface.reset();
 	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
 		d.frame_counter = 0;
@@ -166,8 +170,6 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	const auto& data = render_items[0];
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
-	const auto view = cam_state.view_matrix;
-
 	const std::size_t total_lights = std::min(dir_lights.size() + spot_lights.size() + point_lights.size() + 1u,
 		max_lights);
 	auto& staging = d.light_staging;
@@ -176,7 +178,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 		std::byte{ 0 }
 	);
 	const std::span staging_lights(reinterpret_cast<shaders::forward::light*>(staging.data()), total_lights);
-	const auto light_count = light_packing::pack(staging_lights, view, atm_state, dir_lights, spot_lights, point_lights, transforms);
+	const auto light_count = light_packing::pack(staging_lights, atm_state, dir_lights, spot_lights, point_lights, transforms);
 
 	if (light_count > 0) {
 		d.light_buffers[frame_index].host_write(staging.data(), light_count * sizeof(shaders::forward::light));
@@ -265,6 +267,20 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 	};
 	d.surface = surface;
 
+	{
+		auto view_rec = co_await gpu::pass<^^light_view_pass>(pass_out).pipeline(d.light_view_pipeline).after<^^camera_latch::frame>();
+		view_rec.dispatch<light_packing::view_entry>(
+			{
+				.light_count = static_cast<std::uint32_t>(light_count),
+			},
+			{
+				.camera_ubo = surface.camera_ubo,
+				.lights = surface.lights,
+			},
+			gpu::group_count<light_packing::view_entry>(static_cast<std::uint32_t>(light_count))
+		);
+	}
+
 	auto rec = co_await gpu::pass<^^frame>(pass_out)
 		.pipeline(d.pipeline)
 		.color(
@@ -275,7 +291,7 @@ auto gse::renderer::forward::frame(context& ctx, shared_view<gpu::context::data>
 		)
 		.depth(gpu::load_depth())
 		.after(technique_passes)
-		.after<^^light_culling::frame, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass, ^^cloud::cloud_shadow_pass>();
+		.after<^^light_culling::frame, ^^light_view_pass, ^^depth_prepass::frame, ^^atmosphere::ap_compute_pass, ^^gi_probe::frame, ^^skin::deform_pass, ^^cloud::cloud_shadow_pass>();
 	rec.set_viewport(ext);
 	rec.set_scissor(ext);
 

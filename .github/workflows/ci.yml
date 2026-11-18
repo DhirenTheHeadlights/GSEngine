@@ -76,8 +76,9 @@ jobs:
           & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-test-tags concurrency --engine-test-repeat 100
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # Headless scenarios only. They create no window and never touch shaders, which is
-      # why release.yml's render_stress verify is still staged off. Their exit code only
+      # Headless CPU-solver scenarios only, run with --no-engine-gpu: the runner has no GPU
+      # or Vulkan driver, and a headless scenario still creates a device unless told not to.
+      # That is also why release.yml's render_stress verify is still staged off. Their exit code only
       # started meaning anything with the verdict plumbing - before that a failed
       # expectation, a settle-cap abort and a REGRESSED baseline all exited 0.
       - name: Run the headless scenario gates
@@ -85,7 +86,7 @@ jobs:
         run: |
           foreach ($scenario in @("pyramid_cpu", "rollback_reference")) {
             Write-Output "::group::$scenario"
-            & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-bench-scenario $scenario
+            & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --no-engine-gpu --engine-bench-scenario $scenario
             $code = $LASTEXITCODE
             Write-Output "::endgroup::"
             if ($code -ne 0) {

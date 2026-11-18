@@ -43,6 +43,7 @@ namespace gse::alloc {
 
 	thread_local tracked_bytes sample_countdown;
 	thread_local std::uint64_t rng_state = 0;
+	thread_local std::uint64_t thread_allocations = 0;
 
 	auto mix(
 		std::uint64_t value
@@ -193,6 +194,7 @@ auto gse::alloc::forget(void* block) -> void {
 }
 
 auto gse::alloc::allocate(const std::size_t size, const void* site_pc) -> void* {
+	++thread_allocations;
 	void* block = std::malloc(size);
 	if (block != nullptr) {
 		remember(block, size, site_pc);
@@ -214,6 +216,7 @@ auto gse::alloc::allocate_aligned(const std::size_t size, const std::align_val_t
 		return allocate(size, site_pc);
 	}
 
+	++thread_allocations;
 	void* raw = std::malloc(size + align);
 	if (raw == nullptr) {
 		return nullptr;
@@ -284,6 +287,10 @@ auto gse::alloc::live_samples() -> std::int64_t {
 
 auto gse::alloc::evicted_samples() -> std::int64_t {
 	return total_evicted.load(std::memory_order_relaxed);
+}
+
+auto gse::alloc::thread_allocation_count() -> std::uint64_t {
+	return thread_allocations;
 }
 
 auto gse::alloc::mark() -> void {

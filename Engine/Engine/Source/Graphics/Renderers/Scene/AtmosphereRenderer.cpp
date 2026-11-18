@@ -3,7 +3,9 @@ module gse.graphics:atmosphere_renderer_impl;
 import std;
 
 import :atmosphere_renderer;
+import :camera_latch_renderer;
 import :camera_system;
+import :shared_shaders;
 
 
 import gse.gpu;
@@ -34,6 +36,7 @@ namespace gse::renderer::atmosphere {
 	};
 
 	struct ap_bindings {
+		shaders::uniform_block<shaders::common::camera_data> camera_ubo;
 		shaders::texture2d<vec4f> transmittance_in;
 		shaders::texture2d<vec4f> multiscatter_in;
 		shaders::storage_image_3d<vec4f> ap_volume_out;
@@ -46,7 +49,6 @@ namespace gse::renderer::atmosphere {
 	};
 
 	struct [[= shaders::shader_struct]] ap_push_constants {
-		mat4f inv_view_proj;
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 	};
@@ -77,6 +79,7 @@ namespace gse::renderer::atmosphere {
 
 	using ap_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/atmosphere_aerial_perspective">,
+		gpu::types<shaders::common::shader_types>,
 		gpu::bindings<ap_bindings, bindings>,
 		gpu::push_constant<ap_push_constants>,
 		lut_pass
@@ -274,7 +277,7 @@ auto gse::renderer::atmosphere::init(context& ctx, const shared_view<gpu::contex
 	return {};
 }
 
-auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<sun_request> sun_in, shared_view<camera::data> cam_state) -> async::task<> {
+auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<sun_request> sun_in, shared_view<camera::data> cam_state, shared_view<camera_latch::data> latch_s) -> async::task<> {
 	angle sun_elevation = d.sun_elevation;
 	angle sun_azimuth = d.sun_azimuth;
 	for (const auto& [elevation, azimuth] : sun_in.of<sun_request>()) {
@@ -320,10 +323,6 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		d.luts_ready = true;
 	}
 
-	const auto view = cam_state.view_matrix;
-	const auto proj = cam_state.projection_matrix;
-	const auto inv_view_proj = (proj * view).inverse();
-
 	auto rec = co_await gpu::pass<^^sky_view_pass>(pass_out).pipeline(d.sky_view_pipeline).after<^^multiscatter_pass>();
 	rec.dispatch<sky_view_entry>(
 		{
@@ -340,14 +339,14 @@ auto gse::renderer::atmosphere::frame(const context& ctx, shared_view<gpu::conte
 		gpu::group_count<sky_view_entry>(sky_view_lut_size)
 	);
 
-	rec = co_await gpu::pass<^^ap_compute_pass>(pass_out).pipeline(d.ap_pipeline).after<^^multiscatter_pass>();
+	rec = co_await gpu::pass<^^ap_compute_pass>(pass_out).pipeline(d.ap_pipeline).after<^^multiscatter_pass, ^^camera_latch::frame>();
 	rec.dispatch<ap_entry>(
 		{
-			.inv_view_proj = inv_view_proj,
 			.sun_direction = d.sun_direction,
 			.camera_altitude = d.camera_altitude,
 		},
 		{
+			.camera_ubo = latch_s.camera_buffers[gpu_s.render_graph->current_frame()],
 			.transmittance_in = d.transmittance_lut,
 			.multiscatter_in = d.multiscatter_lut,
 			.ap_volume_out = d.ap_volume,

@@ -8,6 +8,7 @@ import :light_packing;
 import :point_light;
 import :spot_light;
 import :directional_light;
+import :camera_latch_renderer;
 import :camera_system;
 import :depth_prepass_renderer;
 
@@ -103,6 +104,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 	d.pipeline = gpu_s.device->capabilities().untyped_atomics
 		? gpu::build_compute_program(*gpu_s.device, entry::pod)
 		: gpu::build_compute_program(*gpu_s.device, atomic_entry::pod);
+	d.view_pipeline = gpu::build_compute_program(*gpu_s.device, light_packing::view_entry::pod);
 
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		d.culling_params_buffers[i] = gpu_s.device->create_buffer<culling_params_data>(
@@ -116,6 +118,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 			max_lights,
 			{
 				.usage = gpu::buffer_flag::storage,
+				.writable = true,
 			}
 		);
 	}
@@ -142,7 +145,7 @@ auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::con
 	return {};
 }
 
-auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
+auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<camera_latch::data> latch_s, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
 	auto& graph = *gpu_s.render_graph;
 
 	if (!graph.frame_in_progress()) {
@@ -157,14 +160,13 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 	const auto frame_index = graph.current_frame();
 
 	const auto proj = cam_state.projection_matrix;
-	const auto view = cam_state.view_matrix;
 	const auto inv_proj = proj.inverse();
 	const auto extent = graph.extent();
 
 	const auto& light_alloc = d.light_buffers[frame_index];
 
 	std::array<shaders::forward::light, max_lights> lights{};
-	const auto light_count = light_packing::pack(lights, view, atm_state, dir_lights, spot_lights, point_lights, transforms);
+	const auto light_count = light_packing::pack(lights, atm_state, dir_lights, spot_lights, point_lights, transforms);
 
 	if (light_count > 0) {
 		light_alloc.host_write(lights.data(), light_count * sizeof(shaders::forward::light));
@@ -182,7 +184,21 @@ auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context:
 
 	const auto tiles = tile_count(d.current_width, d.current_height);
 
-	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame>();
+	{
+		auto view_rec = co_await gpu::pass<^^light_view_pass>(pass_out).pipeline(d.view_pipeline).after<^^camera_latch::frame>();
+		view_rec.dispatch<light_packing::view_entry>(
+			{
+				.light_count = static_cast<std::uint32_t>(light_count),
+			},
+			{
+				.camera_ubo = latch_s.camera_buffers[frame_index],
+				.lights = light_alloc,
+			},
+			gpu::group_count<light_packing::view_entry>(static_cast<std::uint32_t>(light_count))
+		);
+	}
+
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame, ^^light_view_pass>();
 
 	rec.dispatch<entry>(
 		{

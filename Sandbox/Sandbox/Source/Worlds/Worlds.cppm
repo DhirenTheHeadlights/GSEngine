@@ -3,7 +3,10 @@ export module sandbox:worlds;
 import std;
 import gse;
 
+import :ambient_sound;
 import :archetypes;
+import :audio_fixtures;
+import :camera_listener;
 import :grass_field;
 import :joints;
 import :machines;
@@ -55,6 +58,22 @@ export namespace sandbox {
 	auto light_hall_scene_setup(
 		gse::scene& s
 	) -> void;
+
+	auto audio_yard_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto audio_yard_solo_open_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto audio_yard_solo_wall_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto audio_yard_solo_pillar_scene_setup(
+		gse::scene& s
+	) -> void;
 }
 
 namespace sandbox {
@@ -83,6 +102,33 @@ namespace sandbox {
 		gse::length inner,
 		gse::length outer,
 		std::uint32_t seed
+	) -> void;
+
+	struct yard_sound {
+		std::string_view name;
+		std::string_view clip;
+		gse::percentage<float> gain;
+		gse::vec3<gse::position> ground;
+	};
+
+	auto yard_open_sound() -> yard_sound;
+
+	auto yard_wall_sound() -> yard_sound;
+
+	auto yard_pillar_sound() -> yard_sound;
+
+	auto spawn_yard_cover(
+		gse::scene& s
+	) -> void;
+
+	auto spawn_yard_sound(
+		gse::scene& s,
+		const yard_sound& sound
+	) -> gse::vec3<gse::position>;
+
+	auto spawn_yard_solo(
+		gse::scene& s,
+		const yard_sound& sound
 	) -> void;
 }
 
@@ -154,6 +200,8 @@ auto sandbox::sandbox_scene_setup(gse::scene& s) -> void {
 	);
 
 	scatter_rocks(s, "Rock", 26, gse::meters(130.f), gse::meters(450.f), 4127u);
+
+	camera_listener::spawn(s);
 
 	s.build("Scene Camera")
 		.with<gse::free_camera::component>({
@@ -463,5 +511,136 @@ auto sandbox::light_hall_scene_setup(gse::scene& s) -> void {
 			.yaw = gse::degrees(0.f),
 			.pitch = gse::degrees(-4.f),
 			.collide_with_geometry = false,
+		});
+}
+
+auto sandbox::yard_open_sound() -> yard_sound {
+	return {
+		.name = "AudioYardOpen",
+		.clip = "Audio/listen_hum",
+		.gain = gse::percentage<float>::one(),
+		.ground = gse::vec3<gse::position>(gse::meters(-5.f), gse::meters(0.f), gse::meters(4.f)),
+	};
+}
+
+auto sandbox::yard_wall_sound() -> yard_sound {
+	return {
+		.name = "AudioYardBehindWall",
+		.clip = "Audio/listen_pulse",
+		.gain = gse::percentage<float>::one(),
+		.ground = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(0.f), gse::meters(-9.f)),
+	};
+}
+
+auto sandbox::yard_pillar_sound() -> yard_sound {
+	return {
+		.name = "AudioYardBehindPillar",
+		.clip = "Audio/listen_sweep",
+		.gain = gse::percentage<float>::one(),
+		.ground = gse::vec3<gse::position>(gse::meters(9.f), gse::meters(0.f), gse::meters(-2.f)),
+	};
+}
+
+auto sandbox::spawn_yard_sound(gse::scene& s, const yard_sound& sound) -> gse::vec3<gse::position> {
+	const auto crate_side = gse::meters(1.f);
+	const auto marker_radius = gse::meters(0.15f);
+	const auto up = [](const gse::length height) {
+		return gse::vec3<gse::displacement>(gse::meters(0.f), height, gse::meters(0.f));
+	};
+	const auto heard_from = sound.ground + up(crate_side + marker_radius);
+
+	s.spawn(
+		std::format("{} Crate", sound.name),
+		static_box(sound.ground + up(crate_side * 0.5f), gse::vec3<gse::length>(crate_side, crate_side, crate_side))
+	);
+	const auto marker = s.spawn(std::string(sound.name), sphere_light(heard_from, marker_radius));
+	s.build(marker)
+		.with<ambient_sound::component>({
+			.clip = sound.clip,
+			.gain = sound.gain,
+		});
+	return heard_from;
+}
+
+auto sandbox::spawn_yard_solo(gse::scene& s, const yard_sound& sound) -> void {
+	const auto in_front = gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.f), gse::meters(1.f));
+
+	spawn_yard_cover(s);
+	const auto heard_from = spawn_yard_sound(s, sound);
+	s.spawn(
+		"AudioYardSoloListener",
+		audio_listener_archetype{
+			.transform = {
+				.position = heard_from + in_front,
+			},
+		}
+	);
+}
+
+auto sandbox::audio_yard_solo_open_scene_setup(gse::scene& s) -> void {
+	spawn_yard_solo(s, yard_open_sound());
+}
+
+auto sandbox::audio_yard_solo_wall_scene_setup(gse::scene& s) -> void {
+	spawn_yard_solo(s, yard_wall_sound());
+}
+
+auto sandbox::audio_yard_solo_pillar_scene_setup(gse::scene& s) -> void {
+	spawn_yard_solo(s, yard_pillar_sound());
+}
+
+auto sandbox::spawn_yard_cover(gse::scene& s) -> void {
+	spawn_outdoor_ground(
+		s,
+		{
+			.prefix = "AudioYard",
+			.floor_visual_radius = gse::meters(700.f),
+			.mountains = false,
+		}
+	);
+
+	s.spawn(
+		"AudioYardWall",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(0.f), gse::meters(2.f), gse::meters(-6.f)),
+			gse::vec3<gse::length>(gse::meters(12.f), gse::meters(4.f), gse::meters(0.4f))
+		)
+	);
+	s.spawn(
+		"AudioYardPillar",
+		static_box(
+			gse::vec3<gse::position>(gse::meters(7.f), gse::meters(2.5f), gse::meters(3.f)),
+			gse::vec3<gse::length>(gse::meters(1.f), gse::meters(5.f), gse::meters(1.f))
+		)
+	);
+}
+
+auto sandbox::audio_yard_scene_setup(gse::scene& s) -> void {
+	spawn_yard_cover(s);
+	spawn_yard_sound(s, yard_open_sound());
+	spawn_yard_sound(s, yard_wall_sound());
+	spawn_yard_sound(s, yard_pillar_sound());
+
+	const auto crate_side = gse::meters(1.f);
+	const auto dropped = s.spawn(
+		"AudioYardDroppedCrate",
+		box(
+			gse::vec3<gse::position>(gse::meters(3.f), gse::meters(4.f), gse::meters(8.f)),
+			gse::vec3<gse::length>(crate_side, crate_side, crate_side),
+			gse::kilograms(20.f)
+		)
+	);
+	s.build(dropped)
+		.with<gse::audio::contact_sound_component>(audio_contact_sound());
+
+	camera_listener::spawn(s);
+
+	s.build("Audio Yard Camera")
+		.with<gse::free_camera::component>({
+			.initial_position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.7f), gse::meters(14.f)),
+			.priority = 60,
+			.speed = gse::meters_per_second(6.f),
+			.yaw = gse::degrees(0.f),
+			.pitch = gse::degrees(0.f),
 		});
 }

@@ -4,8 +4,10 @@ import std;
 
 import :cloud_renderer;
 import :atmosphere_renderer;
+import :camera_latch_renderer;
 import :camera_system;
 import :depth_prepass_renderer;
+import :shared_shaders;
 
 
 import gse.gpu;
@@ -99,7 +101,6 @@ namespace gse::renderer::cloud {
 	};
 
 	struct [[= shaders::shader_struct]] cloud_push_constants {
-		mat4f inv_view_proj;
 		vec3f sun_direction;
 		atmosphere_length camera_altitude;
 		vec3<irradiance> sun_irradiance;
@@ -118,8 +119,6 @@ namespace gse::renderer::cloud {
 	};
 
 	struct [[= shaders::shader_struct]] cloud_resolve_push_constants {
-		mat4f inv_view_proj;
-		mat4f prev_view_proj;
 		vec2f jitter_ndc;
 		vec2f prev_jitter_ndc;
 		vec2f history_uv_scale;
@@ -152,8 +151,8 @@ namespace gse::renderer::cloud {
 
 	using raymarch_entry = gpu::compute_entry<
 		gpu::body_path<"Compute/cloud_raymarch">,
-		gpu::types<cloud_limits>,
-		gpu::bindings<raymarch_bindings, atmosphere::bindings>,
+		gpu::types<cloud_limits, shaders::common::shader_types>,
+		gpu::bindings<raymarch_bindings, atmosphere::bindings, shaders::standard_3d::camera>,
 		gpu::helpers<"Atmosphere/atmosphere_common", "Clouds/cloud_common", "Clouds/cloud_density", "Screen/screen_target">,
 		gpu::push_constant<cloud_push_constants>,
 		gpu::threads<8, 8, 1>
@@ -161,7 +160,8 @@ namespace gse::renderer::cloud {
 
 	using delta_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/CloudDelta">,
-		gpu::bindings<resolve_bindings>,
+		gpu::types<shaders::common::shader_types>,
+		gpu::bindings<resolve_bindings, shaders::standard_3d::camera>,
 		gpu::fullscreen_pass,
 		gpu::helpers<"Clouds/cloud_common", "Screen/screen_target", "Clouds/cloud_history">,
 		gpu::push_constant<cloud_resolve_push_constants>,
@@ -170,7 +170,8 @@ namespace gse::renderer::cloud {
 
 	using resolve_entry = gpu::graphics_entry<
 		gpu::body_path<"Graphics/CloudResolve">,
-		gpu::bindings<resolve_bindings, resolve_delta_bindings>,
+		gpu::types<shaders::common::shader_types>,
+		gpu::bindings<resolve_bindings, resolve_delta_bindings, shaders::standard_3d::camera>,
 		gpu::fullscreen_pass,
 		gpu::helpers<"Clouds/cloud_common", "Screen/screen_target", "Clouds/cloud_history">,
 		gpu::push_constant<cloud_resolve_push_constants>,
@@ -471,7 +472,7 @@ auto gse::renderer::cloud::init(context& ctx, const shared_view<gpu::context::da
 	return {};
 }
 
-auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<weather_request> weather_in, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state, const channel_read<camera::temporal_reset_request> reset_in) -> async::task<> {
+auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::data> gpu_s, data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<weather_request> weather_in, shared_view<atmosphere::data> atm_state, shared_view<camera::data> cam_state, shared_view<camera_latch::data> latch_s, const channel_read<camera::temporal_reset_request> reset_in) -> async::task<> {
 	d.layer.rendered = false;
 
 	if (!reset_in.of<camera::temporal_reset_request>().empty()) {
@@ -602,10 +603,8 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 	}
 
 	const view_snapshot current_view{
-		.view_proj = cam_state.projection_matrix * cam_state.view_matrix,
 		.jitter_ndc = cam_state.jitter_ndc,
 	};
-	const auto inv_view_proj = current_view.view_proj.inverse();
 
 	const auto sun_irradiance = vec3<irradiance>{
 		atm_state.sun_intensity * atm_state.sun_color.x(),
@@ -629,14 +628,14 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 	const auto resolve_extent = d.layer.extent;
 	const auto trace_extent = trace_extent_for(resolve_extent, block_size);
 	const auto screen_extent = gpu_s.render_graph->extent();
+	const auto camera_slot = latch_s.camera_buffers[history_index].slot();
 
 	auto rec = co_await gpu::pass<^^cloud_raymarch_pass>(pass_out)
 		.pipeline(d.raymarch_pipeline)
-		.after<^^atmosphere::sky_view_pass, ^^weather_bake_pass, ^^depth_prepass::frame>();
+		.after<^^camera_latch::frame, ^^atmosphere::sky_view_pass, ^^weather_bake_pass, ^^depth_prepass::frame>();
 
 	rec.dispatch<raymarch_entry>(
 		{
-			.inv_view_proj = inv_view_proj,
 			.sun_direction = atm_state.sun_direction,
 			.camera_altitude = atm_state.camera_altitude,
 			.sun_irradiance = sun_irradiance,
@@ -670,13 +669,12 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.scene_depth_in = d.depth_view,
 			.scene_depth_sampler = d.depth_sampler,
 			.atmosphere_ubo = atm_state.atmosphere_ubo_buffer,
+			.camera_ubo = camera_slot,
 		},
 		gpu::group_count<raymarch_entry>(trace_extent)
 	);
 
 	const cloud_resolve_push_constants resolve_constants{
-		.inv_view_proj = inv_view_proj,
-		.prev_view_proj = previous_view.view_proj,
 		.jitter_ndc = current_view.jitter_ndc,
 		.prev_jitter_ndc = previous_view.jitter_ndc,
 		.history_uv_scale = gpu::screen_uv_scale_for(d.layer.extent, d.layer.allocated_extent),
@@ -706,6 +704,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.resolve_trace_in = d.cloud_target,
 			.resolve_history_in = d.layer.images[previous_index],
 			.resolve_sampler_binding = d.resolve_sampler,
+			.camera_ubo = camera_slot,
 		}
 	);
 	delta_rec.draw(3);
@@ -727,6 +726,7 @@ auto gse::renderer::cloud::frame(const context& ctx, shared_view<gpu::context::d
 			.resolve_history_in = d.layer.images[previous_index],
 			.resolve_sampler_binding = d.resolve_sampler,
 			.resolve_delta_in = d.cloud_delta,
+			.camera_ubo = camera_slot,
 		}
 	);
 	resolve_rec.draw(3);

@@ -3,6 +3,8 @@ module sandbox:game_systems_impl;
 import gse;
 import gse.system_manifest;
 
+import :ambient_sound;
+import :camera_listener;
 import :character_controller;
 import :crosshair_system;
 import :dev_spawn_menu;
@@ -15,6 +17,7 @@ import :hud;
 import :net_directory;
 import :orbit_camera;
 import :pause_menu_system;
+import :periodic_hop;
 import :piston;
 import :player_spawner;
 import :player_state_broadcast;
@@ -50,7 +53,13 @@ namespace sandbox {
 		^^player_reconcile::data,
 		^^player_reconcile::run,
 		^^dev_spawn::data,
-		^^dev_spawn::run
+		^^dev_spawn::run,
+		^^camera_listener::data,
+		^^camera_listener::run,
+		^^ambient_sound::data,
+		^^ambient_sound::run,
+		^^periodic_hop::data,
+		^^periodic_hop::run
 	>;
 
 	using client_ui_systems = gse::system_manifest<

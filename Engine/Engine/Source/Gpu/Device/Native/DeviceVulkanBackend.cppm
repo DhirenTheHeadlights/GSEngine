@@ -5,6 +5,7 @@ import std;
 import :video_backend;
 import :command_dispatch;
 
+import gse.assert;
 import gse.gpu_backend;
 import gse.vulkan;
 import gse.os;
@@ -756,7 +757,8 @@ auto gse::gpu::vulkan_device_backend::recreate_surface(const window::window_surf
 	device_config.wait_idle(queue);
 	device_config.destroy_swapchain(current_swapchain);
 	instance.destroy_surface();
-	instance.create_surface(win.handle);
+	const auto created = instance.create_surface(win.handle);
+	assert(created.has_value(), "Failed to recreate the Vulkan window surface");
 	return instance.surface();
 }
 
@@ -911,9 +913,15 @@ auto gse::gpu::vulkan_device_backend::make_video_encoder_backend(const encode_de
 auto gse::gpu::create_vulkan_device_backend(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, device_settings& cfg) -> expected<vulkan_backend_creation> {
 	auto aftermath_tracker = vulkan::aftermath::create({});
 
-	auto instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
+	auto created_instance = vulkan::instance::create(win ? vulkan::instance::required_window_extensions() : std::span<const char* const>{}, validation_layers_enabled);
+	if (!created_instance) {
+		return std::unexpected{ created_instance.error() };
+	}
+	auto& instance = *created_instance;
 	if (win) {
-		instance.create_surface(win->primary.handle);
+		if (auto surface = instance.create_surface(win->primary.handle); !surface) {
+			return std::unexpected{ surface.error() };
+		}
 	}
 
 	auto created = vulkan::device::create(instance, cfg, aftermath_tracker);

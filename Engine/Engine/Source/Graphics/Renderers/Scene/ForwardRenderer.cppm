@@ -33,6 +33,8 @@ import :texture;
 export namespace gse::renderer::forward {
 	constexpr std::size_t max_lights = 1024;
 
+	struct light_view_pass {};
+
 	struct light_bindings {
 		shaders::ssbo_readonly<shaders::forward::light> lights_ssbo;
 	};
@@ -183,6 +185,7 @@ export namespace gse::renderer::forward {
 		[[= shared]] reflection_quality_level reflection_quality = reflection_quality_level::medium;
 
 		gpu::shader_program pipeline;
+		gpu::shader_program light_view_pipeline;
 		bool vertex_pulled = false;
 		[[= shared]] bool ray_traced = false;
 		[[= shared]] std::optional<surface_frame> surface;
@@ -221,7 +224,6 @@ export namespace gse::renderer::forward {
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
 		channel_read<geometry_collector::render_data> geometry_in,
-		shared_view<camera::data> cam_state,
 		shared_view<camera_latch::data> latch_s,
 		shared_view<geometry_collector::data> gc_r,
 		shared_view<light_culling::data> lc_r,

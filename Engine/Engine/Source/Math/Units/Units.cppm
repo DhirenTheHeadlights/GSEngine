@@ -137,9 +137,14 @@ export namespace gse::inline quantities {
 	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/s">]] inverse_time_tag {};
 
 	constexpr internal::unit<inverse_time_tag, std::ratio<1>, "1/s"> per_second;
+	constexpr internal::unit<inverse_time_tag, std::ratio<1>, "Hz"> hertz;
+	constexpr internal::unit<inverse_time_tag, std::kilo, "kHz"> kilohertz;
 
 	template <typename T = float, auto... U> using inverse_time_t = internal::quantity_t<inverse_time_tag, T, U...>;
 	using inverse_time = inverse_time_t<>;
+
+	template <typename T = float, auto... U> using frequency_t = inverse_time_t<T, U...>;
+	using frequency = frequency_t<>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "kg">]] mass_tag {};
 
@@ -304,9 +309,14 @@ export namespace gse::inline quantities {
 	struct [[= internal::quantity_root<^^internal::dimi<-1, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/m^2">]] stiffness_per_length_tag {};
 
 	constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "N/m^2"> newtons_per_meter_squared;
+	constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "Pa"> pascals;
+	constexpr internal::unit<stiffness_per_length_tag, std::giga, "GPa"> gigapascals;
 
 	template <typename T = float, auto... U> using stiffness_per_length_t = internal::quantity_t<stiffness_per_length_tag, T, U...>;
 	using stiffness_per_length = stiffness_per_length_t<>;
+
+	template <typename T = float, auto... U> using elastic_modulus_t = stiffness_per_length_t<T, U...>;
+	using elastic_modulus = elastic_modulus_t<>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, -2>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m/rad">]] angular_stiffness_tag {};
 
@@ -552,6 +562,10 @@ namespace gse::internal {
 	static_assert(
 		time(1.f / per_second(4.f)) > seconds(0.249f) &&
 		time(1.f / per_second(4.f)) < seconds(0.251f)
+	);
+	static_assert(
+		kilohertz(48.f) * milliseconds(10.f) > 479.9f &&
+		kilohertz(48.f) * milliseconds(10.f) < 480.1f
 	);
 	static_assert(
 		gse::abs(wrap_angle(radians(7.f)) - radians(7.f - 2.f * std::numbers::pi_v<float>)) < radians(1e-5f) &&

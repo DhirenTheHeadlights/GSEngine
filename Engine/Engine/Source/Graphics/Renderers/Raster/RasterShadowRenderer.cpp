@@ -280,7 +280,7 @@ auto gse::renderer::raster_shadow::frame(context& ctx, shared_view<gpu::context:
 	const auto view = cam_state.view_matrix;
 	const auto camera_position = view.inverse().transform_point(vec3<position>{});
 
-	const auto light_count = light_packing::pack(d.packed_lights.span(), view, atm_state, dir_lights, spot_lights, point_lights, transforms);
+	const auto light_count = light_packing::pack(d.packed_lights.span(), atm_state, dir_lights, spot_lights, point_lights, transforms);
 	d.light_buffers[frame_index].host_write(d.packed_lights.data(), light_count * sizeof(shaders::forward::light));
 
 	d.light_tiles.assign(light_count, vec2u{ 0, 0 });

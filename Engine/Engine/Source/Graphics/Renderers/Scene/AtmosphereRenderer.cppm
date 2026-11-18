@@ -7,6 +7,7 @@ import gse.gpu_record;
 import gse.math;
 import gse.meta;
 
+import :camera_latch_renderer;
 import :camera_system;
 
 export namespace gse::renderer::atmosphere {
@@ -225,6 +226,7 @@ export namespace gse::renderer::atmosphere {
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out,
 		channel_read<sun_request> sun_in,
-		shared_view<camera::data> cam_state
+		shared_view<camera::data> cam_state,
+		shared_view<camera_latch::data> latch_s
 	) -> async::task<>;
 }

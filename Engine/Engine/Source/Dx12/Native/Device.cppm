@@ -125,11 +125,11 @@ namespace gse::dx12 {
 export namespace gse::dx12 {
 	class device final : public non_copyable {
 	public:
-		device(
+		[[nodiscard]] static auto create(
 			std::optional<shared_view<window::data>> win,
 			bool enable_validation,
 			gpu::device_settings& cfg
-		);
+		) -> gpu::expected<std::unique_ptr<device>>;
 
 		~device();
 
@@ -604,6 +604,13 @@ export namespace gse::dx12 {
 		) const -> bool;
 
 	private:
+		device(
+			std::optional<shared_view<window::data>> win,
+			bool enable_validation,
+			directx::com_ptr<directx::IDXGIFactory4>&& factory,
+			directx::com_ptr<directx::ID3D12Device>&& d3d_device
+		);
+
 		struct buffer_view_format {
 			gpu::device_size stride = 0;
 			bool byte_address = false;

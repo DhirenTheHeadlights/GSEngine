@@ -184,27 +184,38 @@ auto gse::dx12::build_graphics_pipeline_desc(const gfx_template& tmpl, const gra
 	return desc;
 }
 
-gse::dx12::device::device(const std::optional<shared_view<window::data>> win,const bool enable_validation, gpu::device_settings& cfg) {
-	m_validation_enabled = enable_validation;
-	log::println(log::category::dx12, "ctor begin");
-
-	if (m_validation_enabled) {
+auto gse::dx12::device::create(const std::optional<shared_view<window::data>> win, const bool enable_validation, gpu::device_settings& cfg) -> gpu::expected<std::unique_ptr<device>> {
+	if (enable_validation) {
 		const bool gpu_validation = directx::enable_debug_layer(cfg.gpu_based_validation);
 		log::println(log::category::dx12, "debug layer enabled, gpu-based validation={}", gpu_validation);
 	}
 	const bool dred = cfg.dred && directx::enable_dred();
 	dred_enabled.store(dred, std::memory_order_relaxed);
 	log::println(log::category::dx12, "dred device-removed extended data enabled={} (requested={})", dred, cfg.dred);
-	m_factory = directx::create_factory();
+	auto factory = directx::create_factory();
 	long device_hr = 0;
 	long nvidia_hr = 0;
-	m_device = directx::create_device(m_factory.get(), &device_hr, &nvidia_hr);
-	assert(m_device.get(), "D3D12CreateDevice failed (hr=0x{:08x}); Agility SDK D3D12Core.dll could not be resolved", static_cast<std::uint32_t>(device_hr));
-	assert(directx::enhanced_barriers_supported(m_device.get()), "D3D12 enhanced barriers are required (D3D12_FEATURE_D3D12_OPTIONS12.EnhancedBarriersSupported is false)");
+	auto raw_device = directx::create_device(factory.get(), &device_hr, &nvidia_hr);
+	if (!raw_device.get()) {
+		log::println(log::level::error, log::category::dx12, "D3D12CreateDevice failed (hr=0x{:08x}); no D3D12 adapter, or Agility SDK D3D12Core.dll could not be resolved", static_cast<std::uint32_t>(device_hr));
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+	if (!directx::enhanced_barriers_supported(raw_device.get())) {
+		log::println(log::level::error, log::category::dx12, "D3D12 enhanced barriers are required (D3D12_FEATURE_D3D12_OPTIONS12.EnhancedBarriersSupported is false)");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+	log::println(log::category::dx12, "factory={} device={} nvidia_create_hr=0x{:08x}", static_cast<void*>(factory.get()), static_cast<void*>(raw_device.get()), static_cast<std::uint32_t>(nvidia_hr));
+	return std::unique_ptr<device>(new device(win, enable_validation, std::move(factory), std::move(raw_device)));
+}
+
+gse::dx12::device::device(const std::optional<shared_view<window::data>> win, const bool enable_validation, directx::com_ptr<directx::IDXGIFactory4>&& factory, directx::com_ptr<directx::ID3D12Device>&& d3d_device)
+	: m_factory(std::move(factory)), m_device(std::move(d3d_device)) {
+	m_validation_enabled = enable_validation;
+	log::println(log::category::dx12, "ctor begin");
+
 	if (m_validation_enabled) {
 		directx::disable_debug_break(m_device.get());
 	}
-	log::println(log::category::dx12, "factory={} device={} nvidia_create_hr=0x{:08x}", static_cast<void*>(m_factory.get()), static_cast<void*>(m_device.get()), static_cast<std::uint32_t>(nvidia_hr));
 
 	m_draw_indexed_signature = directx::create_draw_indexed_command_signature(m_device.get(), sizeof(gpu::draw_indexed_indirect_command));
 	m_dispatch_mesh_signature = directx::create_dispatch_mesh_command_signature(m_device.get(), sizeof(gpu::draw_mesh_tasks_indirect_command));

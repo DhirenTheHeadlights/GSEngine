@@ -169,9 +169,9 @@ export namespace gse::webgpu {
 
 	class device {
 	public:
-		device(
+		[[nodiscard]] static auto create(
 			std::optional<shared_view<window::data>> win
-		);
+		) -> gpu::expected<std::unique_ptr<device>>;
 
 		~device();
 
@@ -380,6 +380,10 @@ export namespace gse::webgpu {
 		) -> void;
 
 	private:
+		device(
+			std::optional<shared_view<window::data>> win
+		);
+
 		[[nodiscard]] auto readbacks_settled(
 			std::uint64_t serial
 		) -> bool;
@@ -546,6 +550,11 @@ namespace gse::webgpu {
 	[[nodiscard]] auto backend_name(
 		WGPUBackendType type
 	) -> std::string_view;
+
+	[[nodiscard]] auto request_adapter(
+		WGPUInstance instance,
+		WGPUSurface compatible_surface
+	) -> std::expected<WGPUAdapter, std::string>;
 
 	[[nodiscard]] auto error_name(
 		WGPUErrorType type
@@ -879,15 +888,7 @@ auto gse::webgpu::mapped_size(const buffer_record& buffer) -> gpu::device_size {
 	return std::max<gpu::device_size>((buffer.size + 3) & ~gpu::device_size{ 3 }, 4);
 }
 
-gse::webgpu::device::device(const std::optional<shared_view<window::data>> win) {
-	install_platform_logging();
-	m_instance = wgpuCreateInstance(nullptr);
-	assert(m_instance != nullptr, "wgpuCreateInstance failed");
-
-	if (win) {
-		m_boot_surface = record_of<surface_record>(create_surface(win->primary.handle).value);
-	}
-
+auto gse::webgpu::request_adapter(const WGPUInstance instance, const WGPUSurface compatible_surface) -> std::expected<WGPUAdapter, std::string> {
 	struct adapter_result {
 		WGPUAdapter adapter = nullptr;
 		bool done = false;
@@ -900,9 +901,9 @@ gse::webgpu::device::device(const std::optional<shared_view<window::data>> win) 
 		.powerPreference = WGPUPowerPreference_HighPerformance,
 		.forceFallbackAdapter = false,
 		.backendType = WGPUBackendType_Undefined,
-		.compatibleSurface = m_boot_surface ? m_boot_surface->surface : nullptr,
+		.compatibleSurface = compatible_surface,
 	};
-	wgpuInstanceRequestAdapter(m_instance, &adapter_options, WGPURequestAdapterCallbackInfo{
+	wgpuInstanceRequestAdapter(instance, &adapter_options, WGPURequestAdapterCallbackInfo{
 		.nextInChain = nullptr,
 		.mode = WGPUCallbackMode_AllowProcessEvents,
 		.callback = [](const WGPURequestAdapterStatus status, WGPUAdapter adapter, const WGPUStringView message, void* userdata1, void*) {
@@ -917,10 +918,46 @@ gse::webgpu::device::device(const std::optional<shared_view<window::data>> win) 
 		.userdata2 = nullptr,
 	});
 	while (!adapter_out.done) {
-		wgpuInstanceProcessEvents(m_instance);
+		wgpuInstanceProcessEvents(instance);
 	}
-	assert(adapter_out.adapter != nullptr, "webgpu: no adapter available: {}", adapter_out.message);
-	m_adapter = adapter_out.adapter;
+	if (adapter_out.adapter == nullptr) {
+		return std::unexpected{ std::move(adapter_out.message) };
+	}
+	return adapter_out.adapter;
+}
+
+auto gse::webgpu::device::create(const std::optional<shared_view<window::data>> win) -> gpu::expected<std::unique_ptr<device>> {
+	const WGPUInstance instance = wgpuCreateInstance(nullptr);
+	if (instance == nullptr) {
+		log::println(log::level::error, log::category::render, "webgpu: wgpuCreateInstance failed");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+	const auto adapter = request_adapter(instance, nullptr);
+	if (adapter) {
+		wgpuAdapterRelease(*adapter);
+	}
+	wgpuInstanceRelease(instance);
+	if (!adapter) {
+		log::println(log::level::error, log::category::render, "webgpu: no adapter available: {}", adapter.error());
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+	return std::unique_ptr<device>(new device(win));
+}
+
+gse::webgpu::device::device(const std::optional<shared_view<window::data>> win) {
+	install_platform_logging();
+	m_instance = wgpuCreateInstance(nullptr);
+	assert(m_instance != nullptr, "wgpuCreateInstance failed");
+
+	if (win) {
+		m_boot_surface = record_of<surface_record>(create_surface(win->primary.handle).value);
+	}
+
+	auto adapter = request_adapter(m_instance, m_boot_surface ? m_boot_surface->surface : nullptr);
+	if (!adapter) {
+		assert(false, "webgpu: no adapter available: {}", adapter.error());
+	}
+	m_adapter = *adapter;
 
 	WGPUAdapterInfo info{};
 	if (wgpuAdapterGetInfo(m_adapter, &info) == WGPUStatus_Success) {

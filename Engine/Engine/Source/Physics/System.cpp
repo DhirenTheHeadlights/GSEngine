@@ -14,6 +14,7 @@ import gse.time;
 import std;
 
 import :collision_component;
+import :contact_events;
 import :contact_manifold;
 import :hull_collision;
 import :joint_drive_component;
@@ -343,6 +344,8 @@ auto gse::physics::clear_runtime_state(data& d) -> void {
 	d.joints.clear();
 	d.muscles.clear();
 	d.contact_cache.clear();
+	d.contact_history.clear();
+	d.moving_contacts.clear();
 	d.sleep_counters.clear();
 	++d.joints_generation;
 	++d.muscles_generation;
@@ -2314,7 +2317,7 @@ auto gse::physics::ensure_results(context& ctx, data& d, write<collision_compone
 	co_return;
 }
 
-auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in, const channel_write<gpu_solver_frame_info> solver_out, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results, write<hull_definition> hull_definitions) -> async::task<> {
+auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in, const channel_write<gpu_solver_frame_info> solver_out, const channel_write<contact_event> contacts_out, write<transform_component> transform, write<motion_component> motion, read<motor_component> motor, write<collision_component> collision, write<collision_result_component> results, write<hull_definition> hull_definitions) -> async::task<> {
 	{
 		trace::scope_guard _{ trace_id<"physics::integrate::hulls">() };
 		const auto definition_owners = hull_definitions.owner_ids();
@@ -2429,6 +2432,11 @@ auto gse::physics::integrate(context& ctx, data& d, const channel_read<impulse_r
 		d.observed_step = d.step_index;
 	}
 
+	for (const auto& event : d.contact_events) {
+		contacts_out.push<contact_event>(event);
+	}
+	d.contact_events.clear();
+
 	co_return;
 }
 
@@ -2532,6 +2540,15 @@ auto gse::physics::update_vbd_gpu(const int steps, data& d, write<transform_comp
 					});
 				}
 			}
+		}
+		if (readback && d.gpu_contact_snapshot) {
+			const auto sub_dt = system_clock::constant_update_time() / static_cast<float>(std::max(d.physics_substeps, 1));
+			d.contact_history.fold_readback(d.gpu_solver.read_contact_states(), d.gpu_body_owners, solved, sub_dt, [&motion](const id owner) {
+				const auto* mc = motion.find(owner);
+				const auto* dyn = mc ? std::get_if<dynamic_body>(&mc->body) : nullptr;
+				return dyn ? 1.f / dyn->mass : inverse_mass{};
+			});
+			d.contact_history.close_step(*readback, d.contact_events);
 		}
 
 		const auto diag = d.gpu_solver.diagnostics();
@@ -3129,6 +3146,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 				trace::scope_guard _{ trace_id<"vbd_cpu::asleep_skip">() };
 				step += substeps - 1;
 				++d.step_index;
+				d.moving_contacts.clear();
 				snapshot_step(d, transform, motion, in);
 				continue;
 			}
@@ -3210,6 +3228,7 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 		}
 
 		d.vbd_solver.solve(sub_dt);
+		d.contact_history.fold(d.vbd_solver.graph().contact_constraints(), view.motion_owners, std::span<const vbd::body_state>(d.vbd_solver.body_states()), sub_dt);
 		if (d.trace.island_convergence) {
 			accumulate_island_convergence(d, d.vbd_solver.convergence_counts());
 			if ((step + 1) % substeps == 0) {
@@ -3293,6 +3312,8 @@ auto gse::physics::update_vbd(const int steps, data& d, write<transform_componen
 
 		if ((step + 1) % substeps == 0) {
 			++d.step_index;
+			d.contact_history.list_moving(std::span<const vbd::body_state>(result_bodies), const_update_time, d.step_index, d.moving_contacts);
+			d.contact_history.close_step(d.step_index, d.contact_events);
 			snapshot_step(d, transform, motion, in);
 		}
 	}

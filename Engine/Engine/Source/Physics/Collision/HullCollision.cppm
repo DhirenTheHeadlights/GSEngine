@@ -96,6 +96,18 @@ export namespace gse::physics {
 		const vec3<position>& seg_end,
 		vec3<position>& best_point
 	) -> polytope_point_query;
+
+	struct segment_hit {
+		length distance;
+		vec3f normal;
+	};
+
+	auto segment_polytope_first_hit(
+		const polytope& p,
+		const hull_pose& pose,
+		const vec3<position>& seg_start,
+		const vec3<position>& seg_end
+	) -> std::optional<segment_hit>;
 }
 
 namespace gse::physics {
@@ -663,6 +675,58 @@ auto gse::physics::segment_polytope_query(const polytope& p, const hull_pose& po
 	}
 
 	return best;
+}
+
+auto gse::physics::segment_polytope_first_hit(const polytope& p, const hull_pose& pose, const vec3<position>& seg_start, const vec3<position>& seg_end) -> std::optional<segment_hit> {
+	constexpr float parallel = 1e-6f;
+
+	const auto seg_vec = seg_end - seg_start;
+	const length seg_length = magnitude(seg_vec);
+	if (seg_length < meters(1e-6f)) {
+		return std::nullopt;
+	}
+	const vec3f dir = normalize(seg_vec);
+	const auto from_center = seg_start - pose.center;
+
+	length t_enter = meters(0.f);
+	length t_exit = seg_length;
+	std::optional<hull_index> entered;
+
+	for (hull_index f = 0; f < p.face_normals.size(); ++f) {
+		const vec3f normal = world_normal(pose, p.face_normals[f]);
+		const length outside = dot(normal, from_center) - p.face_offsets[f];
+		const float approach = dot(normal, dir);
+
+		if (std::abs(approach) < parallel) {
+			if (outside > meters(0.f)) {
+				return std::nullopt;
+			}
+			continue;
+		}
+
+		const length crossing = -outside / approach;
+		if (approach < 0.f) {
+			if (crossing > t_enter) {
+				t_enter = crossing;
+				entered = f;
+			}
+		}
+		else {
+			t_exit = std::min(t_exit, crossing);
+		}
+
+		if (t_enter > t_exit) {
+			return std::nullopt;
+		}
+	}
+
+	if (!entered) {
+		return std::nullopt;
+	}
+	return segment_hit{
+		.distance = t_enter,
+		.normal = world_normal(pose, p.face_normals[*entered]),
+	};
 }
 
 auto gse::physics::polytope_manifold(const polytope& a, const hull_pose& pose_a, const polytope& b, const hull_pose& pose_b, const vec3f& normal) -> contact_manifold {

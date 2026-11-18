@@ -8,8 +8,8 @@ static const float3 light_cone_kernel[6] = {
 };
 
 float3 reconstruct_world_ray(float2 ndc) {
-    float4 wn = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
-    float4 wf = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
+    float4 wn = mul(camera_ubo.inv_view_proj, float4(ndc, 1.0, 1.0));
+    float4 wf = mul(camera_ubo.inv_view_proj, float4(ndc, 0.0, 1.0));
     return normalize(wf.xyz / wf.w - wn.xyz / wn.w);
 }
 

@@ -456,11 +456,12 @@ export namespace gse::gpu {
 		std::unique_ptr<webgpu_device_backend> backend;
 		const command_dispatch* commands = nullptr;
 		image_format surface_format = image_format::b8g8r8a8_unorm;
+		bool video_encode_enabled = false;
 	};
 
 	[[nodiscard]] auto create_webgpu_device_backend(
 		std::optional<shared_view<window::data>> win
-	) -> webgpu_backend_creation;
+	) -> expected<webgpu_backend_creation>;
 }
 
 namespace gse::gpu {
@@ -897,9 +898,13 @@ auto gse::gpu::webgpu_device_backend::collect_garbage() -> void {
 	device->collect_garbage();
 }
 
-auto gse::gpu::create_webgpu_device_backend(const std::optional<shared_view<window::data>> win) -> webgpu_backend_creation {
-	return {
-		.backend = std::make_unique<webgpu_device_backend>(std::make_unique<webgpu::device>(win)),
+auto gse::gpu::create_webgpu_device_backend(const std::optional<shared_view<window::data>> win) -> expected<webgpu_backend_creation> {
+	auto created = webgpu::device::create(win);
+	if (!created) {
+		return std::unexpected{ created.error() };
+	}
+	return webgpu_backend_creation{
+		.backend = std::make_unique<webgpu_device_backend>(std::move(*created)),
 		.commands = command_dispatch_for<webgpu::commands>(),
 		.surface_format = image_format::b8g8r8a8_unorm,
 	};

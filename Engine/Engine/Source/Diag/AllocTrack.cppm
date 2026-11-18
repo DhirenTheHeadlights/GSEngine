@@ -59,6 +59,8 @@ export namespace gse::alloc {
 
 	auto evicted_samples() -> std::int64_t;
 
+	auto thread_allocation_count() -> std::uint64_t;
+
 	auto mark() -> void;
 
 	auto snapshot(

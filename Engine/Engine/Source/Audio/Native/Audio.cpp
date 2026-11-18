@@ -2,27 +2,45 @@ module gse.audio;
 
 import std;
 
-import gse.assert;
 import gse.log;
 import gse.core;
-import gse.config;
 import gse.concurrency;
 import gse.assets;
+import gse.diag;
 import gse.ecs;
 import gse.math;
 import gse.miniaudio;
 
 namespace gse::audio {
-	struct voice_slot {
-		ma_decoder decoder{};
-		ma_sound sound{};
-		std::uint32_t generation = 0;
-		bool active = false;
+	constexpr std::size_t recorded_block_capacity = 1u << 17;
+
+	using audio_clock = std::chrono::steady_clock;
+
+	struct output_device {
+		ma_device device{};
+		mixer* output = nullptr;
+		std::vector<profile::sample_time> mix_times;
+		std::vector<profile::sample_time> block_periods;
+		audio_clock::time_point first_start;
+		profile::sample_time buffer_span;
+		profile::sample_time lateness_floor;
+		std::uint64_t frames_supplied = 0;
+		std::uint64_t blocks = 0;
+		std::uint64_t underruns = 0;
+		std::uint64_t allocations = 0;
 	};
 
-	struct audio_engine {
-		ma_engine inner{};
-	};
+	auto elapsed(
+		audio_clock::time_point from,
+		audio_clock::time_point to
+	) -> profile::sample_time;
+
+	auto on_device_block(
+		ma_device* device,
+		void* out,
+		const void* in,
+		ma_uint32 frame_count
+	) -> void;
 }
 
 auto gse::audio_clip::load(asset::load_ctx&) -> async::task<asset_result> {
@@ -30,161 +48,118 @@ auto gse::audio_clip::load(asset::load_ctx&) -> async::task<asset_result> {
 	if (!loaded) {
 		co_return std::unexpected(std::move(loaded.error()));
 	}
-	m_bytes = std::move(loaded->bytes.storage);
+	const auto& bytes = loaded->bytes.storage;
 
-	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_unknown, 0, 0);
-	ma_decoder decoder;
-	if (const auto result = ma_decoder_init_memory(m_bytes.data(), m_bytes.size(), &cfg, &decoder); result == ma_result_success) {
-		ma_uint64 length = 0;
-		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
-		m_sample_rate = decoder.outputSampleRate;
-		m_channels = decoder.outputChannels;
-		m_frame_count = length;
-		m_duration = (length > 0 && m_sample_rate > 0)
-			? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate))
-			: seconds(0.f);
-		ma_decoder_uninit(&decoder);
-	}
-	else {
+	ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_f32, audio::output_channels, audio::output_frame_rate);
+	ma_uint64 frames = 0;
+	void* decoded = nullptr;
+	if (ma_decode_memory(bytes.data(), bytes.size(), &cfg, &frames, &decoded) != ma_result_success) {
 		co_return std::unexpected(asset_error{
 			.code = asset_error_code::load_failure,
 			.path = std::filesystem::path(m_path),
 			.detail = "Unable to decode baked audio"
 		});
 	}
+
+	const std::span<const float> pcm(static_cast<const float*>(decoded), static_cast<std::size_t>(frames) * audio::output_channels);
+	m_samples.assign(pcm.begin(), pcm.end());
+	ma_free(decoded, nullptr);
+
 	co_return asset_result{};
 }
 
-auto gse::audio::allocate_voice(data& d, const audio_clip& clip, const bool loop) -> voice_handle {
-	std::uint32_t index;
-	if (!d.free_list.empty()) {
-		index = d.free_list.back();
-		d.free_list.pop_back();
-	}
-	else {
-		index = static_cast<std::uint32_t>(d.voices.size());
-		d.voices.push_back(new voice_slot());
-	}
-
-	auto& [decoder, sound, generation, active] = *d.voices[index];
-	generation++;
-	active = true;
-
-	const ma_decoder_config cfg = ma_decoder_config_init(ma_format_value_f32, 0, 0);
-	auto result = ma_decoder_init_memory(clip.data().data(), clip.data().size(), &cfg, &decoder);
-	assert(result == ma_result_success, "Failed to init audio decoder");
-
-	result = ma_sound_init_from_data_source(&d.engine->inner, &decoder, 0, nullptr, &sound);
-	assert(result == ma_result_success, "Failed to init audio sound");
-
-	ma_sound_set_looping(&sound, loop ? ma_bool_true : ma_bool_false);
-	ma_sound_start(&sound);
-
-	return {
-		.index = index,
-		.generation = generation,
-	};
+auto gse::audio::device_deleter::operator()(output_device* device) const -> void {
+	ma_device_uninit(&device->device);
+	delete device;
 }
 
-auto gse::audio::release_voice(data& d, const voice_handle handle) -> void {
-	if (!valid_voice(d, handle)) {
-		return;
-	}
-	auto& slot = *d.voices[handle.index];
-	ma_sound_stop(&slot.sound);
-	ma_sound_uninit(&slot.sound);
-	ma_decoder_uninit(&slot.decoder);
-	slot.active = false;
-	d.free_list.push_back(handle.index);
+auto gse::audio::elapsed(const audio_clock::time_point from, const audio_clock::time_point to) -> profile::sample_time {
+	return nanoseconds(std::chrono::duration<double, std::nano>(to - from).count());
 }
 
-auto gse::audio::valid_voice(const data& d, const voice_handle handle) -> bool {
-	return handle.index < d.voices.size() && d.voices[handle.index]->active &&
-		d.voices[handle.index]->generation == handle.generation;
+auto gse::audio::on_device_block(ma_device* device, void* out, const void*, const ma_uint32 frame_count) -> void {
+	constexpr double clock_drift_allowance = 0.001;
+
+	auto& state = *static_cast<output_device*>(device->pUserData);
+	const frequency_t<double> rate = sample_rate();
+
+	const auto started = audio_clock::now();
+	if (state.blocks == 0) {
+		state.first_start = started;
+	}
+	const std::uint64_t allocations_before = alloc::thread_allocation_count();
+	state.output->render(std::span(static_cast<float*>(out), static_cast<std::size_t>(frame_count) * output_channels));
+	state.allocations += alloc::thread_allocation_count() - allocations_before;
+
+	const profile::sample_time mix_time = elapsed(started, audio_clock::now());
+	const profile::sample_time block_period = static_cast<double>(frame_count) / rate;
+
+	const profile::sample_time lateness = elapsed(state.first_start, started) - static_cast<double>(state.frames_supplied) / rate;
+	state.lateness_floor = std::min(lateness, state.lateness_floor + block_period * clock_drift_allowance);
+	if (lateness - state.lateness_floor > state.buffer_span || mix_time > block_period) {
+		++state.underruns;
+	}
+
+	if (state.mix_times.size() < state.mix_times.capacity()) {
+		state.mix_times.push_back(mix_time);
+		state.block_periods.push_back(block_period);
+	}
+	state.frames_supplied += frame_count;
+	++state.blocks;
 }
 
-auto gse::audio::init(data& d) -> async::task<> {
-	d.engine = new audio_engine();
-	const ma_engine_config cfg = ma_engine_config_init();
-	const auto result = ma_engine_init(&cfg, &d.engine->inner);
-	assert(result == ma_result_success, "Failed to initialize audio engine");
-	d.engine_initialized = true;
-	ma_engine_set_volume(&d.engine->inner, d.master_vol.value(percentage<float>::bound::zero_to_one));
+auto gse::audio::open_device(mixer& output) -> device_ptr {
+	auto state = std::make_unique<output_device>();
+	state->output = &output;
+	state->mix_times.reserve(recorded_block_capacity);
+	state->block_periods.reserve(recorded_block_capacity);
 
-	return {};
+	ma_device_config cfg = ma_device_config_init(ma_device_type_value_playback);
+	cfg.playback.format = ma_format_value_f32;
+	cfg.playback.channels = output_channels;
+	cfg.sampleRate = output_frame_rate;
+	cfg.periodSizeInFrames = static_cast<ma_uint32>(std::lround(sample_rate() * milliseconds(10.f)));
+	cfg.noFixedSizedCallback = 1;
+	cfg.dataCallback = &on_device_block;
+	cfg.pUserData = state.get();
+
+	if (ma_device_init(nullptr, &cfg, &state->device) != ma_result_success) {
+		log::println(log::level::warning, log::category::general, "audio: no output device could be opened, so this run is silent");
+		return nullptr;
+	}
+
+	device_ptr opened(state.release());
+	const auto& playback = opened->device.playback;
+	opened->buffer_span = static_cast<double>(playback.internalPeriodSizeInFrames * playback.internalPeriods) / hertz(static_cast<double>(playback.internalSampleRate));
+
+	if (ma_device_start(&opened->device) != ma_result_success) {
+		log::println(log::level::warning, log::category::general, "audio: the output device opened but would not start, so this run is silent");
+		return nullptr;
+	}
+
+	log::println(log::category::general, "audio: output device started, {} channels, device buffer {:.1f:ms}", output_channels, opened->buffer_span);
+	return opened;
 }
 
-auto gse::audio::run(context& ctx, data& d, const channel_read<play_request, stop_request, pause_request, resume_request, set_volume_request, set_master_volume_request> requests_in) -> async::task<> {
-	for (const auto& req : requests_in.of<play_request>()) {
-		if (req.clip) {
-			const auto handle = allocate_voice(d, *req.clip, req.loop);
-			req.promise.fulfill(handle);
-		}
-	}
+auto gse::audio::stop_and_report(output_device& device, const std::uint32_t peak_voices) -> void {
+	ma_device_stop(&device.device);
 
-	for (const auto& req : requests_in.of<stop_request>()) {
-		release_voice(d, req.handle);
-	}
+	std::ranges::sort(device.mix_times);
+	std::ranges::sort(device.block_periods);
+	const profile::sample_time mix_p50 = profile::percentile_of(device.mix_times, 0.50);
+	const profile::sample_time mix_p95 = profile::percentile_of(device.mix_times, 0.95);
+	const profile::sample_time block_period = profile::percentile_of(device.block_periods, 0.50);
 
-	for (const auto& req : requests_in.of<pause_request>()) {
-		if (valid_voice(d, req.handle)) {
-			ma_sound_stop(&d.voices[req.handle.index]->sound);
-		}
-	}
-
-	for (const auto& req : requests_in.of<resume_request>()) {
-		if (valid_voice(d, req.handle)) {
-			ma_sound_start(&d.voices[req.handle.index]->sound);
-		}
-	}
-
-	for (const auto& req : requests_in.of<set_volume_request>()) {
-		if (valid_voice(d, req.handle)) {
-			ma_sound_set_volume(
-				&d.voices[req.handle.index]->sound,
-				req.vol.value(percentage<float>::bound::zero_to_one)
-			);
-		}
-	}
-
-	for (const auto& req : requests_in.of<set_master_volume_request>()) {
-		d.master_vol = req.vol;
-		if (d.engine_initialized) {
-			ma_engine_set_volume(&d.engine->inner, req.vol.value(percentage<float>::bound::zero_to_one));
-		}
-	}
-
-	for (std::uint32_t i = 0; i < d.voices.size(); ++i) {
-		auto& slot = *d.voices[i];
-		if (slot.active && ma_sound_at_end(&slot.sound)) {
-			ma_sound_uninit(&slot.sound);
-			ma_decoder_uninit(&slot.decoder);
-			slot.active = false;
-			d.free_list.push_back(i);
-		}
-	}
-
-	return {};
-}
-
-auto gse::audio::shutdown(data& d) -> void {
-	for (std::uint32_t i = 0; i < d.voices.size(); ++i) {
-		auto& slot = *d.voices[i];
-		if (slot.active) {
-			ma_sound_stop(&slot.sound);
-			ma_sound_uninit(&slot.sound);
-			ma_decoder_uninit(&slot.decoder);
-			slot.active = false;
-		}
-		delete d.voices[i];
-	}
-	d.free_list.clear();
-	d.voices.clear();
-
-	if (d.engine_initialized) {
-		ma_engine_uninit(&d.engine->inner);
-		delete d.engine;
-		d.engine = nullptr;
-		d.engine_initialized = false;
-	}
+	log::println(
+		log::category::general,
+		"audio: device ran {} blocks, {} underruns, {} allocations on the audio thread, mix p50 {:.3f:us} p95 {:.3f:us}, block period {:.3f:ms}, p95 over block {:.4f}, peak {} voices",
+		device.blocks,
+		device.underruns,
+		device.allocations,
+		mix_p50,
+		mix_p95,
+		block_period,
+		device.blocks > 0 ? mix_p95 / block_period : 0.0,
+		peak_voices
+	);
 }

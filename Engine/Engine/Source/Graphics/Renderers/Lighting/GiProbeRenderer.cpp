@@ -315,7 +315,7 @@ auto gse::renderer::gi_probe::frame(context& ctx, shared_view<gpu::context::data
 	const auto frame_index = gpu_s.render_graph->current_frame();
 
 	std::array<shaders::forward::light, max_lights> packed_lights{};
-	const auto light_count = light_packing::pack(packed_lights, cam_state.view_matrix, atm_state, dir_lights, spot_lights, point_lights, transforms);
+	const auto light_count = light_packing::pack(packed_lights, atm_state, dir_lights, spot_lights, point_lights, transforms);
 
 	if (light_count > 0) {
 		d.light_buffers[frame_index].host_write(packed_lights.data(), light_count * sizeof(shaders::forward::light));

@@ -133,12 +133,16 @@ auto gse::engine::initialize(const setup_fn& app_setup) -> void {
 		gpu::report_late_pass_requests(m_scheduler);
 	});
 
+	const bool launch_presents = m_config.render && m_config.create_window;
+	const bool fixed_step_bench = m_config.bench.enabled && m_config.bench.pacing != scenario::pacing::wall_clock;
+
 	system_manifest<^^launch::data>{}.register_with(*this);
 	m_scheduler.state<launch::data>() = {
-		.presents = m_config.render && m_config.create_window,
+		.presents = launch_presents,
 		.render = m_config.render,
 		.gpu = m_config.gpu,
 		.simulate_world = m_config.simulate_world,
+		.audio = fixed_step_bench ? launch::audio_output::offline : launch_presents ? launch::audio_output::device : launch::audio_output::none,
 	};
 	register_systems<^^window>(*this);
 	system_manifest<^^gpu::offscreen::data>{}.register_with(*this);
