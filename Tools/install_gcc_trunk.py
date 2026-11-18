@@ -145,12 +145,12 @@ def link_current(tag: str) -> Path:
     target = install_path(tag)
     if os.name == "nt":
         # rmdir removes a junction (or empty dir) without touching the target.
-        if link.exists() or os.path.islink(link):
+        if os.path.lexists(link):
             subprocess.run(["cmd", "/c", "rmdir", str(link)], check=False)
         # rmdir leaves a real directory in place ("The directory is not empty"), which is what
         # `current` becomes if anything ever copied a toolchain there instead of linking it.
         # mklink would then fail with a confusing "already exists", so clear it explicitly.
-        if link.exists():
+        if os.path.lexists(link):
             print(f"{link} is a real directory, not a junction; replacing it")
             force_remove_tree(link)
         subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True)
