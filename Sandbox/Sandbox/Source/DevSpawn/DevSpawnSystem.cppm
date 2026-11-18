@@ -49,6 +49,12 @@ export namespace sandbox {
 	struct spawn_audio_slide_plate_request {};
 
 	struct spawn_audio_roll_ball_request {};
+
+	struct prefetch_audio_reverb_request {};
+
+	struct play_audio_reverb_knock_request {
+		gse::id emitter;
+	};
 }
 
 export namespace sandbox::dev_spawn {
@@ -120,7 +126,7 @@ export namespace sandbox::dev_spawn {
 	auto run(
 		gse::context& ctx,
 		data& state,
-		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request> spawn_in,
+		gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request, prefetch_audio_reverb_request, play_audio_reverb_knock_request> spawn_in,
 		gse::channel_write<gse::animation::ragdoll_request> ragdoll_out,
 		gse::channel_write<gse::physics::impulse_request> impulse_out,
 		gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out,
@@ -154,6 +160,31 @@ namespace sandbox::dev_spawn {
 	auto loaded_modal_materials(
 		gse::shared_view<gse::asset::data> assets_d
 	) -> std::optional<audio_modal_material_set>;
+
+	auto audio_reverb_knock(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> gse::resource::handle<gse::audio_clip>;
+
+	auto warn_of_unloaded_linings(
+		gse::shared_view<gse::asset::data> assets_d
+	) -> void;
+}
+
+auto sandbox::dev_spawn::audio_reverb_knock(const gse::shared_view<gse::asset::data> assets_d) -> gse::resource::handle<gse::audio_clip> {
+	return gse::asset::get<gse::audio_clip>(assets_d, std::string(audio_contact_clip));
+}
+
+auto sandbox::dev_spawn::warn_of_unloaded_linings(const gse::shared_view<gse::asset::data> assets_d) -> void {
+	for (const auto station : { audio_reverb_station::wood, audio_reverb_station::cork }) {
+		const auto lining = audio_reverb_lining(station);
+		if (!gse::asset::get<gse::acoustic_material>(assets_d, lining).valid()) {
+			gse::log::println(
+				gse::log::level::warning,
+				"dev_spawn: a reverb probe sound was played while the lining {} had not loaded, so walls lined with it absorb as unlined ones",
+				lining
+			);
+		}
+	}
 }
 
 auto sandbox::dev_spawn::loaded_modal_materials(const gse::shared_view<gse::asset::data> assets_d) -> std::optional<audio_modal_material_set> {
@@ -206,7 +237,7 @@ auto sandbox::dev_spawn::cycle_audio_stress(data& state, const audio_stress_out 
 	}
 }
 
-auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const audio_stress_out audio_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
+auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_read<spawn_stress_request, spawn_joints_request, spawn_character_request, prefetch_character_request, spawn_pyramid_request, strike_pyramid_request, spawn_lights_request, prefetch_audio_stress_request, spawn_audio_stress_request, cycle_audio_stress_request, spawn_audio_contact_faller_request, add_contact_sounds_request, prefetch_audio_modal_request, spawn_audio_modal_bar_request, spawn_audio_modal_field_request, spawn_audio_slide_plate_request, spawn_audio_roll_ball_request, prefetch_audio_reverb_request, play_audio_reverb_knock_request> spawn_in, const gse::channel_write<gse::animation::ragdoll_request> ragdoll_out, const gse::channel_write<gse::physics::impulse_request> impulse_out, const gse::channel_write<gse::renderer::atmosphere::sun_request> sun_out, const audio_stress_out audio_out, const gse::shared_view<gse::actions::data> actions_d, const gse::shared_view<gse::world_system::data> world_d, const gse::shared_view<gse::asset::data> assets_d) -> gse::async::task<> {
 	const auto& cs = gse::actions::current_state(actions_d);
 	auto* scene = world_d.active_scene_ptr;
 	const gse::scene::mutation_scope _(ctx);
@@ -326,6 +357,23 @@ auto sandbox::dev_spawn::run(gse::context& ctx, data& state, const gse::channel_
 	}
 	if (!spawn_in.of<prefetch_audio_modal_request>().empty()) {
 		loaded_modal_materials(assets_d);
+	}
+	if (!spawn_in.of<prefetch_audio_reverb_request>().empty()) {
+		audio_reverb_knock(assets_d);
+		for (const auto station : { audio_reverb_station::wood, audio_reverb_station::cork }) {
+			gse::asset::get<gse::acoustic_material>(assets_d, audio_reverb_lining(station));
+		}
+	}
+	const auto reverb_knocks = spawn_in.of<play_audio_reverb_knock_request>();
+	if (!reverb_knocks.empty()) {
+		warn_of_unloaded_linings(assets_d);
+	}
+	for (const auto& req : reverb_knocks) {
+		audio_out.push<gse::audio::play_request>({
+			.clip = audio_reverb_knock(assets_d),
+			.gain = gse::percentage<float>::fraction(0.25f),
+			.emitter = req.emitter,
+		});
 	}
 	if (!spawn_in.of<spawn_audio_stress_request>().empty()) {
 		for (std::size_t index = 0; index < audio_stress_tones + audio_stress_clips; ++index) {

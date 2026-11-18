@@ -1,45 +1,56 @@
 # Agent chrome: every cell and every event
 
 The chat body's chrome comes from one `chrome_plan`, built by `plan_chrome(data, session)` in
-`Editor/Editor/Source/Agent/Chrome.cpp`. Reachability comes from `excluded_by(kind, phase, state)`
-in the same file, and the `chrome_gallery` drawable (`gse_draw` `{"draw": "chrome_gallery",
-"kind": "<chat_kind>"}`) draws every cell that predicate admits, using the real `plan_from` and
-`draw_status_row`. This document, the predicate and the gallery are meant to agree. If they
-disagree, the predicate is the source of truth.
+`Editor/Editor/Source/Agent/Chrome.cpp`. Reachability comes from two derivations: the phases a
+kind of chat can be in are `reachable_phases(origin)` (`Agent/Phase.cpp`), a walk of the edges
+declared on `task_phase` from `kind_style::starts`; the states within a reachable phase come from
+`excluded_by(origin, goal, phase, state)` in `Chrome.cpp`, which reads only `phase_policy` and
+`kind_style` annotations. The `chrome_gallery` drawable (`gse_draw` `{"draw": "chrome_gallery",
+"kind": "<chat_kind>"}`) draws every cell they admit, using the real `plan_from` and
+`draw_status_row`. This document and the gallery are meant to agree. If they disagree, the
+annotations are the source of truth.
 
-The enums are `chat_kind`, `task_phase` and `agent_state` in `Agent/Model.cppm`.
+A chat's situation is four independent axes, all in `Agent/Model.cppm`:
 
-- 5 kinds: chat, goal, crash, build_error, sync.
-- 7 phases: scope, apply, review, revise, summarize, settled, steer.
-- 12 states: resting, failed, idle, working, editing, build_queued, compiling, hibernating,
-  awaiting_approval, awaiting_goal, awaiting_answer, rate_limited.
+- origin `chat_kind`, stored once at creation: chat, sync, crash, build_error.
+- goal `goal_stage` on `session::goal`: none, proposed, pursuing, met.
+- phase `task_phase`, `runs.back().phase`: scope, apply, review, revise, summarize, settled, steer.
+  Its edges are `entered_from`/`returns_to`/`reentered` annotations, and `begin_phase` asserts
+  every move against them.
+- transition `transition_stage` on `session::gate`: none, held, approved.
+
+`agent_state` (13 states: ready, failed, advancing, working, editing, build_queued, compiling,
+hibernating, awaiting_approval, awaiting_goal, awaiting_answer, rate_limited, offline) is derived
+from those and the turn by `state_of`, in one ordered pass.
 
 ## Exclusion rules
 
-Each unreachable combination is listed here once. Any `(kind, phase, state)` not excluded by one
-of these rules is reachable.
+Each unreachable combination is listed here once. Any `(origin, goal, phase, state)` not excluded
+by one of these rules is reachable.
 
 | # | rule | excludes |
 |---|------|----------|
-| R1 | A sync chat never begins a phase, so `current_phase` reads `apply` for it. | sync × every phase except apply |
-| R2 | `steer` is entered only by a chat with a goal. | chat, crash, build_error, sync × steer |
-| R3 | `awaiting_goal` needs a goal's await (`state_of` requires `s.goal->waiting`). | chat, crash, build_error, sync × awaiting_goal |
-| R4 | A read-only phase cannot write, so `editing` cannot occur. | every kind × scope, review, summarize × editing |
-| R5 | A goal chat gates only on an escalation, a pause or a spent steer budget. All of those are reported from steer or summarize (`needs_owner`, `wake_goal`, `pause_goal`). | goal × scope, apply, review, revise, settled × awaiting_approval |
-| R6 | Without a goal, only a gated phase (`phase_policy::gated`, i.e. scope) of an attended chat (`!kind_style::unattended`) waits for approval. | chat, build_error × every phase but scope × awaiting_approval; crash, sync × every phase × awaiting_approval |
+| E1 | A phase not reached from `kind_style::starts` over the declared `task_phase` edges. A kind with `phased = false` stays in its starting phase. | sync × every phase except settled |
+| E2 | A chat that runs no phases never reports, so it never proposes a goal. | sync × goal |
+| E3 | A `goal_only` phase is entered only while a goal is pursued. | every origin without a goal × steer |
+| E4 | `awaiting_goal` needs a steering run's await. | every cell × every phase but steer × awaiting_goal |
+| E5 | A read-only phase cannot write, so `editing` cannot occur. | every cell × scope, review, summarize × editing |
+| E6 | Only a `gated` phase, or a `gates_under_goal` phase under a goal, waits for approval. Unattended chats (crash) are not excluded: their follow-up cycles gate. | without a goal: every phase but scope; with a goal: apply, review, revise, settled × awaiting_approval |
+| E7 | A settled task reports nothing, so nothing moves on from it. | every cell × settled × advancing |
 
 ## Reachable cells
 
-Reachable states per `(kind, phase)` cell are listed below. The states not named for a cell are
-excluded by the rule cited for it. "all" means all 12 states. `failed` is reachable wherever `resting` is: both are the `!s.running` branch of `state_of`, split only by `info.failure`.
+Reachable states per `(origin, goal, phase)` cell are listed below. The states not named for a
+cell are excluded by the rule cited for it. "all" means all 13 states. `failed` is reachable
+wherever `ready` is: both are the last branch of `state_of`, split only by `info.failure` with no
+link.
 
-| kind | scope | apply | review | revise | summarize | settled | steer |
+| cell | scope | apply | review | revise | summarize | settled | steer |
 |------|-------|-------|--------|--------|-----------|---------|-------|
-| chat | all but editing (R4), awaiting_goal (R3) | all but awaiting_approval (R6), awaiting_goal (R3) | as scope, minus awaiting_approval (R6) | as apply | as review | as apply | none (R2) |
-| goal | all but editing (R4), awaiting_approval (R5) | all but awaiting_approval (R5) | all but editing (R4), awaiting_approval (R5) | all but awaiting_approval (R5) | all but editing (R4) | all but awaiting_approval (R5) | all |
-| crash | all but editing (R4), awaiting_approval (R6), awaiting_goal (R3) | all but awaiting_approval, awaiting_goal | as scope | as apply | as scope | as apply | none (R2) |
-| build_error | same as chat | same as chat | same as chat | same as chat | same as chat | same as chat | none (R2) |
-| sync | none (R1) | all but awaiting_approval (R6), awaiting_goal (R3) | none (R1) | none (R1) | none (R1) | none (R1) | none (R1) |
+| chat, crash, build_error | all but editing (E5), awaiting_goal (E4) | all but awaiting_approval (E6), awaiting_goal (E4) | as apply, minus editing (E5) | as apply | as review | as apply, minus advancing (E7) | none (E3) |
+| chat, crash, build_error + goal | as without a goal | as without a goal | as without a goal | as without a goal | all but editing (E5), awaiting_goal (E4) | as without a goal | all |
+| sync | none (E1) | none (E1) | none (E1) | none (E1) | none (E1) | all but awaiting_approval (E6), awaiting_goal (E4), advancing (E7) | none (E1) |
+| sync + goal | none (E2) | none (E2) | none (E2) | none (E2) | none (E2) | none (E2) | none (E2) |
 
 ### What each reachable cell shows
 
@@ -53,7 +64,6 @@ a whole. So the cell table above, combined with the two tables below, gives ever
 | phase route | always, except sync (no route) | `phase_timeline` stations scope, apply, review, revise, summarize, plus steer only for a goal chat. Never settled. The current station is coloured by `phase_policy::color` and underlined (`animated_rect`). Visited stations are secondary, unvisited ones disabled. A station visited more than once is labelled `xN`. A settled chat has no current station, so no underline. |
 | note | `s.gate` (state awaiting_approval, or any state while a gate is held) | "reported done" or "reported N finding(s)" |
 | note | state failed | `info.failure` |
-| note | `s.pending_transition` | "approved · finishing the turn before <next phase label>" |
 | activity | busy (working, editing, or a build state while the turn is open) | spinner + `s.action` (`tool_flavor` verb, or "thinking") + elapsed time, both drawn in `state_style::activity`: accent while working, the added colour while editing. While a build is queued or running it shows `status_label` instead of `s.action`. It fades in and out through `presence` on the plan's key. |
 
 **Question block.** `draw_question`, above the input, shown while `chrome_plan::question_shown`
@@ -227,8 +237,8 @@ it has finished growing.
 | state / condition | action |
 |-------------------|--------|
 | awaiting_answer | **Answer**, enabled once a draft or an option is chosen |
-| gate held, no pending transition | **`gate_label`**: "Start applying", "Continue goal" or "Approve goal" |
-| busy | stop, interrupts the turn |
+| gate held (`transition_stage::held`) | **`gate_label`**: "Start applying", "Continue goal" or "Approve goal" |
+| busy, or a held turn (rate_limited, offline: `state_style::holds_turn`) | stop, interrupts the turn or drops the held one |
 | goal waiting (awaiting_goal), not busy | stop, pauses the goal |
 | otherwise | stop, disabled |
 
@@ -237,9 +247,9 @@ gallery: `state_style::label` and `state_style::color`, plus `status_label`'s cl
 
 | state | label | clauses |
 |-------|-------|---------|
-| resting | ready (secondary colour) – the process ended between turns; submit relaunches it | holding N builds |
+| ready | ready (secondary colour) – no turn running, whether or not the process is alive; submit relaunches it if it ended | holding N builds |
 | failed | stopped (error colour) – the process ended with `info.failure` set | holding N builds |
-| idle | ready | holding N builds |
+| advancing | moving on to <next phase> (folder colour) – an approved gate, through the finishing turn and the handoff capture | holding N builds |
 | working | working | holding N builds |
 | editing | editing files | holding N builds |
 | build_queued | build queued | the reported `hold_style::brief`: "behind a running build", "until the editor restarts", or "behind '<blocker>'" (`names_blocker`); holding N builds |
@@ -249,6 +259,7 @@ gallery: `state_style::label` and `state_style::color`, plus `status_label`'s cl
 | awaiting_goal | waiting on the goal | · pid N to exit; · '<file>' to change; · wakes within N min; · capped at 48h when the requested wait was cut |
 | awaiting_answer | waiting on your answer | holding N builds |
 | rate_limited | usage limit reached | – resuming in Nm |
+| offline | offline (warning colour) – a held turn whose resume time has passed, waiting for the connection probe | |
 
 **Status note.** One note on the status row, chosen as the first `chrome_note` enumerator
 whose `note_style::text` is non-empty, drawn in `note_style::color`. Priority is the enum order:
@@ -256,7 +267,6 @@ whose `note_style::text` is non-empty, drawn in `note_style::color`. Priority is
 | note | text | colour |
 |------|------|--------|
 | failure | `info.failure` (state failed) | error |
-| pending | approved · finishing the turn before <next> | secondary |
 | findings | reported done / reported N finding(s) | secondary |
 | blame | broke <blame_label> | error |
 | unclaimed | build red · N error(s) nobody claims (chats in `unclaimed_tree`) | warning |
@@ -268,7 +278,7 @@ whose `note_style::text` is non-empty, drawn in `note_style::color`. Priority is
 **Kind flavour.** Kind changes only the icon and its colour (`kind_style`) in the tab strip and
 the overview, apart from two exceptions:
 - sync replaces the status row's route with its own header (`draw_sync_header`: "Syncing <root> · <branch>" while busy, "Sync …" after; a history chevron; **Cancel** only while busy; **Close** always), and shows the status row only while busy. The open sync chat fills the Source Control panel until Close; the git view returns after it. Closed sync chats are kept (newest 20, `max_sync_history`) and listed in the history dropdown, reachable from the open chat's header or, with none open, from a "Past sync chats" strip above the git view. A follow-up typed in a sync chat relaunches it without starting a task route. The sync report is now read in the chat; the git panel banners only a sync that could not start;
-- crash is unattended, which shows up only as R6.
+- crash is unattended, which applies only in its origin cycle (`origin_cycle`): that cycle's scope does not gate, while an owner's follow-up cycle gates like any chat's. It excludes no gallery cell (E6).
 - build_error has its own Summary page, `apply:errors`, placed first at the apply station, ahead of
   apply's changes page. `fix_unclaimed` archives the unclaimed errors and the chats that denied them
   on the session (`session::fix`, a `build_fix`) when it opens the chat. The page draws them as a
@@ -284,7 +294,7 @@ the overview, apart from two exceptions:
 - busy: is_busy;
 - warning: stale;
 - error: blamed errors or `info.failure`;
-- dimmed: state failed. A resting chat is not dimmed.
+- dimmed: state failed. A ready chat is not dimmed.
 
 ## Events and their current presentation
 
@@ -314,7 +324,7 @@ Read from source as of this change. Where a row says "transcript row", the event
 | scope gate released (approve or the phase moving on) | the split closes: the column eases back to zero width and the plan widens |
 | gate needing the owner | **Start applying / Continue goal / Approve goal** button (`gate_label`) in place of stop; note "reported done" or "reported N finding(s)"; state awaiting_approval; tab dirty. Model and effort stay, since they apply at the next launch. |
 | auto-advance | no gate, so no button and no note; transcript row; route underline glides to the next station |
-| `pending_transition` | note "approved · finishing the turn before <next phase>"; the approve button goes and stop returns (interrupts the finishing turn) |
+| gate approved (`transition_stage::approved`) | state advancing "moving on to <next phase>", held through the finishing turn and the handoff capture; the approve button goes and stop returns (interrupts the finishing turn). The approved gate is archived, so it survives an editor restart |
 | phase begun on fresh context | transcript phase row; route station current |
 | review findings > 0 → revise | route shows revise current, review `xN` |
 | review cap reached | transcript row "review limit reached – N finding(s) left open" |
@@ -326,15 +336,17 @@ Read from source as of this change. Where a row says "transcript row", the event
 | await created | state awaiting_goal with one clause per `wait_reason` (pid, file, "wakes within N min"); overview row "on wake: <then>"; stop pauses |
 | await fired | steer begins; note "woke: <fired condition>" until that turn closes |
 | await hitting `longest_await` | the wait is clamped to 48h, recorded as `await_condition::capped`; status adds "· capped at 48h" |
-| goal drafted | gate with **Approve goal** |
-| goal approved | transcript row "pursuing goal …"; kind icon becomes target; steer appears in the route |
+| goal drafted | `goal_stage::proposed`; gate with **Approve goal**, gated even in an unattended chat; goal page standing "waiting for your approval" |
+| goal approved | transcript row "pursuing goal …"; tab icon becomes target (`chat_look` on `goal_stage`); steer appears in the route |
 | steer budget exhausted | transcript row "steering budget spent – waiting for approval"; **Continue goal** |
-| goal met | transcript row "goal met"; kind returns to chat; Summary stays, from `met_goal`, opening on the latest cycle's summarize page; goal page standing "met" |
+| goal met | entering settled while pursuing sets `goal_stage::met` and appends "goal met"; a steering run whose `met` verdict edited code is reviewed and summarized first. The goal stays on the chat, so Summary stays, opening on the latest cycle's summarize page; goal page standing "met" |
+| steering run picks a task and edits code | review and summarize run on its edits, then summarize hands the steering run's summary to scope as the chosen task (`next_phase` reads the steer that opened the task) |
 | goal paused | transcript row "goal paused – waiting for approval"; **Continue goal** |
 | rate limit hit | state rate_limited "– resuming in Nm" |
 | retry countdown | same, the countdown in the clause |
+| connection lost, turn held | state offline once the hold's resume time has passed; stop drops the held turn, as it does while rate_limited |
 | retry resumed | state returns to working |
-| process exit (clean) | state resting, "ready"; not dimmed |
+| process exit (clean) | state ready; not dimmed |
 | process exit (failure) | state failed, "stopped"; note carries `info.failure`; tab error and dimmed |
 | launch failure | transcript failure row "failed to launch 'claude' – is it on PATH?" |
 | `restart_task` from settled | route current returns to scope |
@@ -344,8 +356,8 @@ Read from source as of this change. Where a row says "transcript row", the event
 | sync cancelled | transcript note "cancelled from the panel" |
 | sync closed | panel returns to the git view under the "Past sync chats" strip |
 | sync reopened from history | chosen chat fills the panel again |
-| crash chat opened | crash icon tab; scope does not gate (R6) |
-| build-error chat opened | hammer icon tab; the Summary view gains the `apply:errors` page with the raw-error strip and "no diagnosis yet" |
+| crash chat opened | crash icon tab; its first scope does not gate (`unattended` holds only in the origin cycle); an owner's follow-up cycle gates as any chat's does, and no longer holds back crash triage |
+| build-error chat opened | hammer icon tab; the Summary view gains the `apply:errors` page with the raw-error strip and "no diagnosis yet", on the origin cycle only |
 | diagnosis reported | a build_error chat's apply `gse_phase_done` carries `diagnosis`; it is stored in `build_fix::diagnosis` and drawn as markdown under the strip, and the head turns to "diagnosed". Any other chat or phase sending it is refused, naming the field. Query: `errors[].diagnosis on` |
 | criteria reported | a steering run's `gse_phase_done` carries `criteria` ({id, state met/owner/open, note}); the list replaces `goal_state::criteria` and redraws the goal page's left column. Any other phase or a chat with no goal sending it is refused, naming the field; an unknown state is refused with its index. Query: `criteria[]` |
 | tree busy | queue row hold label; "behind '<blocker>'" on the waiting chat; "holding N builds" on the blocker |
@@ -357,8 +369,8 @@ Read from source as of this change. Where a row says "transcript row", the event
 | apply run ended with steps unmarked | the apply page shows the run as ended: unmarked and current steps become `[-]` not reported (muted), the head reads "ended · k/N marked" |
 | first summary presented | the first Summary page with content appears (a scope gate's summary or steps, an apply/review/summarize/steer screen, build-error records); the view-mode button grows in through `presence` and the body switches from Transcript to the Summary page, which fades in. Query: `summary ready`, `view summary`, `toggle shown` |
 | follow-up starts cycle 2 of a settled chat | the chat stays in Summary: readiness counts any cycle with content, not only the newest, so the toggle stays shown and the body opens on the new cycle's scope page, which shows the live transcript since the cycle began until scope reports, with `<<` reaching earlier cycles. Query: `summary ready`, `toggle shown`, `plans[].live scope` |
-| phase run in progress, no report yet | on the newest cycle, the page of the running phase reads "<stage> · live transcript" and shows the transcript of *that run only*, from its own first row (`lifecycle::live`, `{phase, page, from = phase_run::first_row}`), drawn through the `live_run` view (separate from the split's follow-up column, so the two never reset each other). Decided in `lifecycle_on`: the run is the session's last run, not `settled`, and unreported — no gate, no pending transition, and its `summary`, `findings`, `steps` and `verdict` all empty. Applies to scope, review, revise, summarize and steer; revise shows on the review page, which replaces the review loop until the run reports (earlier cycles' findings stay in Transcript). Apply goes live only when scope gave no steps and the chat is not a build-error fix; otherwise its steps-and-diffs or errors page stays. When the run reports, the page becomes its summary (scope plan, review loop, report, verdict). Past cycles never show it; a chat's first cycle before its first summary still shows the plain transcript with no toggle. Query: `plans[].live <phase>\|none`, `plans[].from <row>\|none` |
-| new goal scoped on a chat whose last goal was met | still a goal chat (`goal_chat`: a goal shown, any steer run in history, or a gate/pending transition carrying a goal record), so Summary and its toggle stay; the goal page at cycle 0 reads "goal · the next goal is still being scoped" until the new goal is approved, and the newest cycle's scope page shows the live transcript. Query: `goal_chat 1`, `summary ready`, `plans[].live scope` |
+| phase run in progress, no report yet | on the newest cycle, the page of the running phase reads "<stage> · live transcript" and shows the transcript of *that run only*, from its own first row (`lifecycle::live`, `{phase, page, from = phase_run::first_row}`), drawn through the `live_run` view (separate from the split's follow-up column, so the two never reset each other). Decided in `lifecycle_on`: the run is the session's last run, not `settled`, and unreported — no gate at either stage, and its `summary`, `findings`, `steps` and `verdict` all empty. Applies to scope, review, revise, summarize and steer; revise shows on the review page, which replaces the review loop until the run reports (earlier cycles' findings stay in Transcript). Apply goes live only when scope gave no steps and the chat is not a build-error fix; otherwise its steps-and-diffs or errors page stays. When the run reports, the page becomes its summary (scope plan, review loop, report, verdict). Past cycles never show it; a chat's first cycle before its first summary still shows the plain transcript with no toggle. Query: `plans[].live <phase>\|none`, `plans[].from <row>\|none` |
+| new goal scoped on a chat whose last goal was met | still a goal chat (`goal_chat`: a goal at any stage, or any steer run in history), so Summary and its toggle stay; the goal page at cycle 0 reads "goal · the next goal is still being scoped" until the new goal is approved, and the newest cycle's scope page shows the live transcript. Query: `goal_chat 1`, `summary ready`, `plans[].live scope` |
 | owner sends a message | the Summary pager jumps to the newest cycle and its current-phase page (`current_page`, the opening-page rule without the since anchor). Past scope (apply, review, revise, summarize, steer; `chrome_plan.transcript_on_send`), the body also switches to Transcript; the next tab entry restores Summary. A Transcript view picked by hand is kept. Scope, settled follow-ups and sync chats only jump. Query: `view transcript` and `plans[].cycle` = `cycles` after the send, `view summary` after a tab switch |
 | goal chat scopes its next cycle | same as a settled chat's follow-up: Summary and toggle stay, the opening page is the newest cycle's scope page with the live transcript until scope reports. Query: `goal_chat 1`, `plans[].opening cycle N page 1/… scope:…` |
 | file edit during apply | recorded against the current step (or unattributed) and counted on the apply page, its diff appearing live on the right |
@@ -367,7 +379,7 @@ Read from source as of this change. Where a row says "transcript row", the event
 
 After one row per reachable cell, `chrome_gallery` draws:
 - awaiting_approval with 3 findings (the enumerated scope × awaiting_approval row is the 0-findings case);
-- approved with `pending_transition`, the turn still finishing;
+- advancing, the approved turn still finishing;
 - a short question block with 3 options, one chosen;
 - a long multi-choice question with 12 two-line options in a tight room, showing the overflow line;
 - build cells: queued behind a build, queued for an editor restart, queued behind 'wasm', compiling,
@@ -461,17 +473,16 @@ ledger row there, is also its cycle's `steer:verdict` page. `gse_panel_query` Ag
 cursor, anchor, digest, fork, fork_about, fork_answer_chars).
 `gse_panel_query` Agent reports the page as `scope:goal` in `plans`, as `goals` (head, standing,
 steers_left, aim, tally, route, ledger_shown, ledger_latest) and as `criteria` (id, state).
-A goal that is met is still cleared from the chat (`s.goal.reset()`, behaviour, not
-presentation). Just before the reset, the goal is moved into `session::met_goal`, an archived
-copy kept only for display. `shown_goal` returns the live goal, else that copy. A chat that met
-its goal before `met_goal` existed has neither, but it has steer runs in its history. For that
-chat the record is recovered from its last "pursuing goal <path>" row and the aim is re-read
-from the record. Its criteria read "not reported", and the head reads "record unknown" when no
-such row exists. Summary readiness, the goal page, the cycle paging and the since-you-were-here
-anchor all read `shown_goal`. A met chat therefore keeps its Summary and toggle. It opens on
-the summarize page of its latest cycle, and the goal page, with standing "met" and no steer
-count, is one `<<` away. Starting a new goal, or restarting the task, clears `met_goal`. The
-"goal met" transcript row stays as well.
+A goal that is met stays on the chat with `goal_stage::met`; nothing pursues it, so the prompt's
+Goal section, steering and `criteria` all require `pursuing`. A chat archived before goal stages
+existed (with a `met_goal` field, now dropped on load) has no goal but has steer runs in its
+history. For that chat a `met` goal is recovered from its last "pursuing goal <path>" row and the
+aim is re-read from the record. Its criteria read "not reported", and the head reads "record
+unknown" when no such row exists. Summary readiness, the goal page, the cycle paging and the
+since-you-were-here anchor all read `session::goal`. A met chat therefore keeps its Summary and
+toggle. It opens on the summarize page of its latest cycle, and the goal page, with standing
+"met" and no steer count, is one `<<` away. Restarting the task clears the met goal. The "goal
+met" transcript row stays as well.
 
 ## Draggable splits
 

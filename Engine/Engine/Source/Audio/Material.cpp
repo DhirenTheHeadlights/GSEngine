@@ -21,6 +21,7 @@ namespace gse::audio {
 		density mass_density;
 		elastic_modulus young_modulus;
 		float poisson_ratio = 0.f;
+		float absorption = 0.f;
 		inverse_time mass_damping;
 		time stiffness_damping;
 	};
@@ -115,11 +116,12 @@ auto gse::bake(const std::filesystem::path& src, acoustic_material::baked& out) 
 	const bool sized = std::ranges::all_of(boxes, [](const audio::box_source& box) {
 		return box.size.x() > displacement{} && box.size.y() > displacement{} && box.size.z() > displacement{};
 	});
-	if (!elastic || !damped || !sized) {
+	const bool absorbing = material.absorption > 0.f && material.absorption <= 1.f;
+	if (!elastic || !damped || !sized || !absorbing) {
 		log::println(
 			log::level::warning,
 			log::category::assets,
-			"Acoustic material {} needs a [Material] section with mass_density, young_modulus, poisson_ratio between 0 and 0.5, a positive mass_damping and stiffness_damping, each with its unit, and a positive size in every [Box.*] section",
+			"Acoustic material {} needs a [Material] section with mass_density, young_modulus, poisson_ratio between 0 and 0.5, an absorption above 0 and at most 1, a positive mass_damping and stiffness_damping, each with its unit, and a positive size in every [Box.*] section",
 			src.generic_display_string()
 		);
 		return false;
@@ -128,6 +130,7 @@ auto gse::bake(const std::filesystem::path& src, acoustic_material::baked& out) 
 	out.mass_density = material.mass_density;
 	out.young_modulus = material.young_modulus;
 	out.poisson_ratio = material.poisson_ratio;
+	out.absorption = material.absorption;
 	out.mass_damping = material.mass_damping;
 	out.stiffness_damping = material.stiffness_damping;
 	for (const auto& [size] : boxes) {

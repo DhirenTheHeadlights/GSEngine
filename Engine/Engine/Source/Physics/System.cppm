@@ -169,6 +169,10 @@ export namespace gse::physics {
 		int steps = 0;
 	};
 
+	struct contact_interest_request {
+		bool wanted = false;
+	};
+
 	struct carried_body_state {
 		id owner;
 		vec3<velocity> previous_velocity;
@@ -839,6 +843,7 @@ export namespace gse::physics {
 
 		bool gpu_unavailable_reported = false;
 		int rollback_history_floor = 0;
+		bool contact_interest = false;
 		[[= shared]] std::uint64_t step_index = 0;
 		[[= shared]] std::uint64_t observed_step = 0;
 		[[= shared]] std::vector<step_snapshot> rollback_ring;
@@ -1265,7 +1270,7 @@ export namespace gse::physics {
 	auto integrate(
 		context& ctx,
 		data& d,
-		channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in,
+		channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, contact_interest_request, gpu_upload_report> requests_in,
 		channel_write<gpu_solver_frame_info> solver_out,
 		channel_write<contact_event> contacts_out,
 		write<transform_component> transform,

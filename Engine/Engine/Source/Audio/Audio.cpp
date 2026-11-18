@@ -96,6 +96,81 @@ auto gse::audio::blocked_share(data& d, const scene_listener& listener, const st
 	return static_cast<float>(blocked) / static_cast<float>(rim_rays + 1);
 }
 
+auto gse::audio::room_radius(const data& d) -> length {
+	return d.reverb.enabled ? d.surroundings.heard.radius : length{};
+}
+
+auto gse::audio::tune_room(data& d, const scene_listener& listener, const std::uint64_t physics_step, const write<acoustic_material_component>& materials, const shared_view<asset::data> assets) -> void {
+	const velocity fastest_walk = meters_per_second(10.f);
+	const time decay_release = seconds(4.f);
+	const auto steps = static_cast<std::uint32_t>(system_clock::fixed_steps_this_frame());
+	const std::uint32_t ramp_frames = std::max(steps, 1u) * d.frames_per_step;
+
+	auto& traced = d.surroundings;
+	if (!d.reverb.enabled) {
+		if (traced.traced) {
+			traced = {};
+			d.output->submit(tune_reverb{ .ramp_frames = ramp_frames });
+		}
+		return;
+	}
+
+	const vec3<position> ear = listener.transform.position;
+	const length stride = fastest_walk * system_clock::fixed_dt() * static_cast<float>(std::max(steps, 1u));
+	const bool jumped = !(listener.owner == traced.listener) || magnitude(ear - traced.ear) > stride;
+	const bool stale = jumped || physics_step > traced.traced_step + steps || physics_step < traced.traced_step;
+	if (!stale && steps == 0) {
+		return;
+	}
+
+	trace::scope_guard _{ trace_id<"audio::reverb">() };
+	trace_room(
+		traced,
+		{
+			.targets = d.ray_targets,
+			.materials = materials,
+			.assets = assets,
+			.ear = ear,
+			.unheard = { listener.owner, listener.body },
+		},
+		stale ? room_ray_count : room_rays_per_step
+	);
+	traced.traced_step = physics_step;
+	const float released = std::min(system_clock::fixed_dt() * static_cast<float>(steps) / decay_release, 1.f);
+	const time shortening = traced.held_decay - (traced.held_decay - traced.heard.decay) * released;
+	traced.held_decay = stale ? traced.heard.decay : std::max(traced.heard.decay, shortening);
+
+	reverb_setting setting = reverb_of(traced, listener.transform);
+	settle_reflections(
+		traced,
+		setting,
+		{
+			.slide = system_clock::fixed_dt() * (static_cast<float>(steps) * (fastest_walk * 2.f / speed_of_sound())),
+			.steps = steps,
+			.jumped = stale,
+		}
+	);
+	d.output->submit(tune_reverb{
+		.setting = setting,
+		.ramp_frames = stale ? ramp_frames : ramp_frames * (room_ray_count / room_rays_per_step),
+	});
+
+	if (d.reverb.trace) {
+		const auto& heard = traced.heard;
+		log::println(
+			log::category::general,
+			"audio: reverb step {} mean free path {:.4f} absorption {:.4f} enclosed {:.4f} volume {:.3f} decay {:.3f:ms} send {:.5f}",
+			physics_step,
+			heard.mean_free_path,
+			heard.absorption,
+			heard.enclosed,
+			heard.size,
+			heard.decay,
+			heard.send
+		);
+	}
+}
+
 auto gse::audio::locate(data& d, const id emitter, const std::optional<scene_listener>& listener, const read<physics::transform_component>& transforms) -> std::optional<located_emitter> {
 	if (!emitter.exists()) {
 		return std::nullopt;
@@ -118,7 +193,7 @@ auto gse::audio::locate(data& d, const id emitter, const std::optional<scene_lis
 		.unheard = unheard,
 		.position = source->position,
 		.occluded = occluded,
-		.at = place(listener->transform, { .position = source->position, .occluded = occluded }, d.listening),
+		.at = place(listener->transform, { .position = source->position, .occluded = occluded, .room_radius = room_radius(d) }, d.listening),
 	};
 }
 
@@ -129,7 +204,7 @@ auto gse::audio::locate(data& d, const physics::contact_event& contact, const sc
 		.unheard = unheard,
 		.position = contact.point,
 		.occluded = occluded,
-		.at = place(listener.transform, { .position = contact.point, .occluded = occluded }, d.listening),
+		.at = place(listener.transform, { .position = contact.point, .occluded = occluded, .room_radius = room_radius(d) }, d.listening),
 	};
 }
 
@@ -612,6 +687,7 @@ auto gse::audio::move_placed_voices(data& d, const scene_listener& listener, con
 			.position = position,
 			.velocity = emitter_velocity,
 			.occluded = slot.occluded,
+			.room_radius = room_radius(d),
 		};
 		d.output->submit(move_voice{
 			.slot = index,
@@ -632,10 +708,14 @@ auto gse::audio::render_fixed_steps(data& d) -> void {
 	d.output->render(std::span(samples).subspan(rendered));
 }
 
-auto gse::audio::run(data& d, const shared_view<physics::data> phys_s, const shared_view<asset::data> assets_s, const channel_read<play_request, play_tone_request, stop_request, offline_sink_request, physics::contact_event> requests_in, read<listener_component> listeners, write<contact_sound_component> contact_sounds, write<acoustic_material_component> materials, read<physics::transform_component> transforms, read<physics::collision_component> colliders, read<physics::motion_component> motions) -> async::task<> {
+auto gse::audio::run(data& d, const shared_view<physics::data> phys_s, const shared_view<asset::data> assets_s, const channel_read<play_request, play_tone_request, stop_request, offline_sink_request, physics::contact_event> requests_in, const channel_write<physics::contact_interest_request> interest_out, read<listener_component> listeners, write<contact_sound_component> contact_sounds, write<acoustic_material_component> materials, read<physics::transform_component> transforms, read<physics::collision_component> colliders, read<physics::motion_component> motions) -> async::task<> {
 	for (const auto& req : requests_in.of<offline_sink_request>()) {
 		d.sink.path = req.path;
 	}
+
+	interest_out.push<physics::contact_interest_request>({
+		.wanted = !contact_sounds.empty() || !materials.empty(),
+	});
 
 	for (const id owner : contact_sounds.drain(component_event::added)) {
 		if (const auto* sound = contact_sounds.find(owner)) {
@@ -703,6 +783,7 @@ auto gse::audio::run(data& d, const shared_view<physics::data> phys_s, const sha
 	if (listener && (moving_placed || starting_placed)) {
 		trace::scope_guard _{ trace_id<"audio::occlusion">() };
 		physics::gather_ray_targets(transforms, colliders, phys_s.hulls, d.ray_targets);
+		tune_room(d, *listener, phys_s.step_index, materials, assets_s);
 		if (moving_placed) {
 			move_placed_voices(d, *listener, transforms);
 		}

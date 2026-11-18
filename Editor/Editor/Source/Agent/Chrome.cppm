@@ -25,12 +25,11 @@ export namespace gse::ide::agent {
 	struct chrome_facts {
 		chat_kind kind = chat_kind::chat;
 		task_phase phase = task_phase::apply;
-		agent_state state = agent_state::idle;
+		agent_state state = agent_state::ready;
 		std::vector<phase_step> steps;
 		std::string status;
 		std::string activity;
 		std::string gate_action;
-		std::string pending_next;
 		std::string failure;
 		std::uint32_t findings = 0;
 		std::span<const build_inbox::plan_step> plan_steps;
@@ -51,18 +50,13 @@ export namespace gse::ide::agent {
 		std::string woke_by;
 		std::string wake_task;
 		bool busy = false;
-		bool has_gate = false;
-		bool pending = false;
+		bool gate_held = false;
 		bool stale = false;
 		bool failed = false;
 		bool summary_ready = false;
 	};
 
 	auto failure_note(
-		const chrome_facts& facts
-	) -> std::string;
-
-	auto pending_note(
 		const chrome_facts& facts
 	) -> std::string;
 
@@ -126,9 +120,6 @@ export namespace gse::ide::agent {
 		failure [[= note_style{
 			.text = &failure_note,
 			.color = &gui::style::color_error,
-		}]],
-		pending [[= note_style{
-			.text = &pending_note,
 		}]],
 		findings [[= note_style{
 			.text = &findings_note,
@@ -507,10 +498,6 @@ export namespace gse::ide::agent {
 		const session& s
 	) -> lifecycle;
 
-	auto shown_goal(
-		const session& s
-	) -> const goal_state*;
-
 	auto goal_chat(
 		const session& s
 	) -> bool;
@@ -547,6 +534,7 @@ export namespace gse::ide::agent {
 
 	auto excluded_by(
 		chat_kind kind,
+		bool goal,
 		task_phase phase,
 		agent_state state
 	) -> std::string_view;

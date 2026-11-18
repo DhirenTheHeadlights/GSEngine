@@ -7,6 +7,7 @@ import gse.core;
 import gse.math;
 
 import :mixer;
+import :reverb_network;
 
 namespace gse::audio {
 	auto strike_pulse_frames() -> std::uint32_t;
@@ -16,10 +17,14 @@ auto gse::audio::sample_rate() -> frequency {
 	return hertz(static_cast<float>(output_frame_rate));
 }
 
-gse::audio::mixer::mixer() : m_paths(voice_capacity), m_banks(voice_capacity), m_delay_lines(static_cast<std::size_t>(voice_capacity) * delay_line_frames) {}
+gse::audio::mixer::mixer() : m_paths(voice_capacity), m_banks(voice_capacity), m_delay_lines(static_cast<std::size_t>(voice_capacity) * delay_line_frames), m_reverb_feed(reverb_feed_frames) {}
 
 auto gse::audio::mixer::submit(const voice_command& command) -> bool {
 	return m_commands.push(command);
+}
+
+auto gse::audio::mixer::submit(const tune_reverb& command) -> bool {
+	return m_reverb_commands.push(command);
 }
 
 auto gse::audio::mixer::take_finished(std::uint32_t& slot) -> bool {
@@ -27,6 +32,11 @@ auto gse::audio::mixer::take_finished(std::uint32_t& slot) -> bool {
 }
 
 auto gse::audio::mixer::render(const std::span<float> out) -> void {
+	tune_reverb tuned;
+	while (m_reverb_commands.pop(tuned)) {
+		m_reverb.tune(tuned.setting, sample_rate(), tuned.ramp_frames);
+	}
+
 	voice_command command;
 	while (m_commands.pop(command)) {
 		std::visit(
@@ -39,21 +49,29 @@ auto gse::audio::mixer::render(const std::span<float> out) -> void {
 
 	std::ranges::fill(out, 0.f);
 
-	for (std::uint32_t slot = 0; slot < voice_capacity; ++slot) {
-		auto& [source, gain, placed] = m_voices[slot];
-		bool ended = false;
-		if (placed) {
-			ended = mix_placed(slot, out);
+	for (std::size_t mixed = 0; mixed < out.size(); mixed += reverb_feed_frames * output_channels) {
+		const std::span piece = out.subspan(mixed, std::min(reverb_feed_frames * output_channels, out.size() - mixed));
+		const std::span reverb_feed = std::span(m_reverb_feed).first(piece.size() / output_channels);
+		std::ranges::fill(reverb_feed, 0.f);
+
+		for (std::uint32_t slot = 0; slot < voice_capacity; ++slot) {
+			auto& [source, gain, placed] = m_voices[slot];
+			bool ended = false;
+			if (placed) {
+				ended = mix_placed(slot, piece, reverb_feed);
+			}
+			else if (auto* cursor = std::get_if<clip_cursor>(&source)) {
+				ended = mix(*cursor, gain, piece);
+			}
+			else if (auto* tone = std::get_if<oscillator>(&source)) {
+				ended = mix(*tone, gain, piece);
+			}
+			if (ended) {
+				finish(slot);
+			}
 		}
-		else if (auto* cursor = std::get_if<clip_cursor>(&source)) {
-			ended = mix(*cursor, gain, out);
-		}
-		else if (auto* tone = std::get_if<oscillator>(&source)) {
-			ended = mix(*tone, gain, out);
-		}
-		if (ended) {
-			finish(slot);
-		}
+
+		m_reverb.process(reverb_feed, piece);
 	}
 }
 
@@ -90,6 +108,7 @@ auto gse::audio::mixer::apply(const move_voice& command) -> void {
 		.left = ramp_step(path.now.left, path.target.left, command.ramp_frames),
 		.right = ramp_step(path.now.right, path.target.right, command.ramp_frames),
 		.damping = (path.target.damping - path.now.damping) / static_cast<float>(command.ramp_frames),
+		.send = (path.target.send - path.now.send) / static_cast<float>(command.ramp_frames),
 	};
 }
 
@@ -120,6 +139,7 @@ auto gse::audio::mixer::arrival_of(const placement& at) -> arrival {
 		.left = arrival_of(at.left),
 		.right = arrival_of(at.right),
 		.damping = 1.f - std::exp(-turn * (at.absorption_cutoff / sample_rate())),
+		.send = at.send,
 	};
 }
 
@@ -153,7 +173,7 @@ auto gse::audio::mixer::finish(const std::uint32_t slot) -> void {
 	m_finished.push(slot);
 }
 
-auto gse::audio::mixer::mix_placed(const std::uint32_t slot, const std::span<float> out) -> bool {
+auto gse::audio::mixer::mix_placed(const std::uint32_t slot, const std::span<float> out, const std::span<float> reverb_feed) -> bool {
 	constexpr std::uint32_t interpolation_reach = 3;
 
 	auto& source = m_voices[slot].source;
@@ -161,6 +181,7 @@ auto gse::audio::mixer::mix_placed(const std::uint32_t slot, const std::span<flo
 	auto& path = m_paths[slot];
 	const std::span line = std::span(m_delay_lines).subspan(static_cast<std::size_t>(slot) * delay_line_frames, delay_line_frames);
 	std::array<float, chunk_frames> scratch;
+	std::size_t fed = 0;
 
 	for (const auto block : out | std::views::chunk(chunk_frames * output_channels)) {
 		const std::span dry = std::span(scratch).first(block.size() / output_channels);
@@ -181,6 +202,7 @@ auto gse::audio::mixer::mix_placed(const std::uint32_t slot, const std::span<flo
 			line[path.head] = sample;
 			path.written = std::min(path.written + 1, delay_line_frames);
 			advance(path);
+			reverb_feed[fed++] += sample * path.now.send;
 			frame[0] += heard(line, path, path.now.left, path.left);
 			frame[1] += heard(line, path, path.now.right, path.right);
 			path.head = (path.head + 1) % delay_line_frames;
@@ -209,6 +231,7 @@ auto gse::audio::mixer::advance(propagation& path) -> void {
 	advance(path.now.left, path.step.left);
 	advance(path.now.right, path.step.right);
 	path.now.damping += path.step.damping;
+	path.now.send += path.step.send;
 }
 
 auto gse::audio::mixer::advance(ear_arrival& now, const ear_arrival& step) -> void {

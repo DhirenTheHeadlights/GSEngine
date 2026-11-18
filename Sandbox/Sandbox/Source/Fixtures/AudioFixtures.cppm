@@ -134,6 +134,64 @@ export namespace sandbox {
 	auto audio_roll_scene_setup(
 		gse::scene& s
 	) -> void;
+
+	constexpr std::string_view audio_reverb_emitter = "AudioReverbEmitter";
+
+	enum class audio_reverb_station : std::uint8_t {
+		wood,
+		cork,
+		open,
+	};
+
+	constexpr std::array audio_reverb_stations{
+		audio_reverb_station::wood,
+		audio_reverb_station::cork,
+		audio_reverb_station::open,
+	};
+
+	auto audio_reverb_room_size() -> gse::vec3<gse::length>;
+
+	auto audio_reverb_station_center(
+		audio_reverb_station station
+	) -> gse::vec3<gse::position>;
+
+	auto audio_reverb_lining(
+		audio_reverb_station station
+	) -> std::string;
+
+	auto audio_reverb_listener_position(
+		audio_reverb_station station
+	) -> gse::vec3<gse::position>;
+
+	auto audio_reverb_emitter_position(
+		audio_reverb_station station
+	) -> gse::vec3<gse::position>;
+
+	auto audio_reverb_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto audio_reverb_hall_size() -> gse::vec3<gse::length>;
+
+	auto audio_reverb_hall_listener_position() -> gse::vec3<gse::position>;
+
+	auto audio_reverb_hall_scene_setup(
+		gse::scene& s
+	) -> void;
+
+	auto spawn_audio_yard_shed(
+		gse::scene& s
+	) -> void;
+
+	constexpr std::string_view audio_doorway_emitter = "AudioDoorwayEmitter";
+
+	auto audio_doorway_listener_position() -> gse::vec3<gse::position>;
+
+	auto audio_doorway_emitter_position() -> gse::vec3<gse::position>;
+
+	auto audio_doorway_scene_setup(
+		gse::scene& s
+	) -> void;
 }
 
 namespace sandbox {
@@ -180,6 +238,48 @@ namespace sandbox {
 		const rolling_ball& placed,
 		const gse::acoustic_material& material
 	) -> gse::id;
+
+	enum class room_floor : std::uint8_t {
+		lined,
+		bare,
+		ground,
+	};
+
+	struct lined_room {
+		std::string_view name;
+		gse::vec3<gse::position> center;
+		gse::vec3<gse::length> interior;
+		std::string lining;
+		room_floor floor = room_floor::lined;
+		bool visible = false;
+		gse::length doorway;
+	};
+
+	struct room_slab {
+		std::string_view side;
+		gse::vec3<gse::displacement> offset;
+		gse::vec3<gse::length> size;
+		bool lined = true;
+	};
+
+	auto spawn_lined_room(
+		gse::scene& s,
+		const lined_room& room
+	) -> void;
+
+	auto room_door_height() -> gse::length;
+
+	auto audio_yard_shed_center() -> gse::vec3<gse::position>;
+
+	auto audio_shed(
+		std::string_view name,
+		const gse::vec3<gse::position>& center,
+		bool visible
+	) -> lined_room;
+
+	auto audio_doorway_room() -> lined_room;
+
+	auto audio_doorway_threshold() -> gse::vec3<gse::position>;
 }
 
 auto sandbox::audio_probe_scene_setup(gse::scene& s) -> void {
@@ -522,6 +622,21 @@ auto sandbox::spawn_audio_yard_ringers(gse::scene& s, const audio_modal_material
 			.kick = gse::vec3<gse::velocity>(gse::meters_per_second(1.75f), still, still),
 			.reversing = true,
 		});
+
+	const auto shed_bar = spawn_ringing_box(
+		s,
+		{
+			.name = "AudioYardShedBar",
+			.position = audio_yard_shed_center(),
+			.size = audio_modal_bar_size(),
+			.orientation = tilted,
+		},
+		steel
+	);
+	s.build(shed_bar)
+		.with<periodic_hop::component>({
+			.period = bar_period,
+		});
 }
 
 auto sandbox::audio_modal_scene_setup(gse::scene& s) -> void {
@@ -627,6 +742,226 @@ auto sandbox::audio_roll_scene_setup(gse::scene& s) -> void {
 		audio_listener_archetype{
 			.transform = {
 				.position = gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.5f), gse::meters(3.f)),
+			},
+		}
+	);
+}
+
+auto sandbox::room_door_height() -> gse::length {
+	return gse::meters(2.f);
+}
+
+auto sandbox::spawn_lined_room(gse::scene& s, const lined_room& room) -> void {
+	const auto thickness = gse::meters(0.3f);
+	const auto door_height = room_door_height();
+	const auto level = gse::meters(0.f);
+
+	const auto& [name, center, interior, lining, floor, visible, doorway] = room;
+	const auto half = interior * 0.5f;
+	const auto outer_x = interior.x() + thickness * 2.f;
+	const auto outer_z = interior.z() + thickness * 2.f;
+	const auto beyond_x = half.x() + thickness * 0.5f;
+	const auto beyond_y = half.y() + thickness * 0.5f;
+	const auto beyond_z = half.z() + thickness * 0.5f;
+
+	std::vector<room_slab> slabs{
+		room_slab{ .side = "Ceiling", .offset = { level, beyond_y, level }, .size = { outer_x, thickness, outer_z } },
+		room_slab{ .side = "West", .offset = { -beyond_x, level, level }, .size = { thickness, interior.y(), outer_z } },
+		room_slab{ .side = "East", .offset = { beyond_x, level, level }, .size = { thickness, interior.y(), outer_z } },
+		room_slab{ .side = "North", .offset = { level, level, -beyond_z }, .size = { interior.x(), interior.y(), thickness } },
+	};
+	if (floor != room_floor::ground) {
+		slabs.push_back({
+			.side = "Floor",
+			.offset = { level, -beyond_y, level },
+			.size = { outer_x, thickness, outer_z },
+			.lined = floor == room_floor::lined,
+		});
+	}
+	if (doorway > level) {
+		const auto beside = (interior.x() - doorway) * 0.5f;
+		const auto beside_at = (interior.x() + doorway) * 0.25f;
+		const auto above = interior.y() - door_height;
+		slabs.push_back({ .side = "SouthWest", .offset = { -beside_at, level, beyond_z }, .size = { beside, interior.y(), thickness } });
+		slabs.push_back({ .side = "SouthEast", .offset = { beside_at, level, beyond_z }, .size = { beside, interior.y(), thickness } });
+		slabs.push_back({ .side = "Lintel", .offset = { level, half.y() - above * 0.5f, beyond_z }, .size = { doorway, above, thickness } });
+	}
+	else {
+		slabs.push_back({ .side = "South", .offset = { level, level, beyond_z }, .size = { interior.x(), interior.y(), thickness } });
+	}
+
+	for (const auto& [side, offset, size, lined] : slabs) {
+		const auto label = std::format("{}{}", name, side);
+		const auto wall = visible ? s.spawn(label, static_box(center + offset, size)) : s.spawn(label, static_collider(center + offset, size));
+		if (lined) {
+			s.build(wall)
+				.with<gse::audio::acoustic_material_component>({
+					.material = gse::find_or_generate_id(lining),
+				});
+		}
+	}
+}
+
+auto sandbox::audio_reverb_room_size() -> gse::vec3<gse::length> {
+	return gse::vec3<gse::length>(gse::meters(6.f), gse::meters(3.f), gse::meters(4.f));
+}
+
+auto sandbox::audio_reverb_station_center(const audio_reverb_station station) -> gse::vec3<gse::position> {
+	const auto station_spacing = gse::meters(200.f);
+	return gse::vec3<gse::position>(
+		station_spacing * static_cast<float>(std::to_underlying(station)),
+		audio_reverb_room_size().y() * 0.5f,
+		gse::meters(0.f)
+	);
+}
+
+auto sandbox::audio_reverb_lining(const audio_reverb_station station) -> std::string {
+	return std::format("Acoustics/{}", station);
+}
+
+auto sandbox::audio_reverb_listener_position(const audio_reverb_station station) -> gse::vec3<gse::position> {
+	return audio_reverb_station_center(station) + gse::vec3<gse::displacement>(gse::meters(-1.3f), gse::meters(-0.3f), gse::meters(0.4f));
+}
+
+auto sandbox::audio_reverb_emitter_position(const audio_reverb_station station) -> gse::vec3<gse::position> {
+	return audio_reverb_station_center(station) + gse::vec3<gse::displacement>(gse::meters(0.7f), gse::meters(0.2f), gse::meters(0.3f));
+}
+
+auto sandbox::audio_reverb_scene_setup(gse::scene& s) -> void {
+	const auto slab = gse::meters(0.3f);
+	const auto open_floor = gse::meters(40.f);
+
+	for (const auto station : { audio_reverb_station::wood, audio_reverb_station::cork }) {
+		spawn_lined_room(
+			s,
+			{
+				.name = station == audio_reverb_station::wood ? "AudioReverbWood" : "AudioReverbCork",
+				.center = audio_reverb_station_center(station),
+				.interior = audio_reverb_room_size(),
+				.lining = audio_reverb_lining(station),
+			}
+		);
+	}
+
+	const auto open = audio_reverb_station_center(audio_reverb_station::open);
+	s.spawn(
+		"AudioReverbOpenFloor",
+		static_collider(
+			open + gse::vec3<gse::displacement>(gse::meters(0.f), -(audio_reverb_room_size().y() + slab) * 0.5f, gse::meters(0.f)),
+			gse::vec3<gse::length>(open_floor, slab, open_floor)
+		)
+	);
+
+	s.spawn(
+		"AudioReverbListener",
+		audio_listener_archetype{
+			.transform = {
+				.position = audio_reverb_listener_position(audio_reverb_station::wood),
+			},
+		}
+	);
+	s.spawn(
+		std::string(audio_reverb_emitter),
+		audio_emitter_archetype{
+			.transform = {
+				.position = audio_reverb_emitter_position(audio_reverb_station::wood),
+			},
+		}
+	);
+}
+
+auto sandbox::audio_reverb_hall_size() -> gse::vec3<gse::length> {
+	return gse::vec3<gse::length>(gse::meters(16.f), gse::meters(6.f), gse::meters(12.f));
+}
+
+auto sandbox::audio_reverb_hall_listener_position() -> gse::vec3<gse::position> {
+	return gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.5f), gse::meters(0.f));
+}
+
+auto sandbox::audio_reverb_hall_scene_setup(gse::scene& s) -> void {
+	const auto size = audio_reverb_hall_size();
+	spawn_lined_room(
+		s,
+		{
+			.name = "AudioReverbHall",
+			.center = gse::vec3<gse::position>(gse::meters(0.f), size.y() * 0.5f, gse::meters(0.f)),
+			.interior = size,
+			.lining = audio_modal_material_tag(audio_modal_material::wood),
+			.floor = room_floor::bare,
+		}
+	);
+	s.spawn(
+		"AudioReverbHallListener",
+		audio_listener_archetype{
+			.transform = {
+				.position = audio_reverb_hall_listener_position(),
+			},
+		}
+	);
+}
+
+auto sandbox::audio_yard_shed_center() -> gse::vec3<gse::position> {
+	return gse::vec3<gse::position>(gse::meters(-10.f), gse::meters(1.25f), gse::meters(10.f));
+}
+
+auto sandbox::audio_shed(const std::string_view name, const gse::vec3<gse::position>& center, const bool visible) -> lined_room {
+	return {
+		.name = name,
+		.center = center,
+		.interior = gse::vec3<gse::length>(gse::meters(4.f), gse::meters(2.5f), gse::meters(4.f)),
+		.lining = audio_modal_material_tag(audio_modal_material::wood),
+		.floor = room_floor::ground,
+		.visible = visible,
+		.doorway = gse::meters(1.2f),
+	};
+}
+
+auto sandbox::spawn_audio_yard_shed(gse::scene& s) -> void {
+	spawn_lined_room(s, audio_shed("AudioYardShed", audio_yard_shed_center(), true));
+}
+
+auto sandbox::audio_doorway_room() -> lined_room {
+	return audio_shed("AudioDoorwayRoom", gse::vec3<gse::position>(gse::meters(0.f), gse::meters(1.25f), gse::meters(0.f)), false);
+}
+
+auto sandbox::audio_doorway_listener_position() -> gse::vec3<gse::position> {
+	return audio_doorway_room().center + gse::vec3<gse::displacement>(gse::meters(0.6f), gse::meters(0.25f), gse::meters(-0.5f));
+}
+
+auto sandbox::audio_doorway_emitter_position() -> gse::vec3<gse::position> {
+	return audio_doorway_room().center + gse::vec3<gse::displacement>(gse::meters(-0.8f), gse::meters(-0.05f), gse::meters(-1.f));
+}
+
+auto sandbox::audio_doorway_threshold() -> gse::vec3<gse::position> {
+	const auto room = audio_doorway_room();
+	return room.center + gse::vec3<gse::displacement>(gse::meters(0.f), gse::meters(0.25f), room.interior.z() * 0.5f);
+}
+
+auto sandbox::audio_doorway_scene_setup(gse::scene& s) -> void {
+	const auto slab = gse::meters(0.3f);
+	const auto ground = gse::meters(40.f);
+
+	s.spawn(
+		"AudioDoorwayGround",
+		static_collider(
+			gse::vec3<gse::position>(gse::meters(0.f), -slab * 0.5f, gse::meters(0.f)),
+			gse::vec3<gse::length>(ground, slab, ground)
+		)
+	);
+	spawn_lined_room(s, audio_doorway_room());
+	s.spawn(
+		"AudioDoorwayListener",
+		audio_listener_archetype{
+			.transform = {
+				.position = audio_doorway_listener_position(),
+			},
+		}
+	);
+	s.spawn(
+		std::string(audio_doorway_emitter),
+		audio_emitter_archetype{
+			.transform = {
+				.position = audio_doorway_emitter_position(),
 			},
 		}
 	);

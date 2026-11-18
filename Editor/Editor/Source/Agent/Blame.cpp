@@ -62,7 +62,7 @@ auto gse::ide::agent::is_busy(const session& s) -> bool {
 }
 
 auto gse::ide::agent::parked(const session& s) -> bool {
-	return asleep(s) || s.gate || s.pending_transition || s.question;
+	return asleep(s) || s.gate || s.question;
 }
 
 auto gse::ide::agent::edit_settle() -> time {
@@ -130,8 +130,8 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 	if (asleep(s)) {
 		return agent_state::hibernating;
 	}
-	if (const held_turn* held = held_of(s); held && held->until > unix_now()) {
-		return agent_state::rate_limited;
+	if (const held_turn* held = held_of(s)) {
+		return held->until > unix_now() ? agent_state::rate_limited : agent_state::offline;
 	}
 
 	switch (build_wait_for(d, s)) {
@@ -143,37 +143,40 @@ auto gse::ide::agent::state_of(const data& d, const session& s) -> agent_state {
 			break;
 	}
 
+	if (gate_approved(s)) {
+		return agent_state::advancing;
+	}
 	if (const live_turn* live = live_of(s); live && s.link) {
 		return live->wrote ? agent_state::editing : agent_state::working;
 	}
 	if (awaiting_answer(s)) {
 		return agent_state::awaiting_answer;
 	}
-	if (s.gate && !s.pending_transition) {
+	if (s.gate) {
 		return agent_state::awaiting_approval;
 	}
 	if (s.goal && s.goal->waiting) {
 		return agent_state::awaiting_goal;
 	}
-	if (s.link) {
-		return agent_state::idle;
+	if (!s.link && !s.info.failure.empty()) {
+		return agent_state::failed;
 	}
-	return s.info.failure.empty() ? agent_state::resting : agent_state::failed;
+	return agent_state::ready;
 }
 
 auto gse::ide::agent::style_of(const agent_state state) -> state_style {
 	return annotation_from_enum<state_style>(state, {});
 }
 
-auto gse::ide::agent::kind_of(const session& s) -> chat_kind {
-	if (s.sync) {
-		return chat_kind::sync;
-	}
-	return s.goal ? chat_kind::goal : s.kind;
-}
-
 auto gse::ide::agent::style_of(const chat_kind kind) -> kind_style {
 	return annotation_from_enum<kind_style>(kind, {});
+}
+
+auto gse::ide::agent::look_of(const session& s) -> chat_look {
+	if (s.goal && enum_has_annotation<chat_look>(s.goal->stage)) {
+		return annotation_from_enum<chat_look>(s.goal->stage, {});
+	}
+	return style_of(s.kind).look;
 }
 
 auto gse::ide::agent::status_label(const data& d, const session& s) -> std::string {
@@ -181,6 +184,9 @@ auto gse::ide::agent::status_label(const data& d, const session& s) -> std::stri
 	std::string out = style_of(state).label;
 	if (state == agent_state::rate_limited) {
 		out += std::format(" - resuming in {}m", std::max<std::int64_t>((held_of(s)->until - unix_now()) / 60, 1));
+	}
+	if (state == agent_state::advancing) {
+		out += std::format(" {}", std::string_view(policy_of(next_phase(s, *s.gate)).label));
 	}
 	return out;
 }
@@ -651,7 +657,7 @@ auto gse::ide::agent::service_inquiry(data& d, const channel_write<blame_offer> 
 	if (!owner) {
 		log::println(log::level::info, log::category::task, "agent: no asked chat claimed the unowned build error(s) ({} denied)", denied.size());
 		const bool fixing = std::ranges::any_of(d.sessions, [](const session& s) {
-			return s.kind == chat_kind::build_error && current_phase(s) != task_phase::settled;
+			return s.kind == chat_kind::build_error && origin_cycle(s) && current_phase(s) != task_phase::settled;
 		});
 		if (d.auto_fix_unclaimed && !fixing) {
 			fix_unclaimed(d, denied);
@@ -1567,8 +1573,7 @@ auto gse::ide::agent::fix_unclaimed(data& d, const std::span<const std::string> 
 	const blamed_error& first = d.unclaimed.front();
 	const std::span<const config::worktree> trees = config::worktrees();
 	const auto tree = std::ranges::find(trees, d.unclaimed_tree, &config::worktree::name);
-	session& started = create_session(d, (tree != trees.end() ? *tree : config::primary()).project_root, task_phase::apply);
-	started.kind = chat_kind::build_error;
+	session& started = create_session(d, (tree != trees.end() ? *tree : config::primary()).project_root, chat_kind::build_error);
 	started.name = first.file.empty() ? std::string("fix build") : std::format("fix {}", first.file.filename().generic_display_string());
 	started.fix = build_fix{
 		.errors = d.unclaimed,
@@ -1643,7 +1648,7 @@ auto gse::ide::agent::set_aside(const std::filesystem::path& report, const std::
 
 auto gse::ide::agent::triage_crashes(data& d) -> void {
 	const auto in_flight = std::ranges::find_if(d.sessions, [](const session& s) {
-		return s.kind == chat_kind::crash && current_phase(s) != task_phase::settled;
+		return s.kind == chat_kind::crash && origin_cycle(s) && current_phase(s) != task_phase::settled;
 	});
 	if (in_flight != d.sessions.end()) {
 		log::println(log::level::info, log::category::task, "agent: chat '{}' is still working on a crash, so new crash reports wait until it settles", in_flight->name);
@@ -1688,8 +1693,7 @@ auto gse::ide::agent::triage_crashes(data& d) -> void {
 		return;
 	}
 
-	session& started = create_session(d, config::primary().project_root, task_phase::scope);
-	started.kind = chat_kind::crash;
+	session& started = create_session(d, config::primary().project_root, chat_kind::crash);
 	started.name = std::format("crash {}", std::filesystem::path(fresh.front().path).replace_extension().stem().generic_display_string());
 
 	if (!launch_session(started)) {

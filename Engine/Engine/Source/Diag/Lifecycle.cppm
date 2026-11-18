@@ -17,6 +17,8 @@ export namespace gse {
 		std::uint64_t to = 0;
 	};
 
+	struct lifecycle_reentry {};
+
 	consteval auto entered_from(
 		std::initializer_list<std::uint64_t> states
 	) -> lifecycle_edges;
@@ -24,6 +26,14 @@ export namespace gse {
 	consteval auto returns_to(
 		std::initializer_list<std::uint64_t> states
 	) -> lifecycle_returns;
+
+	consteval auto reentered() -> lifecycle_reentry;
+
+	template <typename E>
+	constexpr auto lifecycle_edge_declared(
+		E from,
+		E to
+	) -> bool;
 
 	template <typename E>
 	class lifecycle {
@@ -84,12 +94,6 @@ namespace gse {
 		std::initializer_list<std::uint64_t> states
 	) -> std::uint64_t;
 
-	template <typename E>
-	constexpr auto lifecycle_edge_declared(
-		E from,
-		E to
-	) -> bool;
-
 	auto report_lifecycle_transition(
 		std::string_view machine,
 		log::category category,
@@ -119,8 +123,15 @@ consteval auto gse::returns_to(const std::initializer_list<std::uint64_t> states
 	};
 }
 
+consteval auto gse::reentered() -> lifecycle_reentry {
+	return {};
+}
+
 template <typename E>
 constexpr auto gse::lifecycle_edge_declared(const E from, const E to) -> bool {
+	if (from == to) {
+		return enum_has_annotation<lifecycle_reentry>(to);
+	}
 	const std::uint64_t current = std::uint64_t{ 1 } << std::to_underlying(from);
 	const std::uint64_t target = std::uint64_t{ 1 } << std::to_underlying(to);
 	const lifecycle_edges edges = annotation_from_enum<lifecycle_edges>(to, {});

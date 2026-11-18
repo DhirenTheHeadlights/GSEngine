@@ -76,6 +76,21 @@ export namespace gse::format {
 		const options& opts
 	) -> std::vector<block_edit>;
 
+	auto compute_control_headers(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<block_edit>;
+
+	auto compute_ternaries(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<block_edit>;
+
+	auto compute_chains(
+		std::span<const std::string> lines,
+		const options& opts
+	) -> std::vector<block_edit>;
+
 	auto compute_enum_bodies(
 		std::span<const std::string> lines,
 		const options& opts
@@ -335,6 +350,12 @@ namespace gse::format {
 		std::size_t index
 	) -> bool;
 
+	auto opens_control_header(
+		std::span<const syntax::token> tokens,
+		std::span<const code_unit> units,
+		std::size_t index
+	) -> bool;
+
 	auto valid_tail(
 		std::span<const syntax::token> tokens,
 		std::span<const code_unit> units,
@@ -389,6 +410,73 @@ namespace gse::format {
 		std::size_t first,
 		std::size_t open
 	) -> brace_kind;
+
+	constexpr std::size_t no_unit = std::numeric_limits<std::size_t>::max();
+
+	struct bracket_links {
+		std::vector<std::size_t> match;
+		std::vector<std::size_t> parent;
+	};
+
+	struct ternary_span {
+		std::size_t start = 0;
+		std::size_t question = 0;
+		std::size_t colon = 0;
+		std::size_t end = 0;
+	};
+
+	auto link_brackets(
+		std::span<const code_unit> units
+	) -> std::optional<bracket_links>;
+
+	auto single_colon(
+		std::span<const code_unit> units,
+		std::size_t index
+	) -> bool;
+
+	auto ternary_spans(
+		std::span<const syntax::token> tokens,
+		std::span<const code_unit> units,
+		const bracket_links& links
+	) -> std::vector<ternary_span>;
+
+	auto joinable_ternary(
+		const syntax::lex_result& lex,
+		std::span<const code_unit> units,
+		const bracket_links& links,
+		const ternary_span& span
+	) -> bool;
+
+	auto in_ternaries(
+		const syntax::lex_result& lex,
+		std::span<const code_unit> units,
+		const bracket_links& links
+	) -> std::vector<bool>;
+
+	auto binary_logical(
+		std::span<const syntax::token> tokens,
+		std::span<const code_unit> units,
+		std::size_t index
+	) -> bool;
+
+	auto binary_arithmetic(
+		std::span<const std::string> lines,
+		std::span<const syntax::token> tokens,
+		std::span<const code_unit> units,
+		std::size_t index
+	) -> bool;
+
+	auto in_chains(
+		std::span<const syntax::token> tokens,
+		std::span<const code_unit> units,
+		const bracket_links& links
+	) -> std::vector<bool>;
+
+	auto joined_text(
+		std::span<const std::string> lines,
+		source_position from,
+		source_position to
+	) -> std::string;
 }
 
 auto gse::format::is_opener(const char c) -> bool {
@@ -1329,6 +1417,17 @@ auto gse::format::compute_initializers(const std::span<const std::string> lines,
 	}
 	const syntax::lex_result lex = syntax::tokenize(views);
 	const std::span<const syntax::token> tokens = lex.tokens;
+	const std::vector<code_unit> units = flatten_units(tokens);
+	std::vector<bool> in_ternary(units.size(), false);
+	if (const std::optional<bracket_links> links = link_brackets(units)) {
+		in_ternary = in_ternaries(lex, units, *links);
+	}
+	const auto joined_ternary = [&](const source_position at) {
+		const auto found = std::ranges::lower_bound(units, std::pair{ at.line, at.column }, {}, [](const code_unit& u) {
+			return std::pair{ u.start.line, u.start.column };
+		});
+		return found != units.end() && found->start.line == at.line && found->start.column == at.column && in_ternary[static_cast<std::size_t>(found - units.begin())];
+	};
 
 	std::vector<block_edit> edits;
 	std::vector<designated_list> group;
@@ -1387,7 +1486,11 @@ auto gse::format::compute_initializers(const std::span<const std::string> lines,
 		if (t.type == syntax::token_type::punctuation && t.text[ci] == '{') {
 			std::size_t end_ti = ti;
 			std::size_t end_ci = ci;
-			if (std::optional<designated_list> list = parse_designated(tokens, end_ti, end_ci)) {
+			if (std::optional<designated_list> list = parse_designated(tokens, end_ti, end_ci); list && joined_ternary(list->open)) {
+				ti = end_ti;
+				ci = end_ci;
+			}
+			else if (list) {
 				if (!group.empty() && list->open.line > group.back().close.line) {
 					emit();
 				}
@@ -1456,6 +1559,18 @@ auto gse::format::opens_angle(const std::span<const syntax::token> tokens, const
 
 auto gse::format::closes_angle(const std::span<const code_unit> units, const std::size_t index) -> bool {
 	return units[index].c == '>' && !(index > 0 && units[index - 1].c == '-' && units[index - 1].token == units[index].token);
+}
+
+auto gse::format::opens_control_header(const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const std::size_t index) -> bool {
+	if (units[index].c != '(' || index == 0) {
+		return false;
+	}
+	std::string_view word = word_of(tokens, units[index - 1]);
+	if (word == "constexpr" && index > 1) {
+		word = word_of(tokens, units[index - 2]);
+		return word == "if";
+	}
+	return word == "if" || word == "for" || word == "while" || word == "switch";
 }
 
 auto gse::format::valid_tail(const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const std::size_t close) -> bool {
@@ -1835,10 +1950,12 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 		std::size_t index = 0;
 		bool code = false;
 		std::uint32_t body_line = 0;
+		bool header = false;
 	};
 
 	std::vector<std::size_t> close_of(units.size(), units.size());
 	std::vector<bool> in_body(units.size(), false);
+	std::vector<bool> in_header(units.size(), false);
 	std::vector<std::uint32_t> body_line(units.size(), 0);
 	std::vector<bool> template_close(units.size(), false);
 	std::vector<open_bracket> nest;
@@ -1859,6 +1976,7 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 		const bool code = !nest.empty() && nest.back().code;
 		const bool statement = nest.empty() || nest.back().c == '{';
 		const std::uint32_t enclosing = nest.empty() ? 0 : nest.back().body_line;
+		const bool header = !nest.empty() && nest.back().header;
 		if (unit.c == '\0') {
 			const syntax::token& t = tokens[unit.token];
 			if (statement && !code && !is_comment(t.type) && t.type != syntax::token_type::preprocessor) {
@@ -1871,6 +1989,7 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 		}
 		if (unit.c == '(' || unit.c == '[') {
 			in_body[i] = code;
+			in_header[i] = header;
 			body_line[i] = enclosing;
 			saw_paren = saw_paren || statement;
 			nest.push_back({
@@ -1878,6 +1997,7 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 				.index = i,
 				.code = code,
 				.body_line = enclosing,
+				.header = header || opens_control_header(tokens, units, i),
 			});
 		}
 		else if (unit.c == '{') {
@@ -1887,6 +2007,7 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 				.index = i,
 				.code = code || !declares_scope,
 				.body_line = unit.start.line,
+				.header = header,
 			});
 			reset();
 		}
@@ -1896,6 +2017,7 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 				.index = i,
 				.code = code,
 				.body_line = enclosing,
+				.header = header,
 			});
 		}
 		else if (closes_angle(units, i) && !nest.empty() && nest.back().c == '<') {
@@ -1922,12 +2044,23 @@ auto gse::format::compute_calls(const std::span<const std::string> lines, const 
 		}
 	}
 
+	std::vector<bool> in_joined(units.size(), false);
+	if (const std::optional<bracket_links> links = link_brackets(units)) {
+		in_joined = in_chains(tokens, units, *links);
+		const std::vector<bool> ternary = in_ternaries(lex, units, *links);
+		for (std::size_t k = 0; k < units.size(); ++k) {
+			if (ternary[k]) {
+				in_joined[k] = true;
+			}
+		}
+	}
+
 	static constexpr std::array<std::string_view, 7> statement_words{
 		"constexpr", "consteval", "and", "or", "not", "case", "else",
 	};
 
 	const auto opens_call = [&](const std::size_t i) {
-		if (units[i].c != '(' || !in_body[i] || close_of[i] == units.size() || i == 0) {
+		if (units[i].c != '(' || !in_body[i] || in_header[i] || in_joined[i] || close_of[i] == units.size() || i == 0) {
 			return false;
 		}
 		if (template_close[i - 1]) {
@@ -2230,6 +2363,665 @@ auto gse::format::compute_else_breaks(const std::span<const std::string> lines, 
 	}
 
 	return render_breaks(lines, breaks);
+}
+
+auto gse::format::compute_control_headers(const std::span<const std::string> lines, const options&) -> std::vector<block_edit> {
+	std::vector<std::string_view> views;
+	views.reserve(lines.size());
+	for (const std::string& l : lines) {
+		views.emplace_back(l);
+	}
+	const syntax::lex_result lex = syntax::tokenize(views);
+	const std::span<const syntax::token> tokens = lex.tokens;
+	const std::vector<code_unit> units = flatten_units(tokens);
+
+	const auto find_close = [&](const std::size_t open) -> std::optional<std::size_t> {
+		std::vector<std::uint32_t> brace_lines;
+		int depth = 0;
+		for (std::size_t j = open; j < units.size(); ++j) {
+			const code_unit& unit = units[j];
+			if (unit.c == '\0') {
+				const syntax::token_type type = tokens[unit.token].type;
+				if (is_comment(type) || type == syntax::token_type::preprocessor) {
+					return std::nullopt;
+				}
+			}
+			else if (unit.c == '(' || unit.c == '[') {
+				++depth;
+			}
+			else if (unit.c == '{') {
+				brace_lines.push_back(unit.start.line);
+			}
+			else if (unit.c == '}') {
+				if (brace_lines.empty() || brace_lines.back() != unit.start.line) {
+					return std::nullopt;
+				}
+				brace_lines.pop_back();
+			}
+			else if (unit.c == ')' || unit.c == ']') {
+				if (--depth == 0) {
+					return unit.c == ')' && brace_lines.empty() ? std::optional(j) : std::nullopt;
+				}
+			}
+		}
+		return std::nullopt;
+	};
+
+	std::vector<block_edit> edits;
+	std::optional<std::uint32_t> consumed;
+	for (std::size_t i = 0; i < units.size(); ++i) {
+		if (!opens_control_header(tokens, units, i)) {
+			continue;
+		}
+		const std::uint32_t first = units[i].start.line;
+		if (consumed && first <= *consumed) {
+			continue;
+		}
+		const std::optional<std::size_t> close = find_close(i);
+		if (!close) {
+			continue;
+		}
+		const std::uint32_t last = units[*close].start.line;
+		if (last == first || lex.line_start_modes[first] != syntax::lex_mode::normal) {
+			continue;
+		}
+		bool normal = true;
+		for (std::uint32_t l = first + 1; l <= last; ++l) {
+			normal = normal && lex.line_start_modes[l] == syntax::lex_mode::normal;
+		}
+		if (!normal) {
+			continue;
+		}
+		edits.push_back({
+			.first_line = first,
+			.last_line = last,
+			.replacement = { joined_text(lines, { .line = first }, { .line = last, .column = static_cast<std::uint32_t>(lines[last].size()) }) },
+		});
+		consumed = last;
+	}
+	std::ranges::reverse(edits);
+	return edits;
+}
+
+auto gse::format::joined_text(const std::span<const std::string> lines, const source_position from, const source_position to) -> std::string {
+	std::string joined;
+	for (std::uint32_t l = from.line; l <= to.line; ++l) {
+		std::string_view text(lines[l]);
+		if (l == to.line) {
+			text = text.substr(0, to.column);
+		}
+		if (l == from.line) {
+			joined = text.substr(from.column);
+			continue;
+		}
+		joined.erase(joined.find_last_not_of(" \t\r") + 1);
+		const std::string_view rest = text.substr(leading_whitespace(text).size());
+		if (rest.empty()) {
+			continue;
+		}
+		if (joined.back() != '(' && joined.back() != '[' && rest.front() != ')' && rest.front() != ']') {
+			joined += ' ';
+		}
+		joined += rest;
+	}
+	return joined;
+}
+
+auto gse::format::link_brackets(const std::span<const code_unit> units) -> std::optional<bracket_links> {
+	bracket_links links{
+		.match = std::vector<std::size_t>(units.size(), no_unit),
+		.parent = std::vector<std::size_t>(units.size(), no_unit),
+	};
+	std::vector<std::size_t> stack;
+	for (std::size_t i = 0; i < units.size(); ++i) {
+		const char c = units[i].c;
+		if (is_closer(c)) {
+			if (stack.empty() || units[stack.back()].c != matching_opener(c)) {
+				return std::nullopt;
+			}
+			links.match[i] = stack.back();
+			links.match[stack.back()] = i;
+			stack.pop_back();
+		}
+		if (!stack.empty()) {
+			links.parent[i] = stack.back();
+		}
+		if (is_opener(c)) {
+			stack.push_back(i);
+		}
+	}
+	if (!stack.empty()) {
+		return std::nullopt;
+	}
+	return links;
+}
+
+auto gse::format::single_colon(const std::span<const code_unit> units, const std::size_t index) -> bool {
+	if (units[index].c != ':') {
+		return false;
+	}
+	const bool after = index > 0 && units[index - 1].c == ':' && units[index - 1].token == units[index].token;
+	const bool before = index + 1 < units.size() && units[index + 1].c == ':' && units[index + 1].token == units[index].token;
+	return !after && !before;
+}
+
+auto gse::format::ternary_spans(const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const bracket_links& links) -> std::vector<ternary_span> {
+	static constexpr std::array<std::string_view, 7> boundary_words{
+		"return", "co_return", "co_yield", "case", "throw", "else", "do",
+	};
+
+	const auto assigns = [&](const std::size_t j) {
+		if (units[j].c != '=' || (j + 1 < units.size() && units[j + 1].c == '=' && units[j + 1].token == units[j].token)) {
+			return false;
+		}
+		if (j == 0 || units[j - 1].token != units[j].token) {
+			return true;
+		}
+		const char previous = units[j - 1].c;
+		return previous != '=' && previous != '!' && previous != '<' && previous != '>';
+	};
+
+	const auto stops = [&](const std::size_t j) {
+		if (units[j].c != '\0') {
+			return false;
+		}
+		const syntax::token_type type = tokens[units[j].token].type;
+		return is_comment(type) || type == syntax::token_type::preprocessor;
+	};
+
+	std::vector<ternary_span> spans;
+	for (std::size_t i = 0; i + 1 < units.size(); ++i) {
+		if (units[i].c != '?' || units[i + 1].c == ':' || (!spans.empty() && i <= spans.back().end)) {
+			continue;
+		}
+
+		std::optional<std::size_t> colon;
+		int pending = 1;
+		for (std::size_t j = i + 1; j < units.size() && !colon; ++j) {
+			const char c = units[j].c;
+			if (is_opener(c)) {
+				j = links.match[j];
+			}
+			else if (is_closer(c) || c == ';' || c == ',' || (c == '\0' && tokens[units[j].token].type == syntax::token_type::preprocessor)) {
+				break;
+			}
+			else if (c == '?') {
+				++pending;
+			}
+			else if (single_colon(units, j)) {
+				--pending;
+				if (pending == 0) {
+					colon = j;
+				}
+			}
+		}
+		if (!colon) {
+			continue;
+		}
+
+		std::size_t end = *colon;
+		int nested = 0;
+		for (std::size_t j = *colon + 1; j < units.size(); ++j) {
+			const char c = units[j].c;
+			if (is_opener(c)) {
+				j = links.match[j];
+			}
+			else if (is_closer(c) || c == ';' || c == ',') {
+				break;
+			}
+			else if (c == '\0' && stops(j)) {
+				if (tokens[units[j].token].type == syntax::token_type::preprocessor) {
+					break;
+				}
+				continue;
+			}
+			else if (c == '?') {
+				++nested;
+			}
+			else if (single_colon(units, j)) {
+				if (nested == 0) {
+					break;
+				}
+				--nested;
+			}
+			end = j;
+		}
+		if (end == *colon) {
+			continue;
+		}
+
+		std::size_t start = i;
+		while (start > 0) {
+			const std::size_t b = start - 1;
+			const code_unit& unit = units[b];
+			if (unit.c == ')' || unit.c == ']') {
+				start = links.match[b];
+				continue;
+			}
+			if (unit.c == '}') {
+				const std::size_t open = links.match[b];
+				const bool braced = open > 0 && units[open].start.line == unit.start.line && (units[open - 1].c == '>' || (!word_of(tokens, units[open - 1]).empty() && !std::ranges::contains(boundary_words, tokens[units[open - 1].token].text)));
+				if (!braced) {
+					break;
+				}
+				start = open;
+				continue;
+			}
+			if (unit.c == '\0') {
+				if (stops(b) || std::ranges::contains(boundary_words, tokens[unit.token].text)) {
+					break;
+				}
+			}
+			else if (is_opener(unit.c) || unit.c == ';' || unit.c == ',' || unit.c == '?' || single_colon(units, b) || assigns(b)) {
+				break;
+			}
+			start = b;
+		}
+		if (start == i) {
+			continue;
+		}
+
+		spans.push_back({
+			.start = start,
+			.question = i,
+			.colon = *colon,
+			.end = end,
+		});
+	}
+	return spans;
+}
+
+auto gse::format::joinable_ternary(const syntax::lex_result& lex, const std::span<const code_unit> units, const bracket_links& links, const ternary_span& span) -> bool {
+	const std::uint32_t first = units[span.start].start.line;
+	const std::uint32_t last = units[span.end].end.line;
+	for (std::uint32_t l = first; l <= last; ++l) {
+		if (lex.line_start_modes[l] != syntax::lex_mode::normal) {
+			return false;
+		}
+	}
+	for (std::size_t j = span.start; j <= span.end; ++j) {
+		const code_unit& unit = units[j];
+		if (unit.c == '\0') {
+			const syntax::token_type type = lex.tokens[unit.token].type;
+			if (is_comment(type) || type == syntax::token_type::preprocessor) {
+				return false;
+			}
+		}
+		else if (unit.c == '{' && units[links.match[j]].start.line != unit.start.line) {
+			return false;
+		}
+	}
+	return true;
+}
+
+auto gse::format::in_ternaries(const syntax::lex_result& lex, const std::span<const code_unit> units, const bracket_links& links) -> std::vector<bool> {
+	std::vector<bool> marked(units.size(), false);
+	for (const ternary_span& span : ternary_spans(lex.tokens, units, links)) {
+		if (joinable_ternary(lex, units, links, span)) {
+			std::fill_n(marked.begin() + static_cast<std::ptrdiff_t>(span.start), span.end - span.start + 1, true);
+		}
+	}
+	return marked;
+}
+
+auto gse::format::compute_ternaries(const std::span<const std::string> lines, const options& opts) -> std::vector<block_edit> {
+	std::vector<std::string_view> views;
+	views.reserve(lines.size());
+	for (const std::string& l : lines) {
+		views.emplace_back(l);
+	}
+	const syntax::lex_result lex = syntax::tokenize(views);
+	const std::span<const syntax::token> tokens = lex.tokens;
+	const std::vector<code_unit> units = flatten_units(tokens);
+	const std::optional<bracket_links> links = link_brackets(units);
+	if (!links) {
+		return {};
+	}
+
+	const auto source_of = [&](const std::size_t from, const std::size_t to) {
+		return joined_text(lines, units[from].start, units[to].end);
+	};
+
+	const auto starts_line = [&](const std::size_t index) {
+		return index == 0 || units[index - 1].end.line != units[index].start.line;
+	};
+
+	const auto ends_line = [&](const std::size_t index) {
+		return index + 1 == units.size() || units[index + 1].start.line != units[index].end.line;
+	};
+
+	const auto trailing_return = [&](const std::size_t brace) {
+		std::size_t k = brace;
+		while (k > 0) {
+			const std::size_t b = k - 1;
+			const code_unit& unit = units[b];
+			if (unit.c == ')' || unit.c == ']') {
+				k = links->match[b];
+				continue;
+			}
+			if (unit.c == '>' && b > 0 && units[b - 1].c == '-' && units[b - 1].token == unit.token) {
+				return std::ranges::none_of(std::views::iota(b + 1, brace), [&](const std::size_t t) {
+					return word_of(tokens, units[t]) == "auto";
+				});
+			}
+			if (unit.c == '\0' ? is_comment(tokens[unit.token].type) || tokens[unit.token].type == syntax::token_type::preprocessor : is_opener(unit.c) || unit.c == '}' || unit.c == ';' || unit.c == ',' || unit.c == '=') {
+				return false;
+			}
+			k = b;
+		}
+		return false;
+	};
+
+	const auto explicit_return = [&](std::size_t brace) {
+		while (brace != no_unit && brace > 0 && units[brace].c == '{') {
+			const std::size_t before = brace - 1;
+			const code_unit& previous = units[before];
+			const std::string_view word = word_of(tokens, previous);
+			const std::size_t open = previous.c == ')' ? links->match[before] : no_unit;
+			const bool control = open != no_unit && (opens_control_header(tokens, units, open) || (open > 0 && word_of(tokens, units[open - 1]) == "catch"));
+			const bool block = previous.c == ';' || previous.c == '{' || previous.c == '}' || single_colon(units, before) || word == "else" || word == "do" || word == "try";
+			if (!control && !block) {
+				return trailing_return(brace);
+			}
+			brace = links->parent[brace];
+		}
+		return false;
+	};
+
+	const auto assignment_target = [&](const std::size_t assign) -> std::optional<std::size_t> {
+		if (units[assign].c != '=' || tokens[units[assign].token].text != "=") {
+			return std::nullopt;
+		}
+		bool want_name = true;
+		std::size_t k = assign;
+		while (k > 0) {
+			const std::size_t b = k - 1;
+			const code_unit& unit = units[b];
+			if (want_name) {
+				if (unit.c == ']') {
+					k = links->match[b];
+					continue;
+				}
+				if (word_of(tokens, unit).empty()) {
+					return std::nullopt;
+				}
+				want_name = false;
+				k = b;
+				continue;
+			}
+			if (unit.c == '.') {
+				want_name = true;
+				k = b;
+				continue;
+			}
+			const bool joined = b > 0 && units[b - 1].token == unit.token;
+			if (joined && ((unit.c == '>' && units[b - 1].c == '-') || (unit.c == ':' && units[b - 1].c == ':'))) {
+				want_name = true;
+				k = b - 1;
+				continue;
+			}
+			return k;
+		}
+		return std::nullopt;
+	};
+
+	const int width = std::max(1, opts.indent_width);
+
+	const auto rewrite = [&](const ternary_span& span) -> std::optional<block_edit> {
+		const std::size_t semicolon = span.end + 1;
+		if (span.start == 0 || semicolon >= units.size() || units[semicolon].c != ';' || !ends_line(semicolon)) {
+			return std::nullopt;
+		}
+		const std::size_t head = span.start - 1;
+		const bool returns = word_of(tokens, units[head]) == "return";
+		const std::optional<std::size_t> statement = returns ? std::optional(head) : assignment_target(head);
+		if (!statement || *statement == 0 || !starts_line(*statement)) {
+			return std::nullopt;
+		}
+		const std::size_t before = *statement - 1;
+		const char previous = units[before].c;
+		if (previous != ';' && previous != '{' && previous != '}' && !single_colon(units, before)) {
+			return std::nullopt;
+		}
+		const std::size_t scope = links->parent[*statement];
+		if (scope == no_unit || units[scope].c != '{' || (returns && !explicit_return(scope))) {
+			return std::nullopt;
+		}
+
+		const std::uint32_t first = units[*statement].start.line;
+		const std::uint32_t last = units[semicolon].end.line;
+		const std::string flat = joined_text(lines, { .line = first }, { .line = last, .column = static_cast<std::uint32_t>(lines[last].size()) });
+		if (first == last && visual_width(flat, width) <= opts.column_limit) {
+			return std::nullopt;
+		}
+
+		const bool wrapped = units[span.start].c == '(' && links->match[span.start] == span.question - 1;
+		const std::string condition = wrapped ? source_of(span.start + 1, span.question - 2) : source_of(span.start, span.question - 1);
+		const std::string target = returns ? std::string("return ") : source_of(*statement, head - 1) + " = ";
+		const int base = indent_of(leading_whitespace(lines[first]), width);
+		const std::string outer = make_indent(base, width, opts);
+		const std::string inner = make_indent(base + 1, width, opts);
+
+		std::vector<std::string> out{
+			outer + "if (" + condition + ") {",
+			inner + target + source_of(span.question + 1, span.colon - 1) + ";",
+			outer + "}",
+		};
+		const std::string other = target + source_of(span.colon + 1, span.end) + ";";
+		if (returns) {
+			out.push_back(outer + other);
+		}
+		else {
+			out.push_back(outer + "else {");
+			out.push_back(inner + other);
+			out.push_back(outer + "}");
+		}
+		return block_edit{
+			.first_line = first,
+			.last_line = last,
+			.replacement = std::move(out),
+		};
+	};
+
+	std::vector<block_edit> edits;
+	std::optional<std::uint32_t> consumed;
+	for (const ternary_span& span : ternary_spans(tokens, units, *links)) {
+		const std::uint32_t first = units[span.start].start.line;
+		const std::uint32_t last = units[span.end].end.line;
+		if ((consumed && first <= *consumed) || !joinable_ternary(lex, units, *links, span)) {
+			continue;
+		}
+		if (std::optional<block_edit> statement = rewrite(span)) {
+			if (consumed && statement->first_line <= *consumed) {
+				continue;
+			}
+			consumed = statement->last_line;
+			edits.push_back(std::move(*statement));
+			continue;
+		}
+		if (first == last) {
+			continue;
+		}
+		edits.push_back({
+			.first_line = first,
+			.last_line = last,
+			.replacement = { joined_text(lines, { .line = first }, { .line = last, .column = static_cast<std::uint32_t>(lines[last].size()) }) },
+		});
+		consumed = last;
+	}
+	std::ranges::reverse(edits);
+	return edits;
+}
+
+auto gse::format::binary_logical(const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const std::size_t index) -> bool {
+	if (index == 0 || index + 1 >= units.size()) {
+		return false;
+	}
+	const code_unit& unit = units[index];
+	const std::string_view text = tokens[unit.token].text;
+	const bool symbol = unit.c != '\0' && (text == "&&" || text == "||") && units[index + 1].token == unit.token;
+	const bool word = word_of(tokens, unit) == "and" || word_of(tokens, unit) == "or";
+	if (!symbol && !word) {
+		return false;
+	}
+	const std::size_t after = symbol ? index + 2 : index + 1;
+	if (after >= units.size()) {
+		return false;
+	}
+	const code_unit& left = units[index - 1];
+	const code_unit& right = units[after];
+	const auto operand = [&](const code_unit& u) {
+		return u.c == '\0' && !is_comment(tokens[u.token].type) && tokens[u.token].type != syntax::token_type::preprocessor;
+	};
+	const bool ends = operand(left) || left.c == ')' || left.c == ']' || left.c == '>';
+	const bool begins = operand(right) || right.c == '(' || right.c == '!' || right.c == '[' || right.c == '~';
+	return ends && begins;
+}
+
+auto gse::format::binary_arithmetic(const std::span<const std::string> lines, const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const std::size_t index) -> bool {
+	if (index == 0 || index >= units.size()) {
+		return false;
+	}
+	const code_unit& unit = units[index];
+	if (unit.c == '\0' || units[index - 1].token == unit.token) {
+		return false;
+	}
+	const std::string_view text = tokens[unit.token].text;
+	constexpr std::array operators = {
+		std::string_view("+"), std::string_view("-"), std::string_view("*"), std::string_view("/"), std::string_view("%"),
+		std::string_view("|"), std::string_view("&"), std::string_view("^"),
+		std::string_view("=="), std::string_view("!="), std::string_view("<="), std::string_view(">="), std::string_view("<=>"),
+	};
+	if (std::ranges::find(operators, text) == operators.end()) {
+		return false;
+	}
+	const std::size_t after = index + text.size();
+	if (after >= units.size()) {
+		return false;
+	}
+	const code_unit& left = units[index - 1];
+	const code_unit& right = units[after];
+	const bool line_start = left.end.line != unit.start.line;
+	if (line_start && (text == "-" || text == "*" || text == "&")) {
+		return false;
+	}
+	if (text == "|") {
+		const auto pipeline = [&](const std::uint32_t line) {
+			return lines[line].contains("views::") || lines[line].contains("ranges::");
+		};
+		if (pipeline(left.end.line) || pipeline(right.start.line)) {
+			return false;
+		}
+	}
+	const auto operand = [&](const code_unit& u) {
+		return u.c == '\0' && !is_comment(tokens[u.token].type) && tokens[u.token].type != syntax::token_type::preprocessor;
+	};
+	const bool ends = operand(left) || left.c == ')' || left.c == ']';
+	const bool begins = operand(right) || right.c == '(' || right.c == '!' || right.c == '~';
+	return ends && begins;
+}
+
+auto gse::format::in_chains(const std::span<const syntax::token> tokens, const std::span<const code_unit> units, const bracket_links& links) -> std::vector<bool> {
+	std::vector<bool> marked(units.size(), false);
+	for (std::size_t k = 0; k < units.size(); ++k) {
+		if (!binary_logical(tokens, units, k)) {
+			continue;
+		}
+		const std::size_t scope = links.parent[k];
+		const std::uint32_t line = units[k].start.line;
+		const auto mark = [&](const std::size_t i) {
+			if (units[i].c != '(') {
+				return;
+			}
+			for (std::size_t p = links.parent[i]; ; p = links.parent[p]) {
+				if (p == scope) {
+					marked[i] = true;
+					return;
+				}
+				if (p == no_unit) {
+					return;
+				}
+			}
+		};
+		for (std::size_t i = k; i > 0 && units[i - 1].start.line == line; --i) {
+			mark(i - 1);
+		}
+		for (std::size_t i = k + 1; i < units.size() && units[i].start.line == line; ++i) {
+			mark(i);
+		}
+	}
+	return marked;
+}
+
+auto gse::format::compute_chains(const std::span<const std::string> lines, const options&) -> std::vector<block_edit> {
+	std::vector<std::string_view> views;
+	views.reserve(lines.size());
+	for (const std::string& l : lines) {
+		views.emplace_back(l);
+	}
+	const syntax::lex_result lex = syntax::tokenize(views);
+	const std::span<const syntax::token> tokens = lex.tokens;
+	const std::vector<code_unit> units = flatten_units(tokens);
+	const std::optional<bracket_links> links = link_brackets(units);
+	if (!links) {
+		return {};
+	}
+
+	const auto in_control_header = [&](const std::size_t index) {
+		for (std::size_t p = links->parent[index]; p != no_unit; p = links->parent[p]) {
+			if (opens_control_header(tokens, units, p)) {
+				return true;
+			}
+		}
+		return false;
+	};
+
+	const auto joinable = [&](const std::size_t around, const std::uint32_t first, const std::uint32_t last) {
+		for (std::uint32_t l = first; l <= last; ++l) {
+			if (lex.line_start_modes[l] != syntax::lex_mode::normal) {
+				return false;
+			}
+		}
+		std::size_t from = around;
+		while (from > 0 && units[from - 1].end.line >= first) {
+			--from;
+		}
+		for (std::size_t j = from; j < units.size() && units[j].start.line <= last; ++j) {
+			const code_unit& unit = units[j];
+			if (unit.c == '\0') {
+				const syntax::token_type type = tokens[unit.token].type;
+				if (is_comment(type) || type == syntax::token_type::preprocessor) {
+					return false;
+				}
+			}
+			else if (unit.c == '{' && units[links->match[j]].start.line != unit.start.line) {
+				return false;
+			}
+		}
+		return true;
+	};
+
+	std::vector<block_edit> edits;
+	std::optional<std::uint32_t> consumed;
+	for (std::size_t k = 0; k < units.size(); ++k) {
+		if ((!binary_logical(tokens, units, k) && !binary_arithmetic(lines, tokens, units, k)) || in_control_header(k)) {
+			continue;
+		}
+		const std::size_t last_unit = tokens[units[k].token].type == syntax::token_type::identifier ? k : k + tokens[units[k].token].text.size() - 1;
+		const std::uint32_t first = units[k - 1].end.line;
+		const std::uint32_t last = units[last_unit + 1].start.line;
+		if (first == last || (consumed && first <= *consumed) || !joinable(k, first, last)) {
+			continue;
+		}
+		edits.push_back({
+			.first_line = first,
+			.last_line = last,
+			.replacement = { joined_text(lines, { .line = first }, { .line = last, .column = static_cast<std::uint32_t>(lines[last].size()) }) },
+		});
+		consumed = last;
+	}
+	std::ranges::reverse(edits);
+	return edits;
 }
 
 auto gse::format::render_breaks(const std::span<const std::string> lines, std::vector<line_break>& breaks) -> std::vector<block_edit> {
@@ -2773,6 +3565,41 @@ auto gse::format::format_lines(std::vector<std::string>& lines, const options& o
 				result.blocks.push_back(std::move(block));
 				changed = true;
 			}
+		}
+	}
+	bool rewrote = false;
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (block_edit& block : compute_ternaries(lines, opts)) {
+			if (apply_block(lines, block)) {
+				result.blocks.push_back(std::move(block));
+				changed = true;
+				rewrote = true;
+			}
+		}
+	}
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (block_edit& block : compute_chains(lines, opts)) {
+			if (apply_block(lines, block)) {
+				result.blocks.push_back(std::move(block));
+				changed = true;
+				rewrote = true;
+			}
+		}
+	}
+	for (bool changed = rewrote; changed;) {
+		changed = false;
+		for (block_edit& block : compute_calls(lines, opts)) {
+			if (apply_block(lines, block)) {
+				result.blocks.push_back(std::move(block));
+				changed = true;
+			}
+		}
+	}
+	for (block_edit& block : compute_control_headers(lines, opts)) {
+		if (apply_block(lines, block)) {
+			result.blocks.push_back(std::move(block));
 		}
 	}
 	for (block_edit& block : compute_else_breaks(lines, opts)) {

@@ -247,7 +247,7 @@ auto gse::window::push_event(window_surface& surface, const input::event& event)
 				if constexpr (std::is_enum_v<typename [:std::meta::type_of(m):]>) {
 					line += std::format(" {}", enum_to_string(e.[:m:]));
 				}
-				else {
+				else if constexpr (std::formattable<typename [:std::meta::type_of(m):], char>) {
 					line += std::format(" {}", e.[:m:]);
 				}
 			}

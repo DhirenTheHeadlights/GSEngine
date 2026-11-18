@@ -127,6 +127,9 @@ auto gse::ide::agent::load_sessions(data& d) -> void {
 		std::erase_if(s.touched, [](const auto& entry) {
 			return entry.second.mtime == 0;
 		});
+		if (s.sync) {
+			s.kind = chat_kind::sync;
+		}
 		attach_runtime(s);
 		d.next_id = std::max(d.next_id, s.id);
 	}
@@ -290,15 +293,19 @@ auto gse::ide::agent::hand_off_session(session& s) -> bool {
 	return true;
 }
 
-auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd, const task_phase starting) -> session& {
+auto gse::ide::agent::create_session(data& d, const std::filesystem::path& cwd, const chat_kind origin, const std::optional<task_phase> starting) -> session& {
+	const task_phase entered = starting.value_or(style_of(origin).starts);
+	assert(std::ranges::contains(reachable_phases(origin), entered), "agent: a {} chat cannot start in {} - it is not reachable from where that kind of chat begins", origin, entered);
+
 	const std::uint32_t session_id = ++d.next_id;
 	d.sessions.push_back({
 		.id = session_id,
 		.name = std::format("Agent {}", session_id),
 		.cwd = cwd.empty() ? config::primary().project_root : cwd,
+		.kind = origin,
 		.hydrated = true,
 		.runs = { {
-			.phase = starting,
+			.phase = entered,
 			.started = unix_now(),
 		} },
 		.model_id = d.default_model.value,
@@ -315,11 +322,12 @@ auto gse::ide::agent::create_sync_session(data& d, sync_request request) -> sess
 		.id = session_id,
 		.name = std::format("Sync {}", request.root.filename().generic_display_string()),
 		.cwd = request.root,
+		.kind = chat_kind::sync,
 		.hydrated = true,
 		.mode = transcript_mode::transcript,
 		.sync = std::move(request),
 		.runs = { {
-			.phase = task_phase::settled,
+			.phase = style_of(chat_kind::sync).starts,
 			.started = unix_now(),
 		} },
 		.model_id = d.default_model.value,

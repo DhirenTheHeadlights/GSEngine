@@ -242,6 +242,7 @@ export namespace gse::ide::build_runner {
 		[[= shared]] bool building_session = false;
 		[[= shared]] std::uint32_t game_generation = 0;
 		[[= shared]] bool agent_game_attached = false;
+		[[= shared]] bool agent_session = false;
 		std::uint32_t agent_generation = 0;
 		std::uint32_t build_run = 0;
 		[[= shared]] std::filesystem::path game_graph_path;
@@ -2932,6 +2933,7 @@ auto gse::ide::build_runner::run(context& ctx, data& d, const channel_read<attac
 		}
 	}
 	d.agent_game_attached = d.agent_generation != 0 && d.sessions[0].generation == d.agent_generation;
+	d.agent_session = d.building_session ? !d.inbox_id.empty() : d.agent_game_attached;
 	watch_editor_image(d);
 	return {};
 }

@@ -589,12 +589,12 @@ auto gse::ide::agent::draw_overview(gui::builder& ui, data& d, const rectf& area
 				{ std::max(0.f, status_left - pad - name_left), row.height() }
 			));
 
-			const kind_style kind = style_of(kind_of(s));
-			gui::symbol::draw(c, kind.symbol(), rectf::from_position_size(
+			const chat_look look = look_of(s);
+			gui::symbol::draw(c, look.symbol(), rectf::from_position_size(
 				{ text_left, baseline - text_view->vertical_center_offset(fs) + sty.icon_extent * 0.5f },
 				{ sty.icon_extent, sty.icon_extent }
 			), {
-				.color = sty.*kind.color,
+				.color = sty.*look.color,
 				.extent = sty.icon_extent,
 				.clip_rect = body_clip,
 			});
@@ -708,13 +708,13 @@ auto gse::ide::agent::draw_session_tabs(gui::builder& ui, data& d, const rectf& 
 		.pinned = true,
 	});
 	for (const session& s : d.sessions | std::views::filter(is_chat)) {
-		const kind_style kind = style_of(kind_of(s));
+		const chat_look look = look_of(s);
 		const chrome_tab tab = plan_chrome(d, s).tab;
 		descs.push_back({
 			.tab_id = session_tab_id(s.id),
 			.caption = s.name,
-			.icon = kind.symbol(),
-			.icon_color = sty.*kind.color,
+			.icon = look.symbol(),
+			.icon_color = sty.*look.color,
 			.dirty = tab.dirty,
 			.busy = tab.busy,
 			.warning = tab.warning,
@@ -900,7 +900,7 @@ auto gse::ide::agent::draw_new_chat_prompt(gui::builder& ui, data& d, const rect
 
 	d.naming_new_chat = false;
 	if (result == gui::prompt_result::submitted) {
-		session& started = create_session(d, config::primary().project_root, task_phase::scope);
+		session& started = create_session(d, config::primary().project_root, chat_kind::chat);
 		started.name = d.new_chat_name;
 		d.overview_active = false;
 	}
@@ -2268,7 +2268,7 @@ auto gse::ide::agent::submit_draft(session& s, const bool to_transcript) -> void
 	const std::string prompt = input_text(s.draft);
 
 	std::string sent = prompt;
-	if (!s.sync && current_phase(s) == task_phase::settled) {
+	if (style_of(s.kind).phased && current_phase(s) == task_phase::settled) {
 		const auto summarized = std::ranges::find_last(task_runs(s), task_phase::summarize, &phase_run::phase);
 		if (!summarized.empty() && !summarized.front().summary.empty()) {
 			sent = std::format("{}\n\nThe previous cycle's final report:\n\n{}\n\nThe owner's follow-up:\n\n{}", follow_up_opening, summarized.front().summary, prompt);

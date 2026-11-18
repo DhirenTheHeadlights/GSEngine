@@ -251,7 +251,7 @@ namespace gse::ide::agent {
 }
 
 auto gse::ide::agent::recover_met_goal(session& s) -> void {
-	if (s.goal || s.met_goal) {
+	if (s.goal) {
 		return;
 	}
 	const auto met = std::ranges::find_if(s.runs | std::views::reverse, [](const phase_run& run) {
@@ -261,7 +261,7 @@ auto gse::ide::agent::recover_met_goal(session& s) -> void {
 		return;
 	}
 	constexpr std::string_view pursuing = "pursuing goal ";
-	goal_state recovered;
+	goal_state recovered{ .stage = goal_stage::met };
 	const auto named = std::ranges::find_if(s.rows | std::views::reverse, [&](const transcript_row& row) {
 		return row.kind == row_kind::phase && row.text.starts_with(pursuing);
 	});
@@ -269,7 +269,7 @@ auto gse::ide::agent::recover_met_goal(session& s) -> void {
 		recovered.record = std::filesystem::path(named->text.substr(pursuing.size()));
 		recovered.aim = aim_of(recovered.record);
 	}
-	s.met_goal = std::move(recovered);
+	s.goal = std::move(recovered);
 }
 
 auto gse::ide::agent::hydrate_session(session& s) -> void {
@@ -436,7 +436,7 @@ auto gse::ide::agent::restore_chat(data& d, const past_chat& chat) -> void {
 
 	const auto named = d.chat_names.find(chat.agent_id);
 
-	session& restored = create_session(d, config::primary().project_root, task_phase::apply);
+	session& restored = create_session(d, config::primary().project_root, chat_kind::chat, task_phase::apply);
 	restored.name = named != d.chat_names.end() && !named->second.empty()
 		? named->second
 		: chat_title(chat.summary);

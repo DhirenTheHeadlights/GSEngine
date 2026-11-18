@@ -1450,9 +1450,9 @@ def stage6(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def stage6_budget(args: argparse.Namespace) -> int:
-    checks = check_device(args.device, modal_ringing_needed)
-    for path in args.device:
+def check_modal_ringing(logs: list[Path]) -> list[check]:
+    checks: list[check] = []
+    for path in logs:
         match = modal_ringing_pattern.search(read_log(path))
         if not match:
             checks.append(check(f"criterion 6: ringing {path.name}", False, "no 'audio: modal voices peaked' line"))
@@ -1467,6 +1467,11 @@ def stage6_budget(args: argparse.Namespace) -> int:
             f"peak {peak} ringing voices of {match['limit']} (need {modal_ringing_needed}), at the limit on {at_limit} of {frames} frames, "
             f"{100.0 * share:.1f}% (need {100.0 * modal_ringing_share:g}%)",
         ))
+    return checks
+
+
+def stage6_budget(args: argparse.Namespace) -> int:
+    checks = check_device(args.device, modal_ringing_needed) + check_modal_ringing(args.device)
     for item in checks:
         print(f"{'PASS' if item.passed else 'FAIL'}  {item.name}: {item.detail}")
     failed = [item for item in checks if not item.passed]
@@ -1655,6 +1660,446 @@ def stage7(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+reverb_header_pattern = re.compile(r"audio_reverb_probe: speed of sound (?P<speed>[0-9.]+) m/s, fixed step [0-9.]+ ms")
+reverb_sync_pattern = re.compile(r"audio_reverb_probe: sync frame (?P<frame>\d+) pitch [0-9.]+ Hz")
+reverb_station_pattern = re.compile(
+    r"audio_reverb_probe: station (?P<station>\w+) frame (?P<frame>\d+) interior " + vector_text
+    + r" lining (?P<lining>\S+) listener " + vector_text + r" emitter " + vector_text + r" frames (?P<frames>\d+)"
+)
+reverb_closed_pattern = re.compile(r"audio_reverb_probe: station (?P<station>\w+) closed frame (?P<frame>\d+)")
+reverb_trace_pattern = re.compile(
+    r"audio: reverb step (?P<step>\d+) mean free path (?P<path>[0-9.]+) m absorption (?P<absorption>[0-9.]+) "
+    r"enclosed (?P<enclosed>[0-9.]+) volume (?P<volume>[0-9.]+) m\^3 decay (?P<decay>[0-9.]+) ms send (?P<send>[0-9.]+)"
+)
+lining_unloaded_pattern = re.compile(r"dev_spawn: a reverb probe sound was played while the lining \S+ had not loaded")
+absorption_pattern = re.compile(r"^\s*absorption\s*=\s*(?P<value>[0-9.]+)\s*$", re.MULTILINE)
+
+reverb_rooms = ("wood", "cork")
+reverb_decay_tolerance = 0.2
+reverb_fit_top_db = -5.0
+reverb_fit_bottom_db = -25.0
+reverb_open_after = int(0.2 * frame_rate)
+reverb_open_down_db = -60.0
+reverb_parameter_tolerance = 0.05
+reverb_lines_needed = 4
+reverb_active_lines = 100
+reverb_active_enclosed = 0.5
+
+
+def eyring_decay(size: tuple[float, float, float], absorption: float, speed_of_sound: float) -> float:
+    width, height, depth = size
+    volume = width * height * depth
+    surface = 2.0 * (width * height + height * depth + depth * width)
+    return 24.0 * math.log(10.0) * volume / (speed_of_sound * -surface * math.log(1.0 - absorption))
+
+
+def schroeder_decay(energy: list[float]) -> float | None:
+    remaining = 0.0
+    curve = [0.0] * len(energy)
+    for index in range(len(energy) - 1, -1, -1):
+        remaining += energy[index]
+        curve[index] = remaining
+    if remaining <= 0.0:
+        return None
+    points = [
+        (index / frame_rate, 10.0 * math.log10(value / remaining))
+        for index, value in enumerate(curve)
+        if value > 0.0 and reverb_fit_bottom_db <= 10.0 * math.log10(value / remaining) <= reverb_fit_top_db
+    ]
+    if len(points) < 2:
+        return None
+    mean_time = sum(at for at, _ in points) / len(points)
+    mean_level = sum(level for _, level in points) / len(points)
+    spread = sum((at - mean_time) ** 2 for at, _ in points)
+    if spread <= 0.0:
+        return None
+    slope = sum((at - mean_time) * (level - mean_level) for at, level in points) / spread
+    return -60.0 / slope if slope < 0.0 else None
+
+
+def largest_relative_change(values: list[float]) -> float:
+    return max(
+        (abs(later - earlier) / max(abs(earlier), 1e-12) for earlier, later in zip(values, values[1:]) if earlier != later),
+        default=0.0,
+    )
+
+
+def check_reverb_run(path: Path) -> tuple[list[check], str | None]:
+    checks: list[check] = []
+    text = read_log(path)
+    name = path.name
+
+    offline = offline_pattern.search(text)
+    header = reverb_header_pattern.search(text)
+    sync = reverb_sync_pattern.search(text)
+    stations = {match["station"]: match for match in reverb_station_pattern.finditer(text)}
+    closed = {match["station"]: int(match["frame"]) for match in reverb_closed_pattern.finditer(text)}
+    wanted = reverb_rooms + ("open",)
+    scripted = bool(offline and header and sync) and all(station in stations and station in closed for station in wanted)
+    dropped = len(dropped_pattern.findall(text))
+    unloaded = len(lining_unloaded_pattern.findall(text))
+    checks.append(check(
+        f"reverb {name} script",
+        scripted and dropped == 0 and unloaded == 0,
+        f"{len(stations)} stations, {len(closed)} closed (need {len(wanted)} of each), {dropped} sounds dropped, "
+        f"{unloaded} sounds played before a lining had loaded, sample hash {offline['hash'] if offline else 'missing'}",
+    ))
+    if not scripted:
+        return checks, offline["hash"] if offline else None
+    speed_of_sound = float(header["speed"])
+
+    wav_path = Path(offline["path"])
+    if not wav_path.exists():
+        checks.append(check(f"reverb {name} wav", False, f"{wav_path} does not exist"))
+        return checks, offline["hash"]
+    channels, rate, samples = read_float_wav(wav_path)
+    if channels != 2 or rate != frame_rate:
+        checks.append(check(f"reverb {name} wav", False, f"{channels} ch at {rate}"))
+        return checks, offline["hash"]
+    left = samples[0::2]
+    right = samples[1::2]
+
+    sync_onset = first_sound(left, right, 0)
+    if sync_onset is None:
+        checks.append(check(f"reverb {name} sync", False, "the WAV is silent"))
+        return checks, offline["hash"]
+    sync_frame = int(sync["frame"])
+    sync_block = sync_onset - sync_onset % frames_per_step
+
+    def sample_of(frame: int) -> int:
+        return sync_block + (frame - sync_frame) * frames_per_step
+
+    traced: list[list[re.Match[str]]] = []
+    for line in reverb_trace_pattern.finditer(text):
+        if traced and int(line["step"]) == int(traced[-1][-1]["step"]) + 1:
+            traced[-1].append(line)
+        else:
+            traced.append([line])
+    checks.append(check(
+        f"reverb {name} traced",
+        len(traced) == len(wanted),
+        f"{len(traced)} runs of consecutive 'audio: reverb' lines (need {len(wanted)}, one for each station)",
+    ))
+    if len(traced) != len(wanted):
+        return checks, offline["hash"]
+
+    for station, lines in zip(wanted, traced):
+        placed = stations[station]
+        begin = sample_of(int(placed["frame"]))
+        end = min(sample_of(closed[station]), len(left))
+        arrival = first_sound(left, right, begin)
+        if arrival is None or arrival >= end:
+            checks.append(check(f"reverb {name} {station} impulse", False, "no sound between the station's impulse and its close"))
+            continue
+        energy = [left[index] ** 2 + right[index] ** 2 for index in range(arrival, end)]
+
+        if station == "open":
+            direct = sum(energy[:reverb_open_after])
+            late = sum(energy[reverb_open_after:])
+            down = 10.0 * math.log10(late / direct) if late > 0.0 else -math.inf
+            checks.append(check(
+                f"criterion 8: open {name}",
+                direct > 0.0 and down <= reverb_open_down_db,
+                f"energy from {reverb_open_after / frame_rate * 1000.0:g} ms after the direct sound is {down:.1f} dB against the direct sound "
+                f"(need {reverb_open_down_db:g} dB or lower) over {(len(energy) - reverb_open_after) / frame_rate * 1000.0:.0f} ms",
+            ))
+            continue
+
+        size = (float(placed[3]), float(placed[4]), float(placed[5]))
+        source = REPO_ROOT / "Sandbox" / "Assets" / f"{placed['lining']}.acoustic"
+        authored = absorption_pattern.search(source.read_text(encoding="utf-8")) if source.exists() else None
+        if not authored:
+            checks.append(check(f"reverb {name} {station} lining", False, f"no absorption line in {source}"))
+            continue
+        absorption = float(authored["value"])
+        predicted = eyring_decay(size, absorption, speed_of_sound)
+        measured = schroeder_decay(energy)
+        error = measured / predicted - 1.0 if measured else math.inf
+        estimated = float(lines[-1]["decay"]) / 1000.0
+        checks.append(check(
+            f"criterion 8: {station} room decay {name}",
+            abs(error) <= reverb_decay_tolerance,
+            f"measured RT60 {measured:.3f} s against Eyring {predicted:.3f} s for {size[0]:g} x {size[1]:g} x {size[2]:g} m at absorption {absorption:g} "
+            f"({100.0 * error:+.1f}%, limit {100.0 * reverb_decay_tolerance:g}%); the engine's own estimate was {estimated:.3f} s "
+            f"({100.0 * (estimated / predicted - 1.0):+.1f}%)" if measured else "the decay could not be fitted",
+        ))
+
+        changes = {
+            key: largest_relative_change([float(line[key]) for line in lines])
+            for key in ("decay", "send", "path")
+        }
+        steady = len(lines) >= reverb_lines_needed and all(change < reverb_parameter_tolerance for change in changes.values())
+        checks.append(check(
+            f"criterion 8: {station} room parameters steady {name}",
+            steady,
+            f"{len(lines)} lines (need {reverb_lines_needed}), largest change between frames: decay {100.0 * changes['decay']:.3f}%, "
+            f"send {100.0 * changes['send']:.3f}%, mean free path {100.0 * changes['path']:.3f}% (limit {100.0 * reverb_parameter_tolerance:g}%)",
+        ))
+    return checks, offline["hash"]
+
+
+def stage8(args: argparse.Namespace) -> int:
+    checks: list[check] = []
+    hashes: list[str] = []
+    for path in args.logs:
+        run_checks, sample_hash = check_reverb_run(path)
+        checks += run_checks
+        if sample_hash:
+            hashes.append(sample_hash)
+    checks.append(check(
+        "criterion 1: same hash in every reverb run",
+        len(hashes) == len(args.logs) and len(set(hashes)) == 1,
+        ", ".join(hashes) if hashes else "no hashes",
+    ))
+    for item in checks:
+        print(f"{'PASS' if item.passed else 'FAIL'}  {item.name}: {item.detail}")
+    failed = [item for item in checks if not item.passed]
+    print(f"stage8: {len(checks) - len(failed)} of {len(checks)} checks passed")
+    return 1 if failed else 0
+
+
+doorway_header_pattern = re.compile(
+    r"audio_reverb_doorway_probe: speed of sound (?P<speed>[0-9.]+) m/s, fixed step [0-9.]+ ms, interior " + vector_text
+    + r" lining (?P<lining>\S+) doorway (?P<width>[0-9.]+) m by (?P<height>[0-9.]+) m"
+)
+doorway_event_pattern = re.compile(r"audio_reverb_doorway_probe: (?P<event>\w+) frame (?P<frame>\d+)")
+doorway_frames_pattern = re.compile(r" frames (?P<frames>\d+)")
+doorway_events = ("sync", "inside", "stay", "leave", "jump", "jumped", "returned", "walk", "turned", "finished")
+doorway_tails = {"leave": "stay", "jump": "inside"}
+doorway_compare_from = int(0.2 * frame_rate)
+doorway_tail_down_db = 60.0
+doorway_shortfall_db = 6.0
+doorway_walk_lead = 15 * frames_per_step
+doorway_walk_step_db = 1.0
+
+
+def linear_block_levels(left: list[float], right: list[float], begin: int, end: int) -> list[float]:
+    return [both_ears(left, right, block, rms) for block in whole_blocks(begin, end)]
+
+
+def eyring_decay_with_opening(size: tuple[float, float, float], absorption: float, opening: float, speed_of_sound: float) -> float:
+    width, height, depth = size
+    volume = width * height * depth
+    surface = 2.0 * (width * height + height * depth + depth * width)
+    mean = (absorption * (surface - opening) + opening) / surface
+    return 24.0 * math.log(10.0) * volume / (speed_of_sound * -surface * math.log(1.0 - mean))
+
+
+def check_doorway_run(path: Path, dry_walk: tuple[list[float], list[float]] | None) -> tuple[list[check], str | None]:
+    checks: list[check] = []
+    text = read_log(path)
+    name = path.name
+
+    offline = offline_pattern.search(text)
+    header = doorway_header_pattern.search(text)
+    events = {match["event"]: match for match in doorway_event_pattern.finditer(text)}
+    scripted = bool(offline and header) and all(event in events for event in doorway_events)
+    dropped = len(dropped_pattern.findall(text))
+    unloaded = len(lining_unloaded_pattern.findall(text))
+    checks.append(check(
+        f"doorway {name} script",
+        scripted and dropped == 0 and unloaded == 0,
+        f"{sum(1 for event in doorway_events if event in events)} of {len(doorway_events)} script lines, {dropped} sounds dropped, "
+        f"{unloaded} sounds played before a lining had loaded, sample hash {offline['hash'] if offline else 'missing'}",
+    ))
+    if not scripted:
+        return checks, offline["hash"] if offline else None
+
+    wav_path = Path(offline["path"])
+    if not wav_path.exists():
+        checks.append(check(f"doorway {name} wav", False, f"{wav_path} does not exist"))
+        return checks, offline["hash"]
+    channels, rate, samples = read_float_wav(wav_path)
+    if channels != 2 or rate != frame_rate:
+        checks.append(check(f"doorway {name} wav", False, f"{channels} ch at {rate}"))
+        return checks, offline["hash"]
+    left = samples[0::2]
+    right = samples[1::2]
+
+    sync_onset = first_sound(left, right, 0)
+    if sync_onset is None:
+        checks.append(check(f"doorway {name} sync", False, "the WAV is silent"))
+        return checks, offline["hash"]
+    frame_of = {event: int(match["frame"]) for event, match in events.items()}
+    sync_block = sync_onset - sync_onset % frames_per_step
+
+    def sample_of(frame: int) -> int:
+        return sync_block + (frame - frame_of["sync"]) * frames_per_step
+
+    def traced_between(first: str, last: str) -> list[re.Match[str]]:
+        return [
+            line for line in reverb_trace_pattern.finditer(text)
+            if events[first].start() < line.start() < events[last].start()
+        ]
+
+    def ring_frames(event: str) -> int:
+        return int(doorway_frames_pattern.search(text, events[event].end())["frames"]) * frames_per_step
+
+    speed_of_sound = float(header["speed"])
+    size = (float(header[2]), float(header[3]), float(header[4]))
+    opening = float(header["width"]) * float(header["height"])
+    source = REPO_ROOT / "Sandbox" / "Assets" / f"{header['lining']}.acoustic"
+    authored = absorption_pattern.search(source.read_text(encoding="utf-8")) if source.exists() else None
+
+    inside_lines = traced_between("inside", "stay")[:ring_frames("inside") // frames_per_step]
+    inside_begin = sample_of(frame_of["inside"])
+    inside_end = min(inside_begin + ring_frames("inside"), len(left))
+    enclosed = [float(line["enclosed"]) for line in inside_lines]
+    checks.append(check(
+        f"doorway {name} inside enclosed",
+        bool(enclosed) and min(enclosed) >= reverb_active_enclosed,
+        f"{len(enclosed)} 'audio: reverb' lines with the listener inside, smallest enclosed share "
+        f"{min(enclosed, default=0.0):.4f} (need {reverb_active_enclosed:g} or more)",
+    ))
+    arrival = first_sound(left, right, inside_begin)
+    if arrival is None or arrival >= inside_end or not authored or not inside_lines:
+        checks.append(check(f"doorway {name} inside impulse", False, f"no impulse, no trace line, or no absorption line in {source}"))
+        return checks, offline["hash"]
+    absorption = float(authored["value"])
+    measured = schroeder_decay([left[index] ** 2 + right[index] ** 2 for index in range(arrival, inside_end)])
+    closed = eyring_decay(size, absorption, speed_of_sound)
+    opened = eyring_decay_with_opening(size, absorption, opening, speed_of_sound)
+    estimated = float(inside_lines[-1]["decay"]) / 1000.0
+    checks.append(check(
+        f"doorway {name} inside decay (reported, not gated)",
+        measured is not None,
+        f"measured RT60 {measured:.3f} s; Eyring for the closed {size[0]:g} x {size[1]:g} x {size[2]:g} m box at absorption {absorption:g} "
+        f"is {closed:.3f} s ({100.0 * (measured / closed - 1.0):+.1f}%), with the {opening:g} m^2 doorway as absorption 1 it is {opened:.3f} s "
+        f"({100.0 * (measured / opened - 1.0):+.1f}%), the engine's own estimate was {estimated:.3f} s "
+        f"({100.0 * (measured / estimated - 1.0):+.1f}%)" if measured else "the decay could not be fitted",
+    ))
+
+    def knock_levels(event: str) -> list[float]:
+        begin = sample_of(frame_of[event])
+        return linear_block_levels(left, right, begin, min(begin + ring_frames(event), len(left)))
+
+    first_block = doorway_compare_from // occlusion_block
+    for event, stationary in doorway_tails.items():
+        reference = knock_levels(stationary)
+        levels = knock_levels(event)
+        loudest = max(reference)
+        last_block = next(
+            (index for index in range(first_block, len(reference)) if decibels(reference[index] / loudest) < -doorway_tail_down_db),
+            len(reference),
+        )
+        compared = range(first_block, min(last_block, len(levels)))
+        shortfalls = [decibels(reference[index] / levels[index]) if levels[index] > 0.0 else math.inf for index in compared]
+        worst = max(shortfalls, default=math.inf)
+        worst_at = compared[shortfalls.index(worst)] * occlusion_block / frame_rate * 1000.0 if shortfalls else 0.0
+        checks.append(check(
+            f"doorway {name} {event} tail rings out",
+            worst <= doorway_shortfall_db,
+            f"from {doorway_compare_from / frame_rate * 1000.0:g} ms after the knock until the '{stationary}' tail (same start, listener not moved) "
+            f"is {doorway_tail_down_db:g} dB down ({len(compared)} blocks of 10 ms), the level is at most {worst:.2f} dB below that tail "
+            f"at the same offset, at {worst_at:.0f} ms (limit {doorway_shortfall_db:g} dB)",
+        ))
+
+    before_jump = float(traced_between("jump", "jumped")[-1]["enclosed"]) if traced_between("jump", "jumped") else None
+    away = [float(line["enclosed"]) for line in traced_between("jumped", "returned")]
+    latent = next((index for index, share in enumerate(away) if share != before_jump), len(away))
+    lingering = sum(1 for share in away[latent:] if share > 0.0)
+    checks.append(check(
+        f"doorway {name} jump retraced at once",
+        before_jump is not None and latent < len(away) and lingering == 0,
+        f"enclosed share {before_jump if before_jump is not None else math.nan:.4f} before the jump; of {len(away)} lines while away, {latent} still describe "
+        f"the room before the jump takes effect, then {lingering} read an enclosed share above zero (need 0)",
+    ))
+    back = [float(line["enclosed"]) for line in traced_between("returned", "walk")]
+    arrived = next((index for index, share in enumerate(back) if share > 0.0), len(back))
+    checks.append(check(
+        f"doorway {name} return retraced at once",
+        arrived < len(back) and min(back[arrived:]) >= reverb_active_enclosed,
+        f"of {len(back)} lines after the jump back, the {len(back) - arrived} from the first enclosed one read "
+        f"{min(back[arrived:], default=0.0):.4f} or more (need {reverb_active_enclosed:g})",
+    ))
+
+    walk_start = sample_of(frame_of["walk"])
+    walk_end = min(sample_of(frame_of["finished"]), len(left))
+    mixed = (left[walk_start:walk_end], right[walk_start:walk_end])
+    if dry_walk is None or len(dry_walk[0]) != len(mixed[0]):
+        checks.append(check(f"doorway {name} walk", False, "no dry twin run with a walk of the same length to subtract"))
+        return checks, offline["hash"]
+    reverberant = tuple([wet - dry for wet, dry in zip(ear, dry_ear)] for ear, dry_ear in zip(mixed, dry_walk))
+    turned = (frame_of["turned"] - frame_of["walk"]) * frames_per_step
+    for leg, begin, end in (("out", doorway_walk_lead, turned), ("back in", turned, len(mixed[0]))):
+        steps = {
+            part: largest_step(linear_block_levels(ears[0], ears[1], begin, end))
+            for part, ears in (("reverb", reverberant), ("dry", dry_walk), ("mix", mixed))
+        }
+        checks.append(check(
+            f"doorway {name} walk {leg}",
+            steps["reverb"] <= doorway_walk_step_db and steps["dry"] <= doorway_walk_step_db,
+            f"largest change between 10 ms blocks over {(end - begin) // occlusion_block} blocks: the reverb alone (this run minus its dry twin) "
+            f"{steps['reverb']:.3f} dB, the dry sound alone {steps['dry']:.3f} dB (limit {doorway_walk_step_db:g} dB each); "
+            f"their mix {steps['mix']:.3f} dB, not gated, because the tones beat against their own reverberation as the listener moves",
+        ))
+    return checks, offline["hash"]
+
+
+def doorway_dry_walk(path: Path) -> tuple[list[float], list[float]] | None:
+    text = read_log(path)
+    offline = offline_pattern.search(text)
+    frame_of = {match["event"]: int(match["frame"]) for match in doorway_event_pattern.finditer(text)}
+    if not offline or not all(event in frame_of for event in doorway_events) or reverb_trace_pattern.search(text):
+        return None
+    wav_path = Path(offline["path"])
+    if not wav_path.exists():
+        return None
+    channels, rate, samples = read_float_wav(wav_path)
+    left = samples[0::2]
+    right = samples[1::2]
+    sync_onset = first_sound(left, right, 0)
+    if channels != 2 or rate != frame_rate or sync_onset is None:
+        return None
+    sync_block = sync_onset - sync_onset % frames_per_step
+    begin = sync_block + (frame_of["walk"] - frame_of["sync"]) * frames_per_step
+    end = min(sync_block + (frame_of["finished"] - frame_of["sync"]) * frames_per_step, len(left))
+    return left[begin:end], right[begin:end]
+
+
+def stage8_doorway(args: argparse.Namespace) -> int:
+    checks: list[check] = []
+    hashes: list[str] = []
+    dry_walk = doorway_dry_walk(args.dry)
+    checks.append(check(
+        f"doorway dry twin {args.dry.name}",
+        dry_walk is not None,
+        "a complete audio_reverb_doorway_probe_dry run with no 'audio: reverb' line" if dry_walk else "not a complete dry run of the same script",
+    ))
+    for path in args.logs:
+        run_checks, sample_hash = check_doorway_run(path, dry_walk)
+        checks += run_checks
+        if sample_hash:
+            hashes.append(sample_hash)
+    checks.append(check(
+        "criterion 1: same hash in every doorway run",
+        len(hashes) == len(args.logs) and len(set(hashes)) == 1,
+        ", ".join(hashes) if hashes else "no hashes",
+    ))
+    for item in checks:
+        print(f"{'PASS' if item.passed else 'FAIL'}  {item.name}: {item.detail}")
+    failed = [item for item in checks if not item.passed]
+    print(f"stage8-doorway: {len(checks) - len(failed)} of {len(checks)} checks passed")
+    return 1 if failed else 0
+
+
+def stage8_budget(args: argparse.Namespace) -> int:
+    checks = check_device(args.device, modal_ringing_needed) + check_modal_ringing(args.device)
+    for path in args.device:
+        enclosed = [float(line["enclosed"]) for line in reverb_trace_pattern.finditer(read_log(path))]
+        active = sum(1 for share in enclosed if share >= reverb_active_enclosed)
+        checks.append(check(
+            f"criterion 8: reverb active {path.name}",
+            active >= reverb_active_lines,
+            f"{active} of {len(enclosed)} 'audio: reverb' lines report an enclosed share of {reverb_active_enclosed:g} or more (need {reverb_active_lines})",
+        ))
+    for item in checks:
+        print(f"{'PASS' if item.passed else 'FAIL'}  {item.name}: {item.detail}")
+    failed = [item for item in checks if not item.passed]
+    print(f"stage8-budget: {len(checks) - len(failed)} of {len(checks)} checks passed")
+    return 1 if failed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Checks the simulated-audio goal's criteria from scenario logs and WAV files.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1702,6 +2147,19 @@ def main() -> int:
     seventh = commands.add_parser("stage7", help="criterion 7 (sustained sliding and rolling sound, level against speed, silence after rest) from audio_slide_probe and audio_roll_probe logs")
     seventh.add_argument("--logs", type=Path, nargs="+", required=True, help="logs of audio_slide_probe and audio_roll_probe runs")
     seventh.set_defaults(run=stage7)
+
+    eighth = commands.add_parser("stage8", help="criterion 8 (room decay against Eyring, a dry open field, steady parameters) from audio_reverb_probe logs")
+    eighth.add_argument("--logs", type=Path, nargs="+", required=True, help="logs of audio_reverb_probe runs")
+    eighth.set_defaults(run=stage8)
+
+    doorway = commands.add_parser("stage8-doorway", help="a room with a doorway: the tail rings out when the listener leaves or jumps away, and a walk through the door is smooth, from audio_reverb_doorway_probe logs")
+    doorway.add_argument("--logs", type=Path, nargs="+", required=True, help="logs of audio_reverb_doorway_probe runs")
+    doorway.add_argument("--dry", type=Path, required=True, help="log of one audio_reverb_doorway_probe_dry run, subtracted from each run's walk to leave the reverb alone")
+    doorway.set_defaults(run=stage8_doorway)
+
+    reverberant = commands.add_parser("stage8-budget", help="criterion 2's budget with the reverb running under 64 ringing objects, from audio_reverb_stress_device logs")
+    reverberant.add_argument("--device", type=Path, nargs="+", required=True, help="logs of audio_reverb_stress_device runs")
+    reverberant.set_defaults(run=stage8_budget)
 
     args = parser.parse_args()
     return args.run(args)

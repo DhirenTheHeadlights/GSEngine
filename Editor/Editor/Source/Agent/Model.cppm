@@ -75,6 +75,8 @@ export namespace gse::ide::agent {
 		bool fresh_context = false;
 		bool side_thread = false;
 		bool gated = false;
+		bool gates_under_goal = false;
+		bool goal_only = false;
 	};
 
 	enum class task_phase : std::uint8_t {
@@ -85,44 +87,70 @@ export namespace gse::ide::agent {
 			.fresh_context = true,
 			.gated = true,
 		}]],
-		apply [[= phase_policy{
-			.label = "applying",
-			.enter_label = "Start applying",
-			.opening = "The scope is approved. Implement it now, following your phase instructions.",
-			.color = &gui::style::color_added,
-		}]],
-		review [[= phase_policy{
-			.label = "reviewing",
-			.opening = "Review the change now, following your phase instructions.",
-			.color = &gui::style::color_accent,
-			.read_only = true,
-			.fresh_context = true,
-			.side_thread = true,
-		}]],
-		revise [[= phase_policy{
-			.label = "revising",
-			.opening = "Address the review findings now, following your phase instructions.",
-			.color = &gui::style::color_warning,
-		}]],
-		summarize [[= phase_policy{
-			.label = "summarizing",
-			.opening = "Write the owner's summary of this task now, following your phase instructions.",
-			.color = &gui::style::color_file,
-			.read_only = true,
-			.fresh_context = true,
-			.side_thread = true,
-		}]],
-		settled [[= phase_policy{
-			.label = "settled",
-			.color = &gui::style::color_text_disabled,
-		}]],
-		steer [[= phase_policy{
-			.label = "steering",
-			.enter_label = "Continue goal",
-			.opening = "Steer the goal now, following your phase instructions.",
-			.color = &gui::style::color_accent_dim,
-			.fresh_context = true,
-		}]],
+		apply [[
+			= phase_policy{
+				.label = "applying",
+				.enter_label = "Start applying",
+				.opening = "The scope is approved. Implement it now, following your phase instructions.",
+				.color = &gui::style::color_added,
+			},
+			= entered_from({ scope })
+		]],
+		review [[
+			= phase_policy{
+				.label = "reviewing",
+				.opening = "Review the change now, following your phase instructions.",
+				.color = &gui::style::color_accent,
+				.read_only = true,
+				.fresh_context = true,
+				.side_thread = true,
+			},
+			= entered_from({ apply })
+		]],
+		revise [[
+			= phase_policy{
+				.label = "revising",
+				.opening = "Address the review findings now, following your phase instructions.",
+				.color = &gui::style::color_warning,
+			},
+			= entered_from({ review }),
+			= returns_to({ review })
+		]],
+		summarize [[
+			= phase_policy{
+				.label = "summarizing",
+				.opening = "Write the owner's summary of this task now, following your phase instructions.",
+				.color = &gui::style::color_file,
+				.read_only = true,
+				.fresh_context = true,
+				.side_thread = true,
+				.gates_under_goal = true,
+			},
+			= entered_from({ review }),
+			= returns_to({ scope })
+		]],
+		settled [[
+			= phase_policy{
+				.label = "settled",
+				.color = &gui::style::color_text_disabled,
+			},
+			= entered_from({ summarize }),
+			= returns_to({ scope })
+		]],
+		steer [[
+			= phase_policy{
+				.label = "steering",
+				.enter_label = "Continue goal",
+				.opening = "Steer the goal now, following your phase instructions.",
+				.color = &gui::style::color_accent_dim,
+				.fresh_context = true,
+				.gates_under_goal = true,
+				.goal_only = true,
+			},
+			= entered_from({ summarize }),
+			= returns_to({ scope, review, settled }),
+			= reentered()
+		]],
 	};
 
 	struct verdict_policy {
@@ -204,8 +232,29 @@ export namespace gse::ide::agent {
 		bool capped = false;
 	};
 
+	struct chat_look {
+		char label[16] = "chat";
+		std::span<const gui::symbol::stroke> (*symbol)() = &gui::symbol::chat;
+		vec4f gui::style::* color = &gui::style::color_text_secondary;
+	};
+
+	enum class goal_stage : std::uint8_t {
+		proposed,
+		pursuing [[= chat_look{
+			.label = "goal",
+			.symbol = &gui::symbol::target,
+			.color = &gui::style::color_accent,
+		}]],
+		met [[= chat_look{
+			.label = "goal",
+			.symbol = &gui::symbol::target,
+			.color = &gui::style::color_accent,
+		}]],
+	};
+
 	struct goal_state {
 		std::filesystem::path record;
+		goal_stage stage = goal_stage::pursuing;
 		std::uint32_t steers_left = 0;
 		std::optional<await_condition> waiting;
 		std::vector<criterion_report> criteria;
@@ -473,14 +522,15 @@ export namespace gse::ide::agent {
 	};
 
 	struct state_style {
-		char label[24] = "idle";
+		char label[24] = "ready";
 		vec4f gui::style::* color = &gui::style::color_text_secondary;
 		vec4f gui::style::* activity = &gui::style::color_accent;
 		bool waits = false;
+		bool holds_turn = false;
 	};
 
 	enum class agent_state : std::uint8_t {
-		resting [[= state_style{
+		ready [[= state_style{
 			.label = "ready",
 			.color = &gui::style::color_text_secondary,
 		}]],
@@ -488,9 +538,10 @@ export namespace gse::ide::agent {
 			.label = "stopped",
 			.color = &gui::style::color_error,
 		}]],
-		idle [[= state_style{
-			.label = "ready",
-			.color = &gui::style::color_text_secondary,
+		advancing [[= state_style{
+			.label = "moving on to",
+			.color = &gui::style::color_folder,
+			.waits = true,
 		}]],
 		working [[= state_style{
 			.label = "working",
@@ -535,43 +586,61 @@ export namespace gse::ide::agent {
 			.label = "usage limit reached",
 			.color = &gui::style::color_warning,
 			.waits = true,
+			.holds_turn = true,
+		}]],
+		offline [[= state_style{
+			.label = "offline",
+			.color = &gui::style::color_warning,
+			.waits = true,
+			.holds_turn = true,
 		}]],
 	};
 
 	struct kind_style {
-		char label[16] = "chat";
-		std::span<const gui::symbol::stroke> (*symbol)() = &gui::symbol::chat;
-		vec4f gui::style::* color = &gui::style::color_text_secondary;
+		chat_look look;
+		task_phase starts = task_phase::scope;
+		bool phased = true;
 		bool unattended = false;
 	};
 
 	enum class chat_kind : std::uint8_t {
 		chat [[= kind_style{
-			.label = "chat",
-			.symbol = &gui::symbol::chat,
-			.color = &gui::style::color_text_secondary,
+			.look = {
+				.label = "chat",
+				.symbol = &gui::symbol::chat,
+				.color = &gui::style::color_text_secondary,
+			},
 		}]],
-		goal [[= kind_style{
-			.label = "goal",
-			.symbol = &gui::symbol::target,
-			.color = &gui::style::color_accent,
+		sync [[= kind_style{
+			.look = {
+				.label = "sync",
+				.symbol = &gui::symbol::restart,
+				.color = &gui::style::color_folder,
+			},
+			.starts = task_phase::settled,
+			.phased = false,
 		}]],
 		crash [[= kind_style{
-			.label = "crash",
-			.symbol = &gui::symbol::burst,
-			.color = &gui::style::color_error,
+			.look = {
+				.label = "crash",
+				.symbol = &gui::symbol::burst,
+				.color = &gui::style::color_error,
+			},
 			.unattended = true,
 		}]],
 		build_error [[= kind_style{
-			.label = "build error",
-			.symbol = &gui::symbol::hammer,
-			.color = &gui::style::color_error,
+			.look = {
+				.label = "build error",
+				.symbol = &gui::symbol::hammer,
+				.color = &gui::style::color_error,
+			},
+			.starts = task_phase::apply,
 		}]],
-		sync [[= kind_style{
-			.label = "sync",
-			.symbol = &gui::symbol::restart,
-			.color = &gui::style::color_folder,
-		}]],
+	};
+
+	enum class transition_stage : std::uint8_t {
+		held,
+		approved,
 	};
 
 	struct tool_flavor {
@@ -672,11 +741,11 @@ export namespace gse::ide::agent {
 
 	struct phase_gate {
 		task_phase from = task_phase::scope;
+		transition_stage stage = transition_stage::held;
 		std::string summary;
 		std::string note;
 		std::uint32_t findings = 0;
 		std::optional<goal_verdict> verdict;
-		std::filesystem::path goal;
 		std::vector<build_inbox::plan_step> steps;
 		std::uint32_t first_row = std::numeric_limits<std::uint32_t>::max();
 	};
@@ -843,9 +912,7 @@ export namespace gse::ide::agent {
 		bool sync_announced = false;
 		std::vector<phase_run> runs;
 		std::optional<phase_gate> gate;
-		std::optional<phase_gate> pending_transition;
 		std::optional<goal_state> goal;
-		std::optional<goal_state> met_goal;
 		std::optional<pending_question> question;
 		[[= archive_skip{}]] std::optional<std::uint32_t> plan_selected;
 		[[= archive_skip{}]] std::uint32_t lifecycle_page = 0;

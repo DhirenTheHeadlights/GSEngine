@@ -38,7 +38,7 @@ export namespace sandbox {
 }
 
 auto sandbox::world_catalog() -> std::span<const world_entry> {
-	static const std::array<world_entry, 33> entries{
+	static const std::array<world_entry, 36> entries{
 		world_entry{
 			.name = "Sandbox",
 			.label = "Sandbox",
@@ -298,6 +298,27 @@ auto sandbox::world_catalog() -> std::span<const world_entry> {
 			.label = "Audio Roll",
 			.blurb = "A floor and a listener for the rolling sound measurements",
 			.setup = &audio_roll_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioReverb",
+			.label = "Audio Reverb",
+			.blurb = "Two closed rooms lined with wood and cork and an open floor for the reverb measurements",
+			.setup = &audio_reverb_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioReverbHall",
+			.label = "Audio Reverb Hall",
+			.blurb = "A closed wood-lined hall and a listener for the reverb budget measurement",
+			.setup = &audio_reverb_hall_scene_setup,
+			.group = world_group::probe,
+		},
+		world_entry{
+			.name = "AudioReverbDoorway",
+			.label = "Audio Reverb Doorway",
+			.blurb = "The Audio Yard's shed alone on a ground slab, with a listener and an emitter inside, for the doorway measurements",
+			.setup = &audio_doorway_scene_setup,
 			.group = world_group::probe,
 		},
 		world_entry{

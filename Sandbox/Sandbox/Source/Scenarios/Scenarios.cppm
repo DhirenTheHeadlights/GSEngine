@@ -1248,7 +1248,8 @@ export namespace sandbox::scenarios {
 		.frames = 600,
 	},
 		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_radial_cubes>{ 6 },
-		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 }
+		= gse::scenario::pin<^^ss::dev_spawn::stress, ^^stress_scene_params::tumbler_axial_cubes>{ 12 },
+		= gse::scenario::pin<^^gse::audio::data::reverb, ^^gse::audio::reverb_settings::enabled>{ false }
 	]]
 	auto audio_contact_stress(
 		gse::scenario::context& ctx
@@ -1336,6 +1337,74 @@ export namespace sandbox::scenarios {
 		= gse::scenario::pin<^^gse::audio::data::trace_contacts>{ true }
 	]]
 	auto audio_roll_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_reverb_probe",
+		.scene = "AudioReverb",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 720,
+	},
+		= gse::scenario::pin<^^gse::audio::data::reverb, ^^gse::audio::reverb_settings::trace>{ true }
+	]]
+	auto audio_reverb_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_reverb_doorway_probe",
+		.scene = "AudioReverbDoorway",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 1320,
+	},
+		= gse::scenario::pin<^^gse::audio::data::reverb, ^^gse::audio::reverb_settings::trace>{ true }
+	]]
+	auto audio_reverb_doorway_probe(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_reverb_doorway_probe_dry",
+		.scene = "AudioReverbDoorway",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 1320,
+	},
+		= gse::scenario::pin<^^gse::audio::data::reverb, ^^gse::audio::reverb_settings::enabled>{ false }
+	]]
+	auto audio_reverb_doorway_probe_dry(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_reverb_stress_device",
+		.scene = "AudioReverbHall",
+		.gpu_solver = false,
+		.pacing = gse::scenario::pacing::wall_clock,
+		.warmup_frames = 0,
+		.frames = 1000,
+	},
+		= gse::scenario::pin<^^gse::audio::data::reverb, ^^gse::audio::reverb_settings::trace>{ true }
+	]]
+	auto audio_reverb_stress_device(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
+	[[= gse::scenario::info{
+		.name = "audio_reverb_flight",
+		.scene = "AudioReverbHall",
+		.headless = true,
+		.gpu_solver = false,
+		.warmup_frames = 0,
+		.frames = 600,
+	}]]
+	auto audio_reverb_flight(
 		gse::scenario::context& ctx
 	) -> gse::async::task<>;
 }

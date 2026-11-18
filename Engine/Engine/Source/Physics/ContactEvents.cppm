@@ -33,6 +33,12 @@ export namespace gse::physics {
 	public:
 		static constexpr std::uint64_t release_steps = 3;
 
+		auto set_active(
+			bool active
+		) -> void;
+
+		auto active() const -> bool;
+
 		template <typename Body>
 		auto fold(
 			std::span<const vbd::contact_constraint> contacts,
@@ -113,6 +119,8 @@ export namespace gse::physics {
 		std::vector<read_body> m_read_bodies;
 		std::uint64_t m_closed = 0;
 		std::uint64_t m_emitted_step = 0;
+		bool m_active = false;
+		bool m_primed = false;
 	};
 }
 

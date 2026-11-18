@@ -633,6 +633,8 @@ auto sandbox::audio_yard_scene_setup(gse::scene& s) -> void {
 	s.build(dropped)
 		.with<gse::audio::contact_sound_component>(audio_contact_sound());
 
+	spawn_audio_yard_shed(s);
+
 	camera_listener::spawn(s);
 
 	s.build("Audio Yard Camera")

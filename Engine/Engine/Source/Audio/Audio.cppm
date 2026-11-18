@@ -15,6 +15,8 @@ export import :contact;
 export import :material;
 export import :mixer;
 export import :modal;
+export import :reverb_network;
+export import :room;
 export import :spatial;
 export import :wav;
 
@@ -121,6 +123,26 @@ export namespace gse::audio {
 		impulse delivered;
 	};
 
+	struct reverb_settings {
+		[[
+			= settings::describe<
+				"Give positioned sounds the reverberation of the space around the listener, traced "
+				"against the physics colliders. Off leaves every sound dry."
+			>{},
+			= settings::hot_reloadable
+		]]
+		bool enabled = true;
+
+		[[
+			= settings::describe<
+				"Log the room estimate on every fixed step that traces it: mean free path, mean "
+				"absorption, enclosed share, volume, decay time and send. The reverb probe scenario "
+				"pins it on; it is a line a step, so it is off otherwise."
+			>{}
+		]]
+		bool trace = false;
+	};
+
 	struct [[
 		= system_state<"Audio">{},
 		= settings::category<"Audio">{},
@@ -162,6 +184,14 @@ export namespace gse::audio {
 		]]
 		bool rub_sounds = true;
 
+		[[
+			= settings::describe<
+				"Reverberation from the listener's surroundings. Switched off to hear a scene dry, "
+				"and traced by the reverb probe scenario."
+			>{}
+		]]
+		reverb_settings reverb;
+
 		launch::audio_output mode = launch::audio_output::device;
 		std::unique_ptr<mixer> output;
 		device_ptr device;
@@ -180,6 +210,7 @@ export namespace gse::audio {
 		std::uint64_t frames_run = 0;
 		std::uint64_t rubbed_step = 0;
 		std::uint32_t peak_rub_voices = 0;
+		room surroundings;
 	};
 
 	[[= system_init{}]]
@@ -194,6 +225,7 @@ export namespace gse::audio {
 		shared_view<physics::data> phys_s,
 		shared_view<asset::data> assets_s,
 		channel_read<play_request, play_tone_request, stop_request, offline_sink_request, physics::contact_event> requests_in,
+		channel_write<physics::contact_interest_request> interest_out,
 		read<listener_component> listeners,
 		write<contact_sound_component> contact_sounds,
 		write<acoustic_material_component> materials,
@@ -242,6 +274,18 @@ namespace gse::audio {
 		const std::array<id, 2>& unheard,
 		const vec3<current_position>& emitter_position
 	) -> float;
+
+	auto room_radius(
+		const data& d
+	) -> length;
+
+	auto tune_room(
+		data& d,
+		const scene_listener& listener,
+		std::uint64_t physics_step,
+		const write<acoustic_material_component>& materials,
+		shared_view<asset::data> assets
+	) -> void;
 
 	auto locate(
 		data& d,

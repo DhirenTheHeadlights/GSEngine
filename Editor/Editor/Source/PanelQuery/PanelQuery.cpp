@@ -526,6 +526,10 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		const bool ready = agent::summary_ready(chat);
 		field(out, "summary", ready ? "ready" : "none");
 		field(out, "goal_chat", agent::goal_chat(chat) ? "1" : "0");
+		field(out, "origin", enum_to_string(chat.kind));
+		if (chat.goal) {
+			field(out, "goal_stage", enum_to_string(chat.goal->stage));
+		}
 		field(out, "view", chat.mode == agent::transcript_mode::summary && ready ? "summary" : chat.mode == agent::transcript_mode::everything ? "everything" : "transcript");
 		field(out, "toggle", ready ? "shown" : "hidden");
 		if (!chat.model_id.empty()) {
@@ -538,6 +542,7 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 		}
 		if (chat.gate) {
 			field(out, "awaiting_gate", enum_to_string(chat.gate->from));
+			field(out, "gate_stage", enum_to_string(chat.gate->stage));
 		}
 		if (chat.question && !chat.question->answered) {
 			field(out, "awaiting_answer", chat.question->question);
@@ -792,11 +797,10 @@ auto gse::ide::write_agent(const panel_sources& src, const std::uint32_t rows, s
 
 	section(out, "criteria");
 	for (const agent::session& chat : src.chats.sessions) {
-		const agent::goal_state* shown = agent::shown_goal(chat);
-		if (!shown) {
+		if (!chat.goal) {
 			continue;
 		}
-		for (const agent::criterion_report& criterion : shown->criteria) {
+		for (const agent::criterion_report& criterion : chat.goal->criteria) {
 			if (judged >= rows) {
 				break;
 			}

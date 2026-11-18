@@ -22,10 +22,15 @@ export namespace gse::audio {
 
 	auto head_radius() -> length;
 
+	auto occlusion_gain(
+		float occluded
+	) -> float;
+
 	struct emission {
 		vec3<current_position> position;
 		vec3<velocity> velocity;
 		float occluded = 0.f;
+		length room_radius;
 	};
 
 	auto place(

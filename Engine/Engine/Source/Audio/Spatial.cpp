@@ -17,9 +17,14 @@ auto gse::audio::head_radius() -> length {
 	return centimeters(8.75f);
 }
 
+auto gse::audio::occlusion_gain(const float occluded) -> float {
+	constexpr float blocked_gain = 0.355f;
+
+	return std::pow(blocked_gain, occluded);
+}
+
 auto gse::audio::place(const physics::transform_component& listener, const emission& source, const listening_mode listening) -> placement {
 	constexpr float fastest_approach = 0.5f;
-	constexpr float blocked_gain = 0.355f;
 	const length near_field = meters(1.f);
 	const length coincident = millimeters(1.f);
 	const length absorption_reference = meters(10.f);
@@ -35,7 +40,8 @@ auto gse::audio::place(const physics::transform_component& listener, const emiss
 	const velocity receding = apart ? dot(source.velocity, offset) / distance : velocity{};
 	const velocity closing_limit = speed_of_sound() * -fastest_approach;
 
-	const float attenuation = near_field / heard * std::pow(blocked_gain, source.occluded);
+	const float attenuation = near_field / heard * occlusion_gain(source.occluded);
+	const float room_send = source.room_radius > length{} ? source.room_radius / std::max(distance, source.room_radius) * occlusion_gain(source.occluded) : 0.f;
 	const time travel = distance / (speed_of_sound() + std::max(receding, closing_limit));
 	const frequency shadow_corner = speed_of_sound() / (head_radius() * std::numbers::pi_v<float>);
 	const frequency air_cutoff = absorption_reference_cutoff * std::sqrt(absorption_reference / heard);
@@ -48,6 +54,7 @@ auto gse::audio::place(const physics::transform_component& listener, const emiss
 			.right = { .delay = travel, .gain = percentage<float>::fraction(sin(pan) * attenuation) },
 			.shadow_corner = shadow_corner,
 			.absorption_cutoff = absorption_cutoff,
+			.send = room_send,
 		};
 	}
 
@@ -72,5 +79,6 @@ auto gse::audio::place(const physics::transform_component& listener, const emiss
 		.right = ear_facing(side),
 		.shadow_corner = shadow_corner,
 		.absorption_cutoff = absorption_cutoff,
+		.send = room_send,
 	};
 }

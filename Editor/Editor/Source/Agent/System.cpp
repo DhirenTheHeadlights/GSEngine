@@ -30,7 +30,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	if (std::ranges::none_of(d.sessions, is_chat)) {
-		create_session(d, config::primary().project_root, task_phase::scope);
+		create_session(d, config::primary().project_root, chat_kind::chat);
 	}
 
 	for (session& s : d.sessions) {
@@ -67,7 +67,7 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	const auto starts = authenticated ? std::exchange(d.token_pending_starts, {}) : std::vector<start_request>{};
 	const auto syncs = authenticated ? std::exchange(d.token_pending_syncs, {}) : std::vector<sync_request>{};
 	for (const start_request& request : starts) {
-		session& started = create_session(d, request.cwd, task_phase::apply);
+		session& started = create_session(d, request.cwd, chat_kind::chat, task_phase::apply);
 		if (!launch_session(started)) {
 			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' - is it on PATH?");
 			d.sessions.pop_back();

@@ -238,7 +238,8 @@ namespace gse::ide {
 	auto reopen_panel(
 		editor_app::data& d,
 		dock_view& fallback,
-		const dock_insert& otherwise
+		const dock_insert& otherwise,
+		bool activate
 	) -> void;
 
 	auto toggle_panel(
@@ -278,7 +279,8 @@ namespace gse::ide {
 	) -> dock_tree;
 
 	auto open_session_layout(
-		editor_app::data& d
+		editor_app::data& d,
+		bool activate
 	) -> void;
 
 	auto close_session_layout(
@@ -754,13 +756,13 @@ auto gse::ide::build_session_tree(const build_runner::play_session& session) -> 
 	return tree;
 }
 
-auto gse::ide::open_session_layout(editor_app::data& d) -> void {
+auto gse::ide::open_session_layout(editor_app::data& d, const bool activate) -> void {
 	reopen_panel(d, primary_view(d), {
 		.panel = find_or_generate_id(game_panel_name),
 		.target = any_leaf(primary_view(d).tree),
 		.location = gui::dock::location::right,
 		.ratio = 0.5f,
-	});
+	}, activate);
 }
 
 auto gse::ide::close_session_layout(editor_app::data& d) -> void {
@@ -936,7 +938,7 @@ auto gse::ide::unpin_panel(editor_app::data& d, dock_view& v, const id panel) ->
 		.panel = panel,
 		.target = any_leaf(v.tree),
 		.location = gui::dock::location::center,
-	});
+	}, true);
 }
 
 auto gse::ide::panels_menu_items(const editor_app::data& d, const dock_view& v, const std::span<const panel_desc> panels, const id target) -> std::vector<gui::menu_item> {
@@ -995,7 +997,7 @@ auto gse::ide::close_panel(editor_app::data& d, dock_view& v, const id panel) ->
 	}
 }
 
-auto gse::ide::reopen_panel(editor_app::data& d, dock_view& fallback, const dock_insert& otherwise) -> void {
+auto gse::ide::reopen_panel(editor_app::data& d, dock_view& fallback, const dock_insert& otherwise, const bool activate) -> void {
 	const id panel = otherwise.panel;
 	if (std::ranges::any_of(d.views, [&d, panel](const dock_view& v) {
 		return hosts_panel(d, v, panel);
@@ -1013,14 +1015,18 @@ auto gse::ide::reopen_panel(editor_app::data& d, dock_view& fallback, const dock
 					.location = anchor->location,
 					.ratio = anchor->ratio,
 				});
-				activate_panel(v.tree, panel);
+				if (activate) {
+					activate_panel(v.tree, panel);
+				}
 				return;
 			}
 		}
 	}
 
 	insert_panel(fallback.tree, otherwise);
-	activate_panel(fallback.tree, panel);
+	if (activate) {
+		activate_panel(fallback.tree, panel);
+	}
 }
 
 auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
@@ -1034,7 +1040,7 @@ auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -
 			.panel = panel,
 			.target = any_leaf(v.tree),
 			.location = gui::dock::location::center,
-		});
+		}, true);
 	}
 	else if (panel_count(v.tree) > 1 || is_popout(v)) {
 		close_panel(d, v, panel);
@@ -1067,7 +1073,7 @@ auto gse::ide::reveal_panel(editor_app::data& d, const channel_write<window_focu
 			.panel = target,
 			.target = any_leaf(host.tree),
 			.location = gui::dock::location::center,
-		});
+		}, true);
 	}
 	else {
 		activate_panel(host.tree, target);
@@ -1640,7 +1646,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	}
 
 	if (!d.session_dismissed && (session_live || build_d.building_session || !d.session_error.empty())) {
-		open_session_layout(d);
+		open_session_layout(d, !build_d.agent_session);
 	}
 	d.game_panel_open = contains_panel(primary_view(d).tree, find_or_generate_id(game_panel_name));
 
@@ -1708,7 +1714,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
-			});
+			}, true);
 		}
 	}
 
@@ -1767,7 +1773,7 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
-			});
+			}, true);
 		}
 	}
 

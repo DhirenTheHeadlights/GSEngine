@@ -16,6 +16,17 @@ auto gse::physics::contact_tracker::key_of(const loaded_pair& pair) -> std::pair
 	return { pair.body_a.number(), pair.body_b.number() };
 }
 
+auto gse::physics::contact_tracker::set_active(const bool active) -> void {
+	if (active && !m_active) {
+		clear();
+	}
+	m_active = active;
+}
+
+auto gse::physics::contact_tracker::active() const -> bool {
+	return m_active;
+}
+
 auto gse::physics::contact_tracker::absorb(pair_load& into, const pair_load& from) -> void {
 	into.impulse += from.impulse;
 	into.point += (from.point - into.point) * (from.impulse / into.impulse);
@@ -124,8 +135,9 @@ auto gse::physics::contact_tracker::merge_step() -> void {
 
 auto gse::physics::contact_tracker::close_step(const std::uint64_t step, std::vector<contact_event>& out) -> void {
 	++m_closed;
-	const bool fresh_step = step > m_emitted_step;
+	const bool fresh_step = m_primed && step > m_emitted_step;
 	m_emitted_step = std::max(m_emitted_step, step);
+	m_primed = true;
 
 	merge_step();
 
@@ -177,4 +189,5 @@ auto gse::physics::contact_tracker::clear() -> void {
 	m_carried.clear();
 	m_arrests.clear();
 	m_read_bodies.clear();
+	m_primed = false;
 }

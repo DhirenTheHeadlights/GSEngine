@@ -72,7 +72,7 @@ struct phase_run {
 };
 ```
 
-`session` gains `std::vector<phase_run> runs`, plus `std::optional<phase_gate> gate` for a transition awaiting approval and `std::optional<phase_gate> pending_transition` for one that is granted but not yet performed. The current phase is `runs.back().phase` rather than a field of its own, so the two cannot disagree; a session with no runs reads as `apply`, which is exactly how chats behaved before phases existed, so archives written at version 5 keep working without migration.
+`session` gains `std::vector<phase_run> runs`, plus `std::optional<phase_gate> gate` for a reported transition, whose `transition_stage` is `held` while it awaits approval and `approved` once it is granted but not yet performed. The current phase is `runs.back().phase` rather than a field of its own, so the two cannot disagree; a session with no runs reads as `apply`, which is exactly how chats behaved before phases existed, so archives written at version 5 keep working without migration.
 
 `agent_id` in `session_info` stays the id of the *running* process — the CLI reports it, so it is the authority — and `track_run_id` copies it onto the current run as history. `sessions_version` goes 5 to 6.
 
@@ -84,7 +84,7 @@ A transition is requested by the model and granted by the editor. The model cann
 
 `gse_phase_done({ summary, findings? })` in `Tools/gse-mcp/server.mjs` rides the same file inbox as `gse_build` and `gse_hibernate`: the tool writes a report under `phases/`, `accept_phase_reports` picks it up in the editor's own tick, and the reply comes back through `build_inbox::publish` as the tool's result. No new endpoint, and the existing `gse_hibernate` flow is the working precedent for an agent telling the editor to change its state.
 
-A granted transition is **not** performed immediately. Relaunching while the agent is mid-turn would kill it inside a tool call and leave a resumed session with a truncated `tool_use` block, so the editor records `pending_transition` and `service_phase` performs it on the first tick where the turn has ended. The tool result tells the agent to end its turn, and the phase changes as soon as it does.
+A granted transition is **not** performed immediately. Relaunching while the agent is mid-turn would kill it inside a tool call and leave a resumed session with a truncated `tool_use` block, so the editor marks the gate `approved` and `service_phase` performs it on the first tick where the turn has ended. The tool result tells the agent to end its turn, and the phase changes as soon as it does.
 
 This is why the transition signal is an MCP tool rather than `ExitPlanMode`: answering `ExitPlanMode` properly means implementing the stream-json control protocol as a permission host, and the gate belongs in the editor's own UI either way.
 

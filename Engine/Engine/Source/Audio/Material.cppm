@@ -26,11 +26,12 @@ export namespace gse {
 			= asset_format::source_dir<"Acoustics">{},
 			= asset_format::source_exts<".acoustic">{},
 			= asset_format::magic<0x4741434D>{},
-			= asset_format::version<1>{}
+			= asset_format::version<2>{}
 		]] baked {
 			density mass_density;
 			elastic_modulus young_modulus;
 			float poisson_ratio = 0.f;
+			float absorption = 0.f;
 			inverse_time mass_damping;
 			time stiffness_damping;
 			std::vector<acoustic_box> boxes;

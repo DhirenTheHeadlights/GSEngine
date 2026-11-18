@@ -6,6 +6,8 @@ import gse.concurrency;
 import gse.core;
 import gse.math;
 
+import :reverb_network;
+
 export namespace gse::audio {
 	constexpr std::uint32_t voice_capacity = 256;
 	constexpr std::uint32_t output_channels = 2;
@@ -25,6 +27,7 @@ export namespace gse::audio {
 		ear right;
 		frequency shadow_corner;
 		frequency absorption_cutoff;
+		float send = 0.f;
 	};
 
 	struct start_clip {
@@ -93,6 +96,11 @@ export namespace gse::audio {
 		std::uint32_t ramp_frames = 0;
 	};
 
+	struct tune_reverb {
+		reverb_setting setting;
+		std::uint32_t ramp_frames = 0;
+	};
+
 	using voice_command = std::variant<start_clip, start_tone, stop_voice, move_voice, start_ringing, strike_voice, start_rubbing, rub_voice, fade_rub>;
 
 	class mixer {
@@ -101,6 +109,10 @@ export namespace gse::audio {
 
 		auto submit(
 			const voice_command& command
+		) -> bool;
+
+		auto submit(
+			const tune_reverb& command
 		) -> bool;
 
 		auto take_finished(
@@ -134,6 +146,7 @@ export namespace gse::audio {
 			ear_arrival left;
 			ear_arrival right;
 			float damping = 0.f;
+			float send = 0.f;
 		};
 
 		struct ear_filter {
@@ -196,6 +209,8 @@ export namespace gse::audio {
 		static constexpr std::size_t finished_capacity = 512;
 		static constexpr std::uint32_t delay_line_frames = 1u << 15;
 		static constexpr std::size_t chunk_frames = 256;
+		static constexpr std::size_t reverb_feed_frames = 1u << 14;
+		static constexpr std::size_t reverb_command_capacity = 16;
 
 		static auto arrival_of(
 			const ear& at
@@ -238,7 +253,8 @@ export namespace gse::audio {
 
 		auto mix_placed(
 			std::uint32_t slot,
-			std::span<float> out
+			std::span<float> out,
+			std::span<float> reverb_feed
 		) -> bool;
 
 		static auto advance(
@@ -360,5 +376,8 @@ export namespace gse::audio {
 		std::vector<float> m_delay_lines;
 		spsc_ring_buffer<voice_command, command_capacity> m_commands;
 		spsc_ring_buffer<std::uint32_t, finished_capacity> m_finished;
+		reverb_network m_reverb;
+		std::vector<float> m_reverb_feed;
+		spsc_ring_buffer<tune_reverb, reverb_command_capacity> m_reverb_commands;
 	};
 }

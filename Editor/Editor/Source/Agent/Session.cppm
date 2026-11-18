@@ -90,7 +90,8 @@ namespace gse::ide::agent {
 	auto create_session(
 		data& d,
 		const std::filesystem::path& cwd,
-		task_phase starting
+		chat_kind origin,
+		std::optional<task_phase> starting = std::nullopt
 	) -> session&;
 
 	auto create_sync_session(

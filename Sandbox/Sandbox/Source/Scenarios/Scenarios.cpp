@@ -88,6 +88,15 @@ namespace sandbox::scenarios {
 		audio_rub_probe probe
 	) -> gse::async::task<>;
 
+	struct audio_reverb_visit {
+		audio_reverb_station station = audio_reverb_station::wood;
+		std::uint64_t ring_frames = 0;
+	};
+
+	auto run_audio_doorway_script(
+		gse::scenario::context& ctx
+	) -> gse::async::task<>;
+
 	auto capture_parity_frame(
 		gse::scenario::context& ctx,
 		std::string_view name,
@@ -2306,6 +2315,333 @@ auto sandbox::scenarios::run_audio_rub_launches(gse::scenario::context& ctx, con
 		co_await gse::scenario::wait_frames(ctx, quiet_frames);
 	}
 	gse::log::println(gse::log::category::general, "{}: finished frame {}", probe.label, ctx.frame());
+}
+
+auto sandbox::scenarios::audio_reverb_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t gap_frames = 15;
+	constexpr std::uint64_t settle_frames = 10;
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+	const auto emitter = gse::find_or_generate_id(audio_reverb_emitter);
+	const std::array visits{
+		audio_reverb_visit{ .station = audio_reverb_station::wood, .ring_frames = 150 },
+		audio_reverb_visit{ .station = audio_reverb_station::cork, .ring_frames = 90 },
+		audio_reverb_visit{ .station = audio_reverb_station::open, .ring_frames = 60 },
+	};
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto listener = listeners[0];
+	gse::log::println(
+		gse::log::category::general,
+		"audio_reverb_probe: speed of sound {:.2f}, fixed step {:.6f:ms}",
+		gse::audio::speed_of_sound(),
+		gse::system_clock::fixed_dt()
+	);
+
+	ctx.channels().push<prefetch_audio_reverb_request>({});
+	co_await wait_for_ambient_clips(ctx);
+
+	gse::log::println(gse::log::category::general, "audio_reverb_probe: sync frame {} pitch {:.1f:Hz}", ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	if (const auto* handle = sync.try_get(); ctx.expect(handle != nullptr)) {
+		ctx.channels().push<gse::audio::stop_request>({
+			.handle = *handle,
+		});
+	}
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	for (const auto& [station, ring_frames] : visits) {
+		const auto heard_from = audio_reverb_listener_position(station);
+		const auto sounded_at = audio_reverb_emitter_position(station);
+		ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+			.target = listener,
+			.value = heard_from,
+		});
+		ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+			.target = emitter,
+			.value = sounded_at,
+		});
+		co_await gse::scenario::wait_frames(ctx, settle_frames);
+
+		gse::log::println(
+			gse::log::category::general,
+			"audio_reverb_probe: station {} frame {} interior {:.3f} lining {} listener {:.3f} emitter {:.3f} frames {}",
+			station,
+			ctx.frame(),
+			audio_reverb_room_size(),
+			station == audio_reverb_station::open ? std::string("none") : audio_reverb_lining(station),
+			heard_from,
+			sounded_at,
+			ring_frames
+		);
+		ctx.channels().push<play_audio_reverb_knock_request>({
+			.emitter = emitter,
+		});
+		co_await gse::scenario::wait_frames(ctx, ring_frames);
+		gse::log::println(gse::log::category::general, "audio_reverb_probe: station {} closed frame {}", station, ctx.frame());
+		co_await gse::scenario::wait_frames(ctx, gap_frames);
+	}
+}
+
+auto sandbox::scenarios::audio_reverb_doorway_probe(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_doorway_script(ctx);
+}
+
+auto sandbox::scenarios::audio_reverb_doorway_probe_dry(gse::scenario::context& ctx) -> gse::async::task<> {
+	co_await run_audio_doorway_script(ctx);
+}
+
+auto sandbox::scenarios::run_audio_doorway_script(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::string_view label = "audio_reverb_doorway_probe";
+	constexpr std::uint64_t sync_frames = 15;
+	constexpr std::uint64_t gap_frames = 15;
+	constexpr std::uint64_t settle_frames = 10;
+	constexpr std::uint64_t ring_frames = 120;
+	constexpr std::uint64_t jump_after_frames = 6;
+	constexpr std::uint64_t away_frames = 90;
+	constexpr std::uint64_t lead_frames = 30;
+	constexpr std::uint64_t travel_frames = 236;
+	constexpr std::array harmonics{ 1.f, 2.f, 3.f, 5.f, 7.f, 10.f, 14.f, 20.f, 28.f, 40.f, 56.f, 80.f };
+	const auto fundamental = gse::hertz(100.f);
+	const auto harmonic_gain = gse::percentage<float>::fraction(0.05f);
+	const auto sync_pitch = gse::hertz(1000.f);
+	const auto sync_gain = gse::percentage<float>::fraction(0.5f);
+	const auto still = gse::meters_per_second(0.f);
+	const auto outward = gse::vec3<gse::velocity>(still, still, gse::meters_per_second(1.4f));
+	const auto level = gse::meters(0.f);
+	const auto room = audio_doorway_room();
+	const auto emitter = gse::find_or_generate_id(audio_doorway_emitter);
+	const auto inside = audio_doorway_listener_position();
+	const auto leaving_from = audio_doorway_threshold() + gse::vec3<gse::displacement>(level, level, gse::meters(-0.3f));
+	const auto walking_from = audio_doorway_threshold() + gse::vec3<gse::displacement>(level, level, gse::meters(-2.5f));
+	const auto far_away = audio_doorway_threshold() + gse::vec3<gse::displacement>(gse::meters(200.f), level, level);
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto listener = listeners[0];
+	const auto stand_at = [&](const gse::vec3<gse::position>& at) {
+		ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+			.target = listener,
+			.value = at,
+		});
+	};
+	const auto walked = [&](const gse::vec3<gse::position>& from, const std::uint64_t step) {
+		return from + outward * (gse::system_clock::fixed_dt() * static_cast<float>(step));
+	};
+	gse::log::println(
+		gse::log::category::general,
+		"{}: speed of sound {:.2f}, fixed step {:.6f:ms}, interior {:.3f} lining {} doorway {:.3f} by {:.3f}",
+		label,
+		gse::audio::speed_of_sound(),
+		gse::system_clock::fixed_dt(),
+		room.interior,
+		room.lining,
+		room.doorway,
+		room_door_height()
+	);
+
+	ctx.channels().push<prefetch_audio_reverb_request>({});
+	co_await wait_for_ambient_clips(ctx);
+
+	gse::log::println(gse::log::category::general, "{}: sync frame {} pitch {:.1f:Hz}", label, ctx.frame(), sync_pitch);
+	const auto sync = ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = sync_gain,
+	});
+	co_await gse::scenario::wait_frames(ctx, sync_frames);
+	if (const auto* handle = sync.try_get(); ctx.expect(handle != nullptr)) {
+		ctx.channels().push<gse::audio::stop_request>({
+			.handle = *handle,
+		});
+	}
+	ctx.channels().push<gse::audio::play_tone_request>({
+		.pitch = sync_pitch,
+		.gain = gse::percentage<float>::fraction(0.f),
+		.emitter = emitter,
+	});
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	stand_at(inside);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	gse::log::println(
+		gse::log::category::general,
+		"{}: inside frame {} listener {:.3f} emitter {:.3f} frames {}",
+		label,
+		ctx.frame(),
+		inside,
+		audio_doorway_emitter_position(),
+		ring_frames
+	);
+	ctx.channels().push<play_audio_reverb_knock_request>({
+		.emitter = emitter,
+	});
+	co_await gse::scenario::wait_frames(ctx, ring_frames + gap_frames);
+
+	stand_at(leaving_from);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	gse::log::println(
+		gse::log::category::general,
+		"{}: stay frame {} listener {:.3f} frames {}",
+		label,
+		ctx.frame(),
+		leaving_from,
+		ring_frames
+	);
+	ctx.channels().push<play_audio_reverb_knock_request>({
+		.emitter = emitter,
+	});
+	co_await gse::scenario::wait_frames(ctx, ring_frames + gap_frames);
+
+	gse::log::println(
+		gse::log::category::general,
+		"{}: leave frame {} listener {:.3f} velocity {:.3f} frames {}",
+		label,
+		ctx.frame(),
+		leaving_from,
+		outward,
+		ring_frames
+	);
+	ctx.channels().push<play_audio_reverb_knock_request>({
+		.emitter = emitter,
+	});
+	for (std::uint64_t step = 1; step <= ring_frames; ++step) {
+		stand_at(walked(leaving_from, step));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+	co_await gse::scenario::wait_frames(ctx, gap_frames);
+
+	stand_at(inside);
+	co_await gse::scenario::wait_frames(ctx, settle_frames);
+	gse::log::println(
+		gse::log::category::general,
+		"{}: jump frame {} listener {:.3f} frames {}",
+		label,
+		ctx.frame(),
+		inside,
+		jump_after_frames + away_frames
+	);
+	ctx.channels().push<play_audio_reverb_knock_request>({
+		.emitter = emitter,
+	});
+	co_await gse::scenario::wait_frames(ctx, jump_after_frames);
+	stand_at(far_away);
+	gse::log::println(gse::log::category::general, "{}: jumped frame {} listener {:.3f}", label, ctx.frame(), far_away);
+	co_await gse::scenario::wait_frames(ctx, away_frames);
+	stand_at(walking_from);
+	gse::log::println(gse::log::category::general, "{}: returned frame {} listener {:.3f}", label, ctx.frame(), walking_from);
+	co_await gse::scenario::wait_frames(ctx, gap_frames + settle_frames);
+
+	gse::log::println(
+		gse::log::category::general,
+		"{}: walk frame {} listener {:.3f} velocity {:.3f} lead {} travel {}, {} harmonics of {:.1f:Hz}",
+		label,
+		ctx.frame(),
+		walking_from,
+		outward,
+		lead_frames,
+		travel_frames,
+		harmonics.size(),
+		fundamental
+	);
+	for (const float harmonic : harmonics) {
+		ctx.channels().push<gse::audio::play_tone_request>({
+			.pitch = fundamental * harmonic,
+			.gain = harmonic_gain,
+			.emitter = emitter,
+		});
+	}
+	co_await gse::scenario::wait_frames(ctx, lead_frames);
+	for (std::uint64_t step = 1; step <= travel_frames; ++step) {
+		stand_at(walked(walking_from, step));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+	gse::log::println(gse::log::category::general, "{}: turned frame {}", label, ctx.frame());
+	for (std::uint64_t step = travel_frames; step > 0; --step) {
+		stand_at(walked(walking_from, step - 1));
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
+	co_await gse::scenario::wait_frames(ctx, lead_frames);
+	gse::log::println(gse::log::category::general, "{}: finished frame {}", label, ctx.frame());
+}
+
+auto sandbox::scenarios::audio_reverb_stress_device(gse::scenario::context& ctx) -> gse::async::task<> {
+	constexpr std::chrono::milliseconds frame_pause(16);
+
+	co_await gse::scenario::wait_settled(ctx);
+	ctx.channels().push<prefetch_audio_modal_request>({});
+	ctx.channels().push<prefetch_audio_reverb_request>({});
+	co_await wait_for_ambient_clips(ctx);
+	ctx.channels().push<spawn_audio_modal_field_request>({});
+	gse::log::println(
+		gse::log::category::general,
+		"audio_reverb_stress_device: frame {}, a field of {} hopping bars requested in a hall of {:.3f}, {} listeners",
+		ctx.frame(),
+		audio_modal_field_bars,
+		audio_reverb_hall_size(),
+		ctx.owners<gse::audio::listener_component>().size()
+	);
+	while (true) {
+		co_await gse::scenario::wait_frames(ctx, 1);
+		std::this_thread::sleep_for(frame_pause);
+	}
+}
+
+auto sandbox::scenarios::audio_reverb_flight(gse::scenario::context& ctx) -> gse::async::task<> {
+	const auto flight_speed = gse::meters_per_second(24.f);
+	const auto turn_at = gse::meters(6.f);
+	const auto level = gse::meters(0.f);
+	const auto start = audio_reverb_hall_listener_position();
+	constexpr std::uint64_t flight_frames = 470;
+
+	co_await gse::scenario::wait_settled(ctx);
+
+	const auto listeners = ctx.owners<gse::audio::listener_component>();
+	if (!ctx.expect(listeners.size() == 1)) {
+		co_return;
+	}
+	const auto listener = listeners[0];
+
+	ctx.channels().push<prefetch_audio_modal_request>({});
+	ctx.channels().push<prefetch_audio_reverb_request>({});
+	co_await wait_for_ambient_clips(ctx);
+	ctx.channels().push<spawn_audio_modal_field_request>({});
+	gse::log::println(
+		gse::log::category::general,
+		"audio_reverb_flight: frame {}, listener flying at {:.1f} between {:.1f} either side of {:.3f}, a field of {} hopping bars requested",
+		ctx.frame(),
+		flight_speed,
+		turn_at,
+		start,
+		audio_modal_field_bars
+	);
+
+	auto along = level;
+	auto heading = flight_speed;
+	for (std::uint64_t flown = 0; flown < flight_frames; ++flown) {
+		along += heading * gse::system_clock::fixed_dt();
+		if (along > turn_at || along < -turn_at) {
+			heading = -heading;
+		}
+		ctx.channels().push<gse::physics::set_request<^^gse::physics::transform_component::position>>({
+			.target = listener,
+			.value = start + gse::vec3<gse::displacement>(along, level, level),
+		});
+		co_await gse::scenario::wait_frames(ctx, 1);
+	}
 }
 
 auto sandbox::scenarios::audio_yard_listen(gse::scenario::context& ctx) -> gse::async::task<> {

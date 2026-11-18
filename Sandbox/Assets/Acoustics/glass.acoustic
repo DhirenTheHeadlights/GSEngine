@@ -2,6 +2,7 @@
 mass_density = 2500 kg/m^3
 young_modulus = 70 GPa
 poisson_ratio = 0.22
+absorption = 0.03
 mass_damping = 8 1/s
 stiffness_damping = 150 ns
 

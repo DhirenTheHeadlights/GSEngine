@@ -39,6 +39,22 @@ namespace gse::ide::agent {
 		const session& s
 	) -> task_phase;
 
+	auto reachable_phases(
+		chat_kind origin
+	) -> std::vector<task_phase>;
+
+	auto origin_cycle(
+		const session& s
+	) -> bool;
+
+	auto pursued(
+		const session& s
+	) -> bool;
+
+	auto gate_approved(
+		const session& s
+	) -> bool;
+
 	auto task_runs(
 		const session& s
 	) -> std::span<const phase_run>;

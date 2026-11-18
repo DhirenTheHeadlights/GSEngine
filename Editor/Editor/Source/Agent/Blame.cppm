@@ -68,13 +68,13 @@ namespace gse::ide::agent {
 		agent_state state
 	) -> state_style;
 
-	auto kind_of(
-		const session& s
-	) -> chat_kind;
-
 	auto style_of(
 		chat_kind kind
 	) -> kind_style;
+
+	auto look_of(
+		const session& s
+	) -> chat_look;
 
 	auto status_label(
 		const data& d,
