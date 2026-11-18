@@ -78,7 +78,7 @@ export namespace packer {
 namespace packer {
 	constexpr std::string_view listing_name = "gse.modules";
 	constexpr std::string_view link_name = "gse.link";
-	constexpr std::string_view vcpkg_prefix = "vcpkg_installed/";
+	constexpr std::string_view engine_prefix = "Engine/";
 	constexpr std::string_view verify_dir = ".verify";
 	constexpr std::string_view verify_marker = "sdk ok";
 	constexpr std::string_view consumer_dir = "Engine/cmake/SdkConsumer";
@@ -590,7 +590,7 @@ auto packer::stage_link_inputs(const image_plan& plan, transcript& out) -> std::
 	std::size_t vendored = 0;
 	for (const auto token : std::views::split(*inputs, ' ')) {
 		const std::string_view text(token);
-		if (!text.starts_with(vcpkg_prefix)) {
+		if (text.empty() || text.starts_with('-') || !text.contains('/') || text.starts_with(engine_prefix) || std::filesystem::path(text).is_absolute()) {
 			continue;
 		}
 		if (const auto copied = gse::fs::copy_file(plan.build_dir / text, plan.stage / text); !copied) {
