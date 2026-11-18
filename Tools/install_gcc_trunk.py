@@ -150,6 +150,12 @@ def link_current(tag: str) -> Path:
         # rmdir leaves a real directory in place ("The directory is not empty"), which is what
         # `current` becomes if anything ever copied a toolchain there instead of linking it.
         # mklink would then fail with a confusing "already exists", so clear it explicitly.
+        if os.path.lexists(link) and os.lstat(link).st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            print(f"{link} is a dangling link; unlinking it")
+            try:
+                os.rmdir(link)
+            except OSError:
+                os.unlink(link)
         if os.path.lexists(link):
             print(f"{link} is a real directory, not a junction; replacing it")
             force_remove_tree(link)

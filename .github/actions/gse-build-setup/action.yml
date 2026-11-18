@@ -75,7 +75,9 @@ runs:
       if: inputs.toolchain-archive == ''
       uses: actions/cache@v4
       with:
-        path: ~/.gcc-trunk
+        path: |
+          ~/.gcc-trunk
+          !~/.gcc-trunk/current
         key: gcc-trunk-${{ steps.resolve.outputs.toolchain }}
 
     # vcpkg's dependency tree is the expensive part of a cold run - bootstrap.py puts it
