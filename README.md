@@ -36,7 +36,7 @@ There is no registration call and no schema file beside it. The same approach co
 
 ### Units are types
 
-The component above stores a `vec3<velocity>` and a `force`, not floats. Dimensional analysis happens at compile time, across the whole engine:
+Notice the component above stores a `vec3<velocity>` and a `force`. Dimensional analysis happens at compile time, across the whole engine:
 
 ```cpp
 const velocity v = meters(10.f) / seconds(2.f);
@@ -44,7 +44,7 @@ const area a = meters(3.f) * meters(4.f);
 const auto wrong = meters(3.f) + seconds(1.f);  // does not compile
 ```
 
-Quantities stay typed through the physics solver and are only reduced to raw floats at the GPU boundary.
+Quantities stay typed through the physics solver and are only reduced to their primitives at the GPU boundary.
 
 ### One renderer, three backends
 
