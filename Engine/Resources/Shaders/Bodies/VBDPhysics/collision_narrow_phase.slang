@@ -251,8 +251,7 @@ FaceInfo find_best_face(float3 center, float3 he, float3 axes[3], float3 dir) {
 static const int MAX_CLIP_VERTS = 9;
 
 struct ActiveSides {
-    uint values[2];
-    uint count;
+    uint packed;
 };
 
 struct ClipVertexData {
@@ -354,37 +353,41 @@ FeatureDetail classify_feature(float3 center, float3 he, float3 axes[3], float3 
     return result;
 }
 
+uint side_value(ActiveSides sides, uint i) {
+    return (sides.packed >> (feature_side_shift * i)) & feature_side_none;
+}
+
+uint side_count(ActiveSides sides) {
+    return (side_value(sides, 0) != feature_side_none ? 1u : 0u) + (side_value(sides, 1) != feature_side_none ? 1u : 0u);
+}
+
 void init_active_sides(out ActiveSides sides) {
-    sides.values[0] = feature_side_none;
-    sides.values[1] = feature_side_none;
-    sides.count = 0;
+    sides.packed = feature_side_none | (feature_side_none << feature_side_shift);
 }
 
 void add_side(inout ActiveSides sides, uint side) {
     if (side == feature_side_none) return;
 
-    for (uint i = 0; i < sides.count; i++) {
-        if (sides.values[i] == side) return;
-    }
+    uint first = side_value(sides, 0);
+    if (first == side || side_value(sides, 1) == side) return;
 
-    if (sides.count >= 2) return;
-    sides.values[sides.count++] = side;
+    uint count = side_count(sides);
+    if (count >= 2) return;
 
-    if (sides.count == 2 && sides.values[1] < sides.values[0]) {
-        uint tmp = sides.values[0];
-        sides.values[0] = sides.values[1];
-        sides.values[1] = tmp;
+    if (count == 0) {
+        sides.packed = side | (feature_side_none << feature_side_shift);
+    } else {
+        sides.packed = min(first, side) | (max(first, side) << feature_side_shift);
     }
 }
 
 ActiveSides shared_sides(ActiveSides lhs, ActiveSides rhs) {
     ActiveSides shared;
     init_active_sides(shared);
-    for (uint i = 0; i < lhs.count; i++) {
-        for (uint j = 0; j < rhs.count; j++) {
-            if (lhs.values[i] == rhs.values[j]) {
-                add_side(shared, lhs.values[i]);
-            }
+    for (uint i = 0; i < 2; i++) {
+        uint value = side_value(lhs, i);
+        if (value != feature_side_none && (value == side_value(rhs, 0) || value == side_value(rhs, 1))) {
+            add_side(shared, value);
         }
     }
     return shared;
@@ -415,7 +418,8 @@ ActiveSides vertex_side_set(uint ordinal) {
 }
 
 uint feature_type_from_sides(ActiveSides sides) {
-    return sides.count == 0 ? feature_face : (sides.count == 1 ? feature_edge : feature_vertex);
+    uint count = side_count(sides);
+    return count == 0 ? feature_face : (count == 1 ? feature_edge : feature_vertex);
 }
 
 uint reference_edge_side_id(uint edge_index) {
@@ -602,7 +606,7 @@ ClippedFaceContacts build_clipped_face_contacts(
 }
 
 uint pack_feature_component(uint type, uint face, uint side0, uint side1) {
-    return (type << 24) | (face << 16) | (side0 << 8) | side1;
+    return (type << feature_type_shift) | (face << feature_index_shift) | (side0 << feature_side_shift) | side1;
 }
 
 bool feature_less(uint lhs_hi, uint lhs_lo, uint rhs_hi, uint rhs_lo) {
@@ -867,14 +871,14 @@ void build_feature_hi_lo_from_clip_vertex(
         feature_hi = pack_feature_component(
             feature_type_from_sides(vertex.reference_sides),
             clipped.reference_face,
-            vertex.reference_sides.values[0],
-            vertex.reference_sides.values[1]
+            side_value(vertex.reference_sides, 0),
+            side_value(vertex.reference_sides, 1)
         );
         feature_lo = pack_feature_component(
             feature_type_from_sides(vertex.incident_sides),
             clipped.incident_face,
-            vertex.incident_sides.values[0],
-            vertex.incident_sides.values[1]
+            side_value(vertex.incident_sides, 0),
+            side_value(vertex.incident_sides, 1)
         );
         return;
     }
@@ -882,14 +886,14 @@ void build_feature_hi_lo_from_clip_vertex(
     feature_hi = pack_feature_component(
         feature_type_from_sides(vertex.incident_sides),
         clipped.incident_face,
-        vertex.incident_sides.values[0],
-        vertex.incident_sides.values[1]
+        side_value(vertex.incident_sides, 0),
+        side_value(vertex.incident_sides, 1)
     );
     feature_lo = pack_feature_component(
         feature_type_from_sides(vertex.reference_sides),
         clipped.reference_face,
-        vertex.reference_sides.values[0],
-        vertex.reference_sides.values[1]
+        side_value(vertex.reference_sides, 0),
+        side_value(vertex.reference_sides, 1)
     );
 }
 
@@ -1257,6 +1261,772 @@ ContactResult shape_contacts(
     return result;
 }
 
+static const uint HULL_MAX_CLIP_VERTS = 16;
+static const float HULL_PARALLEL_EPSILON = 1e-6;
+static const float HULL_CLIP_EPSILON = 1e-4;
+static const float HULL_REFERENCE_FACE_MARGIN = 0.02;
+static const uint box_face_loop[24] = { 1, 3, 7, 5, 0, 4, 6, 2, 2, 6, 7, 3, 0, 1, 5, 4, 4, 5, 7, 6, 0, 2, 3, 1 };
+static const uint box_edge_lo[12] = { 0, 2, 4, 6, 0, 1, 4, 5, 0, 1, 2, 3 };
+static const uint box_edge_hi[12] = { 1, 3, 5, 7, 2, 3, 6, 7, 4, 5, 6, 7 };
+static const uint box_edge_face_lo[12] = { 3, 2, 3, 2, 1, 0, 1, 0, 1, 0, 1, 0 };
+static const uint box_edge_face_hi[12] = { 5, 5, 4, 4, 5, 5, 4, 4, 3, 3, 2, 2 };
+
+struct Polytope {
+    float3 center;
+    float3 axes[3];
+    float3 he;
+    uint base;
+    bool is_hull;
+    uint body_index;
+};
+
+Polytope make_polytope(uint kind, float3 center, float3 he, float3 axes[3], uint hull_offset, uint body_index) {
+    Polytope p;
+    p.center = center;
+    p.axes[0] = axes[0];
+    p.axes[1] = axes[1];
+    p.axes[2] = axes[2];
+    p.he = he;
+    p.base = hull_offset;
+    p.is_hull = kind == shape_hull;
+    p.body_index = body_index;
+    return p;
+}
+
+uint hull_word(Polytope p, uint index) {
+    return hull_data[p.base + index];
+}
+
+float3 hull_float3(Polytope p, uint index) {
+    return float3(asfloat(hull_word(p, index)), asfloat(hull_word(p, index + 1)), asfloat(hull_word(p, index + 2)));
+}
+
+float3 poly_to_world(Polytope p, float3 local) {
+    return p.axes[0] * local.x + p.axes[1] * local.y + p.axes[2] * local.z;
+}
+
+uint hull_index_mask() {
+    return (1u << hull_index_bits) - 1u;
+}
+
+uint poly_vertex_count(Polytope p) {
+    return p.is_hull ? hull_word(p, hull_vertex_count_index) : 8u;
+}
+
+float3 poly_to_local(Polytope p, float3 world) {
+    return float3(dot(p.axes[0], world), dot(p.axes[1], world), dot(p.axes[2], world));
+}
+
+float3 poly_local_vertex(Polytope p, uint v) {
+    if (p.is_hull) {
+        return hull_float3(p, hull_word(p, hull_vertices_index) + v * 4);
+    }
+    return float3(
+        (v & 1u) != 0 ? p.he.x : -p.he.x,
+        (v & 2u) != 0 ? p.he.y : -p.he.y,
+        (v & 4u) != 0 ? p.he.z : -p.he.z
+    );
+}
+
+float3 poly_world_vertex(Polytope p, uint v) {
+    return p.center + poly_to_world(p, poly_local_vertex(p, v));
+}
+
+uint poly_face_count(Polytope p) {
+    return p.is_hull ? hull_word(p, hull_face_count_index) : 6u;
+}
+
+float3 poly_world_normal(Polytope p, uint f) {
+    if (p.is_hull) {
+        return poly_to_world(p, hull_float3(p, hull_word(p, hull_planes_index) + f * 4));
+    }
+    return box_face_normal(p.axes, f);
+}
+
+float3 poly_local_normal(Polytope p, uint f) {
+    if (p.is_hull) {
+        return hull_float3(p, hull_word(p, hull_planes_index) + f * 4);
+    }
+    float s = (f & 1u) == 0 ? 1.0 : -1.0;
+    return f < 2 ? float3(s, 0, 0) : (f < 4 ? float3(0, s, 0) : float3(0, 0, s));
+}
+
+uint poly_face_first(Polytope p, uint f) {
+    return p.is_hull ? (hull_word(p, hull_word(p, hull_faces_index) + f) & hull_index_mask()) : f * 4;
+}
+
+uint poly_face_size(Polytope p, uint f) {
+    return p.is_hull ? (hull_word(p, hull_word(p, hull_faces_index) + f) >> hull_index_bits) : 4u;
+}
+
+uint poly_loop(Polytope p, uint k) {
+    if (p.is_hull) {
+        uint per_word = 32u / hull_index_bits;
+        return (hull_word(p, hull_word(p, hull_loops_index) + k / per_word) >> (hull_index_bits * (k % per_word))) & hull_index_mask();
+    }
+    return box_face_loop[k];
+}
+
+float3 poly_face_vertex(Polytope p, uint first, uint count, uint i) {
+    return poly_world_vertex(p, poly_loop(p, first + i % count));
+}
+
+uint poly_edge_count(Polytope p) {
+    return p.is_hull ? hull_word(p, hull_edge_count_index) : 12u;
+}
+
+void poly_edge(Polytope p, uint e, out uint lo, out uint hi) {
+    if (p.is_hull) {
+        uint edge = hull_word(p, hull_word(p, hull_edges_index) + e);
+        lo = edge & hull_index_mask();
+        hi = edge >> hull_index_bits;
+        return;
+    }
+    lo = box_edge_lo[e];
+    hi = box_edge_hi[e];
+}
+
+void poly_edge_faces(Polytope p, uint e, out uint face_a, out uint face_b) {
+    if (p.is_hull) {
+        uint faces = hull_word(p, hull_word(p, hull_edge_faces_index) + e);
+        face_a = faces & hull_index_mask();
+        face_b = faces >> hull_index_bits;
+        return;
+    }
+    face_a = box_edge_face_lo[e];
+    face_b = box_edge_face_hi[e];
+}
+
+float poly_min_projection(Polytope p, float3 local_axis) {
+    uint count = poly_vertex_count(p);
+    float lo = dot(local_axis, poly_local_vertex(p, 0));
+    [loop]
+    for (uint i = 1; i < count; i++) {
+        lo = min(lo, dot(local_axis, poly_local_vertex(p, i)));
+    }
+    return lo;
+}
+
+bool minkowski_face(float3 a, float3 b, float3 c, float3 d, float3 dxc) {
+    float3 bxa = cross(b, a);
+    float cba = dot(c, bxa);
+    float dba = dot(d, bxa);
+    float adc = dot(a, dxc);
+    float bdc = dot(b, dxc);
+    return cba * dba < 0.0 && adc * bdc < 0.0 && cba * bdc > 0.0;
+}
+
+struct PolySatState {
+    float best_overlap;
+    float3 best_axis;
+    uint best_index;
+    bool found;
+    bool all_positive;
+    bool separated;
+};
+
+void poly_keep_axis(inout PolySatState s, float overlap, float3 axis, uint index, float margin) {
+    if (overlap < -margin) {
+        s.separated = true;
+        return;
+    }
+    if (overlap <= 0.0) {
+        s.all_positive = false;
+    }
+    if (!s.found || overlap < s.best_overlap) {
+        s.found = true;
+        s.best_overlap = overlap;
+        s.best_axis = axis;
+        s.best_index = index;
+    }
+}
+
+float poly_face_overlap(Polytope ref, Polytope other, uint f, float3 other_in_ref, out float3 world_n) {
+    float3 n = poly_local_normal(ref, f);
+    float3 anchor = poly_local_vertex(ref, poly_loop(ref, poly_face_first(ref, f)));
+    world_n = poly_to_world(ref, n);
+    return dot(n, anchor) - dot(n, other_in_ref) - poly_min_projection(other, poly_to_local(other, world_n));
+}
+
+struct PolyEdgeFrame {
+    float3 c;
+    float3 d;
+    float3 dxc;
+    float3 b0;
+    float3 edge_b;
+};
+
+PolyEdgeFrame poly_edge_frame(Polytope a, Polytope b, uint eb, float3 b_in_a) {
+    uint lo_b;
+    uint hi_b;
+    uint face_b0;
+    uint face_b1;
+    poly_edge(b, eb, lo_b, hi_b);
+    poly_edge_faces(b, eb, face_b0, face_b1);
+
+    PolyEdgeFrame frame;
+    frame.c = -poly_to_local(a, poly_to_world(b, poly_local_normal(b, face_b0)));
+    frame.d = -poly_to_local(a, poly_to_world(b, poly_local_normal(b, face_b1)));
+    frame.dxc = cross(frame.d, frame.c);
+    float3 local_b0 = poly_local_vertex(b, lo_b);
+    frame.b0 = poly_to_local(a, poly_to_world(b, local_b0)) + b_in_a;
+    frame.edge_b = normalize(poly_to_local(a, poly_to_world(b, poly_local_vertex(b, hi_b) - local_b0)));
+    return frame;
+}
+
+bool poly_edge_overlap(Polytope a, PolyEdgeFrame frame, uint ea, out float overlap, out float3 world_axis) {
+    overlap = 0.0;
+    world_axis = float3(0, 0, 0);
+
+    uint face_a0;
+    uint face_a1;
+    poly_edge_faces(a, ea, face_a0, face_a1);
+    float3 na = poly_local_normal(a, face_a0);
+    float3 nb = poly_local_normal(a, face_a1);
+    if (!minkowski_face(na, nb, frame.c, frame.d, frame.dxc)) {
+        return false;
+    }
+
+    uint lo_a;
+    uint hi_a;
+    poly_edge(a, ea, lo_a, hi_a);
+    float3 a0 = poly_local_vertex(a, lo_a);
+    float3 raw_axis = cross(normalize(poly_local_vertex(a, hi_a) - a0), frame.edge_b);
+    float axis_len = length(raw_axis);
+    if (axis_len < HULL_PARALLEL_EPSILON) {
+        return false;
+    }
+
+    float3 axis = raw_axis / axis_len;
+    if (dot(axis, na + nb) < 0.0) {
+        axis = -axis;
+    }
+    overlap = dot(axis, a0 - frame.b0);
+    world_axis = poly_to_world(a, axis);
+    return true;
+}
+
+SatResult poly_sat_wave(Polytope a, Polytope b, float margin, uint lane) {
+    SatResult result;
+    result.valid = false;
+    result.normal = float3(0, 0, 0);
+    result.separation = 0.0;
+    result.is_speculative = false;
+
+    PolySatState s;
+    s.best_overlap = 0.0;
+    s.best_axis = float3(0, 0, 0);
+    s.best_index = 0xFFFFFFFFu;
+    s.found = false;
+    s.all_positive = true;
+    s.separated = false;
+
+    float3 b_in_a = poly_to_local(a, b.center - a.center);
+    float3 a_in_b = poly_to_local(b, a.center - b.center);
+
+    uint faces_a = poly_face_count(a);
+    uint faces = faces_a + poly_face_count(b);
+    [loop]
+    for (uint first = 0; first < faces; first += workgroup_size) {
+        uint k = first + lane;
+        if (k < faces) {
+            float3 world_n;
+            float overlap;
+            if (k < faces_a) {
+                overlap = poly_face_overlap(a, b, k, b_in_a, world_n);
+            }
+            else {
+                overlap = poly_face_overlap(b, a, k - faces_a, a_in_b, world_n);
+            }
+            poly_keep_axis(s, overlap, world_n, k, margin);
+        }
+        if (WaveActiveAnyTrue(s.separated)) return result;
+    }
+
+    uint edges_a = poly_edge_count(a);
+    uint edge_pairs = edges_a * poly_edge_count(b);
+    uint frame_edge = 0xFFFFFFFFu;
+    PolyEdgeFrame frame = (PolyEdgeFrame)0;
+    [loop]
+    for (uint first = 0; first < edge_pairs; first += workgroup_size) {
+        uint k = first + lane;
+        if (k < edge_pairs) {
+            uint eb = k / edges_a;
+            if (eb != frame_edge) {
+                frame = poly_edge_frame(a, b, eb, b_in_a);
+                frame_edge = eb;
+            }
+            float overlap;
+            float3 axis;
+            if (poly_edge_overlap(a, frame, k - eb * edges_a, overlap, axis)) {
+                poly_keep_axis(s, overlap, axis, faces + k, margin);
+            }
+        }
+        if (WaveActiveAnyTrue(s.separated)) return result;
+    }
+
+    float best = WaveActiveMin(s.found ? s.best_overlap : asfloat(0x7F800000u));
+    bool candidate = s.found && s.best_overlap == best;
+    uint best_index = WaveActiveMin(candidate ? s.best_index : 0xFFFFFFFFu);
+    uint winner = firstbitlow(WaveActiveBallot(candidate && s.best_index == best_index).x);
+    float3 best_axis = WaveReadLaneAt(s.best_axis, winner);
+    float separation = WaveReadLaneAt(s.best_overlap, winner);
+    bool all_positive = WaveActiveAllTrue(s.all_positive);
+
+    if (dot(best_axis, b.center - a.center) < 0.0) {
+        best_axis = -best_axis;
+    }
+
+    result.valid = true;
+    result.normal = best_axis;
+    result.separation = separation;
+    result.is_speculative = !all_positive;
+    return result;
+}
+
+struct HullClipPoly {
+    ClipVertexData verts[HULL_MAX_CLIP_VERTS];
+    uint count;
+};
+
+void hull_push_clip(inout HullClipPoly poly, ClipVertexData vertex) {
+    if (poly.count >= HULL_MAX_CLIP_VERTS) {
+        return;
+    }
+    poly.verts[poly.count] = vertex;
+    poly.count += 1;
+}
+
+ActiveSides hull_incident_sides(uint ordinal, uint count) {
+    ActiveSides sides;
+    init_active_sides(sides);
+    if (count == 0) {
+        return sides;
+    }
+    add_side(sides, (ordinal + count - 1) % count);
+    add_side(sides, ordinal);
+    return sides;
+}
+
+HullClipPoly hull_clip_edge(HullClipPoly subject, float3 plane_normal, float3 plane_point, uint reference_side) {
+    HullClipPoly clipped;
+    clipped.count = 0;
+
+    [loop]
+    for (uint i = 0; i < subject.count; i++) {
+        ClipVertexData current = subject.verts[i];
+        ClipVertexData next = subject.verts[(i + 1) % subject.count];
+        float d_current = dot(plane_normal, current.point - plane_point);
+        float d_next = dot(plane_normal, next.point - plane_point);
+        bool current_inside = d_current <= HULL_CLIP_EPSILON;
+        bool next_inside = d_next <= HULL_CLIP_EPSILON;
+
+        if (current_inside) {
+            ClipVertexData retained = current;
+            if (abs(d_current) <= HULL_CLIP_EPSILON) {
+                add_side(retained.reference_sides, reference_side);
+            }
+            hull_push_clip(clipped, retained);
+        }
+
+        if (current_inside != next_inside) {
+            float denominator = d_current - d_next;
+            if (abs(denominator) > 1e-6) {
+                float t = d_current / denominator;
+                ClipVertexData intersection;
+                intersection.point = current.point + (next.point - current.point) * t;
+                intersection.reference_sides = shared_sides(current.reference_sides, next.reference_sides);
+                intersection.incident_sides = shared_sides(current.incident_sides, next.incident_sides);
+                add_side(intersection.reference_sides, reference_side);
+                hull_push_clip(clipped, intersection);
+            }
+        }
+    }
+
+    return clipped;
+}
+
+uint poly_best_face(Polytope p, float3 direction) {
+    uint best = 0;
+    float best_dot = -3.402823466e38;
+    uint count = poly_face_count(p);
+    [loop]
+    for (uint f = 0; f < count; f++) {
+        float d = dot(poly_world_normal(p, f), direction);
+        if (d > best_dot) {
+            best_dot = d;
+            best = f;
+        }
+    }
+    return best;
+}
+
+float3 poly_face_centroid(Polytope p, uint face) {
+    uint first = poly_face_first(p, face);
+    uint count = poly_face_size(p, face);
+    float3 anchor = poly_face_vertex(p, first, count, 0);
+    float3 center = anchor;
+    [loop]
+    for (uint i = 1; i < count; i++) {
+        center += (poly_face_vertex(p, first, count, i) - anchor) / float(count);
+    }
+    return center;
+}
+
+int hull_quantize(float value) {
+    float scaled = value / 1e-4;
+    return int(floor(scaled + (scaled >= 0.0 ? 0.5 : -0.5)));
+}
+
+float3 hull_candidate_midpoint(ContactCandidate candidate, float3 origin) {
+    return candidate.position_on_b + (candidate.position_on_a - candidate.position_on_b) * 0.5 - origin;
+}
+
+bool hull_candidate_less(ContactCandidate lhs, ContactCandidate rhs, float3 origin, float3 tangent_u, float3 tangent_v, float3 normal) {
+    if (feature_less(lhs.feature_hi, lhs.feature_lo, rhs.feature_hi, rhs.feature_lo)) {
+        return true;
+    }
+    if (feature_less(rhs.feature_hi, rhs.feature_lo, lhs.feature_hi, lhs.feature_lo)) {
+        return false;
+    }
+
+    float3 lhs_mid = hull_candidate_midpoint(lhs, origin);
+    float3 rhs_mid = hull_candidate_midpoint(rhs, origin);
+
+    int lhs_u = hull_quantize(dot(lhs_mid, tangent_u));
+    int rhs_u = hull_quantize(dot(rhs_mid, tangent_u));
+    if (lhs_u != rhs_u) return lhs_u < rhs_u;
+
+    int lhs_v = hull_quantize(dot(lhs_mid, tangent_v));
+    int rhs_v = hull_quantize(dot(rhs_mid, tangent_v));
+    if (lhs_v != rhs_v) return lhs_v < rhs_v;
+
+    return dot(lhs_mid, normal) < dot(rhs_mid, normal);
+}
+
+void hull_clip_feature(ClipVertexData vertex, bool reference_is_a, uint reference_face, uint incident_face, out uint feature_hi, out uint feature_lo) {
+    uint reference_key = pack_feature_component(
+        feature_type_from_sides(vertex.reference_sides),
+        reference_face,
+        side_value(vertex.reference_sides, 0),
+        side_value(vertex.reference_sides, 1)
+    );
+    uint incident_key = pack_feature_component(
+        feature_type_from_sides(vertex.incident_sides),
+        incident_face,
+        side_value(vertex.incident_sides, 0),
+        side_value(vertex.incident_sides, 1)
+    );
+    feature_hi = reference_is_a ? reference_key : incident_key;
+    feature_lo = reference_is_a ? incident_key : reference_key;
+}
+
+ContactResult poly_contacts(Polytope a, Polytope b, float3 normal) {
+    ContactResult result = empty_contact_result();
+
+    float3 tangent_u;
+    if (abs(normal.x) < 0.9) tangent_u = normalize(cross(normal, float3(1, 0, 0)));
+    else tangent_u = normalize(cross(normal, float3(0, 1, 0)));
+    float3 tangent_v = cross(normal, tangent_u);
+
+    uint face_a = poly_best_face(a, normal);
+    uint face_b = poly_best_face(b, -normal);
+    float align_a = dot(poly_world_normal(a, face_a), normal);
+    float align_b = dot(poly_world_normal(b, face_b), -normal);
+
+    bool reference_is_a = abs(align_a - align_b) <= HULL_REFERENCE_FACE_MARGIN
+        ? a.body_index < b.body_index
+        : align_a > align_b;
+
+    Polytope reference = reference_is_a ? a : b;
+    Polytope incident = reference_is_a ? b : a;
+    uint reference_face = reference_is_a ? face_a : face_b;
+    uint incident_face = reference_is_a ? face_b : face_a;
+    float3 reference_normal = reference_is_a ? normal : -normal;
+
+    uint ref_first = poly_face_first(reference, reference_face);
+    uint ref_count = poly_face_size(reference, reference_face);
+    uint inc_first = poly_face_first(incident, incident_face);
+    uint inc_count = poly_face_size(incident, incident_face);
+
+    result.clipped_valid = true;
+    result.reference_is_a = reference_is_a;
+    result.reference_face = reference_face;
+    result.incident_face = incident_face;
+
+    HullClipPoly polygon;
+    polygon.count = 0;
+    [loop]
+    for (uint i = 0; i < inc_count; i++) {
+        ClipVertexData vertex;
+        vertex.point = poly_face_vertex(incident, inc_first, inc_count, i);
+        init_active_sides(vertex.reference_sides);
+        vertex.incident_sides = hull_incident_sides(i, inc_count);
+        hull_push_clip(polygon, vertex);
+    }
+
+    [loop]
+    for (uint i = 0; i < ref_count; i++) {
+        float3 v0 = poly_face_vertex(reference, ref_first, ref_count, i);
+        float3 v1 = poly_face_vertex(reference, ref_first, ref_count, i + 1);
+        float3 plane_axis = cross(v1 - v0, reference_normal);
+        if (length(plane_axis) < 1e-6) {
+            continue;
+        }
+
+        polygon = hull_clip_edge(polygon, normalize(plane_axis), v0, i);
+        if (polygon.count == 0) {
+            return result;
+        }
+    }
+
+    result.clipped_vertex_count = polygon.count;
+
+    float3 ref_anchor = poly_face_vertex(reference, ref_first, ref_count, 0);
+    ContactCandidate candidates[HULL_MAX_CLIP_VERTS] = {};
+    uint candidate_count = 0;
+
+    [loop]
+    for (uint i = 0; i < polygon.count; i++) {
+        ClipVertexData vertex = polygon.verts[i];
+        float depth = dot(reference_normal, vertex.point - ref_anchor);
+        if (depth > HULL_CLIP_EPSILON) {
+            continue;
+        }
+
+        float3 on_reference = vertex.point - reference_normal * depth;
+        ContactCandidate candidate;
+        candidate.position_on_a = reference_is_a ? on_reference : vertex.point;
+        candidate.position_on_b = reference_is_a ? vertex.point : on_reference;
+        hull_clip_feature(vertex, reference_is_a, reference_face, incident_face, candidate.feature_hi, candidate.feature_lo);
+        candidates[candidate_count] = candidate;
+        candidate_count += 1;
+    }
+
+    result.raw_candidate_count = candidate_count;
+
+    [loop]
+    for (uint i = 1; i < candidate_count; i++) {
+        ContactCandidate key = candidates[i];
+        int j = int(i) - 1;
+        [loop]
+        while (j >= 0 && hull_candidate_less(key, candidates[j], a.center, tangent_u, tangent_v, normal)) {
+            candidates[j + 1] = candidates[j];
+            j--;
+        }
+        candidates[j + 1] = key;
+    }
+
+    uint unique_candidate_count = 0;
+    [loop]
+    for (uint i = 0; i < candidate_count; i++) {
+        if (i > 0 &&
+            feature_equal(
+                candidates[i - 1].feature_hi,
+                candidates[i - 1].feature_lo,
+                candidates[i].feature_hi,
+                candidates[i].feature_lo
+            )) {
+            continue;
+        }
+        unique_candidate_count++;
+        if (result.count < 4) {
+            result.candidates[result.count] = candidates[i];
+            result.count += 1;
+        }
+    }
+    result.unique_candidate_count = unique_candidate_count;
+
+    if (result.count > 0) {
+        return result;
+    }
+
+    result.candidates[0].position_on_a = poly_face_centroid(a, face_a);
+    result.candidates[0].position_on_b = poly_face_centroid(b, face_b);
+    result.candidates[0].feature_hi = pack_feature_component(feature_face, face_a, feature_side_none, feature_side_none);
+    result.candidates[0].feature_lo = pack_feature_component(feature_face, face_b, feature_side_none, feature_side_none);
+    result.count = 1;
+    result.unique_candidate_count = 1;
+    result.used_fallback = true;
+    return result;
+}
+
+struct PolyQuery {
+    float3 closest;
+    float3 normal;
+    float signed_distance;
+    uint face;
+};
+
+PolyQuery poly_query(Polytope p, float3 point) {
+    PolyQuery result;
+
+    float deepest = -3.402823466e38;
+    uint deepest_face = 0;
+    bool outside = false;
+    uint face_count = poly_face_count(p);
+
+    [loop]
+    for (uint f = 0; f < face_count; f++) {
+        float3 normal = poly_world_normal(p, f);
+        float3 plane_point = poly_world_vertex(p, poly_loop(p, poly_face_first(p, f)));
+        float distance = dot(normal, point - plane_point);
+        if (distance > 0.0) {
+            outside = true;
+        }
+        if (distance > deepest) {
+            deepest = distance;
+            deepest_face = f;
+        }
+    }
+
+    result.face = deepest_face;
+
+    if (!outside) {
+        result.normal = poly_world_normal(p, deepest_face);
+        result.closest = point - result.normal * deepest;
+        result.signed_distance = deepest;
+        return result;
+    }
+
+    float best_distance = 3.402823466e38;
+    float3 best_point = point;
+    uint best_face = deepest_face;
+
+    [loop]
+    for (uint f = 0; f < face_count; f++) {
+        uint first = poly_face_first(p, f);
+        uint count = poly_face_size(p, f);
+        float3 normal = poly_world_normal(p, f);
+        float3 anchor = poly_face_vertex(p, first, count, 0);
+        if (dot(normal, point - anchor) <= 0.0) {
+            continue;
+        }
+
+        float3 projected = point - normal * dot(normal, point - anchor);
+        bool inside_face = true;
+        [loop]
+        for (uint i = 0; i < count; i++) {
+            float3 v0 = poly_face_vertex(p, first, count, i);
+            float3 v1 = poly_face_vertex(p, first, count, i + 1);
+            if (dot(cross(v1 - v0, projected - v0), normal) < 0.0) {
+                inside_face = false;
+            }
+        }
+
+        if (!inside_face) {
+            projected = point;
+            float edge_best = 3.402823466e38;
+            [loop]
+            for (uint i = 0; i < count; i++) {
+                float3 candidate = closest_point_on_segment(
+                    poly_face_vertex(p, first, count, i),
+                    poly_face_vertex(p, first, count, i + 1),
+                    point
+                );
+                float d = length(point - candidate);
+                if (d < edge_best) {
+                    edge_best = d;
+                    projected = candidate;
+                }
+            }
+        }
+
+        float d = length(point - projected);
+        if (d < best_distance) {
+            best_distance = d;
+            best_point = projected;
+            best_face = f;
+        }
+    }
+
+    float3 to_point = point - best_point;
+    float dist = length(to_point);
+
+    result.closest = best_point;
+    result.normal = dist > 1e-6 ? normalize(to_point) : poly_world_normal(p, best_face);
+    result.signed_distance = dist;
+    result.face = best_face;
+    return result;
+}
+
+PolyQuery poly_segment_query(Polytope p, float3 seg_start, float3 seg_end, out float3 best_point) {
+    float3 probe = closest_point_on_segment(seg_start, seg_end, p.center);
+    PolyQuery best = poly_query(p, probe);
+    best_point = probe;
+
+    [loop]
+    for (int iteration = 0; iteration < 3; iteration++) {
+        probe = closest_point_on_segment(seg_start, seg_end, best.closest);
+        PolyQuery candidate = poly_query(p, probe);
+        if (candidate.signed_distance < best.signed_distance) {
+            best = candidate;
+            best_point = probe;
+        }
+    }
+
+    PolyQuery at_start = poly_query(p, seg_start);
+    if (at_start.signed_distance < best.signed_distance) {
+        best = at_start;
+        best_point = seg_start;
+    }
+
+    PolyQuery at_end = poly_query(p, seg_end);
+    if (at_end.signed_distance < best.signed_distance) {
+        best = at_end;
+        best_point = seg_end;
+    }
+
+    return best;
+}
+
+SatResult hull_speculative(Polytope lo, uint lo_kind, float3 lo_params, Polytope hi, float margin) {
+    if (lo_kind == shape_sphere) {
+        PolyQuery q = poly_query(hi, lo.center);
+        return make_sat_result(-q.normal, lo_params.x - q.signed_distance, margin);
+    }
+
+    float3 seg_start;
+    float3 seg_end;
+    capsule_endpoints(lo.center, lo.axes[1], lo_params.y, seg_start, seg_end);
+    float3 seg_pt;
+    PolyQuery q = poly_segment_query(hi, seg_start, seg_end, seg_pt);
+    return make_sat_result(-q.normal, lo_params.x - q.signed_distance, margin);
+}
+
+ContactResult hull_contacts(Polytope lo, uint lo_kind, float3 lo_params, Polytope hi, float3 normal) {
+    if (lo_kind == shape_sphere) {
+        ContactResult result = empty_contact_result();
+        PolyQuery q = poly_query(hi, lo.center);
+        append_shape_contact(
+            result,
+            lo.center + normal * lo_params.x, q.closest,
+            feature_face, sphere_surface_index, feature_side_none, feature_side_none,
+            feature_face, q.face, feature_side_none, feature_side_none
+        );
+        return result;
+    }
+
+    ContactResult result = empty_contact_result();
+    float3 seg_start;
+    float3 seg_end;
+    capsule_endpoints(lo.center, lo.axes[1], lo_params.y, seg_start, seg_end);
+    float3 seg_pt;
+    PolyQuery q = poly_segment_query(hi, seg_start, seg_end, seg_pt);
+
+    uint cap_type;
+    uint cap_index;
+    classify_capsule_feature(segment_param_of(seg_start, seg_end, seg_pt), cap_type, cap_index);
+
+    append_shape_contact(
+        result,
+        seg_pt + normal * lo_params.x, q.closest,
+        cap_type, cap_index, feature_side_none, feature_side_none,
+        feature_face, q.face, feature_side_none, feature_side_none
+    );
+    return result;
+}
+
 void record_narrow_phase_debug(
     uint body_a_idx,
     uint body_b_idx,
@@ -1300,7 +2070,7 @@ void record_narrow_phase_debug(
     collision_state[base + 4] = contacts.raw_candidate_count;
     collision_state[base + 5] = contacts.unique_candidate_count;
     collision_state[base + 6] = contacts.count;
-    collision_state[base + 7] = (contacts.reference_face & 0xFFu) | ((contacts.incident_face & 0xFFu) << 8);
+    collision_state[base + 7] = (contacts.reference_face & hull_index_mask()) | ((contacts.incident_face & hull_index_mask()) << hull_index_bits);
 }
 
 uint warm_start_matches(uint ba, uint bb, uint64_t feature_key, uint adjacency_body, out contact_constraint result) {
@@ -1310,11 +2080,11 @@ uint warm_start_matches(uint ba, uint bb, uint64_t feature_key, uint adjacency_b
     uint matches = 0;
     for (uint k = 0; k < count; k++) {
         uint slot = offset + k;
-        if (slot >= max_contact_adjacency) {
+        if (slot >= max_contact_adjacency()) {
             break;
         }
         uint ci = contact_adjacency[slot];
-        if (ci >= max_contacts) {
+        if (ci >= max_contacts()) {
             continue;
         }
         contact_constraint ws = warm_starts[ci];
@@ -1331,15 +2101,15 @@ uint warm_start_matches(uint ba, uint bb, uint64_t feature_key, uint adjacency_b
 
 bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out contact_constraint result) {
     result = (contact_constraint)0;
-    if (pc.apply_all_body_inputs != 0 && pc.preserve_accel_weight == 0) {
+    if (pc.apply_all_body_inputs != 0 && (pc.warm_start_bits & (warm_start_preserve_accel_weight_bit | warm_start_seeded_bit)) == 0) {
         return false;
     }
 
     uint64_t feature_key = ((uint64_t)feature_hi << 32) | (uint64_t)feature_lo;
-    bool complete_a = contact_offsets[ba] <= max_contact_adjacency
-        && contact_counts[ba] <= max_contact_adjacency - contact_offsets[ba];
-    bool complete_b = contact_offsets[bb] <= max_contact_adjacency
-        && contact_counts[bb] <= max_contact_adjacency - contact_offsets[bb];
+    bool complete_a = contact_offsets[ba] <= max_contact_adjacency()
+        && contact_counts[ba] <= max_contact_adjacency() - contact_offsets[ba];
+    bool complete_b = contact_offsets[bb] <= max_contact_adjacency()
+        && contact_counts[bb] <= max_contact_adjacency() - contact_offsets[bb];
     uint adjacency_body = complete_a && complete_b && contact_counts[bb] < contact_counts[ba] ? bb : ba;
     uint matches = warm_start_matches(ba, bb, feature_key, adjacency_body, result);
     if (adjacency_body != ba && matches > 1) {
@@ -1357,10 +2127,39 @@ bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, out c
     return matches > 0;
 }
 
+float pair_speculative_margin(body_state ba, body_state bb) {
+    float3 relative_velocity = ba.velocity.xyz - bb.velocity.xyz;
+    float3 center_delta = bb.position.xyz - ba.position.xyz;
+    float center_distance = length(center_delta);
+    float closing_speed = center_distance > 1e-6
+        ? max(dot(relative_velocity, center_delta) / center_distance, 0.0)
+        : length(relative_velocity);
+    return clamp(
+        closing_speed * sqrt(pc.h_squared) * 2.0,
+        solver_config_data[0].speculative_margin_floor,
+        solver_config_data[0].speculative_margin
+    );
+}
+
+void swap_contact_sides(inout ContactResult contacts) {
+    for (int ci = 0; ci < 4; ci++) {
+        if (ci >= contacts.count) {
+            break;
+        }
+        float3 swapped_position = contacts.candidates[ci].position_on_a;
+        contacts.candidates[ci].position_on_a = contacts.candidates[ci].position_on_b;
+        contacts.candidates[ci].position_on_b = swapped_position;
+
+        uint swapped_feature = contacts.candidates[ci].feature_hi;
+        contacts.candidates[ci].feature_hi = contacts.candidates[ci].feature_lo;
+        contacts.candidates[ci].feature_lo = swapped_feature;
+    }
+}
+
 void collision_narrow_phase(uint3 dispatch_id) {
     uint pair_idx = dispatch_id.x;
 
-    uint pair_count = min(collision_pairs[0], max_collision_pairs);
+    uint pair_count = min(collision_pairs[0], max_collision_pairs());
     if (pair_idx == 0) {
         InterlockedAdd(collision_state[state_pair_count_index], pair_count);
     }
@@ -1372,14 +2171,11 @@ void collision_narrow_phase(uint3 dispatch_id) {
     body_state ba = body_data[body_a_idx];
     body_state bb = body_data[body_b_idx];
 
-    float3 center_a = ba.position.xyz;
-    float3 center_b = bb.position.xyz;
-
     mat3 rot_a = rotation_from_quat(ba.orientation);
     mat3 rot_b = rotation_from_quat(bb.orientation);
 
-    float3 shape_center_a = body_origin(center_a, ba.orientation, ba.com_local.xyz);
-    float3 shape_center_b = body_origin(center_b, bb.orientation, bb.com_local.xyz);
+    float3 shape_center_a = body_origin(ba.position.xyz, ba.orientation, ba.com_local.xyz);
+    float3 shape_center_b = body_origin(bb.position.xyz, bb.orientation, bb.com_local.xyz);
     float3 he_a = ba.half_extents.xyz;
     float3 he_b = bb.half_extents.xyz;
 
@@ -1392,23 +2188,33 @@ void collision_narrow_phase(uint3 dispatch_id) {
     SatResult sat;
     ContactResult contacts;
     bool swap_shapes = false;
-    float3 relative_velocity = ba.velocity.xyz - bb.velocity.xyz;
-    float3 center_delta = center_b - center_a;
-    float center_distance = length(center_delta);
-    float closing_speed = center_distance > 1e-6
-        ? max(dot(relative_velocity, center_delta) / center_distance, 0.0)
-        : length(relative_velocity);
-    float pair_margin = clamp(
-        closing_speed * sqrt(pc.h_squared) * 2.0,
-        solver_config_data[0].speculative_margin_floor,
-        solver_config_data[0].speculative_margin
-    );
+    float pair_margin = pair_speculative_margin(ba, bb);
 
     if (kind_a == shape_box && kind_b == shape_box) {
         sat = sat_speculative(shape_center_a, he_a, axes_a, shape_center_b, he_b, axes_b, pair_margin);
         if (!sat.valid) return;
 
         contacts = generate_contacts(shape_center_a, he_a, axes_a, shape_center_b, he_b, axes_b, sat.normal, sat.separation, body_a_idx < body_b_idx);
+    }
+    else if (kind_a == shape_hull || kind_b == shape_hull) {
+        swap_shapes = kind_a > kind_b;
+
+        Polytope poly_a = make_polytope(kind_a, shape_center_a, he_a, axes_a, ba.hull_offset, body_a_idx);
+        Polytope poly_b = make_polytope(kind_b, shape_center_b, he_b, axes_b, bb.hull_offset, body_b_idx);
+        Polytope lo = swap_shapes ? poly_b : poly_a;
+        Polytope hi = swap_shapes ? poly_a : poly_b;
+        uint lo_kind = swap_shapes ? kind_b : kind_a;
+        float3 lo_params = swap_shapes ? bb.shape_params.xyz : ba.shape_params.xyz;
+
+        sat = hull_speculative(lo, lo_kind, lo_params, hi, pair_margin);
+        if (!sat.valid) return;
+
+        contacts = hull_contacts(lo, lo_kind, lo_params, hi, sat.normal);
+
+        if (swap_shapes) {
+            sat.normal = -sat.normal;
+            swap_contact_sides(contacts);
+        }
     }
     else {
         swap_shapes = kind_a > kind_b;
@@ -1438,19 +2244,7 @@ void collision_narrow_phase(uint3 dispatch_id) {
                 kind_a, shape_center_a, ba.shape_params.xyz, axes_a,
                 manifold_normal
             );
-
-            for (int ci = 0; ci < 4; ci++) {
-                if (ci >= contacts.count) {
-                    break;
-                }
-                float3 swapped_position = contacts.candidates[ci].position_on_a;
-                contacts.candidates[ci].position_on_a = contacts.candidates[ci].position_on_b;
-                contacts.candidates[ci].position_on_b = swapped_position;
-
-                uint swapped_feature = contacts.candidates[ci].feature_hi;
-                contacts.candidates[ci].feature_hi = contacts.candidates[ci].feature_lo;
-                contacts.candidates[ci].feature_lo = swapped_feature;
-            }
+            swap_contact_sides(contacts);
         }
         else {
             contacts = shape_contacts(
@@ -1460,14 +2254,6 @@ void collision_narrow_phase(uint3 dispatch_id) {
             );
         }
     }
-
-    float3 tangent_u;
-    if (abs(sat.normal.x) < 0.9) tangent_u = normalize(cross(sat.normal, float3(1, 0, 0)));
-    else tangent_u = normalize(cross(sat.normal, float3(0, 1, 0)));
-    float3 tangent_v = cross(sat.normal, tangent_u);
-    float3 constraint_normal = -sat.normal;
-
-    record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
 
     uint local_count = uint(contacts.count);
     uint wave_sum = WaveActiveSum(local_count);
@@ -1479,9 +2265,25 @@ void collision_narrow_phase(uint3 dispatch_id) {
     }
     wave_base = WaveReadLaneFirst(wave_base);
 
+    store_pair_contacts(wave_base + my_offset, body_a_idx, body_b_idx, ba, bb, sat, contacts);
+}
+
+void store_pair_contacts(uint first_slot, uint body_a_idx, uint body_b_idx, body_state ba, body_state bb, SatResult sat, ContactResult contacts) {
+    float3 center_a = ba.position.xyz;
+    float3 center_b = bb.position.xyz;
+
+    float3 tangent_u;
+    if (abs(sat.normal.x) < 0.9) tangent_u = normalize(cross(sat.normal, float3(1, 0, 0)));
+    else tangent_u = normalize(cross(sat.normal, float3(0, 1, 0)));
+    float3 tangent_v = cross(sat.normal, tangent_u);
+    float3 constraint_normal = -sat.normal;
+
+    record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
+
+    uint local_count = uint(contacts.count);
     for (uint p = 0; p < local_count; p++) {
-        uint ci = wave_base + my_offset + p;
-        if (ci >= max_contacts) continue;
+        uint ci = first_slot + p;
+        if (ci >= max_contacts()) continue;
 
         ContactCandidate candidate = contacts.candidates[p];
         float3 world_anchor_a = candidate.position_on_a;

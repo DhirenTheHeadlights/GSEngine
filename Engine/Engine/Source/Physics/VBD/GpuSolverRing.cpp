@@ -43,6 +43,15 @@ auto gse::vbd::gpu_solver::ensure_ring(gpu::device& device, const std::uint32_t 
 			},
 			"vbd.ring.joints"
 		);
+		slot.muscles = device.create_buffer(
+			{
+				.size = std::max<std::size_t>(m_capacities.max_muscles * sizeof(muscle_constraint), 16),
+				.stride = sizeof(muscle_constraint),
+				.usage = ring_usage,
+				.device_local = true
+			},
+			"vbd.ring.muscles"
+		);
 		slot.contacts = device.create_buffer(
 			{
 				.size = m_capacities.ring_max_contacts * sizeof(contact_constraint),
@@ -92,20 +101,15 @@ auto gse::vbd::gpu_solver::stage_ring_copy(per_frame_data& f, const std::uint64_
 	if (m_ring_history == 0) {
 		co_return;
 	}
-	if (m_body_count > m_capacities.ring_max_bodies) {
-		if (!m_ring_overflow_reported) {
-			m_ring_overflow_reported = true;
-			log::println(log::level::warning, log::category::physics, "vbd gpu rollback ring holds {} bodies per slot but the scene has {}; the ring is off for this scene", m_capacities.ring_max_bodies, m_body_count);
-		}
-		co_return;
-	}
-
 	ring_slot& slot = m_ring[static_cast<std::size_t>(tick % m_ring_history)];
 
 	auto rec = co_await gpu::pass<vbd_ring_copy_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>(chain_index);
-	rec.copy_buffer(f.body_buffer, slot.bodies, m_body_count * sizeof(body_state));
+	rec.copy_buffer(m_body_buffer, slot.bodies, m_body_count * sizeof(body_state));
 	if (m_joint_count > 0) {
-		rec.copy_buffer(f.joint_buffer, slot.joints, m_joint_count * sizeof(joint_constraint));
+		rec.copy_buffer(m_joint_buffer, slot.joints, m_joint_count * sizeof(joint_constraint));
+	}
+	if (m_muscle_count > 0) {
+		rec.copy_buffer(m_muscle_buffer, slot.muscles, m_muscle_count * sizeof(muscle_constraint));
 	}
 	rec.copy_buffer(f.contact_buffer, slot.contacts, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(f.contact_counts_buffer, slot.contact_counts, m_body_count * sizeof(std::uint32_t));
@@ -130,9 +134,12 @@ auto gse::vbd::gpu_solver::stage_ring_restore(per_frame_data& f, per_frame_data&
 	log::println(log::category::physics, "vbd gpu rollback: restoring tick {} into the next batch of {} tick(s)", tick, m_ticks);
 
 	auto rec = co_await gpu::pass<vbd_ring_restore_stage>(pass_out).on(gpu::queue_type::compute).in_chain<vbd_solve_chain>(chain_index);
-	rec.copy_buffer(slot.bodies, f.body_buffer, m_body_count * sizeof(body_state));
+	rec.copy_buffer(slot.bodies, m_body_buffer, m_body_count * sizeof(body_state));
 	if (m_joint_count > 0) {
-		rec.copy_buffer(slot.joints, f.joint_buffer, m_joint_count * sizeof(joint_constraint));
+		rec.copy_buffer(slot.joints, m_joint_buffer, m_joint_count * sizeof(joint_constraint));
+	}
+	if (m_muscle_count > 0) {
+		rec.copy_buffer(slot.muscles, m_muscle_buffer, m_muscle_count * sizeof(muscle_constraint));
 	}
 	rec.copy_buffer(slot.contacts, other.contact_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));
 	rec.copy_buffer(slot.contacts, other.warm_start_buffer, m_capacities.ring_max_contacts * sizeof(contact_constraint));

@@ -2,6 +2,7 @@ export module gse.network:remote_peer;
 
 import std;
 
+import :packet_header;
 import :socket;
 
 import gse.math;
@@ -131,8 +132,8 @@ auto gse::network::remote_peer::queue_reliable(const std::uint32_t seq, const st
 }
 
 auto gse::network::remote_peer::ingest_packet_sequence(const std::uint32_t sequence) -> void {
-	if (sequence > m_remote_ack_sequence) {
-		if (const std::uint32_t diff = sequence - m_remote_ack_sequence; diff < 32) {
+	if (sequence_more_recent(sequence, m_remote_ack_sequence)) {
+		if (const std::uint32_t diff = sequence_distance(sequence, m_remote_ack_sequence); diff < 32) {
 			m_remote_ack_bitfield <<= diff;
 			m_remote_ack_bitfield |= (1u << (diff - 1));
 		}
@@ -141,8 +142,8 @@ auto gse::network::remote_peer::ingest_packet_sequence(const std::uint32_t seque
 		}
 		m_remote_ack_sequence = sequence;
 	}
-	else if (sequence < m_remote_ack_sequence) {
-		if (const std::uint32_t diff = m_remote_ack_sequence - sequence; diff < 32) {
+	else if (sequence != m_remote_ack_sequence) {
+		if (const std::uint32_t diff = sequence_distance(m_remote_ack_sequence, sequence); diff < 32) {
 			m_remote_ack_bitfield |= (1u << (diff - 1));
 		}
 	}
@@ -159,8 +160,8 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 			if (msg.sequence == ack) {
 				return true;
 			}
-			if (msg.sequence < ack) {
-				const std::uint32_t diff = ack - msg.sequence;
+			if (sequence_more_recent(ack, msg.sequence)) {
+				const std::uint32_t diff = sequence_distance(ack, msg.sequence);
 				if (diff <= 32 && (ack_bits & (1u << (diff - 1))) != 0) {
 					return true;
 				}

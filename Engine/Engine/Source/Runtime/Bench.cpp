@@ -1,5 +1,6 @@
 module gse.runtime:bench_impl;
 
+import gse.audio;
 import gse.concurrency;
 import gse.config;
 import gse.containers;
@@ -10,6 +11,7 @@ import gse.fs;
 import gse.log;
 import gse.physics;
 import gse.scenario;
+import gse.test;
 import gse.time;
 import std;
 
@@ -21,10 +23,15 @@ import :world_system;
 
 namespace gse {
 	constexpr int bench_settle_frame_limit = 6000;
+	constexpr int state_digest_lead_frames = 8;
 
 	auto world_body_order(
 		std::span<const id> owners
 	) -> std::vector<std::size_t>;
+
+	auto bench_run_dir(
+		const bench_config& config
+	) -> std::filesystem::path;
 
 	auto compare_against_baseline(
 		const bench_config& config,
@@ -32,6 +39,15 @@ namespace gse {
 		std::string_view stamp,
 		const profile::run_summary& summary,
 		const std::filesystem::path& profile_path
+	) -> bool;
+
+	auto report_scenario_failure(
+		const test::failure& f
+	) -> void;
+
+	auto report_state_digests(
+		registry& reg,
+		bench_state& state
 	) -> void;
 }
 
@@ -72,6 +88,15 @@ auto gse::world_state_hash(registry& reg) -> std::uint64_t {
 		writer & *motion;
 	}
 
+	const auto digest_owners = reg.owner_ids<state_digest>();
+	const auto digests = reg.components<state_digest>();
+	for (const std::size_t index : world_body_order(digest_owners)) {
+		const std::uint64_t number = digest_owners[index].number();
+		writer & number;
+		writer & digests[index].value;
+		writer & digests[index].step;
+	}
+
 	return stable_id(buffer.view());
 }
 
@@ -105,14 +130,39 @@ auto gse::bench_world_ready(const bench_config& config, engine& e) -> bool {
 	return e.all_settled() && (config.scene.empty() || world_populated(e.registry()));
 }
 
+auto gse::report_scenario_failure(const test::failure& f) -> void {
+	log::println(
+		log::level::error,
+		log::category::general,
+		"bench: scenario expectation failed at {}:{}: {}",
+		f.location.file_name(),
+		f.location.line(),
+		f.message
+	);
+}
+
+auto gse::report_state_digests(registry& reg, bench_state& state) -> void {
+	const auto digest_owners = reg.owner_ids<state_digest>();
+	const auto digests = reg.components<state_digest>();
+	for (const std::size_t index : world_body_order(digest_owners)) {
+		const id owner = digest_owners[index];
+		const auto& digest = digests[index];
+		if (!digest.taken) {
+			log::println(log::level::error, log::category::general, "bench: owner {} produced no state digest, so the world-state hash does not cover it", owner.number());
+			state.failures.push_back(std::format("owner {} produced no state digest", owner.number()));
+			continue;
+		}
+		log::println(log::category::general, "bench: owner {} digest {:#018x} at step {}", owner.number(), digest.value, digest.step);
+	}
+}
+
 auto gse::drive_scenario(const bench_config& config, bench_state& state, engine& e) -> void {
 	if (!config.scenario_body) {
 		return;
 	}
 
-	if (!state.scenario_started) {
-		state.scenario_started = true;
-		state.scenario_ctx.emplace(e.make_channel_writer(), &state.gate);
+	if (!state.scenario_ctx) {
+		state.scenario_ctx.emplace(e.make_channel_writer(), &state.gate, &e.registry(), &report_scenario_failure);
 		state.scenario_task = config.scenario_body(*state.scenario_ctx);
 		state.scenario_task.start();
 		return;
@@ -141,10 +191,18 @@ auto gse::drive_scenario(const bench_config& config, bench_state& state, engine&
 	state.gate.armed = false;
 	if (!async::resume_checked(state.gate.resume)) {
 		log::println(log::level::error, log::category::general, "bench: the scenario coroutine frame went stale; the rest of the scripted workload will not run");
+		state.failures.emplace_back("the scenario coroutine frame went stale");
 	}
 }
 
-auto gse::compare_against_baseline(const bench_config& config, const std::filesystem::path& run_dir, const std::string_view stamp, const profile::run_summary& summary, const std::filesystem::path& profile_path) -> void {
+auto gse::bench_run_dir(const bench_config& config) -> std::filesystem::path {
+	const std::string stem = config.scenario.empty()
+		? std::format("{}_bench", config::executable_stem())
+		: config.scenario;
+	return config::profile_dir() / "bench" / stem;
+}
+
+auto gse::compare_against_baseline(const bench_config& config, const std::filesystem::path& run_dir, const std::string_view stamp, const profile::run_summary& summary, const std::filesystem::path& profile_path) -> bool {
 	const std::filesystem::path baseline_path = run_dir / "baseline.gsprof";
 
 	if (config.update_baseline) {
@@ -156,18 +214,18 @@ auto gse::compare_against_baseline(const bench_config& config, const std::filesy
 		else {
 			log::println(log::category::general, "bench: recorded this run as the baseline at {}", baseline_path.display_string());
 		}
-		return;
+		return false;
 	}
 
 	if (!std::filesystem::exists(baseline_path)) {
 		log::println(log::category::general, "bench: no baseline at {}; rerun with --engine-bench-update-baseline to record this run as one", baseline_path.display_string());
-		return;
+		return false;
 	}
 
 	const auto baseline_file = profile::load_report(baseline_path);
 	if (!baseline_file) {
 		log::println(log::level::error, log::category::general, "bench: the baseline at {} could not be read, so this run was not compared", baseline_path.display_string());
-		return;
+		return false;
 	}
 
 	const profile::run_summary baseline = profile::summarize(*baseline_file);
@@ -189,11 +247,13 @@ auto gse::compare_against_baseline(const bench_config& config, const std::filesy
 		diff.regressed ? "REGRESSED" : "within threshold",
 		diff_path.display_string()
 	);
+
+	return diff.regressed;
 }
 
 auto gse::begin_bench(const bench_config& config) -> void {
-	if (!config.real_time) {
-		system_clock::set_fixed_step_override(1);
+	if (config.pacing != scenario::pacing::wall_clock) {
+		system_clock::set_fixed_step_override(0);
 	}
 	profile::set_enabled(true);
 	profile::set_frame_recording(true);
@@ -201,7 +261,8 @@ auto gse::begin_bench(const bench_config& config) -> void {
 
 	log::println(
 		log::category::general,
-		"bench: fixed-step clock engaged, {} warmup frames then {} measured frames",
+		"bench: {} pacing, {} warmup frames then {} measured frames",
+		config.pacing,
 		config.warmup_frames,
 		config.frames
 	);
@@ -219,23 +280,29 @@ auto gse::begin_bench(const bench_config& config) -> void {
 auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) -> bool {
 	drive_scenario(config, state, e);
 
-	switch (state.phase) {
+	switch (state.phase.state()) {
+		case bench_phase::awaiting_scene:
 		case bench_phase::settling: {
-			if (!state.scene_requested) {
+			if (state.phase.state() == bench_phase::awaiting_scene) {
 				if (config.scene.empty()) {
-					state.scene_requested = true;
+					state.phase.enter(bench_phase::settling);
 				}
 				else if (const auto scene_id = find_or_generate_id(config.scene); find_scene(e.world(), scene_id)) {
-					state.scene_requested = true;
 					activate_scene(e.world(), scene_id);
 					log::println(log::category::general, "bench: requested scene '{}'", config.scene);
+					state.phase.enter(bench_phase::settling);
 				}
 			}
 
 			if (bench_world_ready(config, e)) {
-				state.phase = bench_phase::warmup;
+				state.phase.enter(bench_phase::warmup);
 				state.frames_in_phase = 0;
-				log::println(log::category::general, "bench: world settled, warming up");
+				if (config.pacing != scenario::pacing::wall_clock) {
+					system_clock::set_fixed_step_override(1);
+					e.make_channel_writer().push<audio::offline_sink_request>({
+						.path = bench_run_dir(config) / std::format("{}.wav", system_clock::timestamp_filename()),
+					});
+				}
 				break;
 			}
 
@@ -243,15 +310,16 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 				log::println(
 					log::level::error,
 					log::category::general,
-					"bench: world never became ready within {} frames (scene '{}' registered={} activated={} populated={} settled={}); aborting without a measurement",
+					"bench: world never became ready within {} frames (phase {}, scene '{}' registered={} populated={} settled={}); aborting without a measurement",
 					bench_settle_frame_limit,
+					state.phase.state(),
 					config.scene,
 					config.scene.empty() || find_scene(e.world(), find_or_generate_id(config.scene)) != nullptr,
-					state.scene_requested,
 					world_populated(e.registry()),
 					e.all_settled()
 				);
-				state.phase = bench_phase::done;
+				state.failures.push_back(std::format("the world never became ready within {} frames", bench_settle_frame_limit));
+				state.phase.enter(bench_phase::done);
 				return true;
 			}
 			break;
@@ -259,7 +327,7 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 		case bench_phase::warmup: {
 			if (++state.frames_in_phase >= config.warmup_frames) {
 				profile::reset();
-				state.phase = bench_phase::measuring;
+				state.phase.enter(bench_phase::measuring);
 				state.frames_in_phase = 0;
 				if (!config.state_dump_out.empty()) {
 					state.state_dump.open(config.state_dump_out, std::ios::binary | std::ios::trunc);
@@ -271,7 +339,6 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 						log::println(log::level::error, log::category::general, "bench: could not open {} for the state dump; this run records timings only", config.state_dump_out);
 					}
 				}
-				log::println(log::category::general, "bench: warmup complete, measuring");
 			}
 			break;
 		}
@@ -279,8 +346,11 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 			if (state.state_dump.is_open()) {
 				write_state_frame(e.registry(), state.state_dump, static_cast<std::uint32_t>(state.frames_in_phase));
 			}
+			if (state.frames_in_phase == std::max(config.frames - state_digest_lead_frames, 0)) {
+				e.make_channel_writer().push(state_digest_request{});
+			}
 			if (++state.frames_in_phase >= config.frames) {
-				state.phase = bench_phase::done;
+				state.phase.enter(bench_phase::done);
 				state.state_dump.close();
 				finish_bench(config, state, e);
 				return true;
@@ -295,7 +365,7 @@ auto gse::step_bench(const bench_config& config, bench_state& state, engine& e) 
 	return false;
 }
 
-auto gse::finish_bench(const bench_config& config, const bench_state& state, engine& e) -> void {
+auto gse::finish_bench(const bench_config& config, bench_state& state, engine& e) -> void {
 	if (config.scenario_body && !state.scenario_task.done()) {
 		log::println(
 			log::level::warning,
@@ -304,10 +374,7 @@ auto gse::finish_bench(const bench_config& config, const bench_state& state, eng
 		);
 	}
 
-	const std::string stem = config.scenario.empty()
-		? std::format("{}_bench", config::executable_stem())
-		: config.scenario;
-	const std::filesystem::path run_dir = config::profile_dir() / "bench" / stem;
+	const std::filesystem::path run_dir = bench_run_dir(config);
 	const std::string stamp = system_clock::timestamp_filename();
 	const std::filesystem::path profile_path = config.profile_out.empty()
 		? run_dir / std::format("{}.gsprof", stamp)
@@ -320,7 +387,17 @@ auto gse::finish_bench(const bench_config& config, const bench_state& state, eng
 	const profile::run_summary summary = profile::summarize(file);
 	profile::write_summary(summary, summary_path);
 	profile::dump_report(profile_path);
-	compare_against_baseline(config, run_dir, stamp, summary, profile_path);
+	if (compare_against_baseline(config, run_dir, stamp, summary, profile_path)) {
+		state.failures.emplace_back("the frame time regressed against the recorded baseline");
+	}
+
+	if (state.scenario_ctx) {
+		for (const test::failure& f : state.scenario_ctx->failures()) {
+			state.failures.push_back(std::format("{}:{}: {}", f.location.file_name(), f.location.line(), f.message));
+		}
+	}
+
+	report_state_digests(e.registry(), state);
 
 	if (summary.frames == 0) {
 		log::println(
@@ -329,6 +406,7 @@ auto gse::finish_bench(const bench_config& config, const bench_state& state, eng
 			"bench: {} frames were recorded, so every percentile below is zero by absence rather than by measurement; the world-state hash is still valid but no timing from this run is",
 			summary.frames
 		);
+		state.failures.emplace_back("no frame was measured, so this run produced no timing");
 	}
 
 	log::println(
@@ -341,4 +419,27 @@ auto gse::finish_bench(const bench_config& config, const bench_state& state, eng
 		world_state_hash(e.registry())
 	);
 	log::println(log::category::general, "bench: wrote {} and {}", profile_path.display_string(), summary_path.display_string());
+}
+
+auto gse::bench_exit_code(const bench_state& state) -> int {
+	if (state.phase.state() != bench_phase::done) {
+		log::println(
+			log::level::error,
+			log::category::general,
+			"bench: the run ended during the {} phase, so it measured nothing, ran no expectation and compared against no baseline",
+			state.phase.state()
+		);
+		return 1;
+	}
+
+	if (state.failures.empty()) {
+		log::println(log::category::general, "bench: PASSED");
+		return 0;
+	}
+
+	log::println(log::level::error, log::category::general, "bench: FAILED, {} reason(s):", state.failures.size());
+	for (const std::string& reason : state.failures) {
+		log::println(log::level::error, log::category::general, "bench:   {}", reason);
+	}
+	return 1;
 }

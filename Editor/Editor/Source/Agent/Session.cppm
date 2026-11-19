@@ -3,12 +3,18 @@ export module gse.ide.agent:session;
 import std;
 import gse;
 
+import gse.ide.analysis;
+
 import :model;
 
 namespace gse::ide::agent {
 	constexpr std::string_view agent_command = "claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode auto";
+	constexpr std::string_view read_only_denied_tools = R"( --disallowed-tools "Bash Edit Write NotebookEdit Agent mcp__gse__gse_build mcp__gse__gse_package_sdk mcp__gse__gse_delete_file mcp__gse__gse_format")";
+	constexpr std::string_view sync_denied_tools = R"( --disallowed-tools "Write NotebookEdit Agent Task TodoWrite WebSearch WebFetch mcp__gse__gse_package_sdk mcp__gse__gse_run mcp__gse__gse_delete_file mcp__gse__gse_format")";
 	constexpr std::wstring_view resume_option = L" --resume ";
+	constexpr std::string_view inquiry_command_head = R"(claude -p --output-format stream-json --input-format stream-json --verbose --tools "Read Grep Glob" --strict-mcp-config --no-session-persistence --fork-session)";
 	constexpr std::string_view mcp_config_format = R"( --mcp-config "{{\"mcpServers\":{{\"gse\":{{\"command\":\"node\",\"args\":[\"{}\"]}}}}}}")";
+	constexpr std::string_view step_gate_hook_format = R"( --settings "{{\"hooks\":{{\"PreToolUse\":[{{\"matcher\":\"Edit|Write|NotebookEdit\",\"hooks\":[{{\"type\":\"command\",\"command\":\"node {} {}\"}}]}}]}}}}")";
 	constexpr std::wstring_view oauth_token_name = L"CLAUDE_CODE_OAUTH_TOKEN";
 	constexpr std::wstring_view config_dir_name = L"CLAUDE_CONFIG_DIR";
 	constexpr std::wstring_view user_profile_name = L"USERPROFILE";
@@ -19,9 +25,11 @@ namespace gse::ide::agent {
 	constexpr std::string_view oauth_beta = "oauth-2025-04-20";
 	constexpr std::int64_t usage_refresh_seconds = 60;
 	constexpr std::uint32_t sessions_magic = 0x47534147;
-	constexpr std::uint32_t sessions_version = 5;
+	constexpr std::uint32_t sessions_version = 10;
 	constexpr std::uint32_t first_schema_sessions_version = 3;
 	constexpr std::uint32_t chat_names_sessions_version = 5;
+	constexpr std::uint32_t overview_sessions_version = 9;
+	constexpr std::uint32_t closed_sessions_version = 10;
 
 	struct handoff {
 		std::uint32_t session = 0;
@@ -38,6 +46,9 @@ namespace gse::ide::agent {
 	};
 
 	auto agent_credentials() -> credentials;
+	auto request_token_prompt() -> void;
+	auto take_token_prompt_request() -> bool;
+	auto save_agent_token(std::string_view token) -> bool;
 
 	auto sessions_path() -> std::filesystem::path;
 
@@ -70,7 +81,7 @@ namespace gse::ide::agent {
 	auto adopt_session(
 		session& s,
 		const handoff& adopted
-	) -> bool;
+	) -> void;
 
 	auto hand_off_session(
 		session& s
@@ -78,16 +89,55 @@ namespace gse::ide::agent {
 
 	auto create_session(
 		data& d,
-		const std::filesystem::path& cwd
+		const std::filesystem::path& cwd,
+		chat_kind origin,
+		std::optional<task_phase> starting = std::nullopt
 	) -> session&;
 
-	auto session_command(
+	auto create_sync_session(
+		data& d,
+		sync_request request
+	) -> session&;
+
+	auto is_chat(
 		const session& s
+	) -> bool;
+
+	auto sync_session(
+		data& d
+	) -> session*;
+
+	constexpr std::ptrdiff_t max_sync_history = 20;
+
+	auto trim_sync_history(
+		data& d
+	) -> void;
+
+	auto session_command(
+		const session& s,
+		const std::filesystem::path& prompt
 	) -> std::wstring;
 
 	auto launch_session(
 		session& s
 	) -> bool;
+
+	auto inquiry_command(
+		const session& s
+	) -> std::wstring;
+
+	auto launch_inquiry(
+		const session& s,
+		std::string_view prompt
+	) -> inquiry_fork;
+
+	auto pump_inquiry(
+		inquiry_fork& fork
+	) -> void;
+
+	auto end_inquiry(
+		inquiry_fork& fork
+	) -> void;
 
 	auto append_row(
 		session& s,
@@ -98,13 +148,73 @@ namespace gse::ide::agent {
 		session& s
 	) -> void;
 
+	auto live_of(
+		session& s
+	) -> live_turn*;
+
+	auto live_of(
+		const session& s
+	) -> const live_turn*;
+
+	auto asleep(
+		session& s
+	) -> hibernation*;
+
+	auto asleep(
+		const session& s
+	) -> const hibernation*;
+
+	auto held_of(
+		const session& s
+	) -> const held_turn*;
+
+	auto finish_turn(
+		session& s,
+		const analysis::json::value& result
+	) -> void;
+
+	auto settle_turn(
+		session& s
+	) -> void;
+
+	auto lose_link(
+		session& s
+	) -> void;
+
+	auto sleep_session(
+		session& s,
+		std::string wake_prompt
+	) -> void;
+
+	auto take_sleep(
+		session& s
+	) -> hibernation;
+
 	auto restart_session(
+		session& s
+	) -> void;
+
+	auto stop_session(
 		session& s
 	) -> void;
 
 	auto close_session(
 		session& s
 	) -> void;
+
+	auto owns_transcript(
+		const session& s,
+		std::string_view agent_id
+	) -> bool;
+
+	auto remember_name(
+		data& d,
+		const session& s
+	) -> void;
+
+	auto persisted(
+		const session& s
+	) -> session;
 
 	auto erase_session(
 		data& d,
@@ -119,8 +229,10 @@ namespace gse::ide::agent {
 	auto send_to_session(
 		session& s,
 		std::string_view prompt,
-		std::span<const attachment> attachments
-	) -> void;
+		std::span<const gui::image_attachment> attachments,
+		bool editor_driven = false,
+		std::optional<transcript_row> shown = std::nullopt
+	) -> bool;
 
 	auto interrupt_session(
 		session& s

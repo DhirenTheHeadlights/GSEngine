@@ -15,10 +15,17 @@ import :remote_peer;
 import :socket;
 
 export namespace gse::network {
+	template <typename T>
+	using replicated_access_t = std::conditional_t<meta::has_written_by(^^T), gse::read<T>, gse::write<T>>;
+
+	template <typename... C>
+	consteval auto owner_events_channel() -> std::meta::info;
+
 	template <typename T, access_mode M>
 	auto broadcast_component_deltas(
 		auto& send_fn,
 		const access<T, M>& components,
+		const auto& owner_events,
 		const std::unordered_map<address, remote_peer>& peers
 	) -> void;
 
@@ -26,6 +33,7 @@ export namespace gse::network {
 	auto replicate_deltas(
 		auto& send_fn,
 		const std::unordered_map<address, remote_peer>& peers,
+		const auto& owner_events,
 		const access<C, M>&... components
 	) -> void;
 
@@ -52,8 +60,24 @@ export namespace gse::network {
 	) -> bool;
 }
 
+template <typename... C>
+consteval auto gse::network::owner_events_channel() -> std::meta::info {
+	std::vector<std::meta::info> events;
+	for (const auto component : std::vector<std::meta::info>{ ^^C... }) {
+		if (meta::has_written_by(component)) {
+			events.push_back(std::meta::substitute(^^component_events, { component }));
+		}
+	}
+	return std::meta::substitute(^^channel_read, events);
+}
+
+export namespace gse::network {
+	template <typename... C>
+	using owner_events_read = [:owner_events_channel<C...>():];
+}
+
 template <typename T, gse::access_mode M>
-auto gse::network::broadcast_component_deltas(auto& send_fn, const access<T, M>& components, const std::unordered_map<address, remote_peer>& peers) -> void {
+auto gse::network::broadcast_component_deltas(auto& send_fn, const access<T, M>& components, const auto& owner_events, const std::unordered_map<address, remote_peer>& peers) -> void {
 	const auto broadcast = [&](const auto& msg) {
 		for (const auto& addr : peers | std::views::keys) {
 			send_fn(msg, addr);
@@ -69,26 +93,33 @@ auto gse::network::broadcast_component_deltas(auto& send_fn, const access<T, M>&
 		}
 	};
 
-	for (const auto eid : components.drain(component_event::added)) {
-		upsert(eid);
-	}
-	for (const auto eid : components.drain(component_event::updated)) {
-		upsert(eid);
-	}
-	for (const auto eid : components.drain(component_event::removed)) {
+	const auto remove = [&](const id eid) {
 		broadcast(component_remove<T>{
 			.owner_id = eid
 		});
+	};
+
+	if constexpr (meta::has_written_by(^^T)) {
+		for (const auto& events : owner_events.template of<component_events<T>>()) {
+			std::ranges::for_each(events.added, upsert);
+			std::ranges::for_each(events.updated, upsert);
+			std::ranges::for_each(events.removed, remove);
+		}
+	}
+	else {
+		std::ranges::for_each(components.drain(component_event::added), upsert);
+		std::ranges::for_each(components.drain(component_event::updated), upsert);
+		std::ranges::for_each(components.drain(component_event::removed), remove);
 	}
 }
 
 template <typename... C, gse::access_mode... M>
-auto gse::network::replicate_deltas(auto& send_fn, const std::unordered_map<address, remote_peer>& peers, const access<C, M>&... components) -> void {
+auto gse::network::replicate_deltas(auto& send_fn, const std::unordered_map<address, remote_peer>& peers, const auto& owner_events, const access<C, M>&... components) -> void {
 	if (peers.empty()) {
 		return;
 	}
 
-	(broadcast_component_deltas(send_fn, components, peers), ...);
+	(broadcast_component_deltas(send_fn, components, owner_events, peers), ...);
 }
 
 template <typename T, gse::access_mode M>

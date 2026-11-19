@@ -7,9 +7,11 @@ export namespace gse::ide {
 	struct panel_desc {
 		gse::id id;
 		std::string_view name;
+		gui::symbol_glyph glyph = nullptr;
 		vec2f min_size{ 180.f, 120.f };
 		bool start_hidden = false;
 		bool menu_hidden = false;
+		bool pinnable = true;
 		std::optional<gui::panel_edge> accent_edge;
 	};
 
@@ -18,6 +20,28 @@ export namespace gse::ide {
 		float divider_thickness = 12.f;
 		float header_height = 32.f;
 		float tear_threshold = 6.f;
+	};
+
+	struct dock_shelf_entry {
+		id panel;
+		gui::panel_edge edge = gui::panel_edge::bottom;
+	};
+
+	struct dock_shelf_bands {
+		std::array<rectf, 4> bands;
+		rectf inner;
+
+		[[nodiscard]] auto of(
+			gui::panel_edge edge
+		) const -> const rectf&;
+
+		[[nodiscard]] auto occupied(
+			gui::panel_edge edge
+		) const -> bool;
+
+		[[nodiscard]] auto contains(
+			vec2f point
+		) const -> bool;
 	};
 
 	struct dock_node {
@@ -32,6 +56,24 @@ export namespace gse::ide {
 	};
 
 	struct dock_tree {
+		dock_tree() = default;
+
+		dock_tree(
+			const dock_tree& other
+		);
+
+		dock_tree(
+			dock_tree&& other
+		) noexcept;
+
+		auto operator=(
+			const dock_tree& other
+		) -> dock_tree&;
+
+		auto operator=(
+			dock_tree&& other
+		) noexcept -> dock_tree&;
+
 		id_mapped_collection<dock_node, id> nodes;
 		id root;
 		id maximized;
@@ -58,6 +100,7 @@ export namespace gse::ide {
 		dock_tree tree;
 		dock_layout layout;
 		dock_metrics metrics;
+		dock_shelf_bands shelf;
 		rectf frame;
 		vec2i window_position;
 		vec2i window_size;
@@ -117,6 +160,37 @@ export namespace gse::ide {
 		gui::dock::location location = gui::dock::location::center;
 		float ratio = 0.5f;
 	};
+
+	[[nodiscard]] auto shelf_band_thickness(
+		const gui::style& sty
+	) -> float;
+
+	[[nodiscard]] auto shelf_bands(
+		const rectf& frame,
+		std::span<const dock_shelf_entry> shelf,
+		float thickness
+	) -> dock_shelf_bands;
+
+	[[nodiscard]] auto shelf_body(
+		const rectf& inner,
+		gui::panel_edge edge,
+		float ratio
+	) -> rectf;
+
+	[[nodiscard]] auto shelf_edge_of(
+		std::span<const dock_shelf_entry> shelf,
+		id panel
+	) -> std::optional<gui::panel_edge>;
+
+	[[nodiscard]] auto serialize_shelf(
+		std::span<const dock_shelf_entry> shelf,
+		std::span<const panel_desc> panels
+	) -> std::string;
+
+	[[nodiscard]] auto deserialize_shelf(
+		std::span<const layout_store::section> sections,
+		std::span<const panel_desc> panels
+	) -> std::vector<dock_shelf_entry>;
 
 	[[nodiscard]] auto is_leaf(
 		const dock_node& node
@@ -235,11 +309,26 @@ export namespace gse::ide {
 		std::span<const layout_store::section> sections,
 		std::span<const panel_desc> panels
 	) -> std::vector<dock_window_layout>;
+
+	[[nodiscard]] auto serialize_anchors(
+		const std::unordered_map<id, dock_anchor>& anchors,
+		std::span<const panel_desc> panels
+	) -> std::string;
+
+	[[nodiscard]] auto deserialize_anchors(
+		std::span<const layout_store::section> sections,
+		std::span<const panel_desc> panels
+	) -> std::unordered_map<id, dock_anchor>;
 }
 
 namespace gse::ide {
 	constexpr std::string_view dock_node_section_prefix = "dock node ";
 	constexpr std::string_view dock_window_section_prefix = "dock window ";
+	constexpr std::string_view dock_anchor_section_prefix = "dock anchor ";
+	constexpr std::string_view dock_shelf_section_prefix = "dock shelf ";
+	constexpr float shelf_fallback_ratio = 0.3f;
+	constexpr float shelf_min_ratio = 0.15f;
+	constexpr float shelf_max_ratio = 0.6f;
 
 	auto make_node(
 		dock_tree& tree
@@ -303,6 +392,11 @@ namespace gse::ide {
 
 	[[nodiscard]] auto any_leaf(
 		const dock_tree& tree
+	) -> id;
+
+	[[nodiscard]] auto first_leaf(
+		const dock_tree& tree,
+		id node
 	) -> id;
 
 	auto collect_nodes(

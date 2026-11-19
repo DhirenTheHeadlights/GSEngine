@@ -2,6 +2,7 @@ export module gse.math:quat_math;
 
 import std;
 
+import :libm;
 import :units;
 import :vector;
 import :vector_math;
@@ -117,7 +118,7 @@ export namespace gse {
 	template <typename T>
 	constexpr auto inverse(
 		const quat_t<T>& q
-	) -> quat_t<T>;
+	) -> quat_t<T> pre(norm_squared(q) != T(0));
 
 	template <typename T>
 	constexpr auto dot(
@@ -145,6 +146,12 @@ export namespace gse {
 	) -> quat_t<T>;
 
 	template <typename T>
+	constexpr auto shortest_arc(
+		const vec3<T>& from,
+		const vec3<T>& to
+	) -> quat_t<T>;
+
+	template <typename T>
 	constexpr auto slerp(
 		const quat_t<T>& a,
 		const quat_t<T>& b,
@@ -159,9 +166,9 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
 		using T = typename Q::value_type;
-		const T ax = static_cast<T>(angle_t<T>(aa.x()));
-		const T ay = static_cast<T>(angle_t<T>(aa.y()));
-		const T az = static_cast<T>(angle_t<T>(aa.z()));
+		const T ax = angle_t<T>(aa.x()).template as<radians>();
+		const T ay = angle_t<T>(aa.y()).template as<radians>();
+		const T az = angle_t<T>(aa.z()).template as<radians>();
 		const T angle_sq = ax * ax + ay * ay + az * az;
 
 		if (angle_sq < T(1e-14)) {
@@ -170,8 +177,8 @@ export namespace gse {
 
 		const T angle = std::sqrt(angle_sq);
 		const T half_angle = angle * T(0.5);
-		const T s = std::sin(half_angle) / angle;
-		return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
+		const T s = libm::sin(half_angle) / angle;
+		return quat_t<T>{ libm::cos(half_angle), s * ax, s * ay, s * az };
 	}
 
 	template <typename T>
@@ -384,6 +391,25 @@ constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> qu
 	const T s = sin(half_angle);
 	const T c = cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
+}
+
+template <typename T>
+constexpr auto gse::shortest_arc(const vec3<T>& from, const vec3<T>& to) -> quat_t<T> {
+	const vec3<T> a = normalize(from);
+	const vec3<T> b = normalize(to);
+	const T d = dot(a, b);
+
+	if (d < T(-1) + T(1e-6)) {
+		vec3<T> axis = cross(a, vec3<T>{ T(1), T(0), T(0) });
+		if (dot(axis, axis) < T(1e-6)) {
+			axis = cross(a, vec3<T>{ T(0), T(1), T(0) });
+		}
+		axis = normalize(axis);
+		return quat_t<T>{ T(0), axis[0], axis[1], axis[2] };
+	}
+
+	const vec3<T> c = cross(a, b);
+	return normalize(quat_t<T>{ T(1) + d, c[0], c[1], c[2] });
 }
 
 template <typename T>

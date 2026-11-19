@@ -32,4 +32,9 @@ export namespace gse::ide::analysis {
 	auto validate_module_graph(
 		const compilation_entry& entry
 	) -> std::expected<void, std::string>;
+
+	auto validate_module_graph(
+		const compilation_entry& entry,
+		std::unordered_set<id>& validated
+	) -> std::expected<void, std::string>;
 }

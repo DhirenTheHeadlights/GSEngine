@@ -138,8 +138,7 @@ auto gse::gui::row_contains(const rectf& rect, const float y) -> bool {
 }
 
 auto gse::gui::face_for(const renderer::text_command& cmd, const font_set& fonts) -> std::shared_ptr<const font> {
-	const resource::handle<font> handle = cmd.font.valid() ? cmd.font : fonts.text;
-	return handle.resolve();
+	return fonts.face_or(cmd.font).resolve();
 }
 
 auto gse::gui::lay_out_runs(const std::span<const renderer::text_command> texts, const font_set& fonts, const render_layer layer, std::vector<laid_run>& out) -> void {
@@ -379,7 +378,7 @@ auto gse::gui::update_text_selection(const text_selection_frame& frame) -> void 
 	for (const selected_run& run : state.runs) {
 		frame.sprites.push_back({
 			.rect = run.rect,
-			.color = frame.style.color_selection,
+			.color = frame.style.input.selection.fill,
 			.texture = frame.blank_texture,
 			.clip_rect = run.clip_rect,
 			.layer = run.layer,
@@ -394,7 +393,7 @@ auto gse::gui::update_text_selection(const text_selection_frame& frame) -> void 
 	const bool ctrl = frame.input.key_held(key::left_control) || frame.input.key_held(key::right_control);
 	if (ctrl && frame.input.key_pressed(key::c) && !frame.layers.is_key_press_consumed(key::c)) {
 		frame.layers.consume_key_press(key::c);
-		window::set_clipboard_text(selection_text(state));
+		clipboard::set_text(selection_text(state));
 	}
 
 	if (right_pressed && !frame.context_menu.open) {

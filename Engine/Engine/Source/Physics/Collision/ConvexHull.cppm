@@ -2,25 +2,30 @@ export module gse.physics:convex_hull;
 
 import std;
 
+import gse.assert;
 import gse.math;
 
 export namespace gse::physics {
 	using hull_quartic = decltype(volume{} * length{});
 	using hull_quintic = decltype(volume{} * length{} * length{});
+	using hull_index = std::uint16_t;
 
-	constexpr std::size_t max_hull_vertices = 64;
-	constexpr std::size_t max_hull_faces = 128;
-	constexpr std::size_t max_hull_edges = 192;
+	constexpr std::size_t max_hull_vertices = 512;
+	constexpr std::size_t max_hull_faces = 1024;
+	constexpr std::size_t max_hull_edges = 1536;
+	constexpr std::size_t max_hull_face_sides = 254;
 
 	struct convex_hull {
 		std::vector<vec3<length>> vertices;
 		std::vector<vec3f> face_normals;
 		std::vector<length> face_offsets;
-		std::vector<std::uint8_t> face_first;
-		std::vector<std::uint8_t> face_count;
-		std::vector<std::uint8_t> face_loop;
-		std::vector<std::uint8_t> edge_a;
-		std::vector<std::uint8_t> edge_b;
+		std::vector<hull_index> face_first;
+		std::vector<hull_index> face_count;
+		std::vector<hull_index> face_loop;
+		std::vector<hull_index> edge_a;
+		std::vector<hull_index> edge_b;
+		std::vector<hull_index> edge_face_a;
+		std::vector<hull_index> edge_face_b;
 
 		auto valid() const -> bool;
 	};
@@ -51,7 +56,7 @@ export namespace gse::physics {
 
 namespace gse::physics {
 	struct hull_face_scratch {
-		std::array<std::uint8_t, 3> v;
+		std::array<hull_index, 3> v;
 		vec3f normal;
 		length offset;
 		bool live;
@@ -67,20 +72,20 @@ namespace gse::physics {
 
 	auto seed_tetrahedron(
 		std::span<const vec3<length>> points,
-		std::array<std::uint8_t, 4>& seed
+		std::array<std::size_t, 4>& seed
 	) -> bool;
 
 	auto push_oriented_face(
 		std::vector<hull_face_scratch>& out,
 		const std::vector<vec3<length>>& verts,
-		std::uint8_t i0,
-		std::uint8_t i1,
-		std::uint8_t i2,
+		hull_index i0,
+		hull_index i1,
+		hull_index i2,
 		const vec3<length>& interior
 	) -> void;
 }
 
-auto gse::physics::push_oriented_face(std::vector<hull_face_scratch>& out, const std::vector<vec3<length>>& verts, const std::uint8_t i0, const std::uint8_t i1, const std::uint8_t i2, const vec3<length>& interior) -> void {
+auto gse::physics::push_oriented_face(std::vector<hull_face_scratch>& out, const std::vector<vec3<length>>& verts, const hull_index i0, const hull_index i1, const hull_index i2, const vec3<length>& interior) -> void {
 	vec3f normal;
 	length offset;
 	if (!plane_of(verts[i0], verts[i1], verts[i2], normal, offset)) {
@@ -111,7 +116,7 @@ auto gse::physics::plane_of(const vec3<length>& a, const vec3<length>& b, const 
 	return true;
 }
 
-auto gse::physics::seed_tetrahedron(const std::span<const vec3<length>> points, std::array<std::uint8_t, 4>& seed) -> bool {
+auto gse::physics::seed_tetrahedron(const std::span<const vec3<length>> points, std::array<std::size_t, 4>& seed) -> bool {
 	if (points.size() < 4) {
 		return false;
 	}
@@ -164,19 +169,14 @@ auto gse::physics::seed_tetrahedron(const std::span<const vec3<length>> points, 
 		return false;
 	}
 
-	seed = {
-		static_cast<std::uint8_t>(min_x),
-		static_cast<std::uint8_t>(max_x),
-		static_cast<std::uint8_t>(best_line),
-		static_cast<std::uint8_t>(best_apex)
-	};
+	seed = { min_x, max_x, best_line, best_apex };
 	return true;
 }
 
 auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points) -> convex_hull {
 	convex_hull hull;
 
-	std::array<std::uint8_t, 4> seed{};
+	std::array<std::size_t, 4> seed{};
 	if (!seed_tetrahedron(points, seed)) {
 		return hull;
 	}
@@ -205,7 +205,7 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 
 	const auto tolerance = meters(1e-6f);
 
-	for (std::size_t p = 0; p < points.size() && verts.size() < max_hull_vertices; ++p) {
+	for (std::size_t p = 0; p < points.size(); ++p) {
 		if (consumed[p]) {
 			continue;
 		}
@@ -222,7 +222,7 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 			continue;
 		}
 
-		std::vector<std::pair<std::uint8_t, std::uint8_t>> horizon;
+		std::vector<std::pair<hull_index, hull_index>> horizon;
 		for (const auto& face : faces) {
 			if (face.live) {
 				continue;
@@ -254,8 +254,9 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 			continue;
 		}
 
+		assert(verts.size() < max_hull_vertices, "convex hull needs more than max_hull_vertices {} vertices", max_hull_vertices);
 		consumed[p] = 1;
-		const auto apex = static_cast<std::uint8_t>(verts.size());
+		const auto apex = static_cast<hull_index>(verts.size());
 		verts.push_back(point);
 
 		std::erase_if(faces, [](const hull_face_scratch& f) { return !f.live; });
@@ -264,9 +265,7 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 			push_oriented_face(faces, verts, a, b, apex, interior);
 		}
 
-		if (faces.size() > max_hull_faces) {
-			return convex_hull{};
-		}
+		assert(faces.size() <= max_hull_faces, "convex hull needs {} triangles, more than max_hull_faces {}", faces.size(), max_hull_faces);
 	}
 
 	if (faces.size() < 4 || verts.size() < 4) {
@@ -275,30 +274,51 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 
 	hull.vertices = std::move(verts);
 
-	std::vector<std::uint8_t> face_of_plane(faces.size(), 0xFF);
+	constexpr std::size_t no_plane = std::numeric_limits<std::size_t>::max();
+	std::map<std::pair<hull_index, hull_index>, std::size_t> edge_owner;
+	for (std::size_t f = 0; f < faces.size(); ++f) {
+		for (std::size_t e = 0; e < 3; ++e) {
+			edge_owner.emplace(std::pair(faces[f].v[e], faces[f].v[(e + 1) % 3]), f);
+		}
+	}
+
+	std::vector<std::size_t> face_of_plane(faces.size(), no_plane);
+	std::vector<std::size_t> pending;
 	for (std::size_t i = 0; i < faces.size(); ++i) {
-		if (face_of_plane[i] != 0xFF) {
+		if (face_of_plane[i] != no_plane) {
 			continue;
 		}
-		const auto plane_index = static_cast<std::uint8_t>(hull.face_normals.size());
+		const auto plane_index = hull.face_normals.size();
 		hull.face_normals.push_back(faces[i].normal);
 		hull.face_offsets.push_back(faces[i].offset);
-		for (std::size_t j = i; j < faces.size(); ++j) {
-			if (face_of_plane[j] != 0xFF) {
-				continue;
+		face_of_plane[i] = plane_index;
+		pending.assign(1, i);
+		while (!pending.empty()) {
+			const auto f = pending.back();
+			pending.pop_back();
+			for (std::size_t e = 0; e < 3; ++e) {
+				const auto across = edge_owner.find(std::pair(faces[f].v[(e + 1) % 3], faces[f].v[e]));
+				if (across == edge_owner.end()) {
+					continue;
+				}
+				const auto j = across->second;
+				if (face_of_plane[j] != no_plane) {
+					continue;
+				}
+				if (dot(faces[j].normal, faces[i].normal) < 0.9999f) {
+					continue;
+				}
+				if (std::ranges::any_of(faces[j].v, [&](const hull_index v) { return abs(dot(faces[i].normal, hull.vertices[v]) - faces[i].offset) > meters(1e-5f); })) {
+					continue;
+				}
+				face_of_plane[j] = plane_index;
+				pending.push_back(j);
 			}
-			if (dot(faces[j].normal, faces[i].normal) < 0.9999f) {
-				continue;
-			}
-			if (abs(faces[j].offset - faces[i].offset) > meters(1e-5f)) {
-				continue;
-			}
-			face_of_plane[j] = plane_index;
 		}
 	}
 
 	for (std::size_t plane = 0; plane < hull.face_normals.size(); ++plane) {
-		std::vector<std::pair<std::uint8_t, std::uint8_t>> boundary;
+		std::vector<std::pair<hull_index, hull_index>> boundary;
 		for (std::size_t f = 0; f < faces.size(); ++f) {
 			if (face_of_plane[f] != plane) {
 				continue;
@@ -308,7 +328,7 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 				const auto b = faces[f].v[(e + 1) % 3];
 				const auto opposite = std::ranges::find_if(
 					boundary,
-					[&](const std::pair<std::uint8_t, std::uint8_t>& edge) {
+					[&](const std::pair<hull_index, hull_index>& edge) {
 						return edge.first == b && edge.second == a;
 					}
 				);
@@ -323,16 +343,18 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 		if (boundary.size() < 3) {
 			return convex_hull{};
 		}
+		assert(boundary.size() <= max_hull_face_sides, "convex hull face has {} sides, more than max_hull_face_sides {}", boundary.size(), max_hull_face_sides);
 
-		hull.face_first.push_back(static_cast<std::uint8_t>(hull.face_loop.size()));
-		hull.face_count.push_back(static_cast<std::uint8_t>(boundary.size()));
+		hull.face_first.push_back(static_cast<hull_index>(hull.face_loop.size()));
+		hull.face_count.push_back(static_cast<hull_index>(boundary.size()));
 
-		auto current = boundary.front().first;
+		const auto start = boundary.front().first;
+		auto current = start;
 		for (std::size_t step = 0; step < boundary.size(); ++step) {
 			hull.face_loop.push_back(current);
 			const auto next = std::ranges::find_if(
 				boundary,
-				[&](const std::pair<std::uint8_t, std::uint8_t>& edge) {
+				[&](const std::pair<hull_index, hull_index>& edge) {
 					return edge.first == current;
 				}
 			);
@@ -340,6 +362,9 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 				return convex_hull{};
 			}
 			current = next->second;
+			if (current == start && step + 1 < boundary.size()) {
+				return convex_hull{};
+			}
 		}
 	}
 
@@ -354,12 +379,16 @@ auto gse::physics::build_convex_hull(const std::span<const vec3<length>> points)
 			bool exists = false;
 			for (std::size_t e = 0; e < hull.edge_a.size(); ++e) {
 				if (hull.edge_a[e] == lo && hull.edge_b[e] == hi) {
+					hull.edge_face_b[e] = static_cast<hull_index>(plane);
 					exists = true;
 				}
 			}
-			if (!exists && hull.edge_a.size() < max_hull_edges) {
+			if (!exists) {
+				assert(hull.edge_a.size() < max_hull_edges, "convex hull needs more than max_hull_edges {} edges", max_hull_edges);
 				hull.edge_a.push_back(lo);
 				hull.edge_b.push_back(hi);
+				hull.edge_face_a.push_back(static_cast<hull_index>(plane));
+				hull.edge_face_b.push_back(static_cast<hull_index>(plane));
 			}
 		}
 	}

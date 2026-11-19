@@ -16,6 +16,7 @@ export namespace gse::ide::build_runner {
 		std::uint8_t clients = 1;
 		bool dedicated_server = false;
 		bool attached = true;
+		bool browser = false;
 		std::uint16_t base_port = 9000;
 
 		auto operator==(
@@ -34,6 +35,10 @@ export namespace gse::ide::build_runner {
 	};
 
 	constexpr std::uint8_t max_profile_clients = 4;
+
+	auto effective_clients(
+		const play_session& session
+	) -> std::uint8_t;
 
 	auto profiles_path() -> std::filesystem::path;
 
@@ -71,11 +76,15 @@ export namespace gse::ide::build_runner {
 
 namespace gse::ide::build_runner {
 	constexpr std::uint32_t profiles_magic = 0x47534250;
-	constexpr std::uint32_t profiles_version = 1;
+	constexpr std::uint32_t profiles_version = 2;
 }
 
 auto gse::ide::build_runner::profiles_path() -> std::filesystem::path {
 	return config::project_state_dir() / "build_profiles.bin";
+}
+
+auto gse::ide::build_runner::effective_clients(const play_session& session) -> std::uint8_t {
+	return session.dedicated_server ? session.clients : std::uint8_t{ 1 };
 }
 
 auto gse::ide::build_runner::default_profiles() -> std::vector<build_profile> {
@@ -149,31 +158,10 @@ auto gse::ide::build_runner::load_profiles(std::vector<build_profile>& profiles,
 }
 
 auto gse::ide::build_runner::save_profiles(const std::vector<build_profile>& profiles, const std::string& active) -> void {
-	const std::filesystem::path path = profiles_path();
-	std::error_code ec;
-	std::filesystem::create_directories(path.parent_path(), ec);
-	if (ec) {
-		log::println(log::level::error, log::category::task, "build: could not create '{}': {}", path.parent_path().generic_display_string(), ec.message());
-		return;
-	}
-
-	std::filesystem::path temporary = path;
-	temporary += ".tmp";
-	{
-		std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-		if (!out) {
-			log::println(log::level::error, log::category::task, "build: could not open '{}'", temporary.generic_display_string());
-			return;
-		}
-		binary_writer writer(out, profiles_magic, profiles_version);
-		writer & profiles & active;
-	}
-
-	std::filesystem::rename(temporary, path, ec);
-	if (ec) {
-		log::println(log::level::error, log::category::task, "build: could not replace '{}': {}", path.generic_display_string(), ec.message());
-		std::filesystem::remove(temporary, ec);
-	}
+	std::ostringstream out(std::ios::binary);
+	binary_writer writer(out, profiles_magic, profiles_version);
+	writer & profiles & active;
+	layout_store::replace(profiles_path(), std::move(out).str());
 }
 
 auto gse::ide::build_runner::profile_for(const std::span<const build_profile> profiles, const std::string_view name) -> const build_profile* {

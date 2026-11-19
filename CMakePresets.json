@@ -27,7 +27,7 @@
       "name": "x64-mingw-gcc-Debug",
       "displayName": "x64 MinGW GCC Debug",
       "inherits": "x64-mingw-gcc-base",
-      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Debug",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -36,17 +36,35 @@
       "name": "x64-mingw-gcc-Release",
       "displayName": "x64 MinGW GCC Release",
       "inherits": "x64-mingw-gcc-base",
-      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Release",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release"
       }
     },
     {
+      "name": "x64-mingw-gcc-Release-portable-simd",
+      "displayName": "x64 MinGW GCC Release (portable SIMD)",
+      "inherits": "x64-mingw-gcc-Release",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Release-portable-simd",
+      "cacheVariables": {
+        "GSE_NO_SIMD_X86": "ON"
+      }
+    },
+    {
+      "name": "x64-mingw-gcc-Release-portable-scalar",
+      "displayName": "x64 MinGW GCC Release (portable SIMD, no AVX2)",
+      "inherits": "x64-mingw-gcc-Release-portable-simd",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Release-portable-scalar",
+      "cacheVariables": {
+        "GSE_NO_AVX2": "ON"
+      }
+    },
+    {
       "name": "x64-mingw-gcc-RelWithDebInfo",
       "displayName": "x64 MinGW GCC RelWithDebInfo",
       "inherits": "x64-mingw-gcc-base",
-      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-RelWithDebInfo",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-RelWithDebInfo",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
@@ -58,7 +76,7 @@
       "name": "x64-mingw-gcc-Profile",
       "displayName": "x64 MinGW GCC Profile (-ftime-report)",
       "inherits": "x64-mingw-gcc-base",
-      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Profile",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Profile",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "VCPKG_TARGET_TRIPLET": "x64-mingw-static-release",
@@ -71,13 +89,27 @@
       "name": "x64-mingw-gcc-Debug-asan",
       "displayName": "x64 MinGW GCC Debug + ASAN",
       "inherits": "x64-mingw-gcc-base",
-      "binaryDir": "${sourceDir}/out/build/x64-mingw-gcc-Debug-asan",
+      "binaryDir": "${sourceDir}/.generated/out/build/x64-mingw-gcc-Debug-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS_INIT": "-fsanitize=address -fno-omit-frame-pointer -g",
         "CMAKE_C_FLAGS_INIT": "-fsanitize=address -fno-omit-frame-pointer -g",
         "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address",
         "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fsanitize=address"
+      }
+    },
+    {
+      "name": "wasm32-wasi-gcc-Release",
+      "displayName": "wasm32 WASI GCC Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/.generated/out/build/wasm32-wasi-gcc-Release",
+      "toolchainFile": "${sourceDir}/Engine/cmake/toolchains/wasm32-wasi-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "GSE_NO_AVX2": "ON"
+      },
+      "environment": {
+        "PATH": "$env{USERPROFILE}/.gcc-trunk/ninja;$penv{PATH}"
       }
     }
   ],
@@ -101,6 +133,10 @@
     {
       "name": "x64-mingw-gcc-Debug-asan",
       "configurePreset": "x64-mingw-gcc-Debug-asan"
+    },
+    {
+      "name": "wasm32-wasi-gcc-Release",
+      "configurePreset": "wasm32-wasi-gcc-Release"
     }
   ],
   "testPresets": []

@@ -2,7 +2,7 @@
 void vbd_update_sticking(uint3 dispatch_id) {
     uint ci = dispatch_id.x;
 
-    uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts);
+    uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts());
     if (ci >= actual_contact_count) {
         return;
     }

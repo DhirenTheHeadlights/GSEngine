@@ -30,7 +30,24 @@ auto gse::gui::dock::space::select(const vec2f point) -> location {
 	return hot;
 }
 
-gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : current_menu(init.current_menu), style(init.style), fonts(init.fonts), blank_texture(init.blank_texture), layout_cursor(init.layout_cursor), sprites(init.sprites), texts(init.texts), text_pool(init.text_pool), text_pool_used(init.text_pool_used), widget_anim_colors(init.widget_anim_colors), widget_scrolls(init.widget_scrolls), widget_tree_open(init.widget_tree_open), current_layer(init.current_layer), current_z_order(init.current_z_order), input_layer(init.input_layer), input_suppressed(init.input_suppressed), owns_keyboard(init.owns_keyboard), hit_regions(init.hit_regions), tooltip(init.tooltip), context_menu(init.context_menu), clip_stack(std::move(init.clip_stack)), m_input(input) {}
+gse::gui::draw_context::draw_context(draw_context_init init, const input::state& input) : draw_context_init(std::move(init)), m_input(input) {}
+
+auto gse::gui::image_attachments::remove(const std::size_t index) -> void {
+	items.erase(items.begin() + static_cast<std::ptrdiff_t>(index));
+	if (viewing == index) {
+		viewing.reset();
+	}
+	else if (viewing && *viewing > index) {
+		--*viewing;
+	}
+}
+
+auto gse::gui::image_attachments::take_items() -> std::vector<image_attachment> {
+	std::vector<image_attachment> taken = std::move(items);
+	items.clear();
+	viewing.reset();
+	return taken;
+}
 
 auto gse::gui::font_set::named(const std::string_view name) const -> resource::handle<font> {
 	const auto it = registry.find(std::string(name));
@@ -41,24 +58,30 @@ auto gse::gui::font_set::named(const std::string_view name) const -> resource::h
 }
 
 auto gse::gui::font_set::face(const text_face which, const resource::handle<font> inherited) const -> resource::handle<font> {
-	auto pick = [](const resource::handle<font>& preferred, const resource::handle<font>& fallback) -> resource::handle<font> {
-		return preferred.valid() ? preferred : fallback;
-	};
+	const resource::handle<font> chosen = [this, which] {
+		switch (which) {
+			case text_face::text:
+				return text;
+			case text_face::text_strong:
+				return text_strong;
+			case text_face::text_emphasis:
+				return text_emphasis;
+			case text_face::code:
+				return code;
+			case text_face::code_strong:
+				return code_strong;
+			case text_face::code_emphasis:
+				return code_emphasis;
+			default:
+				return resource::handle<font>{};
+		}
+	}();
 
-	switch (which) {
-		case text_face::text:
-			return pick(text, inherited);
-		case text_face::text_strong:
-			return pick(text_strong, pick(text, inherited));
-		case text_face::text_emphasis:
-			return pick(text_emphasis, pick(text, inherited));
-		case text_face::code:
-			return pick(code, inherited);
-		case text_face::code_strong:
-			return pick(code_strong, pick(code, inherited));
-		default:
-			return inherited;
-	}
+	return chosen.valid() ? chosen : inherited;
+}
+
+auto gse::gui::font_set::face_or(const resource::handle<font> requested, const text_face fallback) const -> resource::handle<font> {
+	return requested.valid() ? requested : face(fallback, text);
 }
 
 auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
@@ -99,11 +122,11 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 }
 
 auto gse::gui::draw_context::set_clipboard(const std::string& text) const -> void {
-	window::set_clipboard_text(text);
+	clipboard::set_text(text);
 }
 
 auto gse::gui::draw_context::clipboard() const -> std::string {
-	return window::clipboard_text();
+	return clipboard::text();
 }
 
 auto gse::gui::draw_context::request_text_edit(const id widget, const text_edit_action action) const -> void {
@@ -119,6 +142,20 @@ auto gse::gui::draw_context::take_text_edit(const id widget) const -> text_edit_
 	const text_edit_action action = (*pending_text_edit)->action;
 	pending_text_edit->reset();
 	return action;
+}
+
+auto gse::gui::draw_context::request_image_paste(const id widget) const -> void {
+	image_paste.ready.reset();
+	image_paste.target = widget;
+	clipboard::request_image();
+}
+
+auto gse::gui::draw_context::take_image_paste(const id widget) const -> std::optional<image_attachment> {
+	if (!image_paste.ready || image_paste.target != widget) {
+		return std::nullopt;
+	}
+	image_paste.target = {};
+	return std::exchange(image_paste.ready, std::nullopt);
 }
 
 auto gse::gui::draw_context::open_context_menu(context_menu_open request) const -> void {
@@ -235,12 +272,19 @@ auto gse::gui::draw_context::clicked_in_rect(const rectf& rect, const mouse_butt
 	if (!hit_regions || !rect.contains(hit_regions->press_origin())) {
 		return false;
 	}
-	constexpr float click_slop = 3.f;
-	const vec2f travel = m_input.mouse_position() - hit_regions->press_origin();
-	if (std::abs(travel.x()) > click_slop || std::abs(travel.y()) > click_slop) {
+	if (!within_click_slop()) {
 		return false;
 	}
 	return mouse_released_for(rect, button);
+}
+
+auto gse::gui::draw_context::within_click_slop() const -> bool {
+	if (!hit_regions) {
+		return true;
+	}
+	constexpr float click_slop = 4.f;
+	const vec2f travel = m_input.mouse_position() - hit_regions->press_origin();
+	return std::abs(travel.x()) <= click_slop && std::abs(travel.y()) <= click_slop;
 }
 
 auto gse::gui::draw_context::mouse_pressed(const mouse_button button) const -> bool {
@@ -288,7 +332,7 @@ auto gse::gui::draw_context::is_press_consumed(const mouse_button button) const 
 	return hit_regions && hit_regions->is_press_consumed(button);
 }
 
-auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f {
+auto gse::gui::draw_context::scroll_delta_for(const rectf& rect, const scroll_axes axes) const -> vec2f {
 	const input::state& input = m_input;
 	if (!rect.contains(input.mouse_position())) {
 		return {};
@@ -296,27 +340,34 @@ auto gse::gui::draw_context::scroll_delta_for(const rectf& rect) const -> vec2f 
 	if (!input_available()) {
 		return {};
 	}
-	if (hit_regions && hit_regions->is_scroll_consumed()) {
-		return {};
+	const scroll_axes consumed = hit_regions ? hit_regions->consumed_scroll_axes() : scroll_axes{};
+	const vec2f raw = input.scroll_delta();
+
+	vec2f delta{};
+	scroll_axes taken;
+	if (axes.test(scroll_axis_kind::horizontal) && !consumed.test(scroll_axis_kind::horizontal) && raw.x() != 0.f) {
+		delta.x() = raw.x();
+		taken.set(scroll_axis_kind::horizontal);
 	}
-	const vec2f delta = input.scroll_delta();
-	if (delta.x() == 0.f && delta.y() == 0.f) {
-		return delta;
+	if (axes.test(scroll_axis_kind::vertical) && !consumed.test(scroll_axis_kind::vertical) && raw.y() != 0.f) {
+		delta.y() = raw.y();
+		taken.set(scroll_axis_kind::vertical);
 	}
-	if (hit_regions) {
-		hit_regions->consume_scroll();
+
+	if (hit_regions && taken) {
+		hit_regions->consume_scroll(taken);
 	}
 	return delta;
 }
 
-auto gse::gui::draw_context::consume_scroll() const -> void {
+auto gse::gui::draw_context::consume_scroll(const scroll_axes axes) const -> void {
 	if (hit_regions) {
-		hit_regions->consume_scroll();
+		hit_regions->consume_scroll(axes);
 	}
 }
 
-auto gse::gui::draw_context::is_scroll_consumed() const -> bool {
-	return hit_regions && hit_regions->is_scroll_consumed();
+auto gse::gui::draw_context::is_scroll_consumed(const scroll_axes axes) const -> bool {
+	return hit_regions && (hit_regions->consumed_scroll_axes() & axes).bits() == axes.bits();
 }
 
 auto gse::gui::draw_context::key_pressed_for(const key k) const -> bool {
@@ -370,24 +421,26 @@ auto gse::gui::draw_context::next_row(const resource::handle<font>& font, const 
 	return row;
 }
 
-auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const float speed) const -> vec4f {
-	const auto key = widget_id.number();
-	auto it = widget_anim_colors.find(key);
-	if (it == widget_anim_colors.end()) {
-		widget_anim_colors[key] = target;
-		return target;
-	}
+auto gse::gui::draw_context::animated_color(const id& widget_id, const vec4f target, const inverse_time speed) const -> vec4f {
+	return motion.sample(widget_id, motion_channel::color, target, target, { .duration = 1.f / speed });
+}
 
-	const float dt = system_clock::dt<time>().as<seconds>();
-	const float t = std::clamp(speed * dt, 0.f, 1.f);
-	const vec4f remaining = target - it->second;
-	const float settle = 1.f / 512.f;
-	if (std::abs(remaining.x()) < settle && std::abs(remaining.y()) < settle && std::abs(remaining.z()) < settle && std::abs(remaining.w()) < settle) {
-		it->second = target;
-		return target;
-	}
-	it->second = it->second + remaining * t;
-	return it->second;
+auto gse::gui::draw_context::presence(const id& widget_id, const bool present, const motion_spec& spec) const -> float {
+	const vec4f target{ present ? 1.f : 0.f, 0.f, 0.f, 0.f };
+	return motion.sample(widget_id, motion_channel::presence, target, {}, spec).x();
+}
+
+auto gse::gui::draw_context::animated_rect(const id& widget_id, const rectf& target, const motion_spec& spec) const -> rectf {
+	const vec4f packed{ target.min().x(), target.min().y(), target.max().x(), target.max().y() };
+	const vec4f value = motion.sample(widget_id, motion_channel::rect, packed, packed, spec);
+	return rectf({
+		.min = { value.x(), value.y() },
+		.max = { value.z(), value.w() },
+	});
+}
+
+auto gse::gui::draw_context::motion_counts() const -> motion_stats {
+	return motion.stats();
 }
 
 gse::gui::scroll_handle::scroll_handle(draw_context& ctx, scroll_state& state, const rectf& visible_rect, const float saved_layout_y, const scroll_config& config) noexcept
@@ -469,13 +522,21 @@ auto gse::gui::draw_context::scoped_layer(const render_layer layer) const -> lay
 	return layer_scope{ *this, layer };
 }
 
+auto gse::gui::draw_context::scoped_layer(const render_layer layer, const std::uint32_t z_order) const -> layer_scope {
+	return layer_scope{ *this, layer, z_order };
+}
+
 gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer) noexcept
-	: m_ctx(&ctx), m_saved(ctx.current_layer), m_active(true) {
+	: layer_scope(ctx, layer, ctx.current_z_order) {}
+
+gse::gui::layer_scope::layer_scope(const draw_context& ctx, const render_layer layer, const std::uint32_t z_order) noexcept
+	: m_ctx(&ctx), m_saved(ctx.current_layer), m_saved_z(ctx.current_z_order), m_active(true) {
 	ctx.current_layer = layer;
+	ctx.current_z_order = z_order;
 }
 
 gse::gui::layer_scope::layer_scope(layer_scope&& other) noexcept
-	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_active(other.m_active) {
+	: m_ctx(other.m_ctx), m_saved(other.m_saved), m_saved_z(other.m_saved_z), m_active(other.m_active) {
 	other.m_active = false;
 }
 
@@ -485,9 +546,11 @@ auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_sco
 	}
 	if (m_active && m_ctx) {
 		m_ctx->current_layer = m_saved;
+		m_ctx->current_z_order = m_saved_z;
 	}
 	m_ctx = other.m_ctx;
 	m_saved = other.m_saved;
+	m_saved_z = other.m_saved_z;
 	m_active = other.m_active;
 	other.m_active = false;
 	return *this;
@@ -496,5 +559,6 @@ auto gse::gui::layer_scope::operator=(layer_scope&& other) noexcept -> layer_sco
 gse::gui::layer_scope::~layer_scope() noexcept {
 	if (m_active && m_ctx) {
 		m_ctx->current_layer = m_saved;
+		m_ctx->current_z_order = m_saved_z;
 	}
 }

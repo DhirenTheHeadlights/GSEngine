@@ -6,8 +6,6 @@ import :vector;
 import :quat;
 import :simd;
 
-import gse.assert;
-
 export namespace gse::internal {
 	template <typename M>
 	concept is_mat_like = requires(const M& m) {
@@ -75,7 +73,7 @@ export namespace gse {
 		constexpr decltype(auto) operator[](
 			this auto& self,
 			std::size_t index
-		);
+		) pre(index < Cols);
 
 		constexpr auto operator==(
 			const mat&
@@ -291,7 +289,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::inverse() const {
 
 	if constexpr (Cols == 2) {
 		const value_type det = determinant();
-		assert(det != value_type(0), "Matrix is not invertible.");
+		contract_assert(det != value_type(0));
 		const value_type inv_det = value_type(1) / det;
 
 		mat<inv_elem, 2, 2> result;
@@ -305,7 +303,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::inverse() const {
 	}
 	else if constexpr (Cols == 3) {
 		const value_type det = determinant();
-		assert(det != value_type(0), "Matrix is not invertible.");
+		contract_assert(det != value_type(0));
 		const value_type inv_det = value_type(1) / det;
 
 		mat<inv_elem, 3, 3> result;
@@ -361,7 +359,7 @@ constexpr auto gse::mat<Element, Cols, Rows>::inverse() const {
 		const value_type f33 = r(0, 0) * c08 - r(0, 1) * c14 + r(0, 2) * c17;
 
 		const value_type det = r(0, 0) * f00 + r(0, 1) * f10 + r(0, 2) * f20 + r(0, 3) * f30;
-		assert(det != value_type(0), "Matrix is not invertible.");
+		contract_assert(det != value_type(0));
 		const value_type inv_det = value_type(1) / det;
 
 		mat<inv_elem, 4, 4> result;

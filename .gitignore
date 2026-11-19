@@ -1,17 +1,13 @@
-# Build output
+# Generated trees: builds, dist stages, msys64, gcc and wasm workspaces (Tools/repo_paths.py)
+/.generated/
+/.gcc-build/
 /out
-/dist/
 bin/
 build/
 cmake-build-*/
 Makefile
 /vc140.pdb
 
-# GCC trunk build workspace (scripts/build_gcc_trunk.py)
-/msys64/
-/.gcc-build/
-/.gcc-ci-build/
-/.gcc-src-cache/
 *.sfx.exe
 
 # IDE / editor
@@ -32,6 +28,9 @@ __pycache__/
 !/Engine/External/moodycamel/
 !/Engine/External/moodycamel/concurrentqueue.h
 !/Engine/External/pinned-ports/
+!/Engine/External/wgpu-native/
+/Engine/External/wgpu-native/lib/
+!/Engine/External/coremath/
 
 # Generated resources / configs
 # Runtime writes (settings, layouts, logs, crash dumps, profiles, captures) live
@@ -61,3 +60,7 @@ __pycache__/
 
 # Windows `> nul` artifact
 /nul
+
+# WGSL baked by a native Graphics.backend=webgpu run, read by the wasm build
+/Engine/Resources/Shaders/Wgsl/
+

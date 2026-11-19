@@ -1,0 +1,120 @@
+--- a/libgcc/config/wasm/multi3.c
++++ b/libgcc/config/wasm/multi3.c
+@@ -0,0 +1,105 @@
++/* 128-bit multiply for WebAssembly, for compatibility with clang-built objects.
++   Copyright (C) 2026 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it under
++the terms of the GNU General Public License as published by the Free
++Software Foundation; either version 3, or (at your option) any later
++version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT ANY
++WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++Under Section 7 of GPL version 3, you are granted additional
++permissions described in the GCC Runtime Library Exception, version
++3.1, as published by the Free Software Foundation.
++
++You should have received a copy of the GNU General Public License and
++a copy of the GCC Runtime Library Exception along with this program;
++see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
++<http://www.gnu.org/licenses/>.  */
++
++/* Nothing this compiler emits calls this.  wasm.h caps MAX_FIXED_MODE_SIZE at
++   64 and wasm.cc's scalar_mode_supported_p vetoes TImode, so GCC's wasm32 has
++   no __int128 and generates no call to a TImode routine.  It is here because
++   every prebuilt wasm library in existence was built by clang, whose wasm32
++   does have __int128 -- and wasi-libc's intscan.c calls __multi3 from the
++   integer parser that libstdc++'s locale setup reaches.  So this symbol is the
++   one thing standing between a clang-built sysroot and any hosted C++ link at
++   all, and supplying it is interoperability rather than a capability.
++
++   It is written out by hand because libgcc cannot be asked for it.  The
++   generic routine is libgcc2.c's __muldi3 under LIBGCC2_UNITS_PER_WORD 8,
++   where DWtype is TImode, and reaching it means un-vetoing TImode -- which was
++   tried and measured: the expanders ICE in emit_move_multi_word and in
++   extract_insn on `(set (subreg:DI (reg:TI)) (reg:DI))', because the move
++   patterns and the register predicates reject a word of a TImode value rather
++   than splitting it.  See docs/wasm_pipeline_plan.md "Step 13".
++
++   THE SIGNATURE IS MEASURED, NOT ASSUMED.  It is clang's wasm32 ABI for a
++   function taking two __int128 and returning one, read off the object that
++   calls it:
++
++     $ wasm-objdump -x intscan.c.obj
++       - type[3] (i32, i64, i64, i64, i64) -> nil
++       - func[2] sig=3 <env.__multi3>
++
++   so the result comes back through a pointer the caller passes first, and each
++   128-bit argument is two i64s, low word first.  Written in those terms the
++   declaration below produces that signature exactly, with no __int128 in
++   sight.  Getting it wrong would not be quiet: wasm-ld compares an undefined
++   symbol's signature against the definition and says `function signature
++   mismatch' when they differ.  */
++
++#include "tconfig.h"
++#include "tsystem.h"
++#include "coretypes.h"
++#include "tm.h"
++
++typedef unsigned long long uint64;
++
++/* The low 64 bits of a 64x64 product, and the high 64 bits, from four 32-bit
++   partial products.  This is libgcc2.c's __umulsidi3 one word size up, and it
++   is spelled out rather than reached through UWtype because the point of this
++   file is to depend on nothing wider than the target has.  */
++
++static uint64
++umul_lo_hi (uint64 a, uint64 b, uint64 *hi)
++{
++  uint64 a_lo = a & 0xffffffffULL, a_hi = a >> 32;
++  uint64 b_lo = b & 0xffffffffULL, b_hi = b >> 32;
++
++  uint64 ll = a_lo * b_lo;
++  uint64 lh = a_lo * b_hi;
++  uint64 hl = a_hi * b_lo;
++  uint64 hh = a_hi * b_hi;
++
++  /* The two middle products are added as a 65-bit quantity: their sum can
++     carry out of 64 bits, and dropping that carry is the classic way this
++     routine goes wrong on exactly the inputs nobody tests.  */
++  uint64 mid = lh + hl;
++  uint64 mid_carry = (mid < lh) ? (1ULL << 32) : 0;
++
++  uint64 lo = ll + (mid << 32);
++  uint64 lo_carry = (lo < ll) ? 1 : 0;
++
++  *hi = hh + (mid >> 32) + mid_carry + lo_carry;
++  return lo;
++}
++
++void
++__multi3 (uint64 *result, uint64 a_lo, uint64 a_hi, uint64 b_lo, uint64 b_hi)
++{
++  uint64 hi;
++  uint64 lo = umul_lo_hi (a_lo, b_lo, &hi);
++
++  /* The products involving a high word contribute only to the high word of a
++     result truncated to 128 bits, so their own overflow is discarded.  */
++  hi += a_lo * b_hi + a_hi * b_lo;
++
++  result[0] = lo;
++  result[1] = hi;
++}
+--- a/libgcc/config/wasm/t-wasm
++++ b/libgcc/config/wasm/t-wasm
+@@ -9,3 +9,9 @@
+ 
+ # Debug information is not yet supported
+ LIBGCC2_DEBUG_CFLAGS = -g0
++
++# __multi3, which this compiler never calls and every clang-built wasm library
++# expects.  LIB2ADD rather than a libgcc2.c word size: reaching the generic
++# __muldi3 at LIBGCC2_UNITS_PER_WORD 8 needs TImode, and the expanders ICE on
++# it.  See multi3.c.
++LIB2ADD += $(srcdir)/config/wasm/multi3.c

@@ -97,7 +97,6 @@ export namespace gse::gpu {
 		image_format format = image_format::d32_sfloat;
 		image_view_type view = image_view_type::e2d;
 		image_usage usage{ image_flag::sampled, image_flag::depth_attachment };
-		bool bindless = false;
 	};
 
 	struct image_create_info {
@@ -204,6 +203,7 @@ export namespace gse::gpu {
 	struct swap_chain_info {
 		swap_chain_handle handle;
 		vec2u extent;
+		vec2u allocated;
 		image_format format = image_format::d32_sfloat;
 		gpu::present_mode present_mode = gpu::present_mode::fifo;
 		std::vector<gpu::handle<image>> images;
@@ -255,6 +255,17 @@ export namespace gse::gpu {
 	auto is_bgra(
 		image_format f
 	) -> bool;
+
+	constexpr std::uint32_t screen_allocation_granularity = 256;
+
+	[[nodiscard]] auto screen_allocation_for(
+		vec2u active
+	) -> vec2u;
+
+	[[nodiscard]] auto swapchain_allocation_for(
+		vec2u active,
+		vec2u monitor
+	) -> vec2u;
 }
 
 auto gse::gpu::image_aspect_for(const image_format f) -> image_aspect_flags {
@@ -306,4 +317,19 @@ inline auto gse::gpu::image::sampled_slot() const -> bindless_slot {
 
 inline auto gse::gpu::image::valid() const -> bool {
 	return static_cast<bool>(m_image);
+}
+
+auto gse::gpu::screen_allocation_for(const vec2u active) -> vec2u {
+	const auto round_up = [](const std::uint32_t value) -> std::uint32_t {
+		if (value == 0) {
+			return 0;
+		}
+		return ((value + screen_allocation_granularity - 1) / screen_allocation_granularity) * screen_allocation_granularity;
+	};
+	return vec2u{ round_up(active.x()), round_up(active.y()) };
+}
+
+auto gse::gpu::swapchain_allocation_for(const vec2u active, const vec2u monitor) -> vec2u {
+	const auto bucketed = screen_allocation_for(active);
+	return vec2u{ std::max(bucketed.x(), monitor.x()), std::max(bucketed.y(), monitor.y()) };
 }

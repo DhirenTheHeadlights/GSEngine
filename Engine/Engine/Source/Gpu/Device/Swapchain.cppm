@@ -15,6 +15,16 @@ import gse.math;
 import gse.log;
 
 export namespace gse::gpu {
+	[[nodiscard]] auto screen_uv_scale_for(
+		vec2u active,
+		vec2u allocated
+	) -> vec2f;
+
+	[[nodiscard]] auto screen_uv_max_for(
+		vec2u active,
+		vec2u allocated
+	) -> vec2f;
+
 	class swap_chain final : public non_copyable {
 	public:
 		[[nodiscard]]
@@ -32,6 +42,8 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto extent() const -> vec2u;
+
+		[[nodiscard]] auto allocated() const -> vec2u;
 
 		[[nodiscard]] auto image_count() const -> std::uint32_t;
 
@@ -80,10 +92,6 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto refresh_interval() const -> time_t<std::uint64_t>;
 
-		[[nodiscard]] auto depth_image(
-			this auto& self
-		) -> auto&;
-
 		using recreate_callback = std::function<void()>;
 		auto on_recreate(
 			recreate_callback callback
@@ -101,39 +109,33 @@ export namespace gse::gpu {
 			gpu::present_mode preferred_present_mode
 		) -> expected<void>;
 
+		[[nodiscard]] auto resize_in_place(
+			vec2i framebuffer_size
+		) -> bool;
+
 		[[nodiscard]] auto current_handle() const -> swap_chain_handle;
 
 	private:
 		swap_chain(
 			swap_chain_info&& info,
-			gpu::image&& depth_image,
 			device& dev,
 			gpu::surface surface
 		);
 
 		swap_chain_info m_info;
-		gpu::image m_depth_image;
 		device* m_device;
 		gpu::surface m_surface;
 		std::vector<recreate_callback> m_recreate_callbacks;
 	};
 }
 
-namespace gse::gpu {
-	auto create_swapchain_depth(
-		device& dev,
-		vec2u extent
-	) -> image;
-}
-
 auto gse::gpu::swap_chain::create(const gpu::surface surface, const vec2i framebuffer_size, const gpu::present_mode preferred_present_mode, device& dev) -> std::unique_ptr<swap_chain> {
 	auto info = must(dev.create_swapchain(surface, framebuffer_size, preferred_present_mode));
-	auto depth = create_swapchain_depth(dev, info.extent);
-	return std::unique_ptr<swap_chain>(new swap_chain(std::move(info), std::move(depth), dev, surface));
+	return std::unique_ptr<swap_chain>(new swap_chain(std::move(info), dev, surface));
 }
 
-gse::gpu::swap_chain::swap_chain(swap_chain_info&& info, gpu::image&& depth_image, device& dev, const gpu::surface surface)
-	: m_info(std::move(info)), m_depth_image(std::move(depth_image)), m_device(&dev), m_surface(surface) {
+gse::gpu::swap_chain::swap_chain(swap_chain_info&& info, device& dev, const gpu::surface surface)
+	: m_info(std::move(info)), m_device(&dev), m_surface(surface) {
 }
 
 auto gse::gpu::swap_chain::surface() const -> gpu::surface {
@@ -146,6 +148,10 @@ auto gse::gpu::swap_chain::replace_surface(const gpu::surface surface) -> void {
 
 auto gse::gpu::swap_chain::extent() const -> vec2u {
 	return m_info.extent;
+}
+
+auto gse::gpu::swap_chain::allocated() const -> vec2u {
+	return m_info.allocated;
 }
 
 auto gse::gpu::swap_chain::image_count() const -> std::uint32_t {
@@ -222,10 +228,6 @@ auto gse::gpu::swap_chain::refresh_interval() const -> time_t<std::uint64_t> {
 	return m_info.refresh_interval;
 }
 
-auto gse::gpu::swap_chain::depth_image(this auto& self) -> auto& {
-	return (self.m_depth_image);
-}
-
 auto gse::gpu::swap_chain::on_recreate(recreate_callback callback) -> void {
 	m_recreate_callbacks.push_back(std::move(callback));
 }
@@ -244,9 +246,7 @@ auto gse::gpu::swap_chain::recreate(const vec2i framebuffer_size, const gpu::pre
 		return std::unexpected(info.error());
 	}
 
-	m_depth_image = {};
 	m_info = std::move(*info);
-	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
 	return {};
 }
 
@@ -258,25 +258,39 @@ auto gse::gpu::swap_chain::recreate_detached(const vec2i framebuffer_size, const
 		return std::unexpected(info.error());
 	}
 
-	m_depth_image = {};
 	m_info = std::move(*info);
-	m_depth_image = create_swapchain_depth(*m_device, m_info.extent);
 	return {};
+}
+
+auto gse::gpu::swap_chain::resize_in_place(const vec2i framebuffer_size) -> bool {
+	if (!m_device->resize_swapchain_in_place(m_info.handle, framebuffer_size)) {
+		return false;
+	}
+	m_info.extent = vec2u{ static_cast<std::uint32_t>(framebuffer_size.x()), static_cast<std::uint32_t>(framebuffer_size.y()) };
+	return true;
 }
 
 auto gse::gpu::swap_chain::current_handle() const -> swap_chain_handle {
 	return m_info.handle;
 }
 
-auto gse::gpu::create_swapchain_depth(device& dev, const vec2u extent) -> image {
-	auto img = dev.create_image(
-		image_desc{
-			.size = extent,
-			.format = image_format::d32_sfloat,
-			.usage = { image_flag::depth_attachment, image_flag::sampled },
-		},
-		"swapchain.depth"
-	);
-	transition_image_to(dev, img);
-	return img;
+auto gse::gpu::screen_uv_scale_for(const vec2u active, const vec2u allocated) -> vec2f {
+	if (allocated.x() == 0 || allocated.y() == 0) {
+		return vec2f{ 1.f, 1.f };
+	}
+	return vec2f{
+		static_cast<float>(active.x()) / static_cast<float>(allocated.x()),
+		static_cast<float>(active.y()) / static_cast<float>(allocated.y()),
+	};
+}
+
+auto gse::gpu::screen_uv_max_for(const vec2u active, const vec2u allocated) -> vec2f {
+	if (allocated.x() == 0 || allocated.y() == 0) {
+		return vec2f{ 1.f, 1.f };
+	}
+	const auto scale = screen_uv_scale_for(active, allocated);
+	return vec2f{
+		scale.x() - 0.5f / static_cast<float>(allocated.x()),
+		scale.y() - 0.5f / static_cast<float>(allocated.y()),
+	};
 }

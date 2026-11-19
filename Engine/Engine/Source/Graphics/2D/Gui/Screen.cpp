@@ -24,11 +24,13 @@ import :input_layers;
 import :menu_stack;
 import :render_layer;
 import :styles;
+import :surface_paint;
 import :symbols;
 import :texture;
 import :types;
 import :ui_renderer;
 import :widget_context;
+import :widget_skin;
 
 auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, const rectf& bar_rect, const rectf& full_rect) -> void {
 	draw_context& ctx = b.ctx;
@@ -36,11 +38,7 @@ auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, 
 
 	ctx.clip_stack.push_back(bar_rect);
 
-	ctx.queue_sprite({
-		.rect = bar_rect,
-		.color = sty.color_input_background,
-		.texture = ctx.blank_texture,
-	});
+	draw::fill_surface(ctx, bar_rect, sty.screen.body, {});
 
 	const float button_w = bar_rect.height() * 1.5f;
 	const rectf close_rect = rectf::from_position_size({ bar_rect.right() - button_w, bar_rect.top() }, { button_w, bar_rect.height() });
@@ -54,13 +52,13 @@ auto gse::gui::draw_screen_caption(builder& b, viewport_state& vp, screen& top, 
 
 	const float screen_controls_width = top.draw_caption(b, content_rect);
 
-	if (caption_button(b, close_rect, "##screen_caption_close", symbol::close(), vec4f{ 0.78f, 0.22f, 0.22f, 1.f })) {
+	if (caption_button(b, close_rect, "##screen_caption_close", symbol::close(), sty.caption_button_danger)) {
 		vp.pending_caption_action = caption_action::close;
 	}
-	if (caption_button(b, max_rect, "##screen_caption_max", symbol::maximize(), sty.color_widget_hovered)) {
+	if (caption_button(b, max_rect, "##screen_caption_max", symbol::maximize(), sty.caption_button)) {
 		vp.pending_caption_action = caption_action::toggle_maximize;
 	}
-	if (caption_button(b, min_rect, "##screen_caption_min", symbol::minimize(), sty.color_widget_hovered)) {
+	if (caption_button(b, min_rect, "##screen_caption_min", symbol::minimize(), sty.caption_button)) {
 		vp.pending_caption_action = caption_action::minimize;
 	}
 
@@ -117,29 +115,12 @@ auto gse::gui::process_screen(data& d, viewport_state& vp, const input::state& i
 
 	ids::scope _(vp.screen_surface->id().number());
 
-	widget_context ctx{ {
-		.current_menu = &*vp.screen_surface,
-		.style = sty,
-		.fonts = d.fonts,
-		.blank_texture = d.blank_texture,
+	widget_context ctx{ widget_context_init(d, vp, render_layer::popup, 0, {
+		.current_menu = *vp.screen_surface,
+		.style = vp.fstate.sty,
 		.layout_cursor = layout_cursor,
-		.sprites = d.sprite_commands,
-		.texts = d.text_commands,
-		.text_pool = d.text_pools[d.text_pool_slot],
-		.text_pool_used = d.text_pool_used,
-		.widget_anim_colors = d.widget_anim_colors,
-		.widget_scrolls = d.widget_scrolls,
-		.widget_tree_open = d.widget_tree_open,
-		.current_layer = render_layer::popup,
-		.input_layer = vp.input_layer_render,
-		.input_suppressed = vp.input_suppressed,
-		.owns_keyboard = vp.owns_keyboard,
-		.hit_regions = &vp.input_layers_data,
-		.tooltip = &vp.tooltip,
-		.context_menu = &vp.context_menu,
-		.pending_text_edit = &vp.pending_text_edit,
-		.clip_stack = { body_rect },
-	}, input_state };
+		.clip = body_rect,
+	}), input_state };
 
 	vp.hot_widget_id = {};
 	d.context = &ctx;

@@ -5,6 +5,8 @@ import gse.ide.git;
 import gse.ide.project;
 import std;
 
+import :brand;
+
 export namespace gse::ide {
 	class project_screen : public gui::screen {
 	public:
@@ -19,6 +21,11 @@ export namespace gse::ide {
 		) -> void override;
 
 		auto title() const -> std::string_view override;
+
+		auto draw_caption(
+			gui::builder& ui,
+			const rectf& area
+		) -> float override;
 
 		auto captures_input() const -> bool override;
 
@@ -48,7 +55,6 @@ export namespace gse::ide {
 			std::string key;
 			std::string name;
 			std::string location;
-			vec4f accent;
 			bool current = false;
 			bool elsewhere = false;
 		};
@@ -74,6 +80,7 @@ export namespace gse::ide {
 		struct engine_choice {
 			project::engine_entry entry;
 			std::string location;
+			std::string sdk_version;
 			bool current = false;
 		};
 
@@ -86,6 +93,7 @@ export namespace gse::ide {
 		int m_selected = 0;
 		bool m_creating = false;
 		bool m_init_git = true;
+		bool m_engine_worktree = true;
 		int m_template = 0;
 		std::string m_new_name;
 		std::string m_error;
@@ -103,7 +111,7 @@ export namespace gse::ide {
 		bool m_forced = false;
 		std::string m_engine_problem;
 		std::string m_notice;
-		clock m_probe;
+		interval_timer<> m_probe{ seconds(1.f) };
 	};
 }
 
@@ -119,14 +127,11 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 		if (current) {
 			m_selected = static_cast<int>(m_entries.size());
 		}
-		gui::theme t = gui::theme::midnight;
-		enum_from_string(project::theme_name(found.root), t);
 		m_entries.push_back({
 			.manifest = path,
 			.key = path.generic_display_string(),
 			.name = found.name,
 			.location = found.root.generic_display_string(),
-			.accent = gui::style::from_theme(t).color_accent,
 			.current = current
 		});
 	}
@@ -145,6 +150,19 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 		});
 	}
 
+	for (project::sdk_entry& candidate : project::sdks()) {
+		const bool current = active.valid && candidate.version == active.sdk_version;
+		if (current) {
+			m_engine_selected = static_cast<int>(m_engines.size());
+		}
+		m_engines.push_back({
+			.entry = { .name = std::format("SDK {}", candidate.version), .path = candidate.image },
+			.location = candidate.image.generic_display_string(),
+			.sdk_version = std::move(candidate.version),
+			.current = current
+		});
+	}
+
 	if (active.valid && !active.engine_problem.empty()) {
 		m_engine_problem = active.engine_problem;
 		m_rebinding = true;
@@ -154,6 +172,28 @@ gse::ide::project_screen::project_screen(channel_write<window_launcher_mode_requ
 
 auto gse::ide::project_screen::title() const -> std::string_view {
 	return m_hub ? "GSEditor" : "Projects";
+}
+
+auto gse::ide::project_screen::draw_caption(gui::builder& ui, const rectf& area) -> float {
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const rectf symbol_rect = gui::layout::align_in(
+		area.inset({ sty.padding, 0.f }),
+		{ sty.icon_extent, sty.icon_extent },
+		gui::layout::halign::start,
+		gui::layout::valign::center
+	);
+	brand::draw(ctx, symbol_rect);
+	const float title_x = symbol_rect.right() + sty.padding * 0.5f;
+	const rectf title_rect = rectf::from_position_size(
+		{ title_x, area.top() },
+		{ std::max(0.f, area.right() - sty.padding - title_x), area.height() }
+	);
+	gui::draw::label(ctx, title_rect, title(), sty.screen.caption, {
+		.color = sty.screen.caption_color,
+		.clip_rect = area,
+	});
+	return 0.f;
 }
 
 auto gse::ide::project_screen::captures_input() const -> bool {
@@ -199,7 +239,7 @@ auto gse::ide::project_screen::body_rect(const gui::style& sty, const vec2f view
 auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f viewport_size) const -> void {
 	ctx.sprites.push_back({
 		.rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size),
-		.color = m_hub ? vec4f{ vec3f(ctx.style.color_menu_body), 1.f } : vec4f{ 0.f, 0.f, 0.f, 0.55f },
+		.color = m_hub ? ctx.style.modal.panel.fill : ctx.style.modal.scrim.fill,
 		.texture = ctx.blank_texture,
 		.layer = render_layer::overlay,
 	});
@@ -207,13 +247,8 @@ auto gse::ide::project_screen::draw_backdrop(gui::draw_context& ctx, const vec2f
 	if (m_hub) {
 		return;
 	}
-	const rectf card = body_rect(ctx.style, viewport_size);
-	ctx.sprites.push_back({
-		.rect = card,
-		.color = { vec3f(ctx.style.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
+	gui::draw::fill_surface(ctx, body_rect(ctx.style, viewport_size), ctx.style.modal.panel, {
 		.layer = render_layer::overlay,
-		.corner_radius = ctx.style.corner_radius_menu,
 	});
 }
 
@@ -446,7 +481,12 @@ auto gse::ide::project_screen::build_rebind(gui::builder& ui) -> void {
 				m_rebinding = false;
 				return;
 			}
-			project::bind_engine(active.file, item.entry);
+			if (item.sdk_version.empty()) {
+				project::bind_engine(active.file, item.entry);
+			}
+			else {
+				project::bind_sdk(active.file, item.sdk_version);
+			}
 			m_dismiss = true;
 			open(active.file);
 			return;
@@ -475,7 +515,7 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 		}
 	}
 
-	if (m_probe.elapsed() >= seconds(1.f)) {
+	if (m_probe.tick()) {
 		refresh_elsewhere();
 	}
 
@@ -492,7 +532,6 @@ auto gse::ide::project_screen::build_list(gui::builder& ui) -> void {
 			.key = item.key,
 			.selected = m_selected == static_cast<int>(index),
 			.align = gui::selectable_align::left,
-			.accent = item.accent,
 			.detail_column = detail_column,
 		})) {
 			activate(item);
@@ -596,6 +635,11 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		.value = m_init_git,
 	});
 
+	ui.draw<gui::toggle>({
+		.name = "Create Engine Worktree",
+		.value = m_engine_worktree,
+	});
+
 	const bool submit = ctx.key_pressed(key::enter) || ctx.key_pressed(key::kp_enter);
 
 	const float action_h = text_view->line_height(sty.font_size) + pad;
@@ -632,6 +676,24 @@ auto gse::ide::project_screen::build_create(gui::builder& ui) -> void {
 		if (m_init_git) {
 			if (const std::expected<void, std::string> repo = git::initialize(created->parent_path()); !repo) {
 				log::println(log::level::error, log::category::general, "git init failed: {}", repo.error());
+			}
+		}
+		if (m_engine_worktree) {
+			const std::filesystem::path engine = gse::config::root_dir();
+			const std::filesystem::path worktree = engine.parent_path() / (engine.filename().native_encoded_string() + "-" + m_new_name);
+			const std::expected<void, std::string> added = git::add_worktree({
+				.repository = engine,
+				.destination = worktree,
+				.branch = "project/" + m_new_name,
+			});
+			if (added) {
+				project::bind_engine(*created, {
+					.name = project::ensure_engine_registered(worktree),
+					.path = worktree,
+				});
+			}
+			else {
+				log::println(log::level::error, log::category::general, "engine worktree creation failed, project stays bound to the editor's engine: {}", added.error());
 			}
 		}
 		m_dismiss = true;

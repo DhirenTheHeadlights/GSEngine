@@ -10,7 +10,7 @@ void vbd_hash_adjacency(uint3 dispatch_id, uint3 group_thread_id) {
     GroupMemoryBarrierWithGroupSync();
 
     uint local_hash = 0;
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
 
     return;
 

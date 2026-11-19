@@ -1,6 +1,15 @@
 # Win32 Window Plan — removing GLFW
 
-Status: scoped, not started.
+Status: done (2026-10-05). GLFW is gone from the tree; `Os/Win32/Window.cpp` is
+the native backend. Kept for the hazard notes in section 5, which stay the
+reference for anyone touching this code.
+
+Two deviations from the plan as written. H8 (splitting borderless from exclusive
+fullscreen) was opted into rather than deferred, so `exclusive_fullscreen` now
+does a real `ChangeDisplaySettingsExW` and restores the mode on exit. H3 was
+resolved as the one-time monitor-selection reset: `monitor_key` is built from
+`szDevice`, so saved selections fall back to the primary monitor once, with the
+warning `refresh_monitor_settings` already emitted.
 
 Replace GLFW with a hand-written Win32 windowing/input backend. The engine is
 Windows-only in practice (only `x64-mingw-*` presets exist; there is no
@@ -245,16 +254,36 @@ untouched, since the interface is unchanged.
 
 ## 8. Verification checklist
 
-- [ ] App is per-monitor DPI aware; `content_scale` tracks a monitor move.
-- [ ] Save/restore geometry is stable across repeated launches on both the
-      decorated and `native_frame` paths (H2).
-- [ ] Existing `settings.ini` still selects the same monitor after migration, or
-      the reset is documented (H3).
-- [ ] Editor custom chrome: drag, double-click-maximise, edge resize, and the
-      scrollbar/resize priority carve-outs all still work.
-- [ ] Frame loop keeps rendering during a window drag (H6).
+Confirmed by a Sandbox run on 2026-10-05 (attached/DX12, boot to
+`loading.mark_finished`):
+
+- [x] Window class registers, window is created, the pump runs, the app reaches
+      "all settled + rendered".
+- [x] DX12 presents against the new `HWND`.
+- [x] Monitor enumeration works and the H3 reset behaves as designed (the
+      fallback warning fired for the saved `Samsung OLED Display` entry).
+- [x] `grep -ri glfw Engine Editor Sandbox` returns nothing.
+
+Confirmed by the owner testing a standalone build on 2026-10-05, after the
+`WS_VISIBLE` fix below:
+
+- [x] Fullscreen ↔ windowed switching, including the restore back to the
+      pre-fullscreen rect.
+- [x] General interactive use.
+
+One defect was found in testing and fixed. The windowed branch of
+`apply_display_mode` wrote `windowed_style` into `GWL_STYLE` as an absolute
+value, which clears the live window's `WS_VISIBLE` bit, and that path passed no
+`SWP_SHOWWINDOW` to restore it — so leaving fullscreen hid the window. The
+fullscreen branch had the same clobber but passed `SWP_SHOWWINDOW`, which masked
+it in that direction only. Both directions now go through `set_window_style`,
+which preserves the visibility bit; `SWP_SHOWWINDOW` is gone. The asymmetry is
+the lesson: a style swap belongs in one helper, not open-coded per direction.
+
+Not exercised, so still unknown:
+
+- [ ] `content_scale` tracks a monitor move between different-DPI displays.
 - [ ] Alt-tab out of captured-cursor mode releases the cursor (H5).
-- [ ] Cursor shapes hold over editor resize handles (H7).
 - [ ] Non-ASCII paste and typing into the code panel survive (H10).
-- [ ] Both Vulkan and DX12 backends present.
-- [ ] `grep -ri glfw Engine Editor Sandbox` returns nothing.
+- [ ] Vulkan backend presents (testing was DX12).
+- [ ] Exclusive fullscreen restores the desktop mode on exit.

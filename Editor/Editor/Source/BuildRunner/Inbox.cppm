@@ -21,7 +21,12 @@ export namespace gse::ide::build_inbox {
 		std::string config;
 		std::filesystem::path cwd;
 		std::filesystem::path project;
+		std::vector<std::string> settings;
+		std::string scenario;
+		time exit_after{};
 		bool run = false;
+		bool run_only = false;
+		bool standalone = false;
 	};
 
 	struct result {
@@ -64,6 +69,15 @@ export namespace gse::ide::build_inbox {
 
 	auto take_presence() -> std::vector<presence>;
 
+	auto step_gate_path(
+		std::uint32_t session
+	) -> std::filesystem::path;
+
+	auto publish_step_gate(
+		std::uint32_t session,
+		std::string_view refusal
+	) -> void;
+
 	auto peek_hibernations() -> std::vector<hibernate_request>;
 
 	auto peek_requests() -> std::vector<request>;
@@ -88,6 +102,15 @@ export namespace gse::ide::build_inbox {
 		std::string_view id
 	) -> void;
 
+	auto exits_dir() -> std::filesystem::path;
+
+	auto publish_exit(
+		std::uint32_t pid,
+		std::uint32_t exit_code,
+		std::span<const std::string> tail
+	) -> void;
+
+
 	struct symbol_query {
 		std::string id;
 		std::string agent;
@@ -106,6 +129,179 @@ export namespace gse::ide::build_inbox {
 	auto peek_symbol_queries() -> std::vector<symbol_query>;
 
 	auto consume_symbol_query(
+		std::string_view id
+	) -> void;
+
+	struct panel_query {
+		std::string id;
+		std::string agent;
+		std::string panel;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		std::uint32_t rows = 0;
+	};
+
+	auto panels_dir() -> std::filesystem::path;
+
+	auto peek_panel_queries() -> std::vector<panel_query>;
+
+	auto consume_panel_query(
+		std::string_view id
+	) -> void;
+
+	struct format_request {
+		std::string id;
+		std::string agent;
+		std::filesystem::path file;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		bool dry_run = false;
+	};
+
+	auto formats_dir() -> std::filesystem::path;
+
+	auto peek_format_requests() -> std::vector<format_request>;
+
+	auto consume_format_request(
+		std::string_view id
+	) -> void;
+
+	struct package_request {
+		std::string id;
+		std::string agent;
+		std::filesystem::path cwd;
+		std::filesystem::path project;
+		sdk::pack_kind kind = sdk::pack_kind::sdk;
+		std::string scenario;
+	};
+
+	auto packages_dir() -> std::filesystem::path;
+
+	auto peek_package_requests() -> std::vector<package_request>;
+
+	auto consume_package_request(
+		std::string_view id
+	) -> void;
+
+	struct plan_step {
+		std::string text;
+		std::vector<std::filesystem::path> files;
+	};
+
+	struct reported_criterion {
+		std::string id;
+		std::string state;
+		std::string note;
+	};
+
+	struct phase_report {
+		std::string id;
+		std::string agent;
+		std::string summary;
+		std::uint32_t findings = 0;
+		std::string next;
+		std::filesystem::path goal;
+		std::filesystem::path cwd;
+		std::vector<plan_step> steps;
+		std::optional<std::string> diagnosis;
+		std::vector<reported_criterion> criteria;
+	};
+
+	auto phases_dir() -> std::filesystem::path;
+
+	auto peek_phase_reports() -> std::vector<phase_report>;
+
+	auto consume_phase_report(
+		std::string_view id
+	) -> void;
+
+	struct await_request {
+		std::string id;
+		std::string agent;
+		std::string then;
+		std::optional<std::uint32_t> pid;
+		std::filesystem::path file;
+		time wait{};
+		std::filesystem::path cwd;
+	};
+
+	auto awaits_dir() -> std::filesystem::path;
+
+	auto peek_awaits() -> std::vector<await_request>;
+
+	auto consume_await(
+		std::string_view id
+	) -> void;
+
+	constexpr std::size_t max_ask_options = 6;
+
+	struct ask_request {
+		std::string id;
+		std::string agent;
+		std::string question;
+		std::string context;
+		std::vector<std::string> options;
+		std::filesystem::path cwd;
+		bool multi = false;
+	};
+
+	auto asks_dir() -> std::filesystem::path;
+
+	auto peek_ask_requests() -> std::vector<ask_request>;
+
+	auto consume_ask_request(
+		std::string_view id
+	) -> void;
+
+	struct gap_report {
+		std::string id;
+		std::string agent;
+		std::string kind;
+		std::string need;
+		std::string tried;
+		std::filesystem::path cwd;
+	};
+
+	auto gaps_dir() -> std::filesystem::path;
+
+	auto peek_gap_reports() -> std::vector<gap_report>;
+
+	auto consume_gap_report(
+		std::string_view id
+	) -> void;
+
+	struct draw_request {
+		std::string id;
+		std::string agent;
+		std::string name;
+		std::string payload;
+		std::optional<std::uint32_t> chat;
+		vec2f size;
+		std::filesystem::path cwd;
+		bool list = false;
+	};
+
+	struct step_request {
+		std::string id;
+		std::string agent;
+		std::uint32_t index = 0;
+		std::string state;
+		std::filesystem::path cwd;
+	};
+
+	auto steps_dir() -> std::filesystem::path;
+
+	auto peek_step_requests() -> std::vector<step_request>;
+
+	auto consume_step_request(
+		std::string_view id
+	) -> void;
+
+	auto draws_dir() -> std::filesystem::path;
+
+	auto peek_draw_requests() -> std::vector<draw_request>;
+
+	auto consume_draw_request(
 		std::string_view id
 	) -> void;
 }

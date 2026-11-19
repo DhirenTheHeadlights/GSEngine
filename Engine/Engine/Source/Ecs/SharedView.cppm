@@ -4,8 +4,6 @@ import std;
 import gse.meta;
 import gse.assert;
 
-import :traits;
-
 export namespace gse {
 	struct shared_tag {};
 	constexpr shared_tag shared{};
@@ -176,9 +174,7 @@ export namespace gse {
 	using shared_snapshot = typename shared_snapshot_base<Data>::type;
 
 	template <typename S>
-	struct shared_view : shared_view_base<state_of_t<S>>::type {
-		using target_system_t = S;
-	};
+	struct shared_view : shared_view_base<S>::type {};
 
 	template <typename T>
 	struct is_shared_view : std::false_type {};
@@ -225,12 +221,12 @@ export namespace gse {
 
 	template <typename S>
 	auto make_shared_view_live(
-		const state_of_t<S>& d
+		const S& d
 	) -> shared_view<S>;
 
 	template <typename S>
 	auto make_shared_view_snapshot(
-		const shared_snapshot<state_of_t<S>>& s
+		const shared_snapshot<S>& s
 	) -> shared_view<S>;
 }
 
@@ -343,11 +339,11 @@ auto gse::snapshot_shared_aggregate(const shared_snapshot<Data>& s) -> typename 
 }
 
 template <typename S>
-auto gse::make_shared_view_live(const state_of_t<S>& d) -> shared_view<S> {
-	return shared_view<S>{ live_shared_aggregate<state_of_t<S>>(d) };
+auto gse::make_shared_view_live(const S& d) -> shared_view<S> {
+	return shared_view<S>{ live_shared_aggregate<S>(d) };
 }
 
 template <typename S>
-auto gse::make_shared_view_snapshot(const shared_snapshot<state_of_t<S>>& s) -> shared_view<S> {
-	return shared_view<S>{ snapshot_shared_aggregate<state_of_t<S>>(s) };
+auto gse::make_shared_view_snapshot(const shared_snapshot<S>& s) -> shared_view<S> {
+	return shared_view<S>{ snapshot_shared_aggregate<S>(s) };
 }

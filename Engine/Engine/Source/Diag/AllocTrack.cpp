@@ -6,7 +6,6 @@ import :alloc_track;
 
 import gse.log;
 import gse.math;
-import gse.win32;
 
 namespace gse::alloc {
 	constexpr std::size_t site_capacity = 1u << 13;
@@ -35,15 +34,16 @@ namespace gse::alloc {
 	site_slot slots[site_capacity] = {};
 
 	std::atomic<sample_entry*> samples{ nullptr };
-	std::atomic<tracked_bytes> total_bytes{ tracked_bytes(0) };
+	std::atomic<tracked_bytes> total_bytes{};
 	std::atomic<std::int64_t> total_samples{ 0 };
 	std::atomic<std::int64_t> total_evicted{ 0 };
-	std::atomic<tracked_bytes> interval_bytes{ tracked_bytes(default_interval) };
+	std::atomic<tracked_bytes> interval_bytes{ tracked_bytes::from<bytes>(default_interval) };
 	std::atomic<std::uint64_t> seed_source{ 0x243f6a8885a308d3ull };
 	std::atomic<bool> tracking{ false };
 
 	thread_local tracked_bytes sample_countdown;
 	thread_local std::uint64_t rng_state = 0;
+	thread_local std::uint64_t thread_allocations = 0;
 
 	auto mix(
 		std::uint64_t value
@@ -118,17 +118,17 @@ auto gse::alloc::next_countdown() -> tracked_bytes {
 	rng_state ^= rng_state << 17;
 
 	const double uniform = static_cast<double>(rng_state >> 11) * 0x1p-53;
-	const double interval = static_cast<std::int64_t>(interval_bytes.load(std::memory_order_relaxed));
-	return tracked_bytes(static_cast<std::int64_t>(-interval * std::log(1.0 - uniform)) + 1);
+	const data_size_t<double, bytes> interval = interval_bytes.load(std::memory_order_relaxed);
+	return tracked_bytes(-interval * std::log(1.0 - uniform)) + tracked_bytes::from<bytes>(1);
 }
 
 auto gse::alloc::should_sample(const std::size_t size) -> bool {
-	if (interval_bytes.load(std::memory_order_relaxed) == tracked_bytes(0)) {
+	if (interval_bytes.load(std::memory_order_relaxed) == tracked_bytes{}) {
 		return true;
 	}
 
-	sample_countdown -= tracked_bytes(size);
-	if (sample_countdown > tracked_bytes(0)) {
+	sample_countdown -= tracked_bytes::from<bytes>(size);
+	if (sample_countdown > tracked_bytes{}) {
 		return false;
 	}
 
@@ -156,7 +156,7 @@ auto gse::alloc::remember(void* block, const std::size_t size, const void* site_
 		return;
 	}
 
-	const tracked_bytes weight = std::max(tracked_bytes(size), interval_bytes.load(std::memory_order_relaxed));
+	const tracked_bytes weight = std::max(tracked_bytes::from<bytes>(size), interval_bytes.load(std::memory_order_relaxed));
 	const auto key = reinterpret_cast<std::uintptr_t>(block);
 	auto& entry = table[static_cast<std::size_t>(mix(key)) & (sample_capacity - 1)];
 
@@ -194,6 +194,7 @@ auto gse::alloc::forget(void* block) -> void {
 }
 
 auto gse::alloc::allocate(const std::size_t size, const void* site_pc) -> void* {
+	++thread_allocations;
 	void* block = std::malloc(size);
 	if (block != nullptr) {
 		remember(block, size, site_pc);
@@ -215,6 +216,7 @@ auto gse::alloc::allocate_aligned(const std::size_t size, const std::align_val_t
 		return allocate(size, site_pc);
 	}
 
+	++thread_allocations;
 	void* raw = std::malloc(size + align);
 	if (raw == nullptr) {
 		return nullptr;
@@ -275,44 +277,6 @@ auto gse::alloc::sample_interval() -> byte_count {
 	return interval_bytes.load(std::memory_order_relaxed);
 }
 
-#ifdef _WIN32
-auto gse::alloc::address_space_usage() -> address_space {
-	using namespace gse::win32;
-
-	address_space usage{};
-	MEMORY_BASIC_INFORMATION region{};
-
-	for (std::uintptr_t at = 0; VirtualQuery(reinterpret_cast<const void*>(at), &region, sizeof(region)) == sizeof(region); at += region.RegionSize) {
-		const byte_count size(region.RegionSize);
-
-		if (region.State == mem_reserve) {
-			usage.reserved += size;
-		}
-		else if (region.State == mem_commit) {
-			if (region.Type == mem_image) {
-				usage.image += size;
-			}
-			else if (region.Type == mem_mapped) {
-				usage.mapped += size;
-			}
-			else {
-				usage.private_committed += size;
-			}
-		}
-
-		if (region.RegionSize == 0) {
-			break;
-		}
-	}
-
-	return usage;
-}
-#else
-auto gse::alloc::address_space_usage() -> address_space {
-	return {};
-}
-#endif
-
 auto gse::alloc::estimated_live() -> byte_count {
 	return total_bytes.load(std::memory_order_relaxed);
 }
@@ -323,6 +287,10 @@ auto gse::alloc::live_samples() -> std::int64_t {
 
 auto gse::alloc::evicted_samples() -> std::int64_t {
 	return total_evicted.load(std::memory_order_relaxed);
+}
+
+auto gse::alloc::thread_allocation_count() -> std::uint64_t {
+	return thread_allocations;
 }
 
 auto gse::alloc::mark() -> void {
@@ -344,7 +312,7 @@ auto gse::alloc::snapshot(std::vector<site>& out) -> void {
 		const std::int64_t count = slot.live_samples.load(std::memory_order_relaxed);
 		const tracked_bytes since = live - slot.mark.load(std::memory_order_relaxed);
 
-		if (count == 0 && since == tracked_bytes(0)) {
+		if (count == 0 && since == tracked_bytes{}) {
 			continue;
 		}
 
@@ -356,37 +324,6 @@ auto gse::alloc::snapshot(std::vector<site>& out) -> void {
 		});
 	}
 }
-
-#ifdef _WIN32
-auto gse::alloc::label_of(const std::uint64_t pc) -> std::string {
-	using namespace gse::win32;
-
-	std::string module_name = "?";
-	std::uint64_t offset = pc;
-
-	HMODULE handle = nullptr;
-	if (pc != 0 && GetModuleHandleExW(get_module_handle_ex_flag_from_address | get_module_handle_ex_flag_unchanged_refcount, reinterpret_cast<const wchar_t*>(pc), &handle) && handle != nullptr) {
-		wchar_t path[max_path];
-		if (const auto length = GetModuleFileNameW(handle, path, max_path); length > 0) {
-			std::wstring_view view(path, length);
-			if (const auto slash = view.find_last_of(L"\\/"); slash != std::wstring_view::npos) {
-				view = view.substr(slash + 1);
-			}
-			module_name.clear();
-			for (const wchar_t character : view) {
-				module_name.push_back(static_cast<char>(character));
-			}
-		}
-		offset = pc - reinterpret_cast<std::uintptr_t>(handle);
-	}
-
-	return std::format("{}+0x{:x}", module_name, offset);
-}
-#else
-auto gse::alloc::label_of(const std::uint64_t pc) -> std::string {
-	return std::format("0x{:x}", pc);
-}
-#endif
 
 auto gse::alloc::log_report(const int top_rows) -> void {
 	std::vector<site> sites;

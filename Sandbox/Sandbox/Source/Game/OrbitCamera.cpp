@@ -1,0 +1,218 @@
+module sandbox:orbit_camera_impl;
+
+import std;
+import gse;
+
+import :orbit_camera;
+
+auto sandbox::orbit_camera::attach(gse::context& ctx, data& d, gse::write<component> orbits) -> gse::async::task<> {
+	for (const auto owner_id : orbits.drain(gse::component_event::added)) {
+		const auto* o = orbits.find(owner_id);
+		if (!o) {
+			continue;
+		}
+		const gse::quat initial_orientation = gse::normalize(
+			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o->yaw) *
+			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o->pitch)
+		);
+
+		ctx.add_component<gse::camera::follow_component>(
+			owner_id,
+			{
+				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
+				.priority = o->priority,
+				.blend_in_duration = gse::milliseconds(300.f),
+				.active = o->active,
+				.use_entity_position = false,
+				.orientation = initial_orientation,
+			}
+		);
+
+		if (!o->active) {
+			continue;
+		}
+
+		d.bound_owners.insert(owner_id);
+	}
+
+	return {};
+}
+
+auto sandbox::orbit_camera::update(gse::context& ctx, data& d, const gse::shared_view<gse::actions::data> as, const gse::shared_view<gse::camera::data> cam_s, const gse::shared_view<gse::physics::data> phys_s, gse::write<component> orbits, gse::write<gse::camera::follow_component> follows, gse::read<gse::physics::transform_component> transforms, gse::read<gse::physics::collision_component> collisions, gse::read<gse::physics::motion_component> motions) -> gse::async::task<> {
+	const auto orbit_ids = orbits.owner_ids();
+
+	const auto& cs = gse::actions::current_state(as);
+	const auto dt = gse::system_clock::dt();
+
+	for (std::size_t i = 0; i < orbits.size(); ++i) {
+		auto& o = orbits[i];
+		const auto owner_id = orbit_ids[i];
+		if (!d.bound_owners.contains(owner_id)) {
+			continue;
+		}
+		const auto& b = d.binds;
+
+		auto* cam_follow = follows.find(owner_id);
+		if (!cam_follow) {
+			continue;
+		}
+
+		if (gse::actions::pressed(b.toggle, cs, as)) {
+			o.active = !o.active;
+			cam_follow->active = o.active;
+		}
+
+		if (!o.active) {
+			continue;
+		}
+
+		const bool looking = !cam_s.ui_focus && (o.free_look || gse::actions::held(b.free_look, cs, as));
+		if (looking) {
+			const auto delta = cs.axis2_v(static_cast<std::uint16_t>(b.look_axis_id.number()));
+			o.yaw -= delta.x() * o.mouse_sensitivity;
+			o.pitch -= delta.y() * o.mouse_sensitivity;
+		}
+		else {
+			const float yaw_axis = (gse::actions::held(b.yaw_left, cs, as)
+										? 1.f
+										: 0.f) -
+				(gse::actions::held(b.yaw_right, cs, as)
+					 ? 1.f
+					 : 0.f);
+			const float pitch_axis = (gse::actions::held(b.pitch_up, cs, as)
+										  ? 1.f
+										  : 0.f) -
+				(gse::actions::held(b.pitch_down, cs, as)
+					 ? 1.f
+					 : 0.f);
+			o.yaw += yaw_axis * o.arrow_speed * dt;
+			o.pitch += pitch_axis * o.arrow_speed * dt;
+		}
+
+		o.pitch = std::clamp(o.pitch, gse::degrees(-89.f), gse::degrees(89.f));
+
+		if (!cam_s.ui_focus) {
+			const float zoom = cs.axis1(static_cast<std::uint16_t>(b.zoom_axis_id.number()));
+			if (o.stepped_views) {
+				if (zoom > 0.f) {
+					o.view_step = std::max(o.view_step - 1, 0);
+				}
+				else if (zoom < 0.f) {
+					o.view_step = std::min(o.view_step + 1, static_cast<int>(o.view_steps.size()) - 1);
+				}
+			}
+			else {
+				o.distance -= zoom * o.scroll_zoom_step;
+			}
+		}
+
+		if (o.stepped_views) {
+			o.distance = o.view_steps[static_cast<std::size_t>(o.view_step)];
+		}
+		else {
+			o.distance = std::clamp(o.distance, o.min_distance, o.max_distance);
+		}
+
+		const gse::quat orientation = gse::normalize(
+			gse::quat(gse::vec3f(0.f, 1.f, 0.f), o.yaw) *
+			gse::quat(gse::vec3f(1.f, 0.f, 0.f), o.pitch)
+		);
+
+		const auto* target_tc = transforms.find(o.target);
+		if (!target_tc) {
+			continue;
+		}
+
+		auto target_pos = gse::physics::render_transform(*target_tc, motions.find(o.target), phys_s.interpolation).position;
+		target_pos += gse::vec3<gse::displacement>(gse::meters(0.f), o.pivot_height, gse::meters(0.f));
+
+		const gse::vec3f forward = gse::rotate_vector(orientation, gse::vec3f(0.f, 0.f, -1.f));
+		const auto inflation = o.collision_radius * 2.f;
+		const auto for_each_static_box = [&](auto body) {
+			const auto col_ids = collisions.owner_ids();
+			for (std::size_t k = 0; k < collisions.size(); ++k) {
+				const auto col_eid = col_ids[k];
+				const auto* mc = motions.find(col_eid);
+				if (!mc || !gse::physics::is_static(*mc)) {
+					continue;
+				}
+				const auto* col_tc = transforms.find(col_eid);
+				if (!col_tc) {
+					continue;
+				}
+				const auto* shape = std::get_if<gse::physics::box_shape>(&collisions[k].shape.value);
+				if (!shape) {
+					continue;
+				}
+				const gse::physics::box_shape inflated{
+					.size = shape->size + gse::vec3<gse::displacement>(inflation)
+				};
+				body(gse::bounding_box(*col_tc, inflated));
+			}
+		};
+
+		gse::vec3<gse::displacement> spring_displacement = -forward * o.distance;
+
+		if (o.collide_with_geometry) {
+			for_each_static_box([&](const gse::bounding_box& bb) {
+				const auto q = gse::narrow_phase_collision::query_obb(bb, target_pos);
+				if (q.signed_distance < gse::meters(0.f)) {
+					const auto into_wall = -gse::dot(spring_displacement, q.normal);
+					if (into_wall > gse::meters(0.f)) {
+						spring_displacement += q.normal * into_wall;
+					}
+				}
+			});
+		}
+
+		const auto desired_camera_pos = target_pos + spring_displacement;
+		const auto displacement_mag = gse::magnitude(spring_displacement);
+		float spring_factor = 1.f;
+		if (o.collide_with_geometry && displacement_mag > gse::meters(1e-5f)) {
+			for_each_static_box([&](const gse::bounding_box& bb) {
+				if (const auto hit = gse::narrow_phase_collision::segment_obb_first_hit(bb, target_pos, desired_camera_pos)) {
+					const auto safe = std::max(hit->distance - o.collision_skin, gse::meters(0.f));
+					const float factor = safe / displacement_mag;
+					if (factor < spring_factor) {
+						spring_factor = factor;
+					}
+				}
+			});
+		}
+
+		auto camera_pos = target_pos + spring_displacement * spring_factor;
+
+		if (o.collide_with_geometry) {
+			for_each_static_box([&](const gse::bounding_box& bb) {
+				const auto result = gse::narrow_phase_collision::query_obb(bb, camera_pos);
+				if (result.signed_distance < o.collision_skin) {
+					const auto push = o.collision_skin - result.signed_distance;
+					camera_pos = camera_pos + result.normal * push;
+				}
+			});
+		}
+
+		cam_follow->position = camera_pos;
+		cam_follow->orientation = orientation;
+		cam_follow->latch = looking
+			? gse::camera::latch{
+				.model = gse::camera::latch_model::orbit,
+				.yaw = o.yaw,
+				.pitch = o.pitch,
+				.min_pitch = gse::degrees(-89.f),
+				.max_pitch = gse::degrees(89.f),
+				.per_count = gse::vec2<gse::angle>(-o.mouse_sensitivity, -o.mouse_sensitivity),
+				.distance = gse::magnitude(camera_pos - target_pos),
+			}
+			: gse::camera::latch{};
+	}
+
+	std::erase_if(
+		d.bound_owners,
+		[&orbits](const gse::id owner_id) {
+			return !orbits.find(owner_id);
+		}
+	);
+
+	return {};
+}

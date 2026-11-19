@@ -1,12 +1,13 @@
 import gse;
+import gse.analysis;
 import gse.ide.analysis;
 import std;
 
 namespace gse::ide::audit {
 	using analysis::identifier_context;
 	using analysis::identifier_use;
-	using analysis::semantic_kind;
-	using analysis::semantic_token;
+	using gse::analysis::semantic_kind;
+	using gse::analysis::semantic_token;
 	using analysis::symbol_ref;
 
 	enum class miss_kind {

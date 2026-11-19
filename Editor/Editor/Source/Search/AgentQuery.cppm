@@ -48,10 +48,6 @@ namespace gse::ide::search {
 		bool complete = false;
 	};
 
-	auto owns_query(
-		const build_inbox::symbol_query& query
-	) -> bool;
-
 	auto query_file(
 		const build_inbox::symbol_query& query
 	) -> std::filesystem::path;

@@ -1,6 +1,9 @@
 export module gse.ide.app:code_panel;
 
 import gse;
+import gse.analysis;
+import gse.complete;
+import gse.complete.view;
 import gse.format;
 import gse.gpu;
 import gse.ide.analysis;
@@ -105,7 +108,7 @@ namespace gse::ide {
 		std::span<const format::line_edit> edits
 	) -> void;
 
-	auto adjust_after_import_sort(
+	auto adjust_after_block(
 		gui::buffer_position& p,
 		const format::block_edit& edit
 	) -> void;
@@ -139,9 +142,16 @@ namespace gse::ide {
 		channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels
 	) -> void;
 
+	auto update_completion(
+		document& doc,
+		const search::index_state* index,
+		bool edited,
+		bool requested
+	) -> void;
+
 	auto apply_diagnostics(
 		workspace::data& ws,
-		const std::shared_ptr<analysis::diagnostics_check>& check,
+		const analysis::diagnostics_result& result,
 		channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels
 	) -> void;
 
@@ -465,7 +475,7 @@ auto gse::ide::hover_panel_code_hit(const gui::draw_context& ctx, const hover_st
 
 auto gse::ide::highlight_code_body(const docs::doc_card& card, const search::index_state* index) -> std::vector<gui::text_span> {
 	constexpr std::uint32_t no_line = std::numeric_limits<std::uint32_t>::max();
-	syntax_producer::semantic_data sem;
+	gse::analysis::semantic_index sem;
 	if (index && !card.source.empty() && !card.line_source.empty()) {
 		std::uint32_t lo = no_line;
 		std::uint32_t hi = 0;
@@ -508,7 +518,7 @@ auto gse::ide::highlight_code_body(const docs::doc_card& card, const search::ind
 			}
 		}
 	}
-	return syntax_producer::highlight(card.body, sem.at.empty() ? nullptr : &sem, nullptr);
+	return syntax_producer::highlight(card.body, sem.at.empty() ? nullptr : &sem);
 }
 
 auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, const std::string_view row, const std::size_t ident_start, const bool declaration_fallback, const search::index_state* index, docs::cppref_index& cppref, const std::span<const search::lookup_error> issues, resolved_symbol resolved) -> void {
@@ -559,7 +569,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 		}
 		h.url = docs::cppref_url(cref->page);
 		h.from_cppref = true;
-		h.has_card = true;
 	}
 	else if (language_word) {
 		h.title = qualified;
@@ -570,7 +579,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			: "cpp/keyword/" + qualified;
 		h.url = docs::cppref_url(page);
 		h.from_cppref = true;
-		h.has_card = true;
 	}
 	else if (def && !def->path.empty()) {
 		if (const std::optional<docs::doc_card> card = docs::extract_definition(def->path, def->line, qualified, sym_kind == "function")) {
@@ -582,7 +590,6 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			}
 			h.body_is_code = true;
 			h.code_spans = highlight_code_body(*card, index);
-			h.has_card = true;
 		}
 		else {
 			append_issue(std::format("definition preview could not be extracted from {}", def->path.generic_display_string()));
@@ -609,8 +616,8 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 			};
 			return has_word("auto") || has_word("decltype");
 		};
-		if (!has_decl || head_hides_type(h.body)) {
-			std::vector<gui::text_span> spans = syntax_producer::highlight(type, nullptr, nullptr);
+		if (!has_decl || ident == "auto" || head_hides_type(h.body)) {
+			std::vector<gui::text_span> spans = syntax_producer::highlight(type, nullptr);
 			std::string body = std::move(type);
 			if (has_decl) {
 				for (gui::text_span& sp : h.code_spans) {
@@ -630,7 +637,7 @@ auto gse::ide::resolve_hover_card(hover_state& h, const std::string_view ident, 
 	}
 	if (!value.empty() && (h.body_is_code || h.body.empty())) {
 		const std::string line = "= " + value;
-		std::vector<gui::text_span> spans = syntax_producer::highlight(line, nullptr, nullptr);
+		std::vector<gui::text_span> spans = syntax_producer::highlight(line, nullptr);
 		std::uint32_t base = 0;
 		if (!h.body.empty()) {
 			base = static_cast<std::uint32_t>(std::ranges::count(h.body, '\n')) + 1;
@@ -834,19 +841,16 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 		h.scroll_x = std::clamp(h.scroll_x - wheel_x * char_w * 4.f, 0.f, max_scroll_x);
 
 		const auto _ = ctx.scoped_layer(render_layer::popup);
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-			.color = sty.color_shadow,
-			.texture = ctx.blank_texture,
+		gui::draw::fill_surface(
+			ctx,
+			rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+			sty.modal.shadow,
+			{
+				.z_order = z,
+			}
+		);
+		gui::draw::fill_surface(ctx, panel, sty.modal.panel, {
 			.z_order = z,
-			.corner_radius = sty.corner_radius_menu,
-		});
-		ctx.queue_sprite({
-			.rect = panel,
-			.color = { vec3f(sty.color_menu_body), 1.f },
-			.texture = ctx.blank_texture,
-			.z_order = z,
-			.corner_radius = sty.corner_radius_menu,
 		});
 
 		for (std::size_t i = 0; i < header.size(); ++i) {
@@ -993,19 +997,16 @@ auto gse::ide::draw_hover_panel(const gui::draw_context& ctx, const rectf& text_
 	bool link_clicked = false;
 
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{
+			.z_order = z,
+		}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {
 		.z_order = z,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.z_order = z,
-		.corner_radius = sty.corner_radius_menu,
 	});
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
@@ -1077,18 +1078,13 @@ auto gse::ide::draw_diagnostic_tooltip(const gui::draw_context& ctx, const rectf
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 	for (std::size_t i = 0; i < lines.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
 		ctx.queue_text({
@@ -1148,7 +1144,7 @@ auto gse::ide::adjust_after_format(gui::buffer_position& p, const std::span<cons
 	}
 }
 
-auto gse::ide::adjust_after_import_sort(gui::buffer_position& p, const format::block_edit& edit) -> void {
+auto gse::ide::adjust_after_block(gui::buffer_position& p, const format::block_edit& edit) -> void {
 	if (p.line < edit.first_line) {
 		return;
 	}
@@ -1161,30 +1157,22 @@ auto gse::ide::adjust_after_import_sort(gui::buffer_position& p, const format::b
 }
 
 auto gse::ide::apply_format(document& doc, const format::options& opts) -> void {
-	const std::optional<format::block_edit> imports = format::compute_imports(doc.buffer.lines);
-	std::vector<format::line_edit> edits = format::compute(doc.buffer.lines, opts);
-	if (!imports && edits.empty()) {
+	std::vector<std::string> before = doc.buffer.lines;
+	const format::format_result result = format::format_lines(doc.buffer.lines, opts);
+	if (result.blocks.empty() && result.reindented == 0) {
 		return;
 	}
-	doc.view.undo_stack.push_back({ doc.buffer.lines, doc.view.caret, doc.view.anchor });
+	doc.view.undo_stack.push_back({ std::move(before), doc.view.caret, doc.view.anchor });
 	doc.view.redo_stack.clear();
 	doc.view.last_edit_kind = format_edit_kind;
 
-	bool changed = false;
-	if (imports && format::apply_block(doc.buffer.lines, *imports)) {
-		adjust_after_import_sort(doc.view.caret, *imports);
-		adjust_after_import_sort(doc.view.anchor, *imports);
-		edits = format::compute(doc.buffer.lines, opts);
-		changed = true;
+	for (const format::block_edit& block : result.blocks) {
+		adjust_after_block(doc.view.caret, block);
+		adjust_after_block(doc.view.anchor, block);
 	}
-	if (format::apply(doc.buffer.lines, edits) > 0) {
-		adjust_after_format(doc.view.caret, edits);
-		adjust_after_format(doc.view.anchor, edits);
-		changed = true;
-	}
-	if (!changed) {
-		doc.view.undo_stack.pop_back();
-		return;
+	if (result.reindented > 0) {
+		adjust_after_format(doc.view.caret, result.edits);
+		adjust_after_format(doc.view.anchor, result.edits);
 	}
 	doc.view.caret = doc.buffer.clamp(doc.view.caret);
 	doc.view.anchor = doc.buffer.clamp(doc.view.anchor);
@@ -1220,19 +1208,23 @@ auto gse::ide::format_and_save(workspace::data& ws, const format_save_request& r
 	return document_save_result::unchanged;
 }
 
-auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<analysis::diagnostics_check>& check, channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels) -> void {
-	const auto pending = ws.documents.find(check->document_id);
+auto gse::ide::apply_diagnostics(workspace::data& ws, const analysis::diagnostics_result& result, channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> channels) -> void {
+	const auto pending = ws.documents.find(result.document_id);
 	if (pending == ws.documents.end()) {
 		return;
 	}
 
 	document& doc = pending->second;
-	if (doc.revision != check->revision) {
+	if (result.model) {
+		doc.completion_model = result.model;
+		++doc.completion_generation;
+	}
+	if (doc.revision != result.revision) {
 		return;
 	}
-	doc.analysis_status = check->status;
-	doc.analysis_detail = std::move(check->failure_output);
-	doc.analysis_duration = check->duration;
+	doc.analysis_status = result.status;
+	doc.analysis_detail = result.failure_output;
+	doc.analysis_duration = result.duration;
 	if (doc.analysis_status == analysis::diagnostics_status::cancelled) {
 		doc.diag_dirty = true;
 		return;
@@ -1245,8 +1237,8 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 		return;
 	}
 
-	doc.diagnostics = std::move(check->result);
-	doc.lint = std::move(check->lint);
+	doc.diagnostics = result.diagnostics;
+	doc.lint = result.lint;
 	if (doc.language == document_language::cpp) {
 		if (const std::optional<lint_finding> imports = lint::import_order_finding(doc.buffer.lines, doc.path.generic_display_string())) {
 			doc.lint.push_back(lint::as_diagnostic(*imports));
@@ -1255,7 +1247,7 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	syntax_producer::set_semantic(
 		doc.syntax,
 		{
-			.tokens = check->tokens,
+			.tokens = result.tokens,
 			.buffer = doc.buffer,
 			.revision = doc.revision,
 			.source_path = doc.path.generic_display_string(),
@@ -1263,20 +1255,20 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 	);
 	doc.highlight_dirty = true;
 
-	if (check->symbols_complete) {
+	if (result.symbols_complete) {
 		channels.push<search::index_merge_request>({
 			.path = doc.path,
-			.symbols = std::move(check->symbols),
-			.refs = std::move(check->refs),
-			.params = std::move(check->params),
-			.files = check->files,
+			.symbols = result.symbols,
+			.refs = result.refs,
+			.params = result.params,
+			.files = result.files,
 		});
 	}
 
 	for (const diagnostic& diag : doc.diagnostics) {
-		const log::level level = diag.level == severity::error
+		const log::level level = diag.level == gse::analysis::severity::error
 			? log::level::error
-			: (diag.level == severity::warning ? log::level::warning : log::level::info);
+			: (diag.level == gse::analysis::severity::warning ? log::level::warning : log::level::info);
 		const std::filesystem::path diagnostic_path = diag.file.empty()
 			? doc.path
 			: diag.file;
@@ -1285,6 +1277,34 @@ auto gse::ide::apply_diagnostics(workspace::data& ws, const std::shared_ptr<anal
 		const std::string where = relative_ec ? diagnostic_path.generic_display_string() : relative_path.generic_display_string();
 		log::println(level, log::category::task, "analysis: {}:{}:{}: {}", where, diag.line + 1, diag.start_col + 1, diag.message);
 	}
+}
+
+auto gse::ide::update_completion(document& doc, const search::index_state* index, const bool edited, const bool requested) -> void {
+	const std::shared_ptr<const search::search_snapshot> snapshot = index ? index->query_snapshot() : nullptr;
+	const search::symbol_search_snapshot* symbols = snapshot ? snapshot->symbols.get() : nullptr;
+
+	std::vector<const complete::model*> models;
+	if (doc.completion_model) {
+		models.push_back(doc.completion_model.get());
+	}
+	if (symbols && symbols->completion) {
+		models.push_back(symbols->completion.get());
+	}
+
+	const complete::usage_table no_usage;
+	const std::vector<std::string_view> lines(doc.buffer.lines.begin(), doc.buffer.lines.end());
+	const complete::sources from{
+		.models = models,
+		.lines = lines,
+		.usage = symbols && symbols->usage ? *symbols->usage : no_usage,
+	};
+	complete::update(doc.completion.state, {
+		.from = from,
+		.caret = complete::caret_of(doc.view),
+		.edited = edited,
+		.requested = requested,
+		.generation = doc.completion_generation + (symbols ? symbols->symbol_generation : 0),
+	});
 }
 
 auto gse::ide::audit_semantic_coverage(const document& doc, const search::index_state* index) -> void {
@@ -1381,11 +1401,8 @@ auto gse::ide::audit_semantic_coverage(const document& doc, const search::index_
 
 auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::diagnostics_completed, build_runner::build_finished> diag_in, const channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> code_out, workspace::data& ws, const shared_view<config_system::data> config, const bool building) -> void {
 	for (const analysis::diagnostics_completed& completed : diag_in.of<analysis::diagnostics_completed>()) {
-		if (!completed.check) {
-			continue;
-		}
-		apply_diagnostics(ws, completed.check, code_out);
-		if (ws.diagnostics_pending == completed.check->document_id) {
+		apply_diagnostics(ws, *completed.result, code_out);
+		if (ws.diagnostics_pending == completed.result->document_id) {
 			ws.diagnostics_pending.reset();
 		}
 	}
@@ -1397,8 +1414,6 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 			}
 		}
 	}
-
-	ws.diagnostics_paused_for_build = building;
 
 	if (ws.diagnostics_pending) {
 		const time stall_limit = seconds(90.f);
@@ -1427,7 +1442,7 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 			&& !doc.path.empty()
 			&& doc.diag_dirty
 			&& doc.persistence != document_persistence::conflicted
-			&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(500));
+			&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(500.f));
 	};
 
 	auto candidate = ws.documents.end();
@@ -1472,7 +1487,7 @@ auto gse::ide::update_diagnostics(context& ctx, const channel_read<analysis::dia
 		.file = doc.path,
 		.plugin = config::token_plugin(),
 		.workspace_roots = ide::config::analysis_roots(),
-		.lint_hook = &lint::analyze_check,
+		.lint_hook = &lint::analyze_result,
 	});
 	ws.diagnostics_pending = candidate->first;
 	ws.diagnostics_clock.reset();
@@ -1531,18 +1546,13 @@ auto gse::ide::draw_quickfix_tooltip(const gui::draw_context& ctx, const rectf& 
 
 	const rectf panel = rectf::from_position_size({ px, top_y }, { pw, ph });
 	const auto _ = ctx.scoped_layer(render_layer::popup);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
-		.color = sty.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = panel,
-		.color = { vec3f(sty.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = sty.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ px + 4.f * sty.scale_factor, top_y - 4.f * sty.scale_factor }, { pw, ph }),
+		sty.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, panel, sty.modal.panel, {});
 
 	for (std::size_t i = 0; i < info.size(); ++i) {
 		const float center_y = top_y - pad - line_h * (static_cast<float>(i) + 0.5f);
@@ -1564,7 +1574,7 @@ auto gse::ide::draw_quickfix_tooltip(const gui::draw_context& ctx, const rectf& 
 		if (row.contains(mouse)) {
 			ctx.queue_sprite({
 				.rect = row,
-				.color = sty.color_input_background,
+				.color = sty.input.area.fill,
 				.texture = ctx.blank_texture,
 				.corner_radius = sty.corner_radius_menu,
 			});
@@ -1630,18 +1640,13 @@ auto gse::ide::draw_document_prompt(gui::builder& ui, workspace::data& ws, const
 		{ center.x() - dialog_width * 0.5f, center.y() + dialog_height * 0.5f },
 		{ dialog_width, dialog_height }
 	);
-	ctx.queue_sprite({
-		.rect = rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_width, dialog_height }),
-		.color = style.color_shadow,
-		.texture = ctx.blank_texture,
-		.corner_radius = style.corner_radius_menu,
-	});
-	ctx.queue_sprite({
-		.rect = dialog,
-		.color = { vec3f(style.color_menu_body), 1.f },
-		.texture = ctx.blank_texture,
-		.corner_radius = style.corner_radius_menu,
-	});
+	gui::draw::fill_surface(
+		ctx,
+		rectf::from_position_size({ dialog.left() + 4.f, dialog.top() - 4.f }, { dialog_width, dialog_height }),
+		style.modal.shadow,
+		{}
+	);
+	gui::draw::fill_surface(ctx, dialog, style.modal.panel, {});
 	ctx.queue_text({
 		.font = ctx.fonts.text,
 		.text = title,
@@ -1785,7 +1790,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 	);
 	ctx.queue_sprite({
 		.rect = tab_bar,
-		.color = ctx.style.color_tab_background,
+		.color = ctx.style.tab.cell.idle.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1876,22 +1881,22 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 		int elsewhere = 0;
 		for (const auto& diagnostic : doc.diagnostics) {
 			if (!diagnostic_targets_document(diagnostic, doc.path)) {
-				if (diagnostic.level == severity::error) {
+				if (diagnostic.level == gse::analysis::severity::error) {
 					++elsewhere;
 				}
 				continue;
 			}
-			if (diagnostic.level == severity::error) {
+			if (diagnostic.level == gse::analysis::severity::error) {
 				++errors;
 			}
-			else if (diagnostic.level == severity::warning) {
+			else if (diagnostic.level == gse::analysis::severity::warning) {
 				++warnings;
 			}
 		}
 
 		ctx.queue_sprite({
 			.rect = status_rect,
-			.color = ctx.style.color_input_background,
+			.color = ctx.style.input.area.fill,
 			.texture = ctx.blank_texture,
 		});
 
@@ -1917,7 +1922,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				{ status_rect.left() + pad, status_rect.center().y() + glyph_size * 0.5f },
 				{ glyph_size, glyph_size }
 			);
-			gui::symbol::spinner(ctx, spin_rect, gui::symbol::spinner_rotation(), {
+			gui::symbol::spinner(ctx, spin_rect, {
 				.color = ctx.style.color_text_secondary,
 				.extent = ctx.style.icon_extent,
 				.clip_rect = spin_rect,
@@ -1925,7 +1930,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			text_left = spin_rect.right() + pad * 0.5f;
 			status_text = "analyzing...";
 		}
-		else if (ws.diagnostics_paused_for_build && doc.analysis_status == analysis::diagnostics_status::not_analyzed) {
+		else if (building && doc.analysis_status == analysis::diagnostics_status::not_analyzed) {
 			status_text = "analysis paused - build running";
 		}
 		else if (failing) {
@@ -1979,19 +1984,20 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				ctx,
 				ui.hot_widget_id,
 				ui.active_widget_id,
-				gui::ids::make_from_key(hash_combine(active_document_id->number(), stable_id("doc_view_toggle"))),
-				toggle_rect
+				gui::ids::make_from_key(hash_of(active_document_id->number(), "doc_view_toggle")),
+				{ .rect = toggle_rect }
 			);
 			ctx.queue_text({
 				.font = ctx.fonts.text,
 				.text = label,
 				.position = { toggle_rect.left() + pad, toggle_rect.center().y() + text_view->vertical_center_offset(font_sz) },
 				.scale = font_sz,
-				.color = toggle.color({
+				.color = toggle.select(gui::state_set<vec4f>{
 					.idle = ctx.style.color_text_secondary,
 					.hot = ctx.style.color_text,
 					.active = ctx.style.color_accent,
 					.disabled = ctx.style.color_text_disabled,
+					.selected = ctx.style.color_text,
 				}),
 				.clip_rect = status_rect,
 			});
@@ -2019,8 +2025,8 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 
 	syntax_producer::poll(doc.syntax, doc.revision);
 
-	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending
-		&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(120))) {
+	if (doc.language != document_language::plain && doc.highlight_dirty && !doc.syntax.pending.active()
+		&& (!doc.edit_clock || doc.edit_clock->elapsed() > milliseconds(120.f))) {
 		syntax_producer::rebuild(doc.syntax, doc.buffer, doc.revision, doc.language);
 		doc.highlight_dirty = false;
 	}
@@ -2031,7 +2037,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 		std::uint32_t byte_end = 0;
 		vec4f color;
 		std::string_view message;
-		severity level = severity::error;
+		gse::analysis::severity level = gse::analysis::severity::error;
 		const diagnostic* diag = nullptr;
 	};
 
@@ -2039,18 +2045,6 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 	std::vector<gui::text_fade> fades;
 	std::vector<diag_region> diag_regions;
 	if (!doc.diagnostics.empty() || !doc.lint.empty()) {
-		const std::size_t line_count = doc.buffer.line_count();
-		auto display_to_byte = [](const std::string_view row, const std::uint32_t display_col) -> std::uint32_t {
-			constexpr std::size_t gcc_tab_width = 8;
-			std::size_t display = 0;
-			for (std::size_t i = 0; i < row.size(); ++i) {
-				if (display >= display_col) {
-					return static_cast<std::uint32_t>(i);
-				}
-				display += row[i] == '\t' ? gcc_tab_width - display % gcc_tab_width : 1;
-			}
-			return static_cast<std::uint32_t>(row.size());
-		};
 		underlines.reserve(doc.diagnostics.size() + doc.lint.size());
 		diag_regions.reserve(doc.diagnostics.size() + doc.lint.size());
 		const std::array<std::span<const diagnostic>, 2> diag_sources{ doc.diagnostics, doc.lint };
@@ -2059,32 +2053,37 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			if (!diagnostic_targets_document(diagnostic, doc.path)) {
 				continue;
 			}
-			if (diagnostic.line >= line_count) {
-				continue;
-			}
-			const vec4f color = diagnostic.level == severity::warning
+			const vec4f color = diagnostic.level == gse::analysis::severity::warning
 				? ctx.style.color_warning
-				: (diagnostic.level == severity::hint ? vec4f{ 0.45f, 0.51f, 0.58f, 0.9f } : diagnostic.level == severity::note ? vec4f{ 0.43f, 0.50f, 0.64f, 1.f } : ctx.style.color_error);
-			const bool faded = diagnostic.rule.has_value() && diagnostic.level == severity::hint;
-			const std::uint32_t last_line = std::min<std::uint32_t>(std::max(diagnostic.end_line, diagnostic.line), static_cast<std::uint32_t>(line_count) - 1);
-			for (std::uint32_t seg_line = diagnostic.line; seg_line <= last_line; ++seg_line) {
-				const std::string_view row = doc.buffer.line(seg_line);
-				const std::uint32_t byte_start = seg_line == diagnostic.line ? display_to_byte(row, diagnostic.start_col) : 0;
-				std::uint32_t byte_end = seg_line == last_line ? display_to_byte(row, diagnostic.end_col) : static_cast<std::uint32_t>(row.size());
-				if (seg_line == diagnostic.line && seg_line == last_line) {
-					byte_end = std::max(byte_start + 1, byte_end);
-				}
-				if (byte_end <= byte_start) {
-					continue;
-				}
+				: (diagnostic.level == gse::analysis::severity::hint ? vec4f{ 0.45f, 0.51f, 0.58f, 0.9f } : diagnostic.level == gse::analysis::severity::note ? vec4f{ 0.43f, 0.50f, 0.64f, 1.f } : ctx.style.color_error);
+			const bool faded = diagnostic.rule.has_value() && diagnostic.level == gse::analysis::severity::hint;
+			gse::analysis::for_each_byte_range(diagnostic, doc.buffer.lines, [&](const gse::analysis::byte_range& range) {
 				if (faded) {
-					fades.push_back({ .line = seg_line, .start_col = byte_start, .end_col = byte_end, .alpha = 0.45f });
+					fades.push_back({
+						.line = range.line,
+						.start_col = range.start,
+						.end_col = range.end,
+						.alpha = 0.45f,
+					});
 				}
 				else {
-					underlines.push_back({ .line = seg_line, .start_col = byte_start, .end_col = byte_end, .color = color });
+					underlines.push_back({
+						.line = range.line,
+						.start_col = range.start,
+						.end_col = range.end,
+						.color = color,
+					});
 				}
-				diag_regions.push_back({ .line = seg_line, .byte_start = byte_start, .byte_end = byte_end, .color = color, .message = diagnostic.message, .level = diagnostic.level, .diag = &diagnostic });
-			}
+				diag_regions.push_back({
+					.line = range.line,
+					.byte_start = range.start,
+					.byte_end = range.end,
+					.color = color,
+					.message = diagnostic.message,
+					.level = diagnostic.level,
+					.diag = &diagnostic,
+				});
+			});
 		}
 	}
 
@@ -2303,8 +2302,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				hv.ident = std::string(ident);
 				hv.reveal.arm(hover_reveal_delay);
 			}
-			else if (!hv.resolved && hv.reveal.due()) {
-				hv.resolved = true;
+			else if (!hv.has_card && hv.reveal.due()) {
 				std::string qualified;
 				std::string sym_kind;
 				std::string type;
@@ -2312,14 +2310,28 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				std::optional<search::location> def;
 				std::vector<search::lookup_error> lookup_issues;
 				bool declaration_fallback = !member_access;
-				const syntax_producer::semantic_data* semantic = doc.syntax.current_semantic(doc.revision);
-				const analysis::semantic_kind* token_kind = semantic ? semantic->kind_at({
+				const gse::analysis::semantic_index* semantic = doc.syntax.current_semantic(doc.revision);
+				const gse::analysis::semantic_kind* token_kind = semantic ? semantic->kind_at({
 					.line = hp.line,
 					.column = static_cast<std::uint32_t>(a),
 				}) : nullptr;
-				const bool attribute_word = token_kind && *token_kind == analysis::semantic_kind::attribute;
+				const bool attribute_word = token_kind && *token_kind == gse::analysis::semantic_kind::attribute;
 				const bool language_word = syntax_producer::is_language_word(ident);
-				if (language_word || attribute_word) {
+				std::optional<search::hover_hit> deduced;
+				if (index && ident == "auto") {
+					if (std::expected<search::hover_hit, search::lookup_error> hit = index->symbol_at(doc.path, hp.line, static_cast<std::uint32_t>(a)); hit && !hit->type.empty()) {
+						deduced = std::move(*hit);
+					}
+				}
+				if (deduced) {
+					qualified = std::move(deduced->qualified);
+					sym_kind = std::move(deduced->kind);
+					type = std::move(deduced->type);
+					def = deduced->def;
+					lookup_issues = std::move(deduced->issues);
+					declaration_fallback = false;
+				}
+				else if (language_word || attribute_word) {
 					qualified = ident;
 					declaration_fallback = false;
 				}
@@ -2437,8 +2449,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				child.ident = ident;
 				child.reveal.arm(hover_reveal_delay);
 			}
-			else if (!child.resolved && child.reveal.due()) {
-				child.resolved = true;
+			else if (!child.has_card && child.reveal.due()) {
 				resolve_hover_card(child, ident, row_text, hit->start_col, !hit->member_access, index, ws.cppref, {}, {});
 				child.kind_color = ctx.style.color_text_secondary;
 				for (const gui::text_span& sp : ws.hover_stack[k].code_spans) {
@@ -2530,12 +2541,30 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 				continue;
 			}
 			if (draw_hover_panel(ctx, text_rect, hv, ctx.current_z_order + 1 + static_cast<std::uint32_t>(i), static_cast<int>(i) == scroll_owner) && !hv.url.empty()) {
-				analysis::process::open_url(hv.url);
+				process::open_url(hv.url);
 			}
 		}
 	}
 
-	const id text_id = gui::ids::make_from_key(hash_combine(active_document_id->number(), stable_id("doc_text")));
+	const id text_id = gui::ids::make_from_key(hash_of(active_document_id->number(), "doc_text"));
+	const bool completing = !rendered_mode && doc.language == document_language::cpp && ui.focus_widget_id == text_id;
+	const complete::view_params completion_view{
+		.geometry = {
+			.buffer = doc.buffer,
+			.state = doc.view,
+			.rect = text_rect,
+			.spans = doc_spans,
+			.show_line_numbers = config.show_line_numbers,
+			.indent_width = display_tab_width,
+		},
+		.buffer = doc.buffer,
+		.area = doc.view,
+		.bounds = text_rect,
+	};
+	if (!completing) {
+		complete::dismiss(doc.completion.state);
+	}
+	const bool accepted = completing && complete::draw_popup(ui, doc.completion, completion_view);
 	bool edited = false;
 	if (rendered_mode) {
 		refresh_rendered_view(ctx, doc, text_rect);
@@ -2546,6 +2575,7 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			.spans = doc.rendered.content.spans,
 			.blocks = doc.rendered.content.blocks,
 			.stops = doc.rendered.content.stops,
+			.rules = doc.rendered.content.rules,
 			.rect = text_rect,
 			.read_only = true,
 			.indent_width = display_tab_width,
@@ -2569,12 +2599,17 @@ auto gse::ide::draw_code_panel(gui::builder& ui, workspace::data& ws, channel_wr
 			.blink_interval = config.caret_blink,
 		});
 	}
+	edited = edited || accepted;
 	if (edited) {
 		++doc.revision.value;
 		mark_document_dirty(doc);
 		doc.highlight_dirty = true;
 		doc.diag_dirty = true;
 		doc.edit_clock.emplace();
+	}
+	if (completing) {
+		update_completion(doc, index, edited, goto_ctrl && ctx.key_pressed(key::space));
+		complete::draw_hints(ui, doc.completion, completion_view);
 	}
 
 	if (goto_click && link_target) {

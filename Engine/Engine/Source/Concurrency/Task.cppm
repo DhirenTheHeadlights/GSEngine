@@ -14,20 +14,6 @@ export namespace gse {
 	using job = std::move_only_function<void()>;
 }
 
-namespace gse::task {
-	template <typename F>
-	using first_arg_t = typename [:std::meta::type_of(std::meta::parameters_of(^^std::remove_cvref_t<F>::operator())[0]):];
-
-	using parallel_for_fn = std::move_only_function<void(std::size_t)>;
-
-	auto parallel_for_impl(
-		std::size_t first,
-		std::size_t last,
-		parallel_for_fn func,
-		id id
-	) -> void;
-}
-
 export namespace gse::task {
 	class group;
 
@@ -116,14 +102,6 @@ export namespace gse::task {
 		id id = trace_id<trace::current_loc_tag()>()
 	) -> void;
 
-	template <typename F>
-	auto parallel_for(
-		first_arg_t<F> first,
-		first_arg_t<F> last,
-		F&& func,
-		id id = trace_id<trace::current_loc_tag()>()
-	) -> void;
-
 	auto thread_count() -> std::size_t;
 
 	auto current_worker() noexcept -> std::optional<std::size_t>;
@@ -153,7 +131,8 @@ export namespace gse::task {
 		std::size_t n,
 		std::size_t min_chunk_items,
 		Fn&& fn,
-		id label = trace_id<trace::current_loc_tag()>()
+		id label = trace_id<trace::current_loc_tag()>(),
+		lane target = lane::worker
 	) -> void;
 
 	class group : non_copyable, non_movable {
@@ -167,13 +146,6 @@ export namespace gse::task {
 
 		auto post(
 			job j,
-			id id = trace_id<trace::current_loc_tag()>()
-		) -> void;
-
-		template <std::input_iterator It>
-		auto post_range(
-			It first,
-			It last,
 			id id = trace_id<trace::current_loc_tag()>()
 		) -> void;
 
@@ -314,7 +286,6 @@ namespace gse::task {
 	inline thread_local bool t_is_main_thread = false;
 	inline thread_local blocking_lane* t_lane = nullptr;
 
-	inline constexpr std::size_t coalesce_threshold = 64;
 	inline constexpr std::size_t min_chunks_per_worker = 4;
 	inline constexpr std::size_t hot_spin_yields = 200;
 	constexpr std::size_t idle_spin_yields = 4;
@@ -348,6 +319,11 @@ namespace gse::task {
 
 	auto try_pop_lane(
 		blocking_lane& lane
+	) -> std::optional<job_entry>;
+
+	auto try_pop_lane_for(
+		blocking_lane& lane,
+		const group& owner
 	) -> std::optional<job_entry>;
 
 	auto io_thread_count() -> std::size_t;
@@ -391,11 +367,6 @@ namespace gse::task {
 		const void* p
 	) -> std::uint64_t;
 
-	auto compute_chunk_size(
-		std::size_t n,
-		std::size_t workers
-	) -> std::size_t;
-
 	auto try_pop_local(
 		std::size_t worker_idx
 	) -> std::optional<job_entry>;
@@ -432,9 +403,13 @@ gse::task::group::~group() noexcept {
 }
 
 auto gse::task::group::wait() const -> void {
+	if (m_counter.load(std::memory_order_acquire) == 0) {
+		return;
+	}
+	trace::scope_guard _{ trace_id<"task::fanout_wait">(), trace::span_kind::wait };
 	while (m_counter.load(std::memory_order_acquire) > 0) {
 		if (t_lane) {
-			if (auto entry = try_pop_lane(*t_lane)) {
+			if (auto entry = try_pop_lane_for(*t_lane, *this)) {
 				run_job(*entry);
 			}
 			else {
@@ -614,61 +589,8 @@ auto gse::task::post_range(It first, It last, const id id) -> void {
 	work_available.release(static_cast<std::ptrdiff_t>(count));
 }
 
-auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
-	if (last <= first) {
-		return;
-	}
-
-	const std::size_t n = last - first;
-
-	{
-		trace::scope_guard _{ id };
-		if (n <= coalesce_threshold) {
-			for (std::size_t i = first; i < last; ++i) {
-				func(i);
-			}
-			return;
-		}
-
-		const std::size_t workers = std::max<std::size_t>(1, worker_count_value.load(std::memory_order_acquire));
-		const std::size_t chunk = compute_chunk_size(n, workers);
-
-		group g(id);
-		for (std::size_t chunk_start = first; chunk_start < last; chunk_start += chunk) {
-			const std::size_t chunk_stop = std::min(chunk_start + chunk, last);
-			g.post(
-				[chunk_start, chunk_stop, &func] {
-					for (std::size_t i = chunk_start; i < chunk_stop; ++i) {
-						func(i);
-					}
-				},
-				id
-			);
-		}
-		g.wait();
-	}
-}
-
-template <typename F>
-auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, const id id) -> void {
-	using index = first_arg_t<F>;
-
-	if (last <= first) {
-		return;
-	}
-
-	parallel_for_impl(
-		static_cast<std::size_t>(first),
-		static_cast<std::size_t>(last),
-		parallel_for_fn([f = std::forward<F>(func)](std::size_t i) mutable {
-			f(static_cast<index>(i));
-		}),
-		id
-	);
-}
-
 template <typename Fn>
-auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label) -> void {
+auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk_items, Fn&& fn, const id label, const lane target) -> void {
 	if (n == 0) {
 		return;
 	}
@@ -678,7 +600,7 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 		}
 		return;
 	}
-	const auto workers = std::max<std::size_t>(1, thread_count());
+	const auto workers = target == lane::background ? background_thread_count() : std::max<std::size_t>(1, thread_count());
 	const auto max_chunks = std::max<std::size_t>(1, n / min_chunk_items);
 	const auto chunk_count = std::min(workers * 2, max_chunks);
 	if (chunk_count <= 1) {
@@ -689,7 +611,7 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 	}
 	const auto chunk = (n + chunk_count - 1) / chunk_count;
 
-	group g{ label };
+	group g{ label, target };
 	for (std::size_t start = 0; start < n; start += chunk) {
 		const auto end = std::min(start + chunk, n);
 		g.post(
@@ -700,13 +622,6 @@ auto gse::task::coarse_parallel(const std::size_t n, const std::size_t min_chunk
 			},
 			label
 		);
-	}
-}
-
-template <std::input_iterator It>
-auto gse::task::group::post_range(It first, It last, const id id) -> void {
-	for (; first != last; ++first) {
-		this->post(std::move(*first), id);
 	}
 }
 
@@ -746,7 +661,7 @@ auto gse::task::wait_idle_for(const time budget) -> bool {
 		std::this_thread::yield();
 	}
 
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<std::int64_t>(budget.as<milliseconds>()));
+	const auto deadline = std::chrono::steady_clock::now() + to_chrono(budget);
 
 	std::unique_lock lk(idle_mutex);
 	return idle_cv.wait_until(
@@ -773,7 +688,7 @@ auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job
 	auto& q = *per_worker_queues[worker_idx];
 	job_entry entry;
 	if (q.entries.try_pop(entry)) {
-		return std::optional<job_entry>{ std::move(entry) };
+		return std::move(entry);
 	}
 
 	std::lock_guard _(q.remote_mtx);
@@ -782,7 +697,7 @@ auto gse::task::try_pop_local(const std::size_t worker_idx) -> std::optional<job
 	}
 	entry = std::move(q.remote_entries.back());
 	q.remote_entries.pop_back();
-	return std::optional<job_entry>{ std::move(entry) };
+	return std::move(entry);
 }
 
 auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<job_entry> {
@@ -792,7 +707,7 @@ auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<jo
 	auto& q = *per_worker_queues[victim_idx];
 	job_entry entry;
 	if (q.entries.try_steal(entry)) {
-		return std::optional<job_entry>{ std::move(entry) };
+		return std::move(entry);
 	}
 
 	std::unique_lock lk(q.remote_mtx, std::try_to_lock);
@@ -801,7 +716,7 @@ auto gse::task::try_steal_from(const std::size_t victim_idx) -> std::optional<jo
 	}
 	entry = std::move(q.remote_entries.front());
 	q.remote_entries.pop_front();
-	return std::optional<job_entry>{ std::move(entry) };
+	return std::move(entry);
 }
 
 auto gse::task::try_pop_or_steal(const std::optional<std::size_t> my_idx) -> std::optional<job_entry> {
@@ -904,10 +819,7 @@ auto gse::task::parallel_invoke_range(const std::size_t first, const std::size_t
 			id
 		);
 	}
-	{
-		trace::scope_guard _{ trace_id<"task::fanout_wait">() };
-		g.wait();
-	}
+	g.wait();
 }
 
 auto gse::task::run_job(job_entry& entry) -> void {
@@ -945,32 +857,8 @@ auto gse::task::run_job(job_entry& entry) -> void {
 		return;
 	}
 
-	try {
-		{
-			trace::scope_guard _{ entry.trace_id, entry.parent_eid };
-			entry.fn();
-		}
-	}
-	catch (const std::exception& e) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"Exception in task (trace_id={}, type={}): {}\nStack:\n{}",
-			entry.trace_id,
-			typeid(e).name(),
-			e.what(),
-			capture_stacktrace(1)
-		);
-	}
-	catch (...) {
-		log::println(
-			log::level::error,
-			log::category::task,
-			"Unknown exception in task (trace_id={})\nStack:\n{}",
-			entry.trace_id,
-			capture_stacktrace(1)
-		);
-	}
+	trace::scope_guard _{ entry.trace_id, entry.parent_eid };
+	entry.fn();
 }
 
 auto gse::task::worker_loop(const std::stop_token& st, std::size_t index) -> void {
@@ -1053,6 +941,17 @@ auto gse::task::try_pop_lane(blocking_lane& lane) -> std::optional<job_entry> {
 	}
 	std::optional<job_entry> entry{ std::move(lane.entries.front()) };
 	lane.entries.pop_front();
+	return entry;
+}
+
+auto gse::task::try_pop_lane_for(blocking_lane& lane, const group& owner) -> std::optional<job_entry> {
+	std::lock_guard _(lane.mutex);
+	const auto owned = std::ranges::find(lane.entries, &owner, &job_entry::gp);
+	if (owned == lane.entries.end()) {
+		return std::nullopt;
+	}
+	std::optional<job_entry> entry{ std::move(*owned) };
+	lane.entries.erase(owned);
 	return entry;
 }
 
@@ -1250,12 +1149,4 @@ auto gse::task::async_key_for(const void* p) -> std::uint64_t {
 	}
 
 	return k;
-}
-
-auto gse::task::compute_chunk_size(const std::size_t n, const std::size_t workers) -> std::size_t {
-	const std::size_t target_chunks = workers * min_chunks_per_worker;
-	if (target_chunks == 0) {
-		return n;
-	}
-	return std::max<std::size_t>(1, (n + target_chunks - 1) / target_chunks);
 }

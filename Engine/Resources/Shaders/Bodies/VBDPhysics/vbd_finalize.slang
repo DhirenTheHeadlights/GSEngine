@@ -1,7 +1,7 @@
 
 void vbd_finalize(uint3 dispatch_id) {
-    uint bi = dispatch_id.x;
-    if (bi >= pc.body_count) return;
+    if (dispatch_id.x >= active_data[active_count_word]) return;
+    uint bi = active_list[active_data[active_half_word] * max_bodies() + dispatch_id.x];
 
     body_state body = body_data[bi];
     bool locked = body.locked != 0;
@@ -24,7 +24,12 @@ void vbd_finalize(uint3 dispatch_id) {
             body.angular_velocity = float3(0, 0, 0);
             body.position = body.old_position;
             body.orientation = body.old_orientation;
-            body_data[bi] = body;
+            body_data[bi].predicted_position = body.predicted_position;
+            body_data[bi].predicted_orientation = body.predicted_orientation;
+            body_data[bi].velocity = body.velocity;
+            body_data[bi].angular_velocity = body.angular_velocity;
+            body_data[bi].position = body.position;
+            body_data[bi].orientation = body.orientation;
             return;
         }
 
@@ -39,6 +44,8 @@ void vbd_finalize(uint3 dispatch_id) {
 
         body.position = body.predicted_position;
         if (update_orient) {
+            mat3 turn = rotation_from_quat(quat_mul(body.predicted_orientation, quat_conjugate(body.orientation)));
+            body_data[bi].inv_inertia = mat3_mul(mat3_mul(turn, body.inv_inertia), mat3_transpose(turn));
             body.orientation = body.predicted_orientation;
         }
     }
@@ -60,5 +67,10 @@ void vbd_finalize(uint3 dispatch_id) {
         body.aabb_max = shape_center + aabb_he;
     }
 
-    body_data[bi] = body;
+    body_data[bi].position = body.position;
+    body_data[bi].orientation = body.orientation;
+    body_data[bi].predicted_orientation = body.predicted_orientation;
+    body_data[bi].angular_velocity = body.angular_velocity;
+    body_data[bi].aabb_min = body.aabb_min;
+    body_data[bi].aabb_max = body.aabb_max;
 }

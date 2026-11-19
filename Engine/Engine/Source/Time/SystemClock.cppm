@@ -3,7 +3,6 @@ export module gse.time:system_clock;
 import std;
 import gse.math;
 import gse.log;
-import gse.win32;
 
 import :clock;
 
@@ -77,7 +76,7 @@ namespace gse::system_clock {
 	internal_time fixed_accumulator{};
 	internal_time refresh_interval{};
 	internal_time snap_error{};
-	bool display_snapping = true;
+	bool display_snapping = false;
 	std::optional<int> fixed_step_override;
 	std::optional<internal_time> external_display_interval;
 
@@ -242,7 +241,7 @@ auto gse::system_clock::update_frame_rate(const internal_time elapsed) -> void {
 	frame_rate_update_time += elapsed;
 
 	if (frame_rate_update_time >= fps_report_interval) {
-		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<seconds>());
+		frame_rate_count = static_cast<std::uint32_t>(frame_count * (seconds(1.0) / frame_rate_update_time));
 		frame_count = 0;
 		frame_rate_update_time -= fps_report_interval;
 	}
@@ -256,19 +255,6 @@ auto gse::system_clock::dt() -> Q {
 template <gse::is_quantity Q>
 auto gse::system_clock::now() -> Q {
 	return quantity_cast<Q>(main_clock.elapsed<double>());
-}
-
-auto gse::system_clock::from_query_performance_counter(const std::uint64_t ticks) -> time_t<double> {
-	const auto before = now<time_t<double>>();
-	const auto current = win32::performance_counter();
-	const auto after = now<time_t<double>>();
-	static const auto frequency = win32::performance_counter_frequency();
-	if (current == 0 || frequency == 0) {
-		return after;
-	}
-	const auto midpoint = before + (after - before) * 0.5;
-	const auto delta_ns = (static_cast<double>(ticks) - static_cast<double>(current)) * (1.0e9 / static_cast<double>(frequency));
-	return midpoint + nanoseconds(delta_ns);
 }
 
 template <gse::is_quantity Q>

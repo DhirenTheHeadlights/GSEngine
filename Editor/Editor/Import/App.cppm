@@ -1,5 +1,7 @@
 export module gse.ide.app;
 
+export import :brand_shape;
+export import :brand;
 export import :search_screen;
 export import :project_screen;
 export import :dock;

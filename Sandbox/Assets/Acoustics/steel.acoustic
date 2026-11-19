@@ -1,0 +1,13 @@
+[Material]
+mass_density = 7850 kg/m^3
+young_modulus = 200 GPa
+poisson_ratio = 0.29
+absorption = 0.05
+mass_damping = 5 1/s
+stiffness_damping = 100 ns
+
+[Box.probe_bar]
+size = (0.5 m, 0.02 m, 0.03 m)
+
+[Box.yard_plate]
+size = (0.4 m, 0.02 m, 0.3 m)

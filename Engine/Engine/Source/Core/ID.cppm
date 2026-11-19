@@ -6,6 +6,10 @@ import gse.meta;
 
 namespace gse {
 	using uuid = std::uint64_t;
+
+	auto fold_path_case(
+		std::string& key
+	) -> void;
 }
 
 export namespace gse {

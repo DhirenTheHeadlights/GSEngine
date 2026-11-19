@@ -21,6 +21,8 @@ export namespace gse::gui {
 		dock::location docked_to = dock::location::none;
 		float dock_split_ratio = 0.5f;
 
+		float zoom = 1.f;
+
 		[[= field_key<"active_tab">{}]]
 		std::uint32_t active_tab_index = 0;
 
@@ -31,7 +33,7 @@ export namespace gse::gui {
 	};
 
 	auto save(
-		id_mapped_collection<menu>& menus,
+		const id_mapped_collection<menu>& menus,
 		const std::filesystem::path& file_path,
 		vec2f viewport_size,
 		float scale_factor

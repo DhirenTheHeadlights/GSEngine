@@ -1,0 +1,4 @@
+wgpu-native v29.0.1.1 (gfx-rs/wgpu-native release)
+asset: wgpu-windows-x86_64-gnu-release.zip
+sha256: d471e3614733c1d4ddd61bfd19868356477d0d37bf531bf8c6cb64a7f579bd2a
+license: MIT OR Apache-2.0

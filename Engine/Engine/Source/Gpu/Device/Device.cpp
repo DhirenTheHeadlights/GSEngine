@@ -8,16 +8,14 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
-import gse.nsight_perf;
+import gse.gpu_profile;
 import gse.os;
 import std;
 
 import :backend_state;
 import :command_dispatch;
 import :device;
-import :device_dx12_backend;
-import :device_vulkan_backend;
-import :video_encoder;
+import :device_contract;
 
 namespace gse::gpu {
 	constexpr std::size_t max_perf_metrics = 32;
@@ -26,17 +24,20 @@ namespace gse::gpu {
 		std::string_view field
 	) -> std::string_view;
 
-	template <typename B>
-	auto device_backend_delete(void* self) -> void {
-		delete static_cast<B*>(self);
-	}
+	enum class checkpoint_phase : std::uint64_t {
+		begin = 1,
+		end = 2,
+	};
 
-	consteval {
-		std::meta::define_aggregate(^^gpu_dispatch, meta::dispatch_specs(meta::pointer_receiver<vulkan_device_backend>::self_type(), ^^vulkan_device_backend, meta::dispatch_no_exclude));
-	}
+	auto encode_checkpoint(
+		std::uint64_t seq,
+		device::pass_marker_domain domain,
+		checkpoint_phase phase
+	) -> std::uint64_t;
+}
 
-	template <typename B>
-	constexpr gpu_dispatch device_dispatch_for = meta::build_dispatch<gpu_dispatch, vulkan_device_backend, meta::pointer_receiver<B>>();
+auto gse::gpu::encode_checkpoint(const std::uint64_t seq, const device::pass_marker_domain domain, const checkpoint_phase phase) -> std::uint64_t {
+	return seq << 4 | static_cast<std::uint64_t>(domain) << 2 | static_cast<std::uint64_t>(phase);
 }
 
 auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_view {
@@ -46,68 +47,6 @@ auto gse::gpu::trimmed_metric_name(const std::string_view field) -> std::string_
 		return {};
 	}
 	return field.substr(first, field.find_last_not_of(blanks) - first + 1);
-}
-
-auto gse::gpu::device::create(const std::optional<shared_view<window::data>> win, const bool validation_layers_enabled, backend_kind& backend, device_settings& device_cfg) -> std::unique_ptr<device> {
-	if (backend == backend_kind::vulkan) {
-		auto created = create_vulkan_device_backend(win, validation_layers_enabled, device_cfg);
-		if (created) {
-			active_backend = backend_kind::vulkan;
-
-			std::unique_ptr<void, void (*)(void*)> backend(
-				created->backend.release(),
-				&device_backend_delete<vulkan_device_backend>
-			);
-
-			auto dev = std::unique_ptr<device>(new device(
-				std::move(backend),
-				&device_dispatch_for<vulkan_device_backend>,
-				created->commands,
-				created->surface_format,
-				created->video_encode_enabled,
-				device_cfg.pass_checkpoints
-			));
-
-			dev->m_transient = transient_executor<device>::create(
-				*dev,
-				dev->queue_family(queue_type::graphics),
-				dev->queue_family(queue_type::compute),
-				task::thread_count()
-			);
-
-			return dev;
-		}
-
-		log::println(log::category::render, "vulkan device unavailable; falling back to dx12 backend");
-		log::flush();
-		backend = backend_kind::dx12;
-	}
-
-	auto created = create_dx12_device_backend(win, validation_layers_enabled, device_cfg);
-	active_backend = backend_kind::dx12;
-
-	std::unique_ptr<void, void (*)(void*)> backend_ptr(
-		created.backend.release(),
-		&device_backend_delete<dx12_device_backend>
-	);
-
-	auto dev = std::unique_ptr<device>(new device(
-		std::move(backend_ptr),
-		&device_dispatch_for<dx12_device_backend>,
-		created.commands,
-		created.surface_format,
-		created.video_encode_enabled,
-		device_cfg.pass_checkpoints
-	));
-
-	dev->m_transient = transient_executor<device>::create(
-		*dev,
-		dev->queue_family(queue_type::graphics),
-		dev->queue_family(queue_type::compute),
-		task::thread_count()
-	);
-
-	return dev;
 }
 
 gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const gpu_dispatch* dispatch, const command_dispatch* commands, image_format surface_format, bool video_encode_enabled, bool pass_checkpoints_enabled)
@@ -140,7 +79,7 @@ gse::gpu::device::device(std::unique_ptr<void, void (*)(void*)> backend, const g
 }
 
 gse::gpu::device::~device() {
-	nsight_perf::end_session();
+	gpu_profile::end_session();
 	log::println(log::category::runtime, "Destroying Device");
 }
 
@@ -157,6 +96,9 @@ auto gse::gpu::device::queue_family(const queue_type queue) const -> std::uint32
 }
 
 auto gse::gpu::device::wait_idle() const -> void {
+	if (m_device_lost_reported.load(std::memory_order_relaxed)) {
+		return;
+	}
 	m_vt->wait_idle(m_backend.get());
 }
 
@@ -174,7 +116,7 @@ auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> vo
 	}
 	m_perf_metrics = config;
 
-	nsight_perf::end_session();
+	gpu_profile::end_session();
 	if (!config.enabled) {
 		return;
 	}
@@ -190,7 +132,7 @@ auto gse::gpu::device::set_perf_metrics(const perf_metrics_config& config) -> vo
 		}
 	}
 
-	nsight_perf::begin_session({
+	gpu_profile::begin_session({
 		.device_index = m_perf_metrics.device_index,
 		.metrics = names,
 		.sampling_interval = m_perf_metrics.sampling_interval,
@@ -202,6 +144,8 @@ auto gse::gpu::device::begin_pass_marker(const command_buffer_handle cmd, const 
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(domain)];
 	const auto seq = ring.seq.fetch_add(1, std::memory_order_relaxed);
 	ring.entries[seq % pass_marker_ring_size] = marker;
+
+	m_vt->record_checkpoint(m_backend.get(), cmd, encode_checkpoint(seq, domain, checkpoint_phase::begin));
 
 	if (ring.checkpoint_buffer.valid()) {
 		const auto slot = seq % pass_marker_ring_size;
@@ -260,6 +204,8 @@ auto gse::gpu::device::post_renderpass_pass_marker(const command_buffer_handle c
 auto gse::gpu::device::end_pass_marker(const command_buffer_handle cmd, const pass_marker_handle handle) -> void {
 	end_debug_event(cmd);
 
+	m_vt->record_checkpoint(m_backend.get(), cmd, encode_checkpoint(handle.seq, handle.domain, checkpoint_phase::end));
+
 	auto& ring = m_pass_marker_rings[static_cast<std::size_t>(handle.domain)];
 	if (!ring.checkpoint_buffer.valid()) {
 		return;
@@ -285,7 +231,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		m_vt->wait_for_crash_dump(m_backend.get());
 	});
 
-	log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
+	log::println(log::level::error, log::category::render, "GPU device lost during {}", operation);
 
 	for (std::size_t di = 0; di < pass_marker_domain_count; ++di) {
 		auto& ring = m_pass_marker_rings[di];
@@ -301,7 +247,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		if (ring.checkpoint_slots == nullptr) {
 			log::println(
 				log::level::error,
-				log::category::vulkan,
+				log::category::render,
 				"Last {} pass markers for {} (record order, NOT GPU execution order). GPU checkpoints are OFF, so "
 				"every pass below reads as 'queued' and none can be blamed -- set Graphics.device_settings."
 				"pass_checkpoints and reproduce to find the pass that hung:",
@@ -312,7 +258,7 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 		else {
 			log::println(
 				log::level::error,
-				log::category::vulkan,
+				log::category::render,
 				"Last {} pass markers for {} (record order, NOT GPU execution order; status from GPU checkpoint):",
 				count,
 				domain
@@ -389,6 +335,64 @@ auto gse::gpu::device::report_device_lost(const std::string_view operation) -> v
 					m.pass_type.tag()
 				);
 			}
+		}
+	}
+
+	for (const auto queue : { queue_type::graphics, queue_type::compute }) {
+		const auto checkpoints = m_vt->queue_checkpoints(m_backend.get(), queue);
+		if (checkpoints.empty()) {
+			continue;
+		}
+
+		log::println(
+			log::level::error,
+			log::category::vulkan,
+			"{} queue diagnostic checkpoints (last marker each pipeline stage passed; a begin with no matching end is the pass that hung):",
+			queue
+		);
+
+		for (const auto& checkpoint : checkpoints) {
+			const auto seq = checkpoint.marker >> 4;
+			const auto domain_index = static_cast<std::size_t>(checkpoint.marker >> 2 & 3);
+			const auto phase = static_cast<checkpoint_phase>(checkpoint.marker & 3);
+			const auto ended = std::ranges::any_of(checkpoints, [&](const queue_checkpoint& other) {
+				return other.marker == (checkpoint.marker & ~std::uint64_t{ 3 } | static_cast<std::uint64_t>(checkpoint_phase::end));
+			});
+			const std::string_view verdict = phase == checkpoint_phase::begin && !ended ? "BEGAN, NOT ENDED" : phase == checkpoint_phase::begin ? "began" : "ended";
+
+			if (domain_index >= pass_marker_domain_count) {
+				log::println(log::level::error, log::category::vulkan, "  stage={} marker={:#x} (not a pass marker)", checkpoint.stage, checkpoint.marker);
+				continue;
+			}
+
+			const auto& ring = m_pass_marker_rings[domain_index];
+			const auto seq_next = ring.seq.load(std::memory_order_relaxed);
+			if (seq >= seq_next || seq_next - seq > pass_marker_ring_size) {
+				log::println(
+					log::level::error,
+					log::category::vulkan,
+					"  stage={} seq={} domain={} [{}] (pass evicted from the marker ring)",
+					checkpoint.stage,
+					seq,
+					static_cast<pass_marker_domain>(domain_index),
+					verdict
+				);
+				continue;
+			}
+
+			const auto& m = ring.entries[seq % pass_marker_ring_size];
+			log::println(
+				log::level::error,
+				log::category::vulkan,
+				"  stage={} seq={} domain={} frame={} pass_index={} pass_type={} [{}]",
+				checkpoint.stage,
+				seq,
+				static_cast<pass_marker_domain>(domain_index),
+				m.frame_counter,
+				m.pass_index,
+				m.pass_type.tag(),
+				verdict
+			);
 		}
 	}
 
@@ -472,7 +476,9 @@ auto gse::gpu::device::frame_command_buffer(const queue_type queue, const std::u
 }
 
 auto gse::gpu::device::submit(const queue_type queue, const submit_info& info, const gpu::handle<fence> signal_fence) -> void {
-	m_vt->submit(m_backend.get(), queue, info, signal_fence);
+	if (m_vt->submit(m_backend.get(), queue, info, signal_fence) == result::error_device_lost) {
+		report_device_lost(std::format("submit ({} command buffers on the {} queue)", info.command_buffers.size(), queue));
+	}
 }
 
 auto gse::gpu::device::present(const present_info& info) -> result {
@@ -493,17 +499,6 @@ auto gse::gpu::device::reset_worker_command_pools(const std::uint32_t frame_inde
 
 auto gse::gpu::device::acquire_worker_command_buffer(const queue_type queue, const std::size_t worker_index, const std::uint32_t frame_index) -> command_buffer_handle {
 	return m_vt->acquire_worker_command_buffer(m_backend.get(), queue, worker_index, frame_index);
-}
-
-auto gse::gpu::device::make_video_encoder(const encode_desc& desc) -> std::optional<video_encoder> {
-	if (!m_video_encode_enabled) {
-		return std::nullopt;
-	}
-	auto backend = m_vt->make_video_encoder_backend(m_backend.get(), desc);
-	if (!backend) {
-		return std::nullopt;
-	}
-	return video_encoder(std::move(backend));
 }
 
 auto gse::gpu::device::create_image_unbound(const image_create_info& info) const -> std::pair<gpu::handle<image>, memory_requirements> {
@@ -745,6 +740,10 @@ auto gse::gpu::device::create_swapchain(const surface surface, const vec2i frame
 	return m_vt->create_swapchain(m_backend.get(), surface, framebuffer_size, mode, old_handle);
 }
 
+auto gse::gpu::device::resize_swapchain_in_place(const swap_chain_handle swapchain, const vec2i framebuffer_size) -> bool {
+	return m_vt->resize_swapchain_in_place(m_backend.get(), swapchain, framebuffer_size);
+}
+
 auto gse::gpu::device::boot_surface() const -> surface {
 	return m_vt->boot_surface(m_backend.get());
 }
@@ -781,16 +780,16 @@ auto gse::gpu::device::swapchain_past_presentation_timing(const swap_chain_handl
 	return m_vt->swapchain_past_presentation_timing(m_backend.get(), swapchain);
 }
 
-auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) -> blas {
-	return m_vt->create_blas(m_backend.get(), geometry, prim_count);
+auto gse::gpu::device::create_blas(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) -> blas {
+	return m_vt->create_blas(m_backend.get(), geometry, prim_count, flags);
 }
 
 auto gse::gpu::device::create_tlas(const std::uint32_t max_instances) -> tlas {
 	return m_vt->create_tlas(m_backend.get(), max_instances);
 }
 
-auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count) const -> acceleration_structure_build_sizes {
-	return m_vt->query_blas_build_sizes(m_backend.get(), geometry, prim_count);
+auto gse::gpu::device::query_blas_build_sizes(const acceleration_structure_geometry& geometry, const std::uint32_t prim_count, const build_acceleration_structure_flags flags) const -> acceleration_structure_build_sizes {
+	return m_vt->query_blas_build_sizes(m_backend.get(), geometry, prim_count, flags);
 }
 
 auto gse::gpu::device::acceleration_structure_scratch_alignment() const -> device_size {
@@ -803,9 +802,13 @@ auto gse::gpu::device::host_upload_image_layers(const gpu::handle<image> img, co
 
 auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_view tag, const std::source_location& loc) -> buffer {
 	auto buf = m_vt->create_buffer(m_backend.get(), desc, tag, loc);
-	if (desc.bindless) {
+	if (!buf.handle()) {
+		report_device_lost(std::format("create_buffer '{}' ({} B) at {}:{}", tag, desc.size, loc.file_name(), loc.line()));
+		return buf;
+	}
+	if (gpu::takes_slot(desc)) {
 		assert(
-			buf.slot().valid(),
+			buf.slot().valid() || m_device_lost_reported.load(std::memory_order_relaxed),
 			"'{}' ({} B) asked for a bindless slot and the backend had none left, so nothing can reach it: "
 			"shader writes through this binding and copies that name it are both discarded with no further diagnostic. "
 			"Raise the bindless buffer heap size or release a buffer. Created at {}:{}.",
@@ -815,7 +818,7 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 			loc.line()
 		);
 		set_slot_resource(buf.slot().index, resource_ref{
-			.ptr = std::bit_cast<const void*>(buf.handle()),
+			.id = std::bit_cast<std::uint64_t>(buf.handle()),
 			.type = resource_type::buffer,
 		});
 	}
@@ -824,15 +827,13 @@ auto gse::gpu::device::create_buffer(const buffer_desc& desc, const std::string_
 
 auto gse::gpu::device::create_image(const image_desc& desc, const std::string_view tag) -> image {
 	auto img = m_vt->create_image(m_backend.get(), desc, tag);
-	if (desc.bindless) {
-		const resource_ref ref{
-			.ptr = std::bit_cast<const void*>(img.handle()),
-			.type = resource_type::image,
-			.aspects = image_aspect_for(img.format()),
-		};
-		set_slot_resource(img.storage_slot().index, ref);
-		set_slot_resource(img.sampled_slot().index, ref);
-	}
+	const resource_ref ref{
+		.id = std::bit_cast<std::uint64_t>(img.handle()),
+		.type = resource_type::image,
+		.aspects = image_aspect_for(img.format()),
+	};
+	set_slot_resource(img.storage_slot().index, ref);
+	set_slot_resource(img.sampled_slot().index, ref);
 	return img;
 }
 
@@ -863,11 +864,15 @@ auto gse::gpu::device::allocate_acceleration_structure_slot() -> bindless_handle
 }
 
 auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const buffer& buf, const device_size size) -> void {
+	write_storage_buffer(slot, buf.handle(), size);
+}
+
+auto gse::gpu::device::write_storage_buffer(const bindless_slot slot, const gpu::handle<buffer> buf, const device_size size) -> void {
 	set_slot_resource(slot.index, resource_ref{
-		.ptr = std::bit_cast<const void*>(buf.handle()),
+		.id = std::bit_cast<std::uint64_t>(buf),
 		.type = resource_type::buffer,
 	});
-	m_vt->write_storage_buffer(m_backend.get(), slot, buf.device_address(), size);
+	m_vt->write_storage_buffer(m_backend.get(), slot, buffer_address(buf), size);
 }
 
 auto gse::gpu::device::write_acceleration_structure(const bindless_slot slot, const device_address as_address) -> void {
@@ -876,7 +881,7 @@ auto gse::gpu::device::write_acceleration_structure(const bindless_slot slot, co
 
 auto gse::gpu::device::write_sampled_image(const bindless_slot slot, const image& img) -> void {
 	set_slot_resource(slot.index, resource_ref{
-		.ptr = std::bit_cast<const void*>(img.handle()),
+		.id = std::bit_cast<std::uint64_t>(img.handle()),
 		.type = resource_type::image,
 		.aspects = image_aspect_for(img.format()),
 	});
@@ -901,6 +906,10 @@ auto gse::gpu::device::bindless_sampler_heap_binding() const -> bindless_heap_bi
 
 auto gse::gpu::device::max_push_data_size() const -> std::uint32_t {
 	return m_vt->max_push_data_size(m_backend.get());
+}
+
+auto gse::gpu::device::capabilities() const -> backend_capabilities {
+	return m_vt->capabilities(m_backend.get());
 }
 
 auto gse::gpu::device::collect_garbage() -> void {

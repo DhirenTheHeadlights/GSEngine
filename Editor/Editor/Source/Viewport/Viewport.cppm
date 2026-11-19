@@ -10,12 +10,14 @@ export namespace gse::ide::viewport {
 	struct pending_session {
 		std::uint32_t generation = 0;
 		std::uint32_t instance = 0;
+		std::uint32_t revision = 0;
 		std::shared_ptr<const attached_surface_message> message;
 	};
 
 	struct imported_session {
 		std::uint32_t generation = 0;
 		std::uint32_t instance = 0;
+		std::uint32_t revision = 0;
 		std::array<gpu::shared_surface, attached_ring_size> surfaces{};
 		std::array<gpu::bindless_handle, attached_ring_size> slots{};
 		gpu::handle<gpu::semaphore> produced_semaphore{};

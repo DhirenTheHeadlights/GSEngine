@@ -16,10 +16,13 @@ import std;
 import :cursor;
 import :ids;
 import :input_layers;
+import :interaction;
 import :styles;
+import :surface_paint;
 import :texture;
 import :types;
 import :ui_renderer;
+import :widget_skin;
 
 namespace gse::gui {
 	auto auto_scroll_delta(
@@ -66,12 +69,12 @@ namespace gse::gui {
 
 auto gse::gui::auto_scroll_delta(const float distance) -> float {
 	constexpr float dead_zone = 8.f;
-	constexpr float speed_scale = 90.f;
+	const inverse_time speed_scale = per_second(90.f);
 	constexpr float distance_scale = 90.f;
-	constexpr float max_speed = 2600.f;
+	const inverse_time max_speed = per_second(2600.f);
 	const float magnitude = std::max(0.f, std::abs(distance) - dead_zone);
-	const float speed = std::min(max_speed, (std::exp(magnitude / distance_scale) - 1.f) * speed_scale);
-	return std::copysign(speed * system_clock::dt<time>().as<seconds>(), distance);
+	const inverse_time speed = std::min(max_speed, (std::exp(magnitude / distance_scale) - 1.f) * speed_scale);
+	return std::copysign(speed * system_clock::dt<time>(), distance);
 }
 
 auto gse::gui::apply_auto_scroll(scroll_axis& axis, const float delta, const bool smooth) -> void {
@@ -173,18 +176,18 @@ auto gse::gui::draw_scroll_bar(const draw_context& ctx, const scroll_bar_result&
 		return;
 	}
 
-	vec4f track_color = ctx.style.color_widget_background;
-	track_color.w() *= 0.3f;
-	ctx.queue_sprite({
-		.rect = bar.track_rect,
-		.color = track_color,
-		.texture = ctx.blank_texture,
+	const scrollbar_skin& skin = ctx.style.scrollbar;
+
+	const interaction::press state{
+		.hovered = bar.hovered,
+		.held = axis.held,
+	};
+
+	draw::fill_surface(ctx, bar.track_rect, skin.track, {
 		.layer = ctx.current_layer,
 	});
-	ctx.queue_sprite({
-		.rect = bar.thumb_rect,
-		.color = axis.held ? ctx.style.color_widget_active : (bar.hovered ? ctx.style.color_widget_hovered : ctx.style.color_widget_background),
-		.texture = ctx.blank_texture,
+
+	draw::fill_surface(ctx, bar.thumb_rect, state.select(skin.thumb), {
 		.layer = ctx.current_layer,
 	});
 }
@@ -205,7 +208,7 @@ auto gse::gui::scroll_region(draw_context& ctx, const scroll_region_info& info) 
 		{ available_width, std::max(0.f, available_height) }
 	);
 
-	const std::uint64_t key = hash_combine(ids::current_seed(), stable_id(info.id));
+	const std::uint64_t key = hash_of(ids::current_seed(), info.id);
 	scroll_state& state = ctx.widget_scrolls[key];
 
 	const float saved_layout_y = ctx.layout_cursor.y();
@@ -273,12 +276,20 @@ auto gse::gui::scroll_area(const draw_context& ctx, scroll_state& state, const r
 	const float max_y = std::max(0.f, content_size.y() - visible_h);
 	const float max_x = std::max(0.f, content_size.x() - visible_w);
 
-	const vec2f wheel = ctx.scroll_delta_for(visible_rect);
 	const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
 	const bool redirect = shift && max_x > 0.f;
 
+	scroll_axes axes;
+	if (max_x > 0.f) {
+		axes.set(scroll_axis_kind::horizontal);
+	}
+	if (max_y > 0.f || redirect) {
+		axes.set(scroll_axis_kind::vertical);
+	}
+	const vec2f wheel = ctx.scroll_delta_for(visible_rect, axes);
+
 	const bool in_region = visible_rect.contains(ctx.mouse_position());
-	const bool can_scroll = max_x > 0.f || max_y > 0.f;
+	const bool can_scroll = config.middle_click_auto_scroll && (max_x > 0.f || max_y > 0.f);
 	if (can_scroll && ctx.mouse_pressed_for(visible_rect, mouse_button::button_3)) {
 		state.auto_scroll_active = !state.auto_scroll_active;
 		state.auto_scroll_anchor = ctx.mouse_position();

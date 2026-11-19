@@ -8,14 +8,12 @@ import gse.ide.search;
 import gse.ide.workspace;
 import std;
 
+import :brand;
+import :dock;
 import :search_screen;
 
 namespace gse::ide {
 	auto rebuild_glyph() -> std::span<const gui::symbol::stroke>;
-
-	auto git_status_color(
-		git::file_status status
-	) -> vec4f;
 
 	struct toggle_settings_request {};
 
@@ -26,16 +24,35 @@ namespace gse::ide {
 		id window;
 	};
 
+	struct shelf_toggle_request {
+		id panel;
+	};
+
+	struct shelf_view {
+		std::vector<dock_shelf_entry> entries;
+		std::optional<id> open;
+	};
+
 	struct quick_search_state {
 		search::query_driver driver;
 		gui::text_input_state input;
 	};
 
+	auto draw_shelf_strips(
+		gui::builder& ui,
+		const rectf& frame,
+		const shelf_view& shelf,
+		std::span<const panel_desc> panels,
+		channel_write<shelf_toggle_request> channels
+	) -> void;
+
 	class editor_screen : public gui::screen {
 	public:
 		editor_screen(
-			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels,
+			channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> channels,
 			const search::index_state* index,
+			const shelf_view* shelf,
+			std::span<const panel_desc> panels,
 			id window
 		);
 
@@ -70,8 +87,10 @@ namespace gse::ide {
 	private:
 		[[nodiscard]] auto is_popout() const -> bool;
 
-		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> m_channels;
+		channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> m_channels;
 		const search::index_state* m_index = nullptr;
+		const shelf_view* m_shelf = nullptr;
+		std::span<const panel_desc> m_panels;
 		id m_window;
 		std::optional<std::string> m_loc_label;
 		std::string m_loc_tooltip;
@@ -96,7 +115,7 @@ namespace gse::ide {
 		gui::builder& ui,
 		quick_search_state& state,
 		const search::index_state* index,
-		channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
+		channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const rectf& search_rect,
 		std::string_view id_key
 	) -> void;
@@ -106,7 +125,7 @@ namespace gse::ide {
 		workspace::data& ws,
 		quick_search_state& search,
 		const search::index_state* index,
-		channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
+		channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels,
 		const git::status_map* git_status,
 		std::span<const std::filesystem::path> git_rootless
 	) -> void;
@@ -117,8 +136,8 @@ namespace gse::ide {
 	) -> std::vector<gui::menu_item>;
 }
 
-gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request> channels, const search::index_state* index, const id window)
-	: m_channels(std::move(channels)), m_index(index), m_window(window) {
+gse::ide::editor_screen::editor_screen(channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request> channels, const search::index_state* index, const shelf_view* shelf, const std::span<const panel_desc> panels, const id window)
+	: m_channels(std::move(channels)), m_index(index), m_shelf(shelf), m_panels(panels), m_window(window) {
 }
 
 auto gse::ide::editor_screen::is_popout() const -> bool {
@@ -226,6 +245,80 @@ auto gse::ide::editor_screen::build(gui::builder& ui, gui::nav& n) -> void {
 	if (control_held && shift_held && ctx.key_pressed(key::p)) {
 		m_channels.push<toggle_project_switcher_request>({});
 	}
+
+	draw_shelf_strips(ui, ctx.clip_stack.back(), *m_shelf, m_panels, m_channels);
+}
+
+auto gse::ide::draw_shelf_strips(gui::builder& ui, const rectf& frame, const shelf_view& shelf, const std::span<const panel_desc> panels, const channel_write<shelf_toggle_request> channels) -> void {
+	if (shelf.entries.empty()) {
+		return;
+	}
+
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const dock_shelf_bands bands = shelf_bands(frame, shelf.entries, shelf_band_thickness(sty));
+	const float inset = sty.padding * 0.5f;
+
+	for (const gui::panel_edge edge : { gui::panel_edge::left, gui::panel_edge::right, gui::panel_edge::top, gui::panel_edge::bottom }) {
+		if (!bands.occupied(edge)) {
+			continue;
+		}
+
+		const rectf band = bands.of(edge);
+		ctx.queue_sprite({
+			.rect = band,
+			.color = sty.tab.cell.idle.fill,
+			.texture = ctx.blank_texture,
+			.clip_rect = band,
+		});
+
+		const bool stacked = edge == gui::panel_edge::left || edge == gui::panel_edge::right;
+		float cursor = stacked ? band.top() - inset : band.left() + inset;
+
+		for (const dock_shelf_entry& entry : shelf.entries) {
+			if (entry.edge != edge) {
+				continue;
+			}
+			const panel_desc* desc = panel_desc_for(panels, entry.panel);
+			if (!desc) {
+				continue;
+			}
+
+			const std::string_view initial = desc->glyph ? std::string_view() : std::string_view(desc->name).substr(0, 1);
+			const std::string_view label = stacked ? initial : desc->name;
+			const float side = band.width() - inset * 2.f;
+			const rectf tab = stacked
+				? rectf::from_position_size({ band.left() + inset, cursor }, { side, side })
+				: rectf::from_position_size(
+					{ cursor, band.top() - inset },
+					{
+						sty.padding * 2.f + (desc->glyph ? band.height() : 0.f) + text_view->width(label, sty.font_size),
+						band.height() - inset * 2.f,
+					}
+				);
+
+			if (stacked ? tab.bottom() < band.bottom() : tab.right() > band.right()) {
+				break;
+			}
+
+			const bool open = shelf.open && *shelf.open == entry.panel;
+			if (ui.draw<gui::button>({
+				.text = label,
+				.rect = tab,
+				.key = desc->name,
+				.glyph = desc->glyph ? desc->glyph() : std::span<const gui::symbol::stroke>{},
+				.role = open ? gui::button_role::accent : gui::button_role::standard,
+			})) {
+				channels.push<shelf_toggle_request>({ .panel = entry.panel });
+			}
+			if (stacked && ctx.hovers(tab)) {
+				ctx.set_tooltip(gui::ids::make(desc->name), desc->name);
+			}
+
+			cursor = stacked ? tab.bottom() - inset : tab.right() + inset;
+		}
+	}
 }
 
 auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) -> float {
@@ -233,18 +326,24 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
 
+	const float logo_extent = std::min(area.height() - sty.padding, sty.font_size * 1.5f);
+	brand::draw(ctx, rectf::from_position_size(
+		{ area.left() + sty.padding, area.center().y() + logo_extent * 0.5f },
+		{ logo_extent, logo_extent }
+	));
+	const float swatch_x = area.left() + sty.padding + logo_extent + sty.padding * 0.5f;
 	const float swatch_width = sty.accent_bar_width;
 	const float swatch_height = sty.font_size;
 	ctx.queue_sprite({
 		.rect = rectf::from_position_size(
-			{ area.left() + sty.padding, area.center().y() + swatch_height * 0.5f },
+			{ swatch_x, area.center().y() + swatch_height * 0.5f },
 			{ swatch_width, swatch_height }
 		),
 		.color = project::accent(),
 		.texture = ctx.blank_texture,
 	});
 
-	const float title_x = area.left() + sty.padding + swatch_width + sty.padding * 0.5f;
+	const float title_x = swatch_x + swatch_width + sty.padding * 0.5f;
 
 	ctx.queue_text({
 		.font = ctx.fonts.text,
@@ -264,21 +363,21 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	};
 
 	if (app_controls) {
-		if (gui::caption_button(ui, slot(1.f), "##chrome_settings", gui::symbol::gear(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(1.f), "##chrome_settings", gui::symbol::gear(), sty.caption_button)) {
 			m_channels.push<toggle_settings_request>({});
 		}
-		if (gui::caption_button(ui, slot(2.f), "##chrome_rebuild", rebuild_glyph(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(2.f), "##chrome_rebuild", rebuild_glyph(), sty.caption_button)) {
 			m_channels.push<build_runner::build_request>({
 				.target = build_runner::build_target::editor,
 			});
 		}
-		if (gui::caption_button(ui, slot(3.f), "##chrome_project", gui::symbol::project(), sty.color_widget_hovered)) {
+		if (gui::caption_button(ui, slot(3.f), "##chrome_project", gui::symbol::project(), sty.caption_button)) {
 			m_channels.push<toggle_project_switcher_request>({});
 		}
 	}
 
 	const rectf panels_rect = slot(app_controls ? 4.f : 1.f);
-	if (gui::caption_button(ui, panels_rect, "##chrome_panels", gui::symbol::chevron_down(), sty.color_widget_hovered)) {
+	if (gui::caption_button(ui, panels_rect, "##chrome_panels", gui::symbol::chevron_down(), sty.caption_button)) {
 		m_channels.push<open_panels_menu_request>({
 			.position = { panels_rect.left(), panels_rect.bottom() },
 			.window = m_window,
@@ -326,10 +425,10 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	std::string status;
 	std::string status_tooltip;
 	bool spinning = false;
-	vec4f pill_color = sty.color_input_background;
+	vec4f pill_color = sty.input.area.fill;
 	vec4f pill_fg = sty.color_text_secondary;
 	const search::index_phase phase = m_index->phase.load(std::memory_order_acquire);
-	if (phase != search::index_phase::idle) {
+	if (search::index_busy(phase)) {
 		const search::index_phase_info info = annotation_from_enum<search::index_phase_info>(phase, {
 			.label = "Unknown indexing stage",
 			.detail = "No explanation was recorded for this indexing stage.",
@@ -337,23 +436,23 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 		const std::size_t total = m_index->progress_total.load(std::memory_order_acquire);
 		const std::size_t done = std::min(m_index->progress_done.load(std::memory_order_acquire), total);
 		const time_t<double> started = m_index->phase_started.load(std::memory_order_acquire);
-		const double elapsed_seconds = started == time_t<double>{}
-			? 0.0
-			: (system_clock::now<time_t<double>>() - started).as<seconds>();
+		const time_t<double> elapsed = started == time_t<double>{}
+			? time_t<double>{}
+			: system_clock::now<time_t<double>>() - started;
 		status = std::string(info.label);
 		if (total > 0) {
 			status += std::format(" {}/{}", done, total);
 		}
-		status += elapsed_seconds < 10.f
-			? std::format(" \xC2\xB7 {:.1f}s", elapsed_seconds)
-			: std::format(" \xC2\xB7 {:.0f}s", elapsed_seconds);
+		status += elapsed < seconds(10.0)
+			? std::format(" \xC2\xB7 {:.1f:s}", elapsed)
+			: std::format(" \xC2\xB7 {:.0f:s}", elapsed);
 		status_tooltip = std::format(
-			"{} — {} Progress: {} of {} items. Time in this stage: {:.1f} seconds.",
+			"{} — {} Progress: {} of {} items. Time in this stage: {:.1f:s}.",
 			info.label,
 			info.detail,
 			done,
 			total,
-			elapsed_seconds
+			elapsed
 		);
 		spinning = true;
 		pill_color = sty.color_accent_dim;
@@ -386,7 +485,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	float sx = status_rect.left() + pad;
 	if (spinning) {
 		const rectf spin_rect = rectf::from_position_size({ sx, status_rect.center().y() + spin_w * 0.5f }, { spin_w, spin_w });
-		gui::symbol::spinner(ctx, spin_rect, gui::symbol::spinner_rotation(), {
+		gui::symbol::spinner(ctx, spin_rect, {
 			.color = pill_fg,
 			.extent = sty.icon_extent,
 			.clip_rect = status_rect,
@@ -408,7 +507,7 @@ auto gse::ide::editor_screen::draw_caption(gui::builder& ui, const rectf& area) 
 	return controls_width;
 }
 
-auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
+auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, const search::index_state* index, channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const rectf& search_rect, const std::string_view id_key) -> void {
 	const auto& ctx = ui.ctx;
 	const auto& sty = ctx.style;
 	const auto text_view = ctx.fonts.text.resolve();
@@ -479,7 +578,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 	);
 	ctx.queue_sprite({
 		.rect = list_rect,
-		.color = { vec3f(sty.color_menu_body), 1.f },
+		.color = sty.modal.panel.fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -495,7 +594,7 @@ auto gse::ide::draw_search_bar(gui::builder& ui, quick_search_state& state, cons
 		if (state.driver.selected == static_cast<int>(i)) {
 			ctx.queue_sprite({
 				.rect = row,
-				.color = sty.color_selection,
+				.color = sty.input.selection.fill,
 				.texture = ctx.blank_texture,
 			});
 		}
@@ -539,7 +638,7 @@ namespace gse::ide::explorer_menu {
 
 	[[= gui::context_action<"Copy Path", "path">{}]]
 	auto copy_path(workspace::data&, const fs_node& n) -> void {
-		window::set_clipboard_text(n.path.generic_display_string());
+		clipboard::set_text(n.path.generic_display_string());
 	}
 
 	[[= gui::context_action<"Delete", "danger", gui::symbol::trash>{}]]
@@ -580,7 +679,7 @@ namespace gse::ide::tab_menu {
 	[[= gui::context_action<"Copy Path", "path">{}]]
 	auto copy_path(workspace::data& w, id doc_id) -> void {
 		if (const auto it = w.documents.find(doc_id); it != w.documents.end()) {
-			window::set_clipboard_text(it->second.path.generic_display_string());
+			clipboard::set_text(it->second.path.generic_display_string());
 		}
 	}
 
@@ -671,11 +770,7 @@ auto gse::ide::explorer_menu_items(const workspace::data& w, const fs_node& n) -
 	return items;
 }
 
-auto gse::ide::git_status_color(const git::file_status status) -> vec4f {
-	return annotation_from_enum<git::file_status_info>(status, {}).color;
-}
-
-auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::init_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
+auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_search_state& search, const search::index_state* index, channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels, const git::status_map* git_status, const std::span<const std::filesystem::path> git_rootless) -> void {
 	const auto& ctx = ui.ctx;
 	if (ctx.clip_stack.empty()) {
 		return;
@@ -687,7 +782,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 	const float search_height = text_view->line_height(ctx.style.font_size) + pad * 0.8f;
 	const rectf panel = ui.draw<gui::panel_backdrop>({
 		.rect = body,
-		.background = ctx.style.color_input_background,
+		.background = ctx.style.input.area.fill,
 	});
 
 	const rectf content = panel.inset({ pad, pad });
@@ -727,7 +822,10 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 			: std::string_view(scoped_label);
 		const std::string init_key = "##git_init_" + rootless.generic_display_string();
 		if (ui.draw<gui::button>({ .text = label, .rect = init_rect, .key = init_key })) {
-			channels.push<git_system::init_request>({ .root = rootless });
+			channels.push<git_system::action_request>({
+				.root = rootless,
+				.kind = git_system::action::initialize,
+			});
 		}
 		ctx.layout_cursor.y() -= row_height + pad;
 	}
@@ -797,7 +895,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 				{ label_x, row_rect.top() },
 				{ std::max(0.f, row_rect.right() - label_x), row_height }
 			);
-			const id input_id = gui::ids::make_from_key(hash_combine(n.key, stable_id("explorer_name_input")));
+			const id input_id = gui::ids::make_from_key(hash_of(n.key, "explorer_name_input"));
 			if (pending.focus_requested) {
 				ui.focus_widget_id = input_id;
 				pending.input.caret = static_cast<int>(pending.name.size());
@@ -849,10 +947,10 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 				return base;
 			}
 			if (n.is_dir) {
-				return git_status->dir_has_changes(n.path) ? lerp(git_status_color(git::file_status::modified), base, 0.5f) : base;
+				return git_status->dir_has_changes(n.path) ? lerp(git::status_color(git::file_status::modified), base, 0.5f) : base;
 			}
 			if (const git::file_status status = git_status->status_of(n.path); status != git::file_status::none) {
-				return git_status_color(status);
+				return git::status_color(status);
 			}
 			return base;
 		},
@@ -895,7 +993,7 @@ auto gse::ide::draw_explorer_panel(gui::builder& ui, workspace::data& ws, quick_
 	if (reveal_offset >= 0.f) {
 		const float row_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 		const float view_height = std::max(0.f, tree_top - content.bottom());
-		gui::scroll_state& scroll = ctx.widget_scrolls[hash_combine(gui::ids::current_seed(), stable_id("explorer_tree"))];
+		gui::scroll_state& scroll = ctx.widget_scrolls[hash_of(gui::ids::current_seed(), "explorer_tree")];
 		if (reveal_offset < scroll.y.offset || reveal_offset + row_height > scroll.y.offset + view_height) {
 			scroll.y.target = std::max(0.f, reveal_offset - view_height * 0.5f + row_height * 0.5f);
 		}

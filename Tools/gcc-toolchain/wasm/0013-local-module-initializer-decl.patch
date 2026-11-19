@@ -1,0 +1,19 @@
+--- a/gcc/cp/module.cc
++++ b/gcc/cp/module.cc
+@@ -23004,6 +23004,16 @@
+ 	  DECL_CONTEXT (fndecl) = FROB_CONTEXT (global_namespace);
+ 	  SET_DECL_ASSEMBLER_NAME (fndecl, name);
+ 	  TREE_PUBLIC (fndecl) = true;
++	  /* And external, which is the literal truth about it: the initializer is
++	     defined in the imported module's own translation unit, and this decl
++	     exists only to call it.  Saying so matters because assemble_external
++	     declines a decl that is not DECL_EXTERNAL (varasm.cc), and that is the
++	     only route to ASM_OUTPUT_EXTERNAL -- so on a target whose assembler
++	     requires a callee to be declared ahead of the call, the call is emitted
++	     with nothing declaring the callee and the unit is rejected.  Every other
++	     call in a module consumer reaches a decl somebody wrote and the front
++	     end marked external, which is why this is the one that got away.  */
++	  DECL_EXTERNAL (fndecl) = true;
+ 	  determine_visibility (fndecl);
+ 
+ 	  tree call = cp_build_function_call_vec (fndecl, &args,

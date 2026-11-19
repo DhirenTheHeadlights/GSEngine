@@ -1,0 +1,50 @@
+The noop coroutine frame's resume and destroy slots take the frame.
+
+libstdc++ has no __builtin_coro_noop, so std::noop_coroutine() is a plain C++
+object: a static __frame whose first two words are function pointers that the
+generated code calls the way it calls any coroutine's.  The generated call is
+`frame->__r (frame)' -- resume takes the frame pointer, which is how a
+coroutine finds its own state -- but the header declares the slots as
+`void (*) ()' and fills them with a `__dummy_resume_destroy ()' that takes
+nothing.  On every target with a C calling convention that is harmless: the
+extra argument is passed and ignored.
+
+wasm type-checks call_indirect against the function's declared signature at
+run time, so there it is not harmless.  The callee's .functype is `() -> ()',
+the call site's type is `(i32) -> ()', and the resume traps with
+`null function or function signature mismatch' -- which names the slot as
+empty when it is in fact occupied by a function of the wrong type.
+
+Fixed in the header rather than by giving GCC a __builtin_coro_noop, because
+the slots' type is simply wrong about what writes to and reads from them and
+is not a property of any target: the pointer width is unchanged, so the
+frame's layout is identical on every target and no ABI moves.  Nothing else
+in libstdc++ names __r, __d or __dummy_resume_destroy; they exist only to be
+read by generated code, which is the code this disagreed with.
+
+Measured: the engine's first scenario run trapped at scenario.wasm 0x7abafb,
+`call_indirect 2' in wrap_run_task<...>.actor, which is the symmetric transfer
+out of AsyncTask.cppm:235's `return std::noop_coroutine ()' -- the arm
+final_awaiter takes when a task started by task::start has no continuation.
+The assembly either side of the trap is `call coroutine_handle<>::address',
+`i32.load 0', `call_indirect (i32) -> ()', against
+`.functype ...__dummy_resume_destroy () -> ()' in the same unit.
+
+Upstream: worth offering, since the declaration is wrong everywhere and only
+this target can tell.
+
+--- a/libstdc++-v3/include/std/coroutine
++++ b/libstdc++-v3/include/std/coroutine
+@@ -301,10 +301,10 @@
+ 
+       struct __frame
+       {
+-	static void __dummy_resume_destroy() { }
++	static void __dummy_resume_destroy(void*) { }
+ 
+-	void (*__r)() = __dummy_resume_destroy;
+-	void (*__d)() = __dummy_resume_destroy;
++	void (*__r)(void*) = __dummy_resume_destroy;
++	void (*__d)(void*) = __dummy_resume_destroy;
+ 	struct noop_coroutine_promise __p;
+       };

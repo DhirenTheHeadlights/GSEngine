@@ -124,7 +124,7 @@ auto gse::gui::column_text_left(const draw_context& ctx, const column_state& sta
 }
 
 auto gse::gui::column_header(const draw_context& ctx, const column_header_params& params, column_state& state) -> column_header_result {
-	const resource::handle<font>& fnt = params.font.valid() ? params.font : ctx.fonts.code;
+	const resource::handle<font> fnt = ctx.fonts.face_or(params.font);
 	const auto fnt_view = fnt.resolve();
 	if (!fnt.valid() || state.widths.size() != params.captions.size()) {
 		return {};

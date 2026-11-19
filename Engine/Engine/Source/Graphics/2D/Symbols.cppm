@@ -50,8 +50,13 @@ export namespace gse::gui::symbol {
 	auto hammer() -> std::span<const stroke>;
 	auto play() -> std::span<const stroke>;
 	auto stop() -> std::span<const stroke>;
+	auto restart() -> std::span<const stroke>;
 	auto square() -> std::span<const stroke>;
+	auto terminal() -> std::span<const stroke>;
 	auto check() -> std::span<const stroke>;
+	auto chat() -> std::span<const stroke>;
+	auto target() -> std::span<const stroke>;
+	auto burst() -> std::span<const stroke>;
 
 	auto draw(
 		const draw_context& ctx,
@@ -68,12 +73,9 @@ export namespace gse::gui::symbol {
 		const paint& p = {}
 	) -> void;
 
-	auto spinner_rotation() -> angle;
-
 	auto spinner(
 		const draw_context& ctx,
 		const rect_t<vec2f>& box,
-		angle rotation,
 		const paint& p = {}
 	) -> void;
 
@@ -114,6 +116,14 @@ namespace gse::gui::symbol {
 		const rect_t<vec2f>& box,
 		const paint& p
 	) -> float;
+
+	auto visible(
+		const draw_context& ctx,
+		const rect_t<vec2f>& box,
+		const paint& p
+	) -> bool;
+
+	auto spinner_rotation() -> angle;
 }
 
 constexpr auto gse::gui::symbol::segment(const vec2f from, const vec2f to) -> stroke {
@@ -307,6 +317,15 @@ auto gse::gui::symbol::stop() -> std::span<const stroke> {
 	return data;
 }
 
+auto gse::gui::symbol::restart() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 3> data{
+		arc({ 0.5f, 0.5f }, 0.30f, degrees(60.f), degrees(300.f)),
+		segment({ 0.65f, 0.76f }, { 0.51f, 0.79f }),
+		segment({ 0.65f, 0.76f }, { 0.69f, 0.62f }),
+	};
+	return data;
+}
+
 auto gse::gui::symbol::square() -> std::span<const stroke> {
 	static constexpr std::array<stroke, 4> data{
 		segment({ 0.18f, 0.18f }, { 0.82f, 0.18f }),
@@ -317,10 +336,55 @@ auto gse::gui::symbol::square() -> std::span<const stroke> {
 	return data;
 }
 
+auto gse::gui::symbol::terminal() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 7> data{
+		segment({ 0.16f, 0.22f }, { 0.16f, 0.78f }),
+		segment({ 0.16f, 0.78f }, { 0.84f, 0.78f }),
+		segment({ 0.84f, 0.78f }, { 0.84f, 0.22f }),
+		segment({ 0.84f, 0.22f }, { 0.16f, 0.22f }),
+		segment({ 0.28f, 0.60f }, { 0.40f, 0.50f }),
+		segment({ 0.40f, 0.50f }, { 0.28f, 0.40f }),
+		segment({ 0.48f, 0.38f }, { 0.68f, 0.38f }),
+	};
+	return data;
+}
+
 auto gse::gui::symbol::check() -> std::span<const stroke> {
 	static constexpr std::array<stroke, 2> data{
 		segment({ 0.30f, 0.52f }, { 0.45f, 0.34f }),
 		segment({ 0.45f, 0.34f }, { 0.72f, 0.68f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::chat() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 5> data{
+		segment({ 0.18f, 0.38f }, { 0.18f, 0.80f }),
+		segment({ 0.18f, 0.80f }, { 0.82f, 0.80f }),
+		segment({ 0.82f, 0.80f }, { 0.82f, 0.38f }),
+		segment({ 0.82f, 0.38f }, { 0.38f, 0.38f }),
+		segment({ 0.38f, 0.38f }, { 0.26f, 0.22f }),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::target() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 3> data{
+		arc({ 0.5f, 0.5f }, 0.34f, degrees(0.f), degrees(360.f)),
+		arc({ 0.5f, 0.5f }, 0.18f, degrees(0.f), degrees(360.f)),
+		arc({ 0.5f, 0.5f }, 0.03f, degrees(0.f), degrees(360.f)),
+	};
+	return data;
+}
+
+auto gse::gui::symbol::burst() -> std::span<const stroke> {
+	static constexpr std::array<stroke, 6> data{
+		segment({ 0.50f, 0.16f }, { 0.50f, 0.38f }),
+		segment({ 0.50f, 0.62f }, { 0.50f, 0.84f }),
+		segment({ 0.19f, 0.33f }, { 0.38f, 0.44f }),
+		segment({ 0.62f, 0.56f }, { 0.81f, 0.67f }),
+		segment({ 0.19f, 0.67f }, { 0.38f, 0.56f }),
+		segment({ 0.62f, 0.44f }, { 0.81f, 0.33f }),
 	};
 	return data;
 }
@@ -359,7 +423,7 @@ auto gse::gui::symbol::to_arc_command(const stroke& st, const vec2f center, cons
 		.shape = renderer::sprite_shape::arc,
 		.arc_radius = radius,
 		.arc_half_sweep = half_sweep,
-		.arc_thickness = half_thickness,
+		.stroke_thickness = half_thickness,
 	};
 }
 
@@ -405,6 +469,14 @@ auto gse::gui::symbol::draw(std::vector<renderer::sprite_command>& out, resource
 	}
 }
 
+auto gse::gui::symbol::visible(const draw_context& ctx, const rect_t<vec2f>& box, const paint& p) -> bool {
+	std::optional<rect_t<vec2f>> clip = ctx.clip_for(p.layer);
+	if (p.clip_rect) {
+		clip = clip ? clip->intersection(*p.clip_rect) : p.clip_rect;
+	}
+	return !clip || clip->intersects(box);
+}
+
 auto gse::gui::symbol::spinner_rotation() -> angle {
 	constexpr angular_velocity spin_rate = radians_per_second(9.6f);
 	constexpr angle full_rotation = degrees(360.f);
@@ -416,9 +488,12 @@ auto gse::gui::symbol::spinner_rotation() -> angle {
 	return fmod(step * steps, full_rotation);
 }
 
-auto gse::gui::symbol::spinner(const draw_context& ctx, const rect_t<vec2f>& box, const angle rotation, const paint& p) -> void {
+auto gse::gui::symbol::spinner(const draw_context& ctx, const rect_t<vec2f>& box, const paint& p) -> void {
+	if (!visible(ctx, box, p)) {
+		return;
+	}
 	constexpr float radius = 0.34f;
 	const angle sweep = degrees(270.f);
-	const std::array<stroke, 1> strokes{ arc({ 0.5f, 0.5f }, radius, rotation, sweep) };
+	const std::array<stroke, 1> strokes{ arc({ 0.5f, 0.5f }, radius, spinner_rotation(), sweep) };
 	draw(ctx, strokes, box, p);
 }

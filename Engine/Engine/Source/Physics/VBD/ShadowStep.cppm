@@ -27,6 +27,7 @@ export namespace gse::physics::shadow_step {
 		std::uint32_t body_index = 0;
 		vec3<position> position;
 		vec3<velocity> velocity;
+		vec3<angular_velocity> spin;
 	};
 
 	struct pending_step {
@@ -37,38 +38,30 @@ export namespace gse::physics::shadow_step {
 		std::vector<body_sample> cpu_post;
 	};
 
-	struct [[= system_state<"Shadow Step">{}, = settings::category<"ShadowStep">{}, = deferred_system{}]] data {
-		[[
-			= settings::describe<"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
-									  "every tick and log the one-step residual, then discard it. A parity instrument: it "
-									  "denies divergence any time to amplify, so a residual is a defect rather than chaos. "
-									  "Stalls the device once per tick, so timings from such a run are meaningless. "
-									  "Requires a restart, and requires the CPU solver.">{},
-			= settings::restart_required{}
-		]]
-		bool enabled = false;
-
-		[[
-			= settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
-									  "Choose the step from the aggregate column rather than letting a magnitude trigger "
-									  "choose it: the steps just after first contact carry a large backend-independent "
-									  "residual from the per-tick reseed, so any threshold fires there instead of at the "
-									  "step where the backends actually part company.">{}
-		]]
+	struct [[
+		= system_state<"Shadow Step">{},
+		= requires_setting_path<true, ^^physics::data::trace, ^^trace_settings::shadow_step, ^^shadow_step_trace_settings::enabled>{},
+		= requires_setting<^^physics::data::use_gpu_solver, false>{},
+		= deferred_system{}
+	]] data {
 		int detail_step = -1;
-
 		std::uint32_t step_index = 0;
-		bool buffers_ready = false;
-		bool conflict_reported = false;
 		std::vector<pending_step> pending;
 		std::vector<joint_definition> joints;
+		std::vector<muscle_definition> muscles;
+		std::vector<std::uint32_t> hull_data;
+		std::vector<std::uint32_t> hull_offsets;
+		std::size_t packed_hull_count = 0;
+		std::uint64_t hull_generation = 0;
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> non_colliding_pairs;
 		vbd::gpu_solver solver;
 	};
 
 	[[= system_init{}]]
 	auto init(
 		context& ctx,
-		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<gpu::context::data> gpu_s,
+		shared_view<physics::data> phys,
 		data& d
 	) -> async::task<>;
 
@@ -87,7 +80,7 @@ export namespace gse::physics::shadow_step {
 	[[= system_frame{}]]
 	auto frame(
 		context& ctx,
-		std::optional<shared_view<gpu::context::data>> gpu_s,
+		shared_view<gpu::context::data> gpu_s,
 		data& d,
 		channel_write<gpu::render_pass_request> pass_out
 	) -> async::task<>;

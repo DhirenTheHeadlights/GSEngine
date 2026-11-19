@@ -3,6 +3,7 @@ export module gse.ecs:registries;
 import gse.assert;
 import gse.concurrency;
 import gse.core;
+import gse.meta;
 import std;
 
 export namespace gse {
@@ -19,14 +20,9 @@ export namespace gse {
 			const void* snapshot_ptr
 		) -> void;
 
-		[[nodiscard]] auto contains(
+		[[nodiscard]] auto state_ptr(
 			id type
-		) const -> bool;
-
-		auto state_ptr(
-			this auto& self,
-			id type
-		) -> decltype(auto);
+		) const -> void*;
 
 		auto state_snapshot_ptr(
 			id type
@@ -45,14 +41,9 @@ export namespace gse {
 			void* ptr
 		) -> void;
 
-		auto contains(
+		[[nodiscard]] auto resources_ptr(
 			id type
-		) const -> bool;
-
-		auto resources_ptr(
-			this auto& self,
-			id type
-		) -> decltype(auto);
+		) const -> void*;
 
 		auto clear() -> void;
 
@@ -65,9 +56,25 @@ export namespace gse {
 	class channel_writer {
 	public:
 		explicit channel_writer(
-			channel_registry* registry
+			channel_registry& registry
 		);
 
+		template <typename T>
+		auto push(
+			T item
+		) const -> void;
+
+		template <promiseable T>
+		auto push(
+			T item
+		) const -> channel_future<typename T::result_type>;
+
+	private:
+		channel_registry* m_registry;
+	};
+
+	class channel_registry {
+	public:
 		template <typename T>
 		auto push(
 			T item
@@ -78,12 +85,6 @@ export namespace gse {
 			T item
 		) -> channel_future<typename T::result_type>;
 
-	private:
-		channel_registry* m_registry = nullptr;
-	};
-
-	class channel_registry {
-	public:
 		template <typename T>
 		auto ensure_typed() -> typed_channel<T>&;
 
@@ -91,6 +92,8 @@ export namespace gse {
 		auto ensure_same_frame() -> same_frame_typed_channel<T>&;
 
 		auto flip_all() -> void;
+
+		[[nodiscard]] auto pending_reveals() const -> std::vector<std::string_view>;
 
 		auto make_writer() -> channel_writer;
 
@@ -101,6 +104,11 @@ export namespace gse {
 		auto drain() -> std::vector<T>;
 
 	private:
+		template <typename T>
+		auto deliver(
+			T item
+		) -> void;
+
 		std::unordered_map<id, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_mutex;
 	};
@@ -124,7 +132,7 @@ export namespace gse {
 		);
 
 		template <typename T>
-		auto of() const -> channel_read_guard<T>;
+		auto of() const -> std::span<const T>;
 
 	private:
 		channel_registry* m_channels = nullptr;
@@ -138,8 +146,9 @@ export namespace gse {
 	public:
 		channel_write() = default;
 
-		explicit channel_write(
-			channel_writer& writer
+		channel_write(
+			channel_registry& channels,
+			id publisher
 		);
 
 		template <typename... Us>
@@ -161,7 +170,8 @@ export namespace gse {
 		) const -> channel_future<typename T::result_type>;
 
 	private:
-		channel_writer* m_writer = nullptr;
+		channel_registry* m_channels = nullptr;
+		id m_publisher;
 
 		template <typename... Us>
 		friend class channel_write;
@@ -194,7 +204,79 @@ export namespace gse {
 		static auto append(
 			std::vector<id>& out
 		) -> void;
+
+		static auto append_lending(
+			std::vector<id>& out
+		) -> void;
 	};
+}
+
+export namespace gse {
+	template <typename T>
+	concept lends_system_state = requires { requires T::lends_system_state; };
+
+	template <typename T>
+	consteval auto payload_borrows_by_address() -> bool;
+
+	template <typename T>
+	consteval auto payload_borrow_message() -> std::string_view;
+
+	template <typename T>
+	consteval auto payload_lends_system_state() -> bool;
+
+	template <typename T>
+	auto assert_lent_by(
+		const T& item,
+		id publisher
+	) -> void;
+}
+
+template <typename T>
+consteval auto gse::payload_borrow_message() -> std::string_view {
+	auto name = meta::qualified_name<T>();
+	name = name.substr(0, name.find('#'));
+	while (name.starts_with(':')) {
+		name.remove_prefix(1);
+	}
+	return std::define_static_string(
+		std::string(name)
+		+ " borrows by address: a channel payload is read unordered against its producer, and a frame later, so it must name engine-owned things by id rather than by address - identifiable_owned for a single owner, resource::handle<T> for an asset, gui::draw_fn for a deferred draw over a system's own data, async::resume_slot<T> for a continuation into a coroutine frame suspended on the request. A [[= same_frame_channel]] payload is exempt, because it is drained in the frame it is pushed, and a function pointer is exempt, because a code address outlives every frame and no id names it"
+	);
+}
+
+template <typename T>
+consteval auto gse::payload_borrows_by_address() -> bool {
+	if constexpr (std::is_class_v<T>) {
+		bool borrows = false;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+			using pointee_t = std::remove_pointer_t<std::remove_reference_t<field_t>>;
+			if constexpr ((std::is_pointer_v<field_t> || std::is_reference_v<field_t>) && !std::is_function_v<pointee_t>) {
+				borrows = true;
+			}
+		}
+		return borrows;
+	}
+	else {
+		return false;
+	}
+}
+
+template <typename T>
+consteval auto gse::payload_lends_system_state() -> bool {
+	if constexpr (std::is_class_v<T>) {
+		bool lends = false;
+		template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+			using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+			if constexpr (lends_system_state<field_t>) {
+				lends = true;
+			}
+		}
+		return lends;
+	}
+	else {
+		return false;
+	}
 }
 
 auto gse::state_registry::register_state(const id type, void* live_ptr, const void* snapshot_ptr) -> void {
@@ -204,17 +286,12 @@ auto gse::state_registry::register_state(const id type, void* live_ptr, const vo
 	};
 }
 
-auto gse::state_registry::contains(const id type) const -> bool {
-	return m_slots.contains(type);
-}
-
-auto gse::state_registry::state_ptr(this auto& self, const id type) -> decltype(auto) {
-	using result_t = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const void*, void*>;
-	const auto it = self.m_slots.find(type);
-	if (it == self.m_slots.end()) {
-		return static_cast<result_t>(nullptr);
+auto gse::state_registry::state_ptr(const id type) const -> void* {
+	const auto it = m_slots.find(type);
+	if (it == m_slots.end()) {
+		return nullptr;
 	}
-	return static_cast<result_t>(it->second.live);
+	return it->second.live;
 }
 
 auto gse::state_registry::state_snapshot_ptr(const id type) const -> const void* {
@@ -233,47 +310,72 @@ auto gse::resource_registry::register_resource(const id type, void* ptr) -> void
 	m_slots[type] = ptr;
 }
 
-auto gse::resource_registry::contains(const id type) const -> bool {
-	return m_slots.contains(type);
-}
-
-auto gse::resource_registry::resources_ptr(this auto& self, const id type) -> decltype(auto) {
-	using result_t = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const void*, void*>;
-	const auto it = self.m_slots.find(type);
-	if (it == self.m_slots.end()) {
-		return static_cast<result_t>(nullptr);
+auto gse::resource_registry::resources_ptr(const id type) const -> void* {
+	const auto it = m_slots.find(type);
+	if (it == m_slots.end()) {
+		return nullptr;
 	}
-	return static_cast<result_t>(it->second);
+	return it->second;
 }
 
 auto gse::resource_registry::clear() -> void {
 	m_slots.clear();
 }
 
-gse::channel_writer::channel_writer(channel_registry* registry) : m_registry(registry) {
+template <typename T>
+auto gse::assert_lent_by(const T& item, const id publisher) -> void {
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()))) {
+		using field_t = typename[:std::meta::dealias(std::meta::type_of(m)):];
+		if constexpr (lends_system_state<field_t>) {
+			const id owner = item.[:m:].owner_id();
+			assert(
+				!owner.exists() || owner == publisher,
+				"{} lends {}'s data over {}, but only the system that owns the data may push it: the scheduler orders the consumer after the publisher, so a borrow of anyone else's data would run unordered against its owner",
+				publisher,
+				owner,
+				meta::qualified_name<T>()
+			);
+		}
+	}
 }
 
+gse::channel_writer::channel_writer(channel_registry& registry) : m_registry(&registry) {}
+
 template <typename T>
-auto gse::channel_writer::push(T item) -> void {
-	if constexpr (is_same_frame_channel_v<T>) {
-		m_registry->ensure_same_frame<T>().push(std::move(item));
-	}
-	else {
-		m_registry->ensure_typed<T>().data.push(std::move(item));
-	}
+auto gse::channel_writer::push(T item) const -> void {
+	m_registry->push<T>(std::move(item));
 }
 
 template <gse::promiseable T>
-auto gse::channel_writer::push(T item) -> channel_future<typename T::result_type> {
+auto gse::channel_writer::push(T item) const -> channel_future<typename T::result_type> {
+	return m_registry->push<T>(std::move(item));
+}
+
+template <typename T>
+auto gse::channel_registry::push(T item) -> void {
+	deliver(std::move(item));
+}
+
+template <gse::promiseable T>
+auto gse::channel_registry::push(T item) -> channel_future<typename T::result_type> {
 	auto [future, promise] = make_promise<typename T::result_type>();
 	item.promise = std::move(promise);
+	deliver(std::move(item));
+	return future;
+}
+
+template <typename T>
+auto gse::channel_registry::deliver(T item) -> void {
+	static_assert(
+		is_same_frame_channel_v<T> || !payload_borrows_by_address<T>(),
+		payload_borrow_message<T>()
+	);
 	if constexpr (is_same_frame_channel_v<T>) {
-		m_registry->ensure_same_frame<T>().push(std::move(item));
+		ensure_same_frame<T>().push(std::move(item));
 	}
 	else {
-		m_registry->ensure_typed<T>().data.push(std::move(item));
+		ensure_typed<T>().data.push(std::move(item));
 	}
-	return future;
 }
 
 template <typename T>
@@ -311,8 +413,19 @@ auto gse::channel_registry::flip_all() -> void {
 	}
 }
 
+auto gse::channel_registry::pending_reveals() const -> std::vector<std::string_view> {
+	std::lock_guard _(m_mutex);
+	std::vector<std::string_view> panels;
+	for (const auto& ch : std::views::values(m_channels)) {
+		if (const std::string_view panel = ch->pending_reveal(); !panel.empty()) {
+			panels.push_back(panel);
+		}
+	}
+	return panels;
+}
+
 auto gse::channel_registry::make_writer() -> channel_writer {
-	return channel_writer{ this };
+	return channel_writer{ *this };
 }
 
 auto gse::channel_registry::clear() -> void {
@@ -332,7 +445,7 @@ gse::channel_read<Ts...>::channel_read(const channel_read<Us...>& wider) : m_cha
 
 template <typename... Ts>
 template <typename T>
-auto gse::channel_read<Ts...>::of() const -> channel_read_guard<T> {
+auto gse::channel_read<Ts...>::of() const -> std::span<const T> {
 	static_assert(
 		channel_pack_contains_v<T, Ts...>,
 		"channel type is not declared in this channel_read<...> pack; add it to the parameter so the scheduler sees the edge"
@@ -346,23 +459,21 @@ auto gse::channel_read<Ts...>::of() const -> channel_read_guard<T> {
 		"or consume via scheduler::drain_channel<T>() instead."
 	);
 	assert(m_channels != nullptr, "channel_read used before it was bound to a channel registry");
-	return channel_read_guard<T>(m_channels->ensure_typed<T>().data.read_raw());
+	return m_channels->ensure_typed<T>().data.read_raw();
 }
 
 template <typename... Ts>
-gse::channel_write<Ts...>::channel_write(channel_writer& writer) : m_writer(&writer) {
-}
+gse::channel_write<Ts...>::channel_write(channel_registry& channels, const id publisher) : m_channels(&channels), m_publisher(publisher) {}
 
 template <typename... Ts>
 auto gse::channel_write<Ts...>::bound() const -> bool {
-	return m_writer != nullptr;
+	return m_channels != nullptr;
 }
 
 template <typename... Ts>
 template <typename... Us>
 requires (gse::channel_pack_contains_v<Ts, Us...> && ...)
-gse::channel_write<Ts...>::channel_write(const channel_write<Us...>& wider) : m_writer(wider.m_writer) {
-}
+gse::channel_write<Ts...>::channel_write(const channel_write<Us...>& wider) : m_channels(wider.m_channels), m_publisher(wider.m_publisher) {}
 
 template <typename... Ts>
 template <typename T>
@@ -371,8 +482,11 @@ auto gse::channel_write<Ts...>::push(T item) const -> void {
 		channel_pack_contains_v<T, Ts...>,
 		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
 	);
-	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
-	m_writer->push<T>(std::move(item));
+	assert(m_channels != nullptr, "channel_write used before it was bound to a channel registry");
+	if constexpr (payload_lends_system_state<T>()) {
+		assert_lent_by(item, m_publisher);
+	}
+	m_channels->push<T>(std::move(item));
 }
 
 template <typename... Ts>
@@ -382,8 +496,11 @@ auto gse::channel_write<Ts...>::push(T item) const -> channel_future<typename T:
 		channel_pack_contains_v<T, Ts...>,
 		"channel type is not declared in this channel_write<...> pack; add it to the parameter so the scheduler sees the edge"
 	);
-	assert(m_writer != nullptr, "channel_write used before it was bound to a channel writer");
-	return m_writer->push<T>(std::move(item));
+	assert(m_channels != nullptr, "channel_write used before it was bound to a channel registry");
+	if constexpr (payload_lends_system_state<T>()) {
+		assert_lent_by(item, m_publisher);
+	}
+	return m_channels->push<T>(std::move(item));
 }
 
 template <typename... Ts>
@@ -394,4 +511,13 @@ auto gse::channel_pack_ids<gse::channel_read<Ts...>>::append(std::vector<id>& ou
 template <typename... Ts>
 auto gse::channel_pack_ids<gse::channel_write<Ts...>>::append(std::vector<id>& out) -> void {
 	(out.push_back(trace_id<Ts>()), ...);
+}
+
+template <typename... Ts>
+auto gse::channel_pack_ids<gse::channel_write<Ts...>>::append_lending(std::vector<id>& out) -> void {
+	(([&] {
+		if constexpr (payload_lends_system_state<Ts>()) {
+			out.push_back(trace_id<Ts>());
+		}
+	}()), ...);
 }

@@ -11,6 +11,7 @@ import gse.assert;
 import gse.core;
 import gse.concurrency;
 import gse.diag;
+import gse.log;
 
 gse::gpu::request_pass_awaitable::request_pass_awaitable(const channel_write<render_pass_request> channels, render_pass_descriptor desc) noexcept
 	: m_channels(channels), m_desc(std::move(desc)) {
@@ -83,6 +84,11 @@ auto gse::gpu::pass_builder::early_signal() && -> pass_builder&& {
 	return std::move(*this);
 }
 
+auto gse::gpu::pass_builder::after(const std::span<const id> passes) && -> pass_builder&& {
+	m_desc.after_deps.append_range(passes);
+	return std::move(*this);
+}
+
 auto gse::gpu::pass_builder::operator co_await() && -> request_pass_awaitable {
 	return request_pass_awaitable{ m_channels, std::move(m_desc) };
 }
@@ -126,9 +132,24 @@ auto gse::gpu::clear_depth(const depth_clear value) -> depth_attachment {
 	};
 }
 
+auto gse::gpu::clear_depth(const depth_clear value, const image& target) -> depth_attachment {
+	return {
+		.op = load_op::clear,
+		.clear = value,
+		.target = std::addressof(target),
+	};
+}
+
 auto gse::gpu::load_depth() -> depth_attachment {
 	return {
 		.op = load_op::load,
+	};
+}
+
+auto gse::gpu::load_depth(const image& target) -> depth_attachment {
+	return {
+		.op = load_op::load,
+		.target = std::addressof(target),
 	};
 }
 
@@ -175,6 +196,7 @@ auto gse::gpu::to_pass_data(render_pass_request req) -> render_pass_data {
 		.queue = req.desc.queue,
 		.primary_pipeline = req.desc.primary_pipeline,
 		.after_passes = std::move(req.desc.after_deps),
+		.extends = std::move(req.desc.extends),
 		.chain_id = req.desc.chain_id,
 		.chain_index = req.desc.chain_index,
 		.early_signal = req.desc.early_signal,
@@ -212,4 +234,22 @@ auto gse::gpu::context::execute_frame(data& d, scheduler& s) -> void {
 			return s.drain_channel<transient_buffer_request>();
 		},
 	});
+}
+
+auto gse::gpu::report_late_pass_requests(scheduler& s) -> void {
+	const auto late = s.drain_channel<render_pass_request>();
+	if (late.empty()) {
+		return;
+	}
+	std::string names;
+	for (const auto& req : late) {
+		names += std::format("{}#{} ", req.desc.pass_name, req.desc.chain_index);
+	}
+	log::println(
+		log::level::error,
+		log::category::runtime,
+		"{} render pass request(s) were pushed after this frame's record round closed and can never record: {}",
+		late.size(),
+		names
+	);
 }

@@ -12,12 +12,17 @@ export namespace gse {
 	};
 
 	constexpr std::uint8_t feature_side_none = 0xFF;
+	constexpr std::uint32_t feature_index_bits = 12;
+	constexpr std::uint32_t feature_side_shift = 8;
+	constexpr std::uint32_t feature_index_shift = 16;
+	constexpr std::uint32_t feature_type_shift = 28;
+	constexpr std::uint32_t feature_body_shift = 32;
 
 	struct feature_id {
 		feature_type type_a = feature_type::face;
 		feature_type type_b = feature_type::face;
-		std::uint8_t index_a = 0;
-		std::uint8_t index_b = 0;
+		std::uint16_t index_a = 0;
+		std::uint16_t index_b = 0;
 		std::uint8_t side_a0 = feature_side_none;
 		std::uint8_t side_a1 = feature_side_none;
 		std::uint8_t side_b0 = feature_side_none;
@@ -77,24 +82,31 @@ auto gse::contact_manifold::clear() -> void {
 }
 
 auto gse::pack_feature(const feature_id& feature) -> std::uint64_t {
-	return (static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_a)) << 56) |
-		(static_cast<std::uint64_t>(feature.index_a) << 48) | (static_cast<std::uint64_t>(feature.side_a0) << 40) |
-		(static_cast<std::uint64_t>(feature.side_a1) << 32) |
-		(static_cast<std::uint64_t>(static_cast<std::uint8_t>(feature.type_b)) << 24) |
-		(static_cast<std::uint64_t>(feature.index_b) << 16) | (static_cast<std::uint64_t>(feature.side_b0) << 8) |
-		static_cast<std::uint64_t>(feature.side_b1);
+	const auto half = [](const feature_type type, const std::uint16_t index, const std::uint8_t side0, const std::uint8_t side1) {
+		return static_cast<std::uint64_t>(static_cast<std::uint8_t>(type)) << feature_type_shift |
+			static_cast<std::uint64_t>(index) << feature_index_shift |
+			static_cast<std::uint64_t>(side0) << feature_side_shift |
+			static_cast<std::uint64_t>(side1);
+	};
+	return half(feature.type_a, feature.index_a, feature.side_a0, feature.side_a1) << feature_body_shift |
+		half(feature.type_b, feature.index_b, feature.side_b0, feature.side_b1);
 }
 
 auto gse::unpack_feature(const std::uint64_t packed) -> feature_id {
+	const auto field = [](const std::uint64_t half, const std::uint32_t shift, const std::uint32_t bits) {
+		return (half >> shift) & ((std::uint64_t{ 1 } << bits) - 1);
+	};
+	const auto a = packed >> feature_body_shift;
+	const auto b = packed & ((std::uint64_t{ 1 } << feature_body_shift) - 1);
 	return feature_id{
-		.type_a = static_cast<feature_type>(static_cast<std::uint8_t>((packed >> 56) & 0xFFu)),
-		.type_b = static_cast<feature_type>(static_cast<std::uint8_t>((packed >> 24) & 0xFFu)),
-		.index_a = static_cast<std::uint8_t>((packed >> 48) & 0xFFu),
-		.index_b = static_cast<std::uint8_t>((packed >> 16) & 0xFFu),
-		.side_a0 = static_cast<std::uint8_t>((packed >> 40) & 0xFFu),
-		.side_a1 = static_cast<std::uint8_t>((packed >> 32) & 0xFFu),
-		.side_b0 = static_cast<std::uint8_t>((packed >> 8) & 0xFFu),
-		.side_b1 = static_cast<std::uint8_t>(packed & 0xFFu),
+		.type_a = static_cast<feature_type>(field(a, feature_type_shift, feature_body_shift - feature_type_shift)),
+		.type_b = static_cast<feature_type>(field(b, feature_type_shift, feature_body_shift - feature_type_shift)),
+		.index_a = static_cast<std::uint16_t>(field(a, feature_index_shift, feature_index_bits)),
+		.index_b = static_cast<std::uint16_t>(field(b, feature_index_shift, feature_index_bits)),
+		.side_a0 = static_cast<std::uint8_t>(field(a, feature_side_shift, feature_side_shift)),
+		.side_a1 = static_cast<std::uint8_t>(field(a, 0, feature_side_shift)),
+		.side_b0 = static_cast<std::uint8_t>(field(b, feature_side_shift, feature_side_shift)),
+		.side_b1 = static_cast<std::uint8_t>(field(b, 0, feature_side_shift)),
 	};
 }
 

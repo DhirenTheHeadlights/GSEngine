@@ -98,6 +98,8 @@ export namespace gse {
 
 		auto drain_completions() -> std::size_t;
 
+		auto destroy_completion_port() -> void;
+
 		auto poll_locked() -> std::size_t;
 	};
 }

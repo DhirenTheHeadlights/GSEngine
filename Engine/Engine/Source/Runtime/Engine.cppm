@@ -20,6 +20,7 @@ import gse.log;
 import gse.save;
 import gse.config;
 import gse.scenario;
+import gse.test;
 
 import :scene;
 import :world_system;
@@ -49,10 +50,18 @@ export namespace gse {
 		std::string summary_out;
 		std::string state_dump_out;
 		bool update_baseline = false;
-		bool real_time = false;
+		scenario::pacing pacing = scenario::pacing::lockstep;
 		double regression_threshold = 1.10;
 		scenario::body_fn scenario_body = nullptr;
 	};
+
+	struct state_digest {
+		std::uint64_t value = 0;
+		std::uint32_t step = 0;
+		bool taken = false;
+	};
+
+	struct state_digest_request {};
 
 	enum class loop_cadence {
 		continuous,
@@ -65,35 +74,38 @@ export namespace gse {
 		bool create_window = true;
 		bool render = true;
 		bool gpu = true;
-		bool dark_background = false;
-		bool video_encode = true;
 		bool simulate_world = true;
-		bool use_gpu_solver = false;
-		bool custom_chrome = false;
-		bool scale_ui_with_resolution = true;
 		bool load_settings = true;
 		bool persist_settings = true;
 		bool author_baked_assets = true;
+		bool bake_assets = false;
 		bool dump_settings = false;
 		bool trace = true;
-		std::filesystem::path gui_layout_path;
+		bool restart_on_device_lost = false;
+		bool restart_on_crash = false;
 		std::filesystem::path project_settings_path;
 		bool attached = false;
 		std::string ipc_pipe_name;
 		std::uint32_t parent_pid = 0;
 		std::uint32_t worker_threads = 0;
+		time exit_after{};
+		time init_stall_dump{};
 		std::string dump_system_graph_path;
 		std::vector<std::string> setting;
+		std::vector<settings::assignment> pins;
+		std::vector<settings::assignment> defaults;
 		bench_config bench;
+		test::config test;
 		network::config net;
 	};
 
 	constexpr std::uint32_t attached_surface_magic = 0x47535334;
-	constexpr std::size_t attached_ring_size = 3;
+	constexpr std::size_t attached_ring_size = gpu::shared_output_slots;
 
 	struct attached_surface_message {
 		std::uint32_t magic = 0;
 		std::uint32_t pid = 0;
+		std::uint32_t revision = 0;
 		vec2u extent{ 0, 0 };
 		gpu::image_format format = gpu::image_format::r8g8b8a8_unorm;
 		gpu::backend_kind backend = gpu::backend_kind::vulkan;
@@ -107,6 +119,37 @@ export namespace gse {
 	struct attached_input_message {
 		std::uint32_t magic = 0;
 		input::event event;
+	};
+
+	constexpr std::uint32_t attached_resize_magic = 0x47535336;
+
+	struct attached_resize_message {
+		std::uint32_t magic = 0;
+		vec2u extent{ 0, 0 };
+	};
+
+	constexpr std::uint32_t attached_fatal_magic = 0x47535335;
+	constexpr std::size_t attached_fatal_field = 256;
+
+	struct attached_fatal_message {
+		std::uint32_t magic = 0;
+		std::uint32_t line = 0;
+		char file[attached_fatal_field] = {};
+		char function[attached_fatal_field] = {};
+		char comment[attached_fatal_field] = {};
+	};
+
+	enum class window_reveal_stage : std::uint8_t {
+		hidden,
+		loading_frame_presented [[
+			= entered_from({ hidden })
+		]],
+		shown [[
+			= entered_from({ hidden, loading_frame_presented })
+		]],
+		hidden_for_bench [[
+			= entered_from({ hidden })
+		]],
 	};
 
 	class engine : public identifiable {
@@ -129,27 +172,37 @@ export namespace gse {
 
 		auto make_channel_writer() -> channel_writer;
 
+		auto flip_channels() -> void;
+
 		auto registry() -> registry&;
 
 		auto world() -> world_system::data&;
+
+		auto presents() -> bool;
 
 		auto window_should_close() -> bool;
 
 		auto tick_window() -> void;
 
-		auto attached_surface_ready() const -> bool;
+		auto apply_pending_resizes() -> void;
 
 		auto abandon_attach() -> void;
 
-		auto attached_message() const -> const attached_surface_message&;
+		[[nodiscard]] auto shared_output() -> std::optional<gpu::shared_output_announcement>;
 
 		auto push_attached_input(
 			const input::event& event
 		) -> void;
 
+		auto push_attached_resize(
+			vec2u extent
+		) -> void;
+
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		[[nodiscard]] auto all_settled() const -> bool;
+
+		[[nodiscard]] auto frame_presented() const -> bool;
 
 		auto add_system_node(
 			system_node node
@@ -161,41 +214,45 @@ export namespace gse {
 		) -> void;
 
 	private:
-		auto destroy_attached_surface(
-			gpu::device& device
+		auto boot_immediately(
+			const setup_fn& app_setup
+		) -> void;
+
+		auto begin_app_setup() -> void;
+
+		auto reveal_window(
+			window::data& window_state,
+			const gpu::context::data& gpu_state
 		) -> void;
 
 		auto install_actions() -> void;
 
+		auto handle_device_lost(
+			std::string_view cause
+		) -> void;
+
 		engine_config m_config;
+		bool m_simulate_device_lost = false;
 		scheduler m_scheduler;
 		save::registry m_save;
 		actions::registry m_actions;
 		primitives::data m_primitives;
 		gse::registry m_registry;
 		loading::state m_loading;
-		std::function<void()> m_deferred_boot;
-		std::atomic<bool> m_boot_tasks_done = false;
+		lifecycle<loading::boot_stage> m_boot{ "boot", log::category::runtime };
+		setup_fn m_app_setup;
+		task::pending<std::monostate> m_app_setup_job;
+		std::optional<std::uint32_t> m_progress_baseline;
 		std::size_t m_actions_revision = 0;
-		std::uint32_t m_boot_init_baseline_settled = 0;
-		bool m_boot_init_baseline_captured = false;
-		bool m_settings_audited = false;
-		bool m_actions_logged = false;
-		std::uint32_t m_frames_since_rendered = 0;
-		bool m_window_shown = false;
-		bool m_headless_gpu = false;
-		std::array<gpu::shared_surface, attached_ring_size> m_attached_surfaces{};
-		std::array<gpu::image, attached_ring_size> m_attached_surface_images;
-		gpu::handle<gpu::semaphore> m_attached_produced_semaphore{};
-		gpu::handle<gpu::semaphore> m_attached_consumed_semaphore{};
-		attached_surface_message m_attached_message{};
-		std::uint64_t m_attached_counter = 0;
-		std::uint32_t m_attached_frames_presented = 0;
-		std::uint32_t m_attached_frames_skipped = 0;
-		interval_timer<> m_attached_report{ seconds(2.f) };
-		bool m_attached_surface_ready = false;
-		bool m_attached_surface_attempted = false;
+		interval_timer<> m_persist_timer{ seconds(1.f) };
+		lifecycle<window_reveal_stage> m_window_reveal{ "window_reveal", log::category::runtime };
+		bool m_frame_presented = false;
+		vec2u m_attached_requested_extent{ 0, 0 };
 	};
+}
+
+namespace gse {
+	auto bake_game_assets() -> int;
 }
 
 template <typename T>

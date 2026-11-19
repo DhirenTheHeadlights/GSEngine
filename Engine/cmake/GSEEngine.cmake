@@ -31,9 +31,114 @@ if(CMAKE_HOST_WIN32 AND EXISTS "$ENV{USERPROFILE}/.gcc-trunk/current/bin/x86_64-
     set(ENV{PATH} "${_gcc_trunk_bin};$ENV{PATH}")
 endif()
 
+function(_gse_engine_paths out_var)
+    set(_absolute "")
+    foreach(_rel IN LISTS ARGN)
+        if(NOT EXISTS "${GSE_ENGINE_ROOT}/${_rel}")
+            message(FATAL_ERROR "GSEEngine.cmake names ${_rel}, which does not exist.")
+        endif()
+        list(APPEND _absolute "${GSE_ENGINE_ROOT}/${_rel}")
+    endforeach()
+    set(${out_var} "${_absolute}" PARENT_SCOPE)
+endfunction()
+
+function(gse_drop_excluded_impls list_var)
+    _gse_engine_paths(_excluded
+        Engine/Engine/Source/External/MiniaudioImpl.cpp
+    )
+    list(REMOVE_ITEM ${list_var} ${_excluded})
+    set(${list_var} "${${list_var}}" PARENT_SCOPE)
+endfunction()
+
+# An implementation-unit list split into the ones CMake must be told are module providers
+# and the ones it must not. A .cpp that declares an implementation partition
+# (`module gse.x:y;`, `module sandbox:y;`) PROVIDES a module and has to live in a
+# CXX_MODULES file set; a plain implementation unit (`module gse.x;`) or a global-module
+# .cpp is an ordinary source, and putting one in the file set is as wrong as leaving the
+# other out.
+#
+# One function because three targets need the rule -- Engine, SandboxLib and EngineServer
+# -- and it was written out twice before the third went without it. A provider handed to
+# target_sources as a plain source configures and scans cleanly and then fails in dyndep
+# collation, which is a `cmake -E` step: no compiler runs, so there is no diagnostic for a
+# build panel to parse and no object is produced anywhere. That is a failure mode worth
+# exactly one definition.
+#
+# The test is the declaration's SHAPE and not a module name, so this needs no argument
+# saying which module the caller's units belong to: a partition is a partition.
+function(gse_split_module_impls list_var module_impls_var plain_impls_var)
+    set(_module_impls "")
+    set(_plain_impls "")
+    foreach(_impl IN LISTS ${list_var})
+        file(STRINGS "${_impl}" _part_decl
+             REGEX "^module [A-Za-z_0-9.]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
+        if(_part_decl)
+            list(APPEND _module_impls "${_impl}")
+        else()
+            list(APPEND _plain_impls "${_impl}")
+        endif()
+    endforeach()
+    set(${module_impls_var} "${_module_impls}" PARENT_SCOPE)
+    set(${plain_impls_var} "${_plain_impls}" PARENT_SCOPE)
+endfunction()
+
+function(gse_select_platform_impls list_var)
+    set(_arms Win32 Native Web)
+    if(WIN32)
+        set(_selected Win32 Native)
+    else()
+        set(_selected Web)
+    endif()
+    set(_kept "")
+    foreach(_source IN LISTS ${list_var})
+        set(_drop OFF)
+        foreach(_platform IN LISTS _arms)
+            if(NOT _platform IN_LIST _selected AND _source MATCHES "/${_platform}/[^/]+\.cpp$")
+                set(_drop ON)
+            endif()
+        endforeach()
+        if(NOT "Native" IN_LIST _selected AND _source MATCHES "/Native/[^/]+\.cppm$")
+            set(_drop ON)
+        endif()
+        if(NOT _drop)
+            list(APPEND _kept "${_source}")
+        endif()
+    endforeach()
+    set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()
+
+function(gse_select_backend_impls list_var selected)
+    set(_arms Nvidia Null)
+    set(_kept "")
+    foreach(_source IN LISTS ${list_var})
+        set(_drop OFF)
+        foreach(_backend IN LISTS _arms)
+            if(NOT _backend STREQUAL selected AND _source MATCHES "/${_backend}/[^/]+\.cpp$")
+                set(_drop ON)
+            endif()
+        endforeach()
+        if(NOT _drop)
+            list(APPEND _kept "${_source}")
+        endif()
+    endforeach()
+    set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()
+
 function(gse_configure_compiler)
+    option(GSE_NO_SIMD_X86
+           "Define GSE_NO_SIMD_X86, selecting the portable arm of Math/Vector/SIMD.cppm instead of the x86 intrinsics one. Off by default and textually inert then: nothing is added to any compile line, so the default build is byte-identical to one configured without this option. On, it gives a native binary running the same sequential reductions the wasm32 build runs, which is what the wasm<->native hash-identity comparison needs."
+           OFF)
+    option(GSE_NO_AVX2
+           "Leave -mavx2 off the compile line. Off by default and textually inert then: the generator expression expands to -mavx2 in its usual position. Meant to be combined with GSE_NO_SIMD_X86, whose x86 arm needs AVX2; together they give a native binary whose portable loops are not autovectorized at 256 bits, for the wasm<->native hash-identity comparison."
+           OFF)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        add_compile_options(-freflection -mavx2 -Wno-changes-meaning -Wno-error=changes-meaning)
+        add_compile_options(-freflection -fcontracts -fno-exceptions $<$<NOT:$<BOOL:${GSE_NO_AVX2}>>:-mavx2> -Wno-changes-meaning -Wno-error=changes-meaning)
+        if(GSE_NO_SIMD_X86)
+            add_compile_definitions(GSE_NO_SIMD_X86=1)
+        endif()
+        add_compile_options($<$<CONFIG:Release>:-fcontract-evaluation-semantic=ignore>)
+        add_compile_definitions($<$<CONFIG:Release>:GSE_CONTRACTS_IGNORED=1>)
+        add_link_options(-fcontracts)
     endif()
 endfunction()
 
@@ -54,7 +159,7 @@ function(gse_write_manifest)
 endfunction()
 
 function(gse_copy_runtime_deps target)
-    if(NOT CMAKE_HOST_WIN32)
+    if(NOT WIN32)
         return()
     endif()
     set(_vcpkg_bin "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
@@ -89,6 +194,14 @@ function(gse_copy_runtime_deps target)
         endforeach()
     endif()
 
+    if(GSE_WGPU_NATIVE_LIB_DIR)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${GSE_WGPU_NATIVE_LIB_DIR}/wgpu_native.dll"
+                "$<TARGET_FILE_DIR:${target}>"
+        )
+    endif()
+
     # DirectX 12 Agility SDK runtime, fetched in Engine/CMakeLists.txt. The exe's exported
     # D3D12SDKPath points at this D3D12/ subfolder, so the OS loader uses this runtime instead
     # of the machine's.
@@ -107,4 +220,87 @@ function(gse_copy_runtime_deps target)
             )
         endif()
     endif()
+endfunction()
+
+# The gse_tokens GCC plugin extracts semantic tokens from the compiler's own AST; the
+# editor and any project that highlights C++ spawn g++ with -fplugin=<it>. A plugin is
+# ABI-locked to the compiler that built it: cc1plus refuses to load one from a different
+# build and exits 1 before compiling anything, which surfaces as every compile failing
+# identically rather than as a stale-artifact error. So it is rebuilt from source per
+# build tree with the toolchain as a declared input, and every consumer gets a
+# toolchain.json beside its exe naming the compiler and plugin that belong together.
+# Needs a GCC configured with --enable-plugin (which generates cc1plus.exe.a).
+function(_gse_add_token_plugin)
+    set(_source_dir "${GSE_ENGINE_ROOT}/Engine/Tools/TokenPlugin")
+    set(_out_dir "${CMAKE_BINARY_DIR}/TokenPlugin")
+    execute_process(
+        COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=plugin
+        OUTPUT_VARIABLE _plugin_dir
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT EXISTS "${_plugin_dir}/cc1plus.exe.a")
+        message(WARNING "gse_tokens plugin: ${_plugin_dir}/cc1plus.exe.a not found, so the plugin will not be built. Projects still compile and run, but semantic highlighting, hover, go-to-definition and the symbol index are all plugin-authoritative and will be silently empty. Install a GCC configured with --enable-plugin and reconfigure.")
+        return()
+    endif()
+    add_custom_command(
+        OUTPUT "${_out_dir}/gse_tokens.dll"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_out_dir}"
+        COMMAND "${CMAKE_CXX_COMPILER}"
+            "-I${_plugin_dir}/include"
+            -O2 -fno-rtti -shared
+            "${_source_dir}/gse_tokens_plugin.cpp"
+            "${_plugin_dir}/cc1plus.exe.a"
+            -o "${_out_dir}/gse_tokens.dll"
+        DEPENDS
+            "${_source_dir}/gse_tokens_plugin.cpp"
+            "${CMAKE_CXX_COMPILER}"
+            "${_plugin_dir}/cc1plus.exe.a"
+        COMMENT "Building gse_tokens GCC plugin"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT "${_out_dir}/gse_tokens_contract.stamp"
+        BYPRODUCTS "${_out_dir}/gse_tokens_contract.tsv"
+        COMMAND "${CMAKE_CXX_COMPILER}"
+            -std=c++26 -fsyntax-only
+            "-fplugin=${_out_dir}/gse_tokens.dll"
+            "-fplugin-arg-gse_tokens-out=${_out_dir}/gse_tokens_contract.tsv"
+            "-fplugin-arg-gse_tokens-root=${GSE_ENGINE_ROOT}"
+            "${_source_dir}/SemanticContract.cpp"
+        COMMAND "${CMAKE_COMMAND}"
+            "-DCONTRACT_OUTPUT=${_out_dir}/gse_tokens_contract.tsv"
+            -P "${_source_dir}/CheckSemanticContract.cmake"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${_out_dir}/gse_tokens_contract.stamp"
+        DEPENDS
+            "${_out_dir}/gse_tokens.dll"
+            "${_source_dir}/SemanticContract.cpp"
+            "${_source_dir}/CheckSemanticContract.cmake"
+        VERBATIM
+    )
+    add_custom_target(gse_tokens_plugin ALL DEPENDS "${_out_dir}/gse_tokens_contract.stamp")
+    add_custom_target(gse_tokens_contract DEPENDS "${_out_dir}/gse_tokens_contract.stamp")
+endfunction()
+
+function(gse_token_plugin target)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        return()
+    endif()
+    if(NOT TARGET gse_tokens_plugin)
+        _gse_add_token_plugin()
+    endif()
+    if(NOT TARGET gse_tokens_plugin)
+        return()
+    endif()
+    add_custom_target(gse_tokens_plugin_${target}
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_BINARY_DIR}/TokenPlugin/gse_tokens.dll"
+            "$<TARGET_FILE_DIR:${target}>"
+        VERBATIM
+    )
+    add_dependencies(gse_tokens_plugin_${target} gse_tokens_plugin)
+    add_dependencies(${target} gse_tokens_plugin_${target})
+    file(GENERATE
+        OUTPUT "$<TARGET_FILE_DIR:${target}>/toolchain.json"
+        CONTENT "{\n\t\"compiler\": \"${CMAKE_CXX_COMPILER}\",\n\t\"plugin\": \"$<TARGET_FILE_DIR:${target}>/gse_tokens.dll\"\n}\n"
+    )
 endfunction()

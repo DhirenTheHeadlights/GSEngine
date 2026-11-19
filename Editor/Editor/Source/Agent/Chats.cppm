@@ -32,14 +32,34 @@ namespace gse::ide::agent {
 	) -> std::string;
 
 	auto past_chats(
+		const data& d,
 		const std::filesystem::path& cwd
 	) -> std::vector<past_chat>;
 
-	auto restore_rows(
-		session& s
+	auto transcript_ids(
+		const session& s
+	) -> std::vector<std::string>;
+
+	auto restore_transcript(
+		const std::string& agent_id,
+		session_info& info,
+		std::vector<transcript_row>& out
 	) -> bool;
 
+	auto restore_history(
+		const std::vector<std::string>& agent_ids,
+		session_info info
+	) -> restored_history;
+
+	auto start_history(
+		session& s
+	) -> void;
+
 	auto hydrate_session(
+		session& s
+	) -> void;
+
+	auto finish_hydration(
 		session& s
 	) -> void;
 

@@ -25,10 +25,16 @@ export namespace gse::camera {
 	struct jitter_request {
 		bool enabled = true;
 	};
+
+	struct world_visibility_update {
+		bool visible = false;
+	};
+
+	struct temporal_reset_request {};
 }
 
 export namespace gse::camera {
-	struct [[= system_state<"Camera">{}, = deferred_system{}]] data {
+	struct [[= system_state<"Camera">{}, = requires_setting<^^launch::data::simulate_world, true>{}, = deferred_system{}]] data {
 		target current{};
 		target blend_from{};
 		target blend_to{};
@@ -42,7 +48,7 @@ export namespace gse::camera {
 		target scripted_target{};
 		id scripted_requester{};
 		int scripted_priority = -1;
-		time scripted_blend_duration = milliseconds(300);
+		time scripted_blend_duration = milliseconds(300.f);
 		bool scripted_continuous = true;
 		bool scripted_active = false;
 
@@ -54,11 +60,14 @@ export namespace gse::camera {
 		[[= shared]] gse::projection_matrix prev_projection_matrix{};
 		[[= shared]] vec2f jitter_ndc{};
 		[[= shared]] vec2f prev_jitter_ndc{};
+		[[= shared]] latch latch{};
+		[[= shared]] input::mouse_totals latch_consumed{};
 
 		std::uint32_t jitter_index = 1;
 		bool jitter_enabled = false;
 		vec2f viewport{ 1920.f, 1080.f };
 		[[= shared]] bool ui_focus = false;
+		[[= shared]] bool world_visible = false;
 	};
 
 	[[= system_init{}]]
@@ -70,8 +79,9 @@ export namespace gse::camera {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<ui_focus_request, viewport_update, request, jitter_request> requests_in,
-		read<follow_component> cameras
+		channel_read<ui_focus_request, viewport_update, request, jitter_request, world_visibility_update, temporal_reset_request> requests_in,
+		read<follow_component> cameras,
+		shared_view<input::data> input_s
 	) -> async::task<>;
 
 	auto scripted_requester_id() -> id;

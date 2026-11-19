@@ -69,7 +69,7 @@ auto gse::ide::draw_action(gui::draw_context& ctx, const rectf& rect, const std:
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = hovered ? sty.color_button_hovered : sty.color_button_background,
+		.color = gui::interaction::press{ .hovered = hovered }.select(sty.button_standard.surfaces).fill,
 		.texture = ctx.blank_texture,
 		.corner_radius = sty.corner_radius,
 	});
@@ -175,7 +175,7 @@ auto gse::ide::draw_alloc_row(gui::draw_context& ctx, const rectf& row, const al
 		.text = growth,
 		.position = { growth_x, baseline },
 		.scale = fs,
-		.color = entry.since_mark > byte_count(0) ? sty.color_accent : sty.color_text_secondary,
+		.color = entry.since_mark > bytes(0.) ? sty.color_accent : sty.color_text_secondary,
 		.clip_rect = row,
 	});
 

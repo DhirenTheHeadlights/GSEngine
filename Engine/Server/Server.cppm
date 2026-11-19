@@ -14,7 +14,6 @@ import gse.diag;
 import gse.log;
 import gse.ecs;
 import gse.os;
-import gse.win32;
 import gse.assets;
 import gse.gpu;
 import gse.runtime;
@@ -54,15 +53,14 @@ export namespace gse::server {
 		) -> void;
 
 		auto update(
-			const structural<player_controller>& controller_auth,
-			const structural<player_input>& input_auth,
 			const entities& ents,
 			channel_write<activate_scene_request> channels,
 			const network::inbound_channel_t<MessagePack>& messages_out,
 			shared_view<actions::data> actions_s,
 			shared_view<physics::data> phys_s,
 			write<player_input>& inputs,
-			write<Components>&... comps
+			const network::owner_events_read<Components...>& owner_events,
+			network::replicated_access_t<Components>&... comps
 		) -> void;
 
 		template <network::is_network_message T>
@@ -92,8 +90,6 @@ export namespace gse::server {
 
 	private:
 		auto accept_connection(
-			const structural<player_controller>& controller_auth,
-			const structural<player_input>& input_auth,
 			const entities& ents,
 			const network::address& addr
 		) -> void;
@@ -131,6 +127,10 @@ export namespace gse::server {
 	};
 }
 
+namespace gse::server {
+	auto prepare_dashboard_console() -> void;
+}
+
 template <typename MessagePack, typename... Components>
 gse::server::host<MessagePack, Components...>::host(network::config cfg) : m_config(std::move(cfg)) {
 }
@@ -162,31 +162,22 @@ auto gse::server::host<MessagePack, Components...>::initialize() -> void {
 template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::draw_dashboard(const shared_view<physics::data>& phys_s) -> void {
 	if (!m_dashboard_started) {
-		const auto out = win32::GetStdHandle(win32::std_output_handle);
-		win32::DWORD mode = 0;
-		if (win32::GetConsoleMode(out, &mode)) {
-			win32::SetConsoleMode(out, mode | win32::enable_virtual_terminal_processing);
-		}
-		const auto in = win32::GetStdHandle(win32::std_input_handle);
-		win32::DWORD in_mode = 0;
-		if (win32::GetConsoleMode(in, &in_mode)) {
-			win32::SetConsoleMode(in, (in_mode & ~win32::enable_quick_edit_mode) | win32::enable_extended_flags);
-		}
+		prepare_dashboard_console();
 		std::print("\x1b[?25l\x1b[2J");
 		m_dashboard_started = true;
 	}
 
-	const auto up = static_cast<std::uint64_t>(m_uptime.elapsed<double>().as<seconds>());
+	const auto up = std::chrono::floor<std::chrono::seconds>(to_chrono(m_uptime.elapsed<double>()));
 	std::string frame;
 	frame += "\x1b[H";
-	frame += std::format("\x1b[1mGSEngine dedicated server\x1b[0m   up {:02}:{:02}:{:02}   port {}\x1b[K\n", up / 3600, (up / 60) % 60, up % 60, m_port);
+	frame += std::format("\x1b[1mGSEngine dedicated server\x1b[0m   up {:%T}   port {}\x1b[K\n", up, m_port);
 	if (m_active_scene) {
 		frame += std::format("scene {}   clients {}/{}   physics step {}\x1b[K\n", *m_active_scene, m_clients.size(), m_config.max_players, phys_s.step_index);
 	}
 	else {
 		frame += std::format("scene <none>   clients {}/{}   physics step {}\x1b[K\n", m_clients.size(), m_config.max_players, phys_s.step_index);
 	}
-	frame += std::format("last 2 s: {} frames, {} physics steps, longest frame {:.1f} ms   socket drops {}\x1b[K\n", m_window_frames, m_window_steps, m_window_longest_frame.as<milliseconds>(), m_endpoint.dropped());
+	frame += std::format("last 2 s: {} frames, {} physics steps, longest frame {:.1f:ms}   socket drops {}\x1b[K\n", m_window_frames, m_window_steps, m_window_longest_frame, m_endpoint.dropped());
 	frame += "\x1b[K\n";
 	frame += std::format("\x1b[1m{:<22} {:>12} {:>6} {:>10} {:>10}\x1b[0m\x1b[K\n", "client", "controller", "queue", "last seq", "applied");
 	if (m_clients.empty()) {
@@ -235,16 +226,14 @@ template <typename MessagePack, typename... Components>
 auto gse::server::host<MessagePack, Components...>::apply_catalog(const world_system::scene_catalog& catalog) -> void {
 	m_scene_ids = catalog.scene_ids;
 	m_triggers = catalog.triggers;
-	m_active_scene = catalog.active_scene != nullptr
-		? std::optional(catalog.active_scene->id())
-		: std::nullopt;
+	m_active_scene = catalog.active_scene;
 	if (m_active_scene.has_value()) {
 		m_requested_scene.reset();
 	}
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::update(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, const shared_view<physics::data> phys_s, write<player_input>& inputs, write<Components>&... comps) -> void {
+auto gse::server::host<MessagePack, Components...>::update(const entities& ents, const channel_write<activate_scene_request> channels, const network::inbound_channel_t<MessagePack>& messages_out, const shared_view<actions::data> actions_s, const shared_view<physics::data> phys_s, write<player_input>& inputs, const network::owner_events_read<Components...>& owner_events, network::replicated_access_t<Components>&... comps) -> void {
 	auto& controllers = std::get<write<player_controller>&>(std::tie(comps...));
 	const bool has_active_scene = m_active_scene.has_value();
 
@@ -321,7 +310,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 					}
 
 					m_endpoint.ensure_peer(msg.from);
-					accept_connection(controller_auth, input_auth, ents, msg.from);
+					accept_connection(ents, msg.from);
 					log::println(
 						log::category::network,
 						"Client [{}:{}] connected ({}/{})",
@@ -342,7 +331,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 				drop_client(controllers, ents, msg.from);
 			}
 
-			accept_connection(controller_auth, input_auth, ents, msg.from);
+			accept_connection(ents, msg.from);
 		})) {
 			return;
 		}
@@ -470,7 +459,7 @@ auto gse::server::host<MessagePack, Components...>::update(const structural<play
 			m_pending_snapshots.clear();
 		}
 
-		network::replicate_deltas(send_all, m_endpoint.peers(), comps...);
+		network::replicate_deltas(send_all, m_endpoint.peers(), owner_events, comps...);
 
 		const int stepped = phys_s.interpolation.steps;
 
@@ -548,7 +537,7 @@ auto gse::server::host<MessagePack, Components...>::drop_client(write<player_con
 }
 
 template <typename MessagePack, typename... Components>
-auto gse::server::host<MessagePack, Components...>::accept_connection(const structural<player_controller>& controller_auth, const structural<player_input>& input_auth, const entities& ents, const network::address& addr) -> void {
+auto gse::server::host<MessagePack, Components...>::accept_connection(const entities& ents, const network::address& addr) -> void {
 	if (!m_active_scene.has_value()) {
 		return;
 	}
@@ -556,8 +545,8 @@ auto gse::server::host<MessagePack, Components...>::accept_connection(const stru
 	const auto controller_name = std::format("PlayerController_{}:{}", addr.ip, addr.port);
 	const auto controller_id = generate_id(controller_name);
 	ents.ensure_active(controller_id);
-	controller_auth.add(controller_id);
-	input_auth.add(controller_id);
+	ents.add_component<player_controller>(controller_id);
+	ents.add_component<player_input>(controller_id);
 	m_clients.emplace(
 		addr,
 		client_data{

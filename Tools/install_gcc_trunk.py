@@ -1,0 +1,224 @@
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import tempfile
+import urllib.request
+import zipfile
+from pathlib import Path
+
+REPO = "DhirenTheHeadlights/GSEngine"
+RELEASE_URL = f"https://github.com/{REPO}/releases/download/{{tag}}/gcc-trunk-windows-x64.zip"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
+ENV_VAR = "MINGW_ROOT"
+TAG_RE = re.compile(r"^gcc-trunk-v(\d+)$")
+
+# Install under the user home directory (not AppData) so Windows Store Python's
+# VFS sandbox redirection of %LOCALAPPDATA% doesn't cause cmake to see a different
+# filesystem view than the Python process does.
+INSTALL_ROOT = Path.home() / ".gcc-trunk"
+
+# The committed pin: the toolchain the tree is known to build with. CI reads the same file,
+# so a newly published release never reaches a build until someone moves the pin.
+PIN_FILE = Path(__file__).resolve().parent.parent / "toolchain.txt"
+
+
+def read_pin() -> str:
+    if not PIN_FILE.exists():
+        raise SystemExit(f"{PIN_FILE} is missing. Pass --tag or --latest to install and write it.")
+    tag = PIN_FILE.read_text(encoding="utf-8").strip()
+    if not TAG_RE.match(tag):
+        raise SystemExit(f"{PIN_FILE} holds {tag!r}, not a gcc-trunk-vN tag.")
+    return tag
+
+
+def write_pin(tag: str) -> None:
+    if PIN_FILE.exists() and PIN_FILE.read_text(encoding="utf-8").strip() == tag:
+        return
+    PIN_FILE.write_text(tag + "\n", encoding="utf-8")
+    print(f"Pinned {tag} in {PIN_FILE}; commit it so CI builds with the same toolchain.")
+
+
+def resolve_latest_tag() -> str:
+    # Filter to gcc-trunk-v* and pick the highest N. Do NOT use /releases/latest:
+    # "latest" is across all release kinds and could hand back an unrelated tag.
+    print(f"Resolving latest gcc-trunk release tag from {RELEASES_API}")
+    req = urllib.request.Request(RELEASES_API, headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req) as response:
+        data = json.load(response)
+    best = None
+    for rel in data:
+        m = TAG_RE.match(rel.get("tag_name", ""))
+        if m and not rel.get("draft", False):
+            n = int(m.group(1))
+            if best is None or n > best[0]:
+                best = (n, rel["tag_name"])
+    if best is None:
+        raise SystemExit("No gcc-trunk-v* release found. Publish one or pass --tag.")
+    print(f"Latest release: {best[1]}")
+    return best[1]
+
+
+def install_path(tag: str) -> Path:
+    return INSTALL_ROOT / tag
+
+
+def already_installed(tag: str) -> bool:
+    return (install_path(tag) / "bin" / "g++.exe").exists()
+
+
+def download(url: str, dest: Path) -> None:
+    print(f"Downloading {url}")
+    with urllib.request.urlopen(url) as response, open(dest, "wb") as out:
+        shutil.copyfileobj(response, out)
+
+
+def verify_sha256(path: Path, expected: str) -> None:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    actual = h.hexdigest()
+    if actual.lower() != expected.lower():
+        raise SystemExit(f"SHA256 mismatch: got {actual}, expected {expected}")
+
+
+def _clear_readonly(func, path, _exc) -> None:
+    # Windows refuses to unlink a read-only file, and the toolchain ships plenty of them
+    # (share/zoneinfo). Plain rmtree therefore dies partway through a delete.
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def force_remove_tree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, onexc=_clear_readonly)
+
+
+def extract(zip_path: Path, dest: Path) -> None:
+    # Never delete the installed toolchain before its replacement is on disk. Deleting first
+    # means any failure mid-delete leaves the machine with no compiler at all, and --force made
+    # that the normal path: one read-only file aborted rmtree and took the whole toolchain with
+    # it. Unpack alongside, then swap, so a failure before the swap changes nothing.
+    staging = dest.with_name(dest.name + ".incoming")
+    previous = dest.with_name(dest.name + ".previous")
+
+    force_remove_tree(staging)
+    force_remove_tree(previous)
+
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(staging)
+    except BaseException:
+        force_remove_tree(staging)
+        raise
+
+    if dest.exists():
+        dest.rename(previous)
+    try:
+        staging.rename(dest)
+    except BaseException:
+        # Put the old tree back rather than leaving the install path empty.
+        if previous.exists() and not dest.exists():
+            previous.rename(dest)
+        raise
+
+    try:
+        force_remove_tree(previous)
+    except OSError as exc:
+        # The new toolchain is already in place, so this is cosmetic: say so and carry on
+        # rather than failing an install that actually succeeded.
+        print(f"Warning: installed, but could not remove {previous}: {exc}")
+
+
+def link_current(tag: str) -> Path:
+    # Maintain a stable, version-independent path (~/.gcc-trunk/current) that the
+    # CMake preset points at, so a toolchain version bump never requires editing
+    # the preset or any environment variable. Re-pointed to the freshly installed
+    # tag on every run.
+    link = INSTALL_ROOT / "current"
+    target = install_path(tag)
+    if os.name == "nt":
+        # rmdir removes a junction (or empty dir) without touching the target.
+        if os.path.lexists(link):
+            subprocess.run(["cmd", "/c", "rmdir", str(link)], check=False)
+        # rmdir leaves a real directory in place ("The directory is not empty"), which is what
+        # `current` becomes if anything ever copied a toolchain there instead of linking it.
+        # mklink would then fail with a confusing "already exists", so clear it explicitly.
+        if os.path.lexists(link) and os.lstat(link).st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            print(f"{link} is a dangling link; unlinking it")
+            try:
+                os.rmdir(link)
+            except OSError:
+                os.unlink(link)
+        if os.path.lexists(link):
+            print(f"{link} is a real directory, not a junction; replacing it")
+            force_remove_tree(link)
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True)
+    else:
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        os.symlink(target, link, target_is_directory=True)
+    print(f"Pointed {link} -> {target}")
+    return link
+
+
+def persist_env_var(name: str, value: str) -> None:
+    if os.name != "nt":
+        print(f"Add to your shell rc: export {name}={value}")
+        return
+    subprocess.run(["setx", name, str(value)], check=True)
+    print(f"Persisted {name} (effective in new shells)")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Download and install the prebuilt native-Windows GCC trunk toolchain")
+    parser.add_argument("--tag", default=None, help="Release tag to install and pin (default: the tag in toolchain.txt)")
+    parser.add_argument("--latest", action="store_true", help="Install the newest gcc-trunk-v* release and pin it")
+    parser.add_argument("--sha256", help="Expected SHA256 of the zip")
+    parser.add_argument("--persist", action="store_true", help=f"Persist {ENV_VAR} via setx")
+    parser.add_argument("--force", action="store_true", help="Reinstall even if already present")
+    parser.add_argument("--url", help="Override the release URL entirely")
+    args = parser.parse_args()
+
+    if args.tag and args.latest:
+        raise SystemExit("--tag and --latest are mutually exclusive.")
+    if args.latest:
+        args.tag = resolve_latest_tag()
+    elif args.tag is None:
+        args.tag = read_pin()
+
+    target = install_path(args.tag)
+    if already_installed(args.tag) and not args.force:
+        print(f"Already installed: {target}")
+    else:
+        url = args.url or RELEASE_URL.format(tag=args.tag)
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = Path(tmp) / "toolchain.zip"
+            download(url, zip_path)
+            if args.sha256:
+                verify_sha256(zip_path, args.sha256)
+            extract(zip_path, target)
+        print(f"Installed: {target}")
+
+    current = link_current(args.tag)
+    write_pin(args.tag)
+
+    print(
+        "\nThe CMake presets resolve the toolchain via "
+        "$env{USERPROFILE}/.gcc-trunk/current, so no environment variable is required."
+    )
+    if args.persist:
+        persist_env_var(ENV_VAR, str(current))
+    else:
+        print(f"\nOptional (manual command-line use only): re-run with --persist, or")
+        print(f'  setx {ENV_VAR} "{current}"')
+
+
+if __name__ == "__main__":
+    main()

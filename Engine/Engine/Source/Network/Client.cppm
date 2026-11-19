@@ -75,10 +75,9 @@ export namespace gse::network {
 		state m_state = state::disconnected;
 
 		time m_timeout{ seconds(5.f) };
-		time m_retry{ seconds(1.f) };
 
 		clock m_connection_start_clock;
-		clock m_retry_clock;
+		interval_timer<> m_retry_timer{ seconds(1.f) };
 	};
 }
 
@@ -111,11 +110,10 @@ auto gse::network::client::connect(const time timeout, const time retry) -> bool
 	log::println(log::category::network, "Client connecting to {}:{}...", m_server.ip, m_server.port);
 
 	m_timeout = timeout;
-	m_retry = retry;
+	m_retry_timer = interval_timer<>{ retry };
 	m_state = state::connecting;
 
 	m_connection_start_clock.reset();
-	m_retry_clock.reset();
 
 	send(connection_request{});
 
@@ -138,9 +136,8 @@ auto gse::network::client::tick() -> void {
 			log::println(log::level::warning, log::category::network, "Client connection timed out");
 			m_state = state::disconnected;
 		}
-		else if (m_retry_clock.elapsed() > m_retry) {
+		else if (m_retry_timer.tick()) {
 			send(connection_request{});
-			m_retry_clock.reset();
 		}
 	}
 

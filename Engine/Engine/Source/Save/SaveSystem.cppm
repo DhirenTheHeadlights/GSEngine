@@ -9,10 +9,12 @@ import gse.core;
 import gse.concurrency;
 import gse.ecs;
 import gse.assert;
+import gse.fs;
 
 export namespace gse::save {
 	enum class value_provenance : std::uint8_t {
 		code_default,
+		app_default,
 		project,
 		user,
 		app_pin,
@@ -46,12 +48,23 @@ export namespace gse::save {
 			std::span<const std::string> assignments
 		) -> void;
 
-		template <typename State, fixed_string Key>
+		template <std::meta::info... Path>
 		auto pin(
-			const auto& value
+			const typename settings::member_path<Path...>::value_type& value
 		) -> void;
 
 		auto set_pin(
+			std::string_view category,
+			std::string_view key,
+			std::string_view value
+		) -> void;
+
+		template <std::meta::info... Path>
+		auto default_for(
+			const typename settings::member_path<Path...>::value_type& value
+		) -> void;
+
+		auto set_app_default(
 			std::string_view category,
 			std::string_view key,
 			std::string_view value
@@ -98,6 +111,10 @@ export namespace gse::save {
 			settings::register_settings_type entry
 		) -> void;
 
+		auto retire(
+			const void* settings_ptr
+		) -> void;
+
 		auto for_each_entry(
 			auto&& fn
 		) const -> void;
@@ -114,9 +131,9 @@ export namespace gse::save {
 
 		auto project_path() const -> const std::filesystem::path&;
 
-		auto save_now() const -> bool;
+		auto save_now() -> bool;
 
-		auto trigger_restart() const -> void;
+		auto trigger_restart() -> void;
 
 		template <typename T>
 		[[nodiscard]]
@@ -129,6 +146,11 @@ export namespace gse::save {
 
 	private:
 		using doc = std::unordered_map<std::string, std::unordered_map<std::string, std::string>>;
+
+		struct dormant_category {
+			std::string category;
+			std::vector<settings::settings_key_info> keys;
+		};
 
 		static auto read_file(
 			const std::filesystem::path& path
@@ -154,20 +176,37 @@ export namespace gse::save {
 		auto save_to_file(
 			const std::filesystem::path& path,
 			settings::scope_kind scope
-		) const -> bool;
+		) -> bool;
 
-		auto save_all() const -> bool;
+		auto save_all() -> bool;
 
 		auto find_key(
 			std::string_view category,
 			std::string_view key
 		) const -> const settings::settings_key_info*;
 
+		auto baseline_of(
+			std::string_view category,
+			std::string_view key,
+			settings::scope_kind scope
+		) const -> std::string_view;
+
+		auto key_written(
+			std::string_view category,
+			std::string_view key
+		) const -> bool;
+
 		auto category_registered(
 			std::string_view category
 		) const -> bool;
 
+		auto find_dormant_key(
+			std::string_view category,
+			std::string_view key
+		) const -> const settings::settings_key_info*;
+
 		std::vector<settings::register_settings_type> m_entries;
+		std::vector<dormant_category> m_dormant;
 		registry_paths m_paths;
 		bool m_auto_save = false;
 		std::function<void()> m_on_restart;
@@ -179,9 +218,12 @@ export namespace gse::save {
 
 		doc m_loaded;
 		doc m_loaded_project;
+		doc m_app_defaults;
 		doc m_pins;
 		doc m_overrides;
+		std::vector<std::string> m_malformed_overrides;
 		doc m_staged;
+		doc m_written;
 		doc m_defaults;
 	};
 }
@@ -200,17 +242,16 @@ auto gse::save::registry::for_each_entry(auto&& fn) const -> void {
 	}
 }
 
-template <typename State, gse::fixed_string Key>
-auto gse::save::registry::pin(const auto& value) -> void {
-	static_assert(
-		!settings::category_of<State>().empty(),
-		"pinned state has no settings::category annotation, so its keys are unreachable"
-	);
-	static_assert(
-		settings::settings_key_exists<State>(std::string_view(Key)),
-		"pinned key does not name an annotated setting on that state"
-	);
-	set_pin(settings::category_of<State>(), std::string_view(Key), meta::write_field(value));
+template <std::meta::info... Path>
+auto gse::save::registry::pin(const typename settings::member_path<Path...>::value_type& value) -> void {
+	using path = settings::member_path<Path...>;
+	set_pin(path::category, path::key, meta::write_field(value));
+}
+
+template <std::meta::info... Path>
+auto gse::save::registry::default_for(const typename settings::member_path<Path...>::value_type& value) -> void {
+	using path = settings::member_path<Path...>;
+	set_app_default(path::category, path::key, meta::write_field(value));
 }
 
 gse::save::registry::~registry() {
@@ -244,12 +285,7 @@ auto gse::save::registry::set_overrides(const std::span<const std::string> assig
 		const std::size_t equals = text.find('=');
 		const std::size_t dot = text.find('.');
 		if (equals == std::string_view::npos || dot == std::string_view::npos || dot > equals) {
-			log::println(
-				log::level::warning,
-				log::category::general,
-				"ignoring setting override '{}'; expected Section.key=value",
-				text
-			);
+			m_malformed_overrides.push_back(assignment);
 			continue;
 		}
 		const std::string category(trim(text.substr(0, dot)));
@@ -264,6 +300,10 @@ auto gse::save::registry::set_pin(const std::string_view category, const std::st
 	apply_one_key(category, key, stored);
 }
 
+auto gse::save::registry::set_app_default(const std::string_view category, const std::string_view key, const std::string_view value) -> void {
+	m_app_defaults[std::string(category)][std::string(key)] = std::string(value);
+}
+
 auto gse::save::registry::set_override(const std::string_view category, const std::string_view key, const std::string_view value) -> void {
 	auto& stored = m_overrides[std::string(category)][std::string(key)];
 	stored = std::string(value);
@@ -275,7 +315,7 @@ auto gse::save::registry::clear_override(const std::string_view category, const 
 	if (cat_it == m_overrides.end() || cat_it->second.erase(std::string(key)) == 0) {
 		return;
 	}
-	for (const doc* source : { &m_pins, &m_loaded, &m_loaded_project, &m_defaults }) {
+	for (const doc* source : { &m_pins, &m_loaded, &m_loaded_project, &m_app_defaults, &m_defaults }) {
 		const auto sc = source->find(std::string(category));
 		if (sc == source->end()) {
 			continue;
@@ -339,6 +379,9 @@ auto gse::save::registry::provenance_of(const std::string_view category, const s
 	if (holds(m_loaded_project)) {
 		return value_provenance::project;
 	}
+	if (holds(m_app_defaults)) {
+		return value_provenance::app_default;
+	}
 	return value_provenance::code_default;
 }
 
@@ -377,7 +420,15 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 		}
 	}
 
+	for (const auto& [gate, pin] : entry.fallbacks) {
+		set_pin(pin.category, pin.key, pin.value);
+		log::println(log::category::save_system, "setting {}.{} pinned to {}: requires {}", pin.category, pin.key, pin.value, gate.requirement);
+	}
+
 	if (entry.read && entry.settings_ptr) {
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::user);
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::project);
+		entry.read(m_app_defaults, entry.category, entry.settings_ptr, settings::scope_kind::app);
 		entry.read(m_loaded, entry.category, entry.settings_ptr, settings::scope_kind::user);
 		entry.read(m_loaded_project, entry.category, entry.settings_ptr, settings::scope_kind::project);
 		for (const doc* layer : { &m_pins, &m_overrides }) {
@@ -418,6 +469,19 @@ auto gse::save::registry::add(settings::register_settings_type entry) -> void {
 	m_entries.push_back(std::move(entry));
 }
 
+auto gse::save::registry::retire(const void* settings_ptr) -> void {
+	const auto owned = [settings_ptr](const settings::register_settings_type& entry) {
+		return entry.settings_ptr == settings_ptr;
+	};
+	for (const auto& entry : m_entries | std::views::filter(owned)) {
+		m_dormant.push_back({
+			.category = entry.category,
+			.keys = entry.keys,
+		});
+	}
+	std::erase_if(m_entries, owned);
+}
+
 auto gse::save::registry::find_key(const std::string_view category, const std::string_view key) const -> const settings::settings_key_info* {
 	for (const auto& entry : m_entries) {
 		if (entry.category != category) {
@@ -431,6 +495,25 @@ auto gse::save::registry::find_key(const std::string_view category, const std::s
 	return nullptr;
 }
 
+auto gse::save::registry::baseline_of(const std::string_view category, const std::string_view key, const settings::scope_kind scope) const -> std::string_view {
+	const doc& loaded = scope == settings::scope_kind::project ? m_loaded_project : m_loaded;
+	for (const doc* layer : { &loaded, &m_app_defaults, &m_defaults }) {
+		const auto cat_it = layer->find(std::string(category));
+		if (cat_it == layer->end()) {
+			continue;
+		}
+		if (const auto kv = cat_it->second.find(std::string(key)); kv != cat_it->second.end()) {
+			return kv->second;
+		}
+	}
+	return {};
+}
+
+auto gse::save::registry::key_written(const std::string_view category, const std::string_view key) const -> bool {
+	const auto cat_it = m_written.find(std::string(category));
+	return cat_it != m_written.end() && cat_it->second.contains(std::string(key));
+}
+
 auto gse::save::registry::category_registered(const std::string_view category) const -> bool {
 	return std::ranges::any_of(
 		m_entries,
@@ -440,17 +523,33 @@ auto gse::save::registry::category_registered(const std::string_view category) c
 	);
 }
 
+auto gse::save::registry::find_dormant_key(const std::string_view category, const std::string_view key) const -> const settings::settings_key_info* {
+	for (const auto& dormant : m_dormant) {
+		if (dormant.category != category) {
+			continue;
+		}
+		const auto it = std::ranges::find(dormant.keys, key, &settings::settings_key_info::key);
+		if (it != dormant.keys.end()) {
+			return &*it;
+		}
+	}
+	return nullptr;
+}
+
 auto gse::save::registry::audit_files() const -> void {
 	const auto audit_file = [this](const doc& d, const std::filesystem::path& path) {
 		if (path.empty()) {
 			return;
 		}
 		for (const auto& [category, values] : d) {
-			if (!category_registered(category)) {
+			if (!category_registered(category) && !std::ranges::contains(m_dormant, category, &dormant_category::category)) {
 				continue;
 			}
 			for (const auto& key : std::views::keys(values)) {
 				const settings::settings_key_info* info = find_key(category, key);
+				if (!info) {
+					info = find_dormant_key(category, key);
+				}
 				if (!info) {
 					log::println(
 						log::level::warning,
@@ -480,36 +579,50 @@ auto gse::save::registry::audit_files() const -> void {
 }
 
 auto gse::save::registry::audit_overrides() const -> void {
-	std::vector<std::string> unknown;
+	std::vector<std::string> errors;
+	for (const std::string& assignment : m_malformed_overrides) {
+		errors.push_back(std::format("setting override '{}' is not of the form Section.key=value", assignment));
+	}
 
 	for (const auto& [category, values] : m_overrides) {
-		if (!category_registered(category)) {
-			for (const auto& key : std::views::keys(values)) {
+		for (const auto& [key, value] : values) {
+			if (!find_key(category, key)) {
 				log::println(
 					log::level::warning,
 					log::category::save_system,
-					"setting override '{}.{}' was not applied: no system registered section '{}' in this run mode",
+					"setting override '{}.{}' was not applied: no system registered that setting in this run mode",
 					category,
-					key,
-					category
+					key
 				);
+				continue;
 			}
-			continue;
-		}
-		for (const auto& key : std::views::keys(values)) {
-			if (!find_key(category, key)) {
-				unknown.push_back(std::format("{}.{}", category, key));
+			for (const auto& entry : m_entries) {
+				if (entry.category != category) {
+					continue;
+				}
+				const auto field = std::ranges::find(entry.fields, key, &settings::settings_field::key);
+				if (field == entry.fields.end() || !field->normalize || !field->normalize(value).empty()) {
+					continue;
+				}
+				std::string units;
+				for (const auto name : field->units) {
+					units += units.empty() ? "" : ", ";
+					units += name;
+				}
+				errors.push_back(std::format("setting override '{}.{}' could not parse '{}'; it needs a unit suffix, one of: {}", category, key, value, units));
 			}
 		}
 	}
 
-	if (unknown.empty()) {
+	if (errors.empty()) {
 		return;
 	}
 
-	for (const auto& name : unknown) {
-		std::cerr << std::format("error: setting override '{}' does not name a setting in that section\n", name);
+	for (const auto& error : errors) {
+		log::println(log::level::error, log::category::save_system, "{}", error);
+		std::println(std::cerr, "error: {}", error);
 	}
+	log::flush();
 	std::cerr.flush();
 	std::_Exit(2);
 }
@@ -563,11 +676,11 @@ auto gse::save::registry::project_path() const -> const std::filesystem::path& {
 	return m_paths.project;
 }
 
-auto gse::save::registry::save_now() const -> bool {
+auto gse::save::registry::save_now() -> bool {
 	return save_all();
 }
 
-auto gse::save::registry::save_all() const -> bool {
+auto gse::save::registry::save_all() -> bool {
 	if (!m_auto_save) {
 		return false;
 	}
@@ -589,7 +702,7 @@ auto gse::save::registry::save_all() const -> bool {
 	return ok;
 }
 
-auto gse::save::registry::trigger_restart() const -> void {
+auto gse::save::registry::trigger_restart() -> void {
 	save_now();
 	if (m_on_restart) {
 		m_on_restart();
@@ -601,6 +714,9 @@ auto gse::save::registry::read_file(const std::filesystem::path& path) -> std::e
 	const auto size = std::filesystem::file_size(path, ec);
 	if (ec) {
 		return std::unexpected(ec);
+	}
+	if (!std::in_range<std::size_t>(size)) {
+		return std::unexpected(std::make_error_code(std::errc::file_too_large));
 	}
 
 	std::ifstream file(path, std::ios::binary);
@@ -670,9 +786,17 @@ auto gse::save::registry::parse(const std::string_view text) -> doc {
 }
 
 auto gse::save::registry::emit(const doc& d) -> std::string {
+	std::map<std::string_view, std::map<std::string_view, std::string_view>> ordered;
+	for (const auto& [section, entries] : d) {
+		auto& keys = ordered[section];
+		for (const auto& [key, value] : entries) {
+			keys.emplace(key, value);
+		}
+	}
+
 	std::string out;
 	bool first = true;
-	for (const auto& [section, entries] : d) {
+	for (const auto& [section, entries] : ordered) {
 		if (!first) {
 			out.push_back('\n');
 		}
@@ -720,24 +844,40 @@ auto gse::save::registry::load_from_file(const std::filesystem::path& path, cons
 	return true;
 }
 
-auto gse::save::registry::save_to_file(const std::filesystem::path& path, const settings::scope_kind scope) const -> bool {
-	const doc& source = scope == settings::scope_kind::project ? m_loaded_project : m_loaded;
-	doc d = source;
-	for (const auto& entry : m_entries) {
-		if (entry.write && entry.settings_ptr) {
-			entry.write(d, entry.category, entry.settings_ptr, scope);
+auto gse::save::registry::save_to_file(const std::filesystem::path& path, const settings::scope_kind scope) -> bool {
+	const auto content = read_file(path);
+	if (!content) {
+		std::error_code ec;
+		if (std::filesystem::exists(path, ec) || ec) {
+			log::println(
+				log::level::warning,
+				log::category::save_system,
+				"Failed to read {} before saving, leaving it untouched: {}",
+				path.generic_display_string(),
+				content.error().message()
+			);
+			return false;
 		}
 	}
-	for (const doc* layer : { &m_pins, &m_overrides }) {
-		for (const auto& [category, keys] : *layer) {
-			for (const auto& key : std::views::keys(keys)) {
-				const auto restored = source.find(category);
-				if (restored != source.end() && restored->second.contains(key)) {
-					d[category][key] = restored->second.at(key);
+
+	doc d = content ? parse(*content) : doc{};
+
+	for (const auto& entry : m_entries) {
+		if (!entry.write || !entry.settings_ptr) {
+			continue;
+		}
+		doc live;
+		entry.write(live, entry.category, entry.settings_ptr, scope);
+		for (const auto& [category, keys] : live) {
+			for (const auto& [key, value] : keys) {
+				if (override_of(category, key)) {
+					continue;
 				}
-				else if (const auto written = d.find(category); written != d.end()) {
-					written->second.erase(key);
+				if (!key_written(category, key) && value == baseline_of(category, key, scope)) {
+					continue;
 				}
+				d[category][key] = value;
+				m_written[category].try_emplace(key);
 			}
 		}
 	}
@@ -746,18 +886,12 @@ auto gse::save::registry::save_to_file(const std::filesystem::path& path, const 
 		for (const auto& [category, keys] : m_staged) {
 			for (const auto& [key, value] : keys) {
 				d[category][key] = value;
+				m_written[category].try_emplace(key);
 			}
 		}
 	}
 
-	std::error_code ec;
-	std::filesystem::create_directories(path.parent_path(), ec);
-
-	std::ofstream file(path);
-	if (!file) {
-		return false;
-	}
-	file << emit(d);
+	layout_store::replace(path, emit(d));
 	return true;
 }
 
@@ -787,6 +921,8 @@ auto gse::save::registry::read_one(const std::filesystem::path& path, const std:
 }
 
 auto gse::save::override_system::run(const channel_read<settings::override_request> requests_in, registry& save_reg) -> async::task<> {
+	bool persist = false;
+	bool restart = false;
 	for (const auto& req : requests_in.of<settings::override_request>()) {
 		switch (req.op) {
 			case settings::override_op::release_override:
@@ -798,7 +934,19 @@ auto gse::save::override_system::run(const channel_read<settings::override_reque
 			case settings::override_op::clear_staged:
 				save_reg.clear_staged(req.category, req.key);
 				break;
+			case settings::override_op::persist:
+				persist = true;
+				break;
+			case settings::override_op::restart:
+				restart = true;
+				break;
 		}
+	}
+	if (restart) {
+		save_reg.trigger_restart();
+	}
+	else if (persist) {
+		save_reg.save_now();
 	}
 	return {};
 }

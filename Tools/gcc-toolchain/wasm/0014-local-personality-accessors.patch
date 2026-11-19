@@ -1,0 +1,52 @@
+--- a/libgcc/config/wasm/unwind-wasm.c
++++ b/libgcc/config/wasm/unwind-wasm.c
+@@ -36,13 +36,20 @@
+    at all.  A throw terminates, which is the truth about the target rather than
+    a property of this file.
+ 
+-   These four are the whole set a hosted libstdc++ asks for, measured off the
+-   link rather than taken from unwind.h: _Unwind_ForcedUnwind, _Unwind_Backtrace
+-   and the _Unwind_Get* accessors are not referenced, because nothing pulls
+-   eh_personality.o in -- with UI_NONE no function names a personality routine.
+-   Both were written here first and removed again on that measurement.  A
+-   program that reaches further will name what it needs at the link, which is
+-   the only thing that can say so.
++   Which symbols are in that set is measured off the link rather than taken from
++   unwind.h, and the set has grown once.  The first four here are what
++   libstdc++'s throwing objects ask for.  The three accessors after them were
++   written here first, removed again on the reasoning that nothing pulls
++   eh_personality.o in -- with UI_NONE no function names a personality routine --
++   and then asked for anyway: a libstdc++ locale member references
++   __gxx_personality_v0, which lives in eh_personality.o, which refers to all
++   three.  So the rule is the link and not the reasoning, and _Unwind_ForcedUnwind
++   and _Unwind_Backtrace stay out until something names them.
++
++   The accessors take a _Unwind_Context, and the only thing that constructs one
++   is an unwind in progress, which _Unwind_RaiseException above terminates.  They
++   are unreachable rather than unimplemented, and abort () for the same reason
++   the others do.
+ 
+    Real exceptions need the WebAssembly exception-handling proposal in the
+    back end.  The sjlj path is not an alternative: it needs a working setjmp,
+@@ -78,3 +85,21 @@
+ {
+   abort ();
+ }
++
++_Unwind_Ptr
++_Unwind_GetRegionStart (struct _Unwind_Context *ctx __attribute__ ((unused)))
++{
++  abort ();
++}
++
++_Unwind_Ptr
++_Unwind_GetTextRelBase (struct _Unwind_Context *ctx __attribute__ ((unused)))
++{
++  abort ();
++}
++
++_Unwind_Ptr
++_Unwind_GetDataRelBase (struct _Unwind_Context *ctx __attribute__ ((unused)))
++{
++  abort ();
++}

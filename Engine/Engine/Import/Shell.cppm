@@ -11,3 +11,10 @@ export namespace gse::shell {
 		const std::filesystem::path& target
 	) -> bool;
 }
+
+namespace gse::shell {
+	auto shell_open(
+		const std::filesystem::path& file,
+		const std::wstring& parameters
+	) -> bool;
+}

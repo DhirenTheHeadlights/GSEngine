@@ -56,11 +56,11 @@ auto gse::gui::ids::current_seed() -> std::uint64_t {
 }
 
 auto gse::gui::ids::make(const std::string_view s) -> id {
-	return generate_temp_id(hash_combine(current_seed(), stable_id(s)));
+	return generate_temp_id(hash_of(current_seed(), s));
 }
 
 auto gse::gui::ids::make_from_key(const std::uint64_t key) -> id {
-	return generate_temp_id(hash_combine(current_seed(), key));
+	return generate_temp_id(hash_of(current_seed(), key));
 }
 
 gse::gui::ids::scope::scope(const std::uint64_t v) {
@@ -80,11 +80,11 @@ gse::gui::ids::scope::~scope() {
 }
 
 auto gse::gui::ids::push(const std::uint64_t v) -> void {
-	id_stack.push_back(hash_combine(current_seed(), v));
+	id_stack.push_back(hash_of(current_seed(), v));
 }
 
 auto gse::gui::ids::push(const std::string_view s) -> void {
-	id_stack.push_back(hash_combine(current_seed(), stable_id(s)));
+	id_stack.push_back(hash_of(current_seed(), s));
 }
 
 auto gse::gui::ids::pop() -> void {

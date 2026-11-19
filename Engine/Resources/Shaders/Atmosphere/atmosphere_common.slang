@@ -95,6 +95,14 @@ public float2 transmittance_r_mu_to_uv(float radius, float view_zenith_cos) {
     return float2(u, v);
 }
 
+public float3 segment_transmittance(float3 origin_to_top, float3 point_to_top) {
+    return saturate(origin_to_top / max(point_to_top, 1e-6));
+}
+
+public float3 segment_in_scatter(float3 ray_radiance, float3 ray_transmittance, float3 segment) {
+    return ray_radiance * (1.0 - segment) / max(1.0 - ray_transmittance, 1e-6);
+}
+
 public float2 multiscatter_r_mu_sun_to_uv(float radius, float mu_sun) {
     float u = clamp(mu_sun * 0.5 + 0.5, 0.0, 1.0);
     float v = clamp((radius - atmosphere_ubo.bottom_radius) / max(atmosphere_ubo.top_radius - atmosphere_ubo.bottom_radius, 1e-6), 0.0, 1.0);

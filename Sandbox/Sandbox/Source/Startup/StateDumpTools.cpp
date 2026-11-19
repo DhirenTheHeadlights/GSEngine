@@ -65,7 +65,7 @@ auto sandbox::startup::summarize_scan(const config& cfg, const std::vector<gse::
 	}
 
 	if (frames.empty()) {
-		std::cerr << std::format("{} contains no frames\n", cfg.scan_states);
+		std::println(std::cerr, "{} contains no frames", cfg.scan_states);
 		return 1;
 	}
 
@@ -118,13 +118,13 @@ auto sandbox::startup::summarize_scan(const config& cfg, const std::vector<gse::
 	const gse::length mean_height = body_count > 0 ? height_sum / static_cast<float>(body_count) : gse::length{};
 	const auto final_frame = std::prev(frames.end())->first;
 
-	std::cout << std::format("{} bodies over {} frames\n\n", body_count, frames.size());
-	std::cout << std::format("{:<22}{}\n", "settled at frame", last_active >= final_frame ? std::string("never") : std::format("{}", last_active + 1));
-	std::cout << std::format("{:<22}{:.3f:m}\n", "mean height", mean_height);
-	std::cout << std::format("{:<22}{:.3f:m}\n", "max height", max_height);
-	std::cout << std::format("{:<22}{:.3f}\n", "final max speed", max_speed);
-	std::cout << std::format("{:<22}{:.3f:m}\n", "spawn reach", spawn_reach);
-	std::cout << std::format("{:<22}{} of {}\n", "shed past reach", shed, body_count);
+	std::println("{} bodies over {} frames\n", body_count, frames.size());
+	std::println("{:<22}{}", "settled at frame", last_active >= final_frame ? std::string("never") : std::format("{}", last_active + 1));
+	std::println("{:<22}{:.3f:m}", "mean height", mean_height);
+	std::println("{:<22}{:.3f:m}", "max height", max_height);
+	std::println("{:<22}{:.3f}", "final max speed", max_speed);
+	std::println("{:<22}{:.3f:m}", "spawn reach", spawn_reach);
+	std::println("{:<22}{} of {}", "shed past reach", shed, body_count);
 
 	return 0;
 }
@@ -138,18 +138,18 @@ auto sandbox::startup::trace_scan_body(const config& cfg, const std::vector<gse:
 	}
 
 	if (by_frame.empty()) {
-		std::cerr << std::format("body {} is not present in {}\n", cfg.scan_states_body, cfg.scan_states);
+		std::println(std::cerr, "body {} is not present in {}", cfg.scan_states_body, cfg.scan_states);
 		return 1;
 	}
 
-	std::cout << std::format("body {} over {} frames\n\n", cfg.scan_states_body, by_frame.size());
-	std::cout << std::format("{:>7}  {:>13}  {:>14}  {}\n", "frame", "speed", "step", "position");
+	std::println("body {} over {} frames\n", cfg.scan_states_body, by_frame.size());
+	std::println("{:>7}  {:>13}  {:>14}  {}", "frame", "speed", "step", "position");
 
 	std::optional<gse::vec3<gse::position>> previous;
 	for (const auto& [frame, record] : by_frame) {
 		const gse::displacement step = previous ? gse::distance(*previous, record.position) : gse::displacement{};
-		std::cout << std::format(
-			"{:>7}  {:>13.3f}  {:>14.6f:m}  {:.3f}\n",
+		std::println(
+			"{:>7}  {:>13.3f}  {:>14.6f:m}  {:.3f}",
 			frame,
 			gse::magnitude(record.velocity),
 			step,
@@ -166,7 +166,7 @@ auto sandbox::startup::trace_focus_frame(const config& cfg, const frame_index& f
 	const auto at_a = frames_a.find(focus);
 	const auto at_b = frames_b.find(focus);
 	if (at_a == frames_a.end() || at_b == frames_b.end()) {
-		std::cout << std::format("\nfocus frame {} is not present in both dumps\n", focus);
+		std::println("\nfocus frame {} is not present in both dumps", focus);
 		return;
 	}
 
@@ -183,12 +183,12 @@ auto sandbox::startup::trace_focus_frame(const config& cfg, const frame_index& f
 	const auto window = static_cast<std::uint32_t>(std::max(cfg.compare_states_focus_window, 0));
 	const auto begin = focus > window ? focus - window : 0u;
 
-	std::cout << std::format("\n=== focus frame {}, top {} diverging bodies ===\n", focus, shown);
+	std::println("\n=== focus frame {}, top {} diverging bodies ===", focus, shown);
 
 	for (std::size_t i = 0; i < shown; ++i) {
 		const auto owner = ranked[i].second;
-		std::cout << std::format("\nbody {}\n", owner);
-		std::cout << std::format("{:>7}  {:>14}  {:>13}  {:>13}  {}\n", "frame", "drift", "speed A", "speed B", "position A");
+		std::println("\nbody {}", owner);
+		std::println("{:>7}  {:>14}  {:>13}  {:>13}  {}", "frame", "drift", "speed A", "speed B", "position A");
 
 		for (std::uint32_t frame = begin; frame <= focus + window; ++frame) {
 			const auto fa = frames_a.find(frame);
@@ -201,8 +201,8 @@ auto sandbox::startup::trace_focus_frame(const config& cfg, const frame_index& f
 			if (ra == fa->second.end() || rb == fb->second.end()) {
 				continue;
 			}
-			std::cout << std::format(
-				"{:>7}  {:>14.6f:m}  {:>13.3f}  {:>13.3f}  {:.3f}\n",
+			std::println(
+				"{:>7}  {:>14.6f:m}  {:>13.3f}  {:>13.3f}  {:.3f}",
 				frame,
 				gse::distance(ra->second.position, rb->second.position),
 				gse::magnitude(ra->second.velocity),
@@ -216,7 +216,7 @@ auto sandbox::startup::trace_focus_frame(const config& cfg, const frame_index& f
 auto sandbox::startup::run_scan_states(const config& cfg) -> int {
 	const auto dump = gse::read_state_dump(cfg.scan_states);
 	if (!dump) {
-		std::cerr << std::format("could not read {}\n", cfg.scan_states);
+		std::println(std::cerr, "could not read {}", cfg.scan_states);
 		return 1;
 	}
 
@@ -244,8 +244,8 @@ auto sandbox::startup::run_scan_states(const config& cfg) -> int {
 		}
 	}
 
-	std::cout << std::format("{} records over {} frames, flagging speed > {:.1f}\n\n", dump->size(), worst.size(), limit);
-	std::cout << std::format("{:>7}  {:>14}  {:>7}  {:>22}\n", "frame", "max speed", "over", "worst body");
+	std::println("{} records over {} frames, flagging speed > {:.1f}\n", dump->size(), worst.size(), limit);
+	std::println("{:>7}  {:>14}  {:>7}  {:>22}", "frame", "max speed", "over", "worst body");
 
 	gse::velocity run_max{};
 	std::uint32_t run_max_frame = 0;
@@ -262,14 +262,14 @@ auto sandbox::startup::run_scan_states(const config& cfg) -> int {
 		const auto over_count = over.contains(frame) ? over.at(frame) : 0;
 		if (!first_breach && speed > limit) {
 			first_breach = true;
-			std::cout << std::format("{:>7}  {:>14.3f}  {:>7}  {:>22}  <- first over limit\n", frame, speed, over_count, owner);
+			std::println("{:>7}  {:>14.3f}  {:>7}  {:>22}  <- first over limit", frame, speed, over_count, owner);
 		}
 		else if (frame % 25 == 0) {
-			std::cout << std::format("{:>7}  {:>14.3f}  {:>7}  {:>22}\n", frame, speed, over_count, owner);
+			std::println("{:>7}  {:>14.3f}  {:>7}  {:>22}", frame, speed, over_count, owner);
 		}
 	}
 
-	std::cout << std::format("\nrun max {:.3f} at frame {} on body {}\n", run_max, run_max_frame, run_max_owner);
+	std::println("\nrun max {:.3f} at frame {} on body {}", run_max, run_max_frame, run_max_owner);
 	return 0;
 }
 
@@ -278,8 +278,9 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	const auto b = gse::read_state_dump(cfg.compare_states_b);
 	if (!a || !b) {
 		const auto& bad = !a ? a.error() : b.error();
-		std::cerr << std::format(
-			"could not read {}: magic {:#x} version {} readable {}\n",
+		std::println(
+			std::cerr,
+			"could not read {}: magic {:#x} version {} readable {}",
 			!a ? cfg.compare_states_a : cfg.compare_states_b,
 			bad.magic,
 			bad.version,
@@ -299,8 +300,8 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	const auto frames_a = by_frame(*a);
 	const auto frames_b = by_frame(*b);
 
-	std::cout << std::format(
-		"A: {} records over {} frames\nB: {} records over {} frames\n\n",
+	std::println(
+		"A: {} records over {} frames\nB: {} records over {} frames\n",
 		a->size(),
 		frames_a.size(),
 		b->size(),
@@ -319,9 +320,9 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 	std::map<std::uint32_t, std::size_t> shift_histogram;
 
 	if (align > 0) {
-		std::cout << std::format("aligning each frame against the best match in B within {} frames\n\n", align);
+		std::println("aligning each frame against the best match in B within {} frames\n", align);
 	}
-	std::cout << std::format("{:>7}  {:>14}  {:>8}  {:>22}\n", "frame", "max drift", "over", "worst body");
+	std::println("{:>7}  {:>14}  {:>8}  {:>22}", "frame", "max drift", "over", "worst body");
 
 	for (const auto& [frame, bodies_a] : frames_a) {
 		frame_delta best;
@@ -360,10 +361,10 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 
 		if (!first_breach_reported && max_delta > threshold) {
 			first_breach_reported = true;
-			std::cout << std::format("{:>7}  {:>14.6f:m}  {:>8}  {:>22}  <- first over threshold\n", frame, max_delta, over_threshold, max_owner);
+			std::println("{:>7}  {:>14.6f:m}  {:>8}  {:>22}  <- first over threshold", frame, max_delta, over_threshold, max_owner);
 		}
 		else if (frame % 50 == 0 || std::next(frames_a.find(frame)) == frames_a.end()) {
-			std::cout << std::format("{:>7}  {:>14.6f:m}  {:>8}  {:>22}\n", frame, max_delta, over_threshold, max_owner);
+			std::println("{:>7}  {:>14.6f:m}  {:>8}  {:>22}", frame, max_delta, over_threshold, max_owner);
 		}
 
 		previous_max = max_delta;
@@ -373,19 +374,19 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 		trace_focus_frame(cfg, frames_a, frames_b);
 	}
 
-	std::cout << std::format("\nthreshold {:.6f:m}\n", threshold);
+	std::println("\nthreshold {:.6f:m}", threshold);
 
 	if (align > 0) {
-		std::cout << "shift chosen per frame:";
+		std::print("shift chosen per frame:");
 		for (const auto& [shift, count] : shift_histogram) {
-			std::cout << std::format("  +{}: {}", shift, count);
+			std::print("  +{}: {}", shift, count);
 		}
-		std::cout << "\n";
+		std::println();
 	}
 
 	if (worst_jump_frame != 0) {
-		std::cout << std::format(
-			"largest single-frame jump: frame {}, {:.6f:m} -> {:.6f:m} on body {}\n",
+		std::println(
+			"largest single-frame jump: frame {}, {:.6f:m} -> {:.6f:m} on body {}",
 			worst_jump_frame,
 			worst_jump_from,
 			worst_jump_to,
@@ -393,7 +394,7 @@ auto sandbox::startup::run_compare_states(const config& cfg) -> int {
 		);
 	}
 	else {
-		std::cout << "no single-frame jump above 10x; divergence is smooth drift\n";
+		std::println("no single-frame jump above 10x; divergence is smooth drift");
 	}
 
 	return 0;

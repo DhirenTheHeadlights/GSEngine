@@ -9,24 +9,14 @@ import :diagnostics_runner;
 
 export namespace gse::ide {
 	namespace analysis {
-		struct diagnostics_request {
-			id document_id;
-			document_revision revision;
-			std::filesystem::path compile_commands;
-			std::filesystem::path file;
-			std::filesystem::path plugin;
-			std::vector<std::filesystem::path> workspace_roots;
-			void (*lint_hook)(diagnostics_check&) = nullptr;
-		};
-
 		struct diagnostics_completed {
-			std::shared_ptr<diagnostics_check> check;
+			std::shared_ptr<const diagnostics_result> result;
 		};
 	}
 
 	namespace diagnostics_system {
 		struct [[= system_state<"Diagnostics">{}]] data {
-			std::shared_ptr<analysis::diagnostics_check> pending;
+			task::pending<analysis::diagnostics_result> analysis_job;
 		};
 
 		[[= system_run<>{}]]
@@ -45,13 +35,13 @@ export namespace gse::ide {
 }
 
 auto gse::ide::diagnostics_system::run(context& ctx, data& d, const channel_read<analysis::diagnostics_request> requests_in, const channel_write<analysis::diagnostics_completed> completed_out) -> async::task<> {
-	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
+	if (std::optional<analysis::diagnostics_result> finished = d.analysis_job.take()) {
 		completed_out.push<analysis::diagnostics_completed>({
-			.check = std::move(d.pending),
+			.result = std::make_shared<const analysis::diagnostics_result>(std::move(*finished)),
 		});
 	}
 
-	if (d.pending) {
+	if (d.analysis_job.active()) {
 		return {};
 	}
 
@@ -63,22 +53,12 @@ auto gse::ide::diagnostics_system::run(context& ctx, data& d, const channel_read
 		return {};
 	}
 
-	d.pending = std::make_shared<analysis::diagnostics_check>();
-	d.pending->document_id = request->document_id;
-	d.pending->revision = request->revision;
-	analysis::diagnostics_runner::start(
-		d.pending,
-		request->compile_commands,
-		request->file,
-		request->plugin,
-		request->workspace_roots,
-		request->lint_hook
-	);
+	d.analysis_job.start([job = std::move(*request)](const std::stop_token& stop) {
+		return analysis::run_diagnostics(job, stop);
+	}, trace_id<"analysis::diagnostics">(), task::lane::background);
 	return {};
 }
 
 auto gse::ide::diagnostics_system::shutdown(data& d) -> void {
-	if (d.pending) {
-		d.pending->cancel.request_stop();
-	}
+	d.analysis_job.cancel();
 }

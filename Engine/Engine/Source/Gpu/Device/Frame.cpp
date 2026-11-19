@@ -24,9 +24,27 @@ namespace gse::gpu {
 	std::uint32_t pacing_transitions = 0;
 	bool pacing_health_reported = false;
 	bool pacing_last_healthy = true;
+
+	auto enter_present_stage(
+		present_target& t,
+		present_target_stage next
+	) -> void;
 }
 
 int gse::gpu::frame::s_live_count = 0;
+
+auto gse::gpu::enter_present_stage(present_target& t, const present_target_stage next) -> void {
+	log::println(
+		log::category::render,
+		"present_target: target {} swapchain_extent={}x{} viewport={}x{}",
+		t.window_id,
+		t.swapchain ? t.swapchain->extent().x() : 0u,
+		t.swapchain ? t.swapchain->extent().y() : 0u,
+		t.window ? window::viewport(t.window->handle).x() : 0,
+		t.window ? window::viewport(t.window->handle).y() : 0
+	);
+	t.stage.enter(next);
+}
 
 auto gse::gpu::frame::create(device& dev, swap_chain* sc) -> std::unique_ptr<frame> {
 	assert(
@@ -113,10 +131,10 @@ auto gse::gpu::frame::frame_in_progress() const -> bool {
 	return m_frame_in_progress;
 }
 
-auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
+auto gse::gpu::frame::recreate_resources(present_target& t, const recreate_cause cause) -> expected<void> {
 	const window::window_surface& win = *t.window;
 	swap_chain* const m_swapchain = t.swapchain;
-	const auto requested_size = window::viewport(win);
+	const auto requested_size = window::viewport(win.handle);
 	const auto requested_mode = win.present_mode;
 	const auto current_extent = m_swapchain->extent();
 	const auto current_mode = m_swapchain->present_mode();
@@ -124,44 +142,75 @@ auto gse::gpu::frame::recreate_resources(present_target& t) -> expected<void> {
 	const bool size_unchanged = current_extent.x() == static_cast<std::uint32_t>(requested_size.x()) &&
 		current_extent.y() == static_cast<std::uint32_t>(requested_size.y());
 
-	if (size_unchanged && current_mode != requested_mode) {
+	if (cause == recreate_cause::window_resize && size_unchanged) {
+		if (current_mode != requested_mode) {
+			log::println(
+				log::category::render,
+				"[swapchain] present-mode-only change at {}x{}, no recreate",
+				current_extent.x(),
+				current_extent.y()
+			);
+			m_swapchain->set_present_mode(requested_mode);
+		}
+		return {};
+	}
+
+	const auto begin = system_clock::now<time_t<double, seconds>>();
+
+	if (cause == recreate_cause::window_resize && current_mode == requested_mode && m_swapchain->resize_in_place(requested_size)) {
+		const auto resized = system_clock::now<time_t<double, seconds>>();
+		m_swapchain->notify_recreated();
+		const auto notified = system_clock::now<time_t<double, seconds>>();
 		log::println(
 			log::category::render,
-			"[swapchain] present-mode-only change at {}x{}, no recreate",
+			"[swapchain] resize_in_place: {}x{} -> {}x{} resize={:.2f:ms} notify={:.2f:ms} frame={}",
 			current_extent.x(),
-			current_extent.y()
+			current_extent.y(),
+			requested_size.x(),
+			requested_size.y(),
+			resized - begin,
+			notified - resized,
+			m_frame_count
 		);
-		m_swapchain->set_present_mode(requested_mode);
 		return {};
 	}
 
 	m_device->wait_idle();
+	const auto drained = system_clock::now<time_t<double, seconds>>();
 
 	if (const auto recreated = m_swapchain->recreate(requested_size, requested_mode); !recreated) {
 		log::println(log::level::error, log::category::render, "swapchain recreate failed ({}), retrying next frame", std::to_underlying(recreated.error()));
 		return std::unexpected(recreated.error());
 	}
+	const auto rebuilt = system_clock::now<time_t<double, seconds>>();
+
+	t.sync = create_sync_objects(*m_device, *m_swapchain);
+	const auto synced = system_clock::now<time_t<double, seconds>>();
+	m_swapchain->notify_recreated();
+	t.present_ids_in_flight.fill(0);
+	const auto notified = system_clock::now<time_t<double, seconds>>();
 
 	const auto granted_extent = m_swapchain->extent();
 	log::println(
 		log::category::render,
-		"[swapchain] recreate_resources: requested={}x{} previous={}x{} granted={}x{} minimized={} pos={},{} frame={}",
+		"[swapchain] recreate_resources: requested={}x{} previous={}x{} granted={}x{} allocated={}x{} minimized={} pos={},{} frame={} drain={:.2f:ms} swapchain={:.2f:ms} sync={:.2f:ms} notify={:.2f:ms}",
 		requested_size.x(),
 		requested_size.y(),
 		current_extent.x(),
 		current_extent.y(),
 		granted_extent.x(),
 		granted_extent.y(),
-		window::minimized(win),
+		m_swapchain->allocated().x(),
+		m_swapchain->allocated().y(),
+		window::minimized(win.handle),
 		win.position.x(),
 		win.position.y(),
-		m_frame_count
+		m_frame_count,
+		drained - begin,
+		rebuilt - drained,
+		synced - rebuilt,
+		notified - synced
 	);
-
-	t.sync = create_sync_objects(*m_device, *m_swapchain);
-	m_swapchain->notify_recreated();
-	t.present_ids_in_flight.fill(0);
-	m_device->wait_idle();
 	return {};
 }
 
@@ -170,7 +219,7 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 	swap_chain* const m_swapchain = t.swapchain;
 	log::println(log::level::warning, log::category::render, "{}, rebuilding surface and swapchain", reason);
 
-	const auto requested_size = window::viewport(win);
+	const auto requested_size = window::viewport(win.handle);
 	const auto requested_mode = win.present_mode;
 
 	m_swapchain->replace_surface(m_device->recreate_surface(win, m_swapchain->current_handle()));
@@ -188,7 +237,7 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 		requested_size.y(),
 		granted_extent.x(),
 		granted_extent.y(),
-		window::minimized(win),
+		window::minimized(win.handle),
 		m_frame_count
 	);
 
@@ -199,46 +248,36 @@ auto gse::gpu::frame::recreate_surface(present_target& t, const std::string_view
 	return {};
 }
 
+auto gse::gpu::frame::apply_pending_resizes() -> void {
+	trace::scope_guard _{ trace_id<"frame::apply_resizes">() };
+	for (present_target& t : m_targets) {
+		if (!t.swapchain || !t.window || window::minimized(t.window->handle)) {
+			continue;
+		}
+		if (!t.swapchain->current_handle() || t.stage.state() == present_target_stage::awaiting_restore) {
+			continue;
+		}
+		if (window::frame_buffer_resized(*t.window)) {
+			(void)recreate_resources(t, recreate_cause::window_resize);
+		}
+	}
+}
+
 auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	present_target& primary = m_targets.front();
 	window::window_surface* win = primary.window;
 	swap_chain* const m_swapchain = primary.swapchain;
 	m_frame_in_progress = false;
 
-	bool any_present_target = false;
-	bool any_live_target = false;
 	for (present_target& t : m_targets) {
-		const bool minimized_now = t.window && window::minimized(*t.window);
-		if (minimized_now != t.minimized_last) {
-			log::println(
-				log::category::render,
-				"[swapchain] target {} minimized {} -> {} after {} frames: swapchain_extent={}x{} viewport={}x{}",
-				t.window_id,
-				t.minimized_last,
-				minimized_now,
-				t.minimized_frames,
-				t.swapchain ? t.swapchain->extent().x() : 0u,
-				t.swapchain ? t.swapchain->extent().y() : 0u,
-				t.window ? window::viewport(*t.window).x() : 0,
-				t.window ? window::viewport(*t.window).y() : 0
-			);
-			t.restore_pending = !minimized_now;
-			t.minimized_last = minimized_now;
-			t.minimized_frames = 0;
+		const bool minimized_now = t.window && window::minimized(t.window->handle);
+		if (minimized_now != (t.stage.state() == present_target_stage::minimized)) {
+			enter_present_stage(t, minimized_now ? present_target_stage::minimized : present_target_stage::awaiting_restore);
 		}
-		++t.minimized_frames;
-		if (t.swapchain) {
-			any_present_target = true;
-			any_live_target = any_live_target || !minimized_now;
-		}
-	}
-
-	if (any_present_target && !any_live_target) {
-		return std::unexpected(frame_status::minimized);
 	}
 
 	{
-		trace::scope_guard _{ trace_id<"begin_frame::wait_fence">() };
+		trace::scope_guard _{ trace_id<"begin_frame::wait_fence">(), trace::span_kind::wait };
 		for (std::size_t i = 0; i < queue_type_count; ++i) {
 			const auto queue = static_cast<queue_type>(i);
 			const auto queue_tag = queue == queue_type::graphics
@@ -246,7 +285,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 				: queue == queue_type::compute
 					? trace_id<"begin_frame::wait_fence::compute">()
 					: trace_id<"begin_frame::wait_fence::video_encode">();
-			trace::scope_guard _{ queue_tag };
+			trace::scope_guard _{ queue_tag, trace::span_kind::wait };
 			const auto fence_result =
 				m_device->wait_for_fence(
 					m_fences.in_flight(queue, m_current_frame)
@@ -259,7 +298,7 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 		}
 	}
 
-	if (m_swapchain && !primary.minimized_last && !(win && win->attached)) {
+	if (m_swapchain && primary.stage.state() != present_target_stage::minimized && !(win && win->attached)) {
 		trace::scope_guard _{ trace_id<"begin_frame::present_feedback">() };
 		const auto refresh = m_swapchain->refresh_interval();
 		m_primary_pacer.observe(m_swapchain->past_presentation_timing(), refresh);
@@ -313,35 +352,19 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 	for (present_target& t : m_targets) {
 		t.acquired = false;
-		if (!t.swapchain || t.minimized_last) {
+		if (!t.swapchain || t.stage.state() == present_target_stage::minimized) {
 			continue;
 		}
-
-		const bool is_primary = std::addressof(t) == std::addressof(m_targets.front());
 
 		if (!t.swapchain->current_handle()) {
 			(void)recreate_surface(t, "swapchain handle gone");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
-		if (t.restore_pending) {
-			t.restore_pending = false;
+		if (t.stage.state() == present_target_stage::awaiting_restore) {
+			enter_present_stage(t, present_target_stage::presenting);
 			(void)window::frame_buffer_resized(*t.window);
 			(void)recreate_surface(t, "window restored from minimize");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
-			continue;
-		}
-
-		if (window::frame_buffer_resized(*t.window)) {
-			(void)recreate_resources(t);
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
@@ -361,17 +384,11 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 
 		if (acquire_status == result::error_surface_lost_khr) {
 			(void)recreate_surface(t, "surface lost on acquire");
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
 			continue;
 		}
 
 		if (acquire_status != result::success && acquire_status != result::suboptimal_khr) {
-			(void)recreate_resources(t);
-			if (is_primary) {
-				return std::unexpected(frame_status::swapchain_out_of_date);
-			}
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			continue;
 		}
 
@@ -401,23 +418,6 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	const auto cmd_main = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	m_device->cmd_reset(cmd_main);
 	m_device->cmd_begin(cmd_main);
-
-	for (const present_target& t : m_targets) {
-		if (!t.acquired) {
-			continue;
-		}
-		const image_discard acquire_barrier{
-			.src_stages = pipeline_stage_flag::top_of_pipe,
-			.src_access = {},
-			.dst_stages = pipeline_stage_flag::color_attachment_output,
-			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
-			.image = t.swapchain->image(t.image_index),
-			.aspects = image_aspect_flag::color,
-		};
-		m_device->cmd_pipeline_barrier(cmd_main, dependency_info{
-			.image_discards = std::span(&acquire_barrier, 1)
-		});
-	}
 
 	const std::array transient_visibility_barriers{
 		memory_barrier{
@@ -456,11 +456,36 @@ auto gse::gpu::frame::begin() -> std::expected<frame_token, frame_status> {
 	};
 }
 
-auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers, std::span<const semaphore_submit_info> extra_graphics_signals) -> void {
+auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std::span<const semaphore_submit_info> extra_graphics_waits, std::span<const command_buffer_handle> graphics_buffers, std::span<const semaphore_submit_info> extra_graphics_signals, std::span<const command_buffer_handle> graphics_leading_buffers, std::span<const semaphore_submit_info> graphics_leading_waits) -> void {
 	const auto graphics_begin = command_buffer_handle{ m_command_buffers[static_cast<std::size_t>(queue_type::graphics)] };
 	{
 		trace::scope_guard _{ trace_id<"end_frame::cmd_end">() };
 		m_device->cmd_end(graphics_begin);
+	}
+
+	std::optional<command_buffer_handle> graphics_acquire;
+	for (const present_target& t : m_targets) {
+		if (!t.acquired) {
+			continue;
+		}
+		if (!graphics_acquire) {
+			graphics_acquire = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, m_current_frame);
+			m_device->cmd_begin(*graphics_acquire);
+		}
+		const image_discard acquire_barrier{
+			.src_stages = pipeline_stage_flag::top_of_pipe,
+			.src_access = {},
+			.dst_stages = pipeline_stage_flag::color_attachment_output,
+			.dst_access = { access_flag::color_attachment_write, access_flag::color_attachment_read },
+			.image = t.swapchain->image(t.image_index),
+			.aspects = image_aspect_flag::color,
+		};
+		m_device->cmd_pipeline_barrier(*graphics_acquire, dependency_info{
+			.image_discards = std::span(&acquire_barrier, 1)
+		});
+	}
+	if (graphics_acquire) {
+		m_device->cmd_end(*graphics_acquire);
 	}
 
 	const auto graphics_end = m_device->acquire_worker_command_buffer(queue_type::graphics, 0, m_current_frame);
@@ -554,11 +579,32 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 		main_signals.push_back(s);
 	}
 
+	const bool split_graphics = !graphics_leading_buffers.empty();
+	if (split_graphics) {
+		trace::scope_guard _{ trace_id<"end_frame::submit_leading">() };
+		std::vector<command_buffer_submit_info> cmd_infos;
+		cmd_infos.reserve(1 + graphics_leading_buffers.size());
+		cmd_infos.push_back({ .command_buffer = graphics_begin });
+		for (const auto cb : graphics_leading_buffers) {
+			cmd_infos.push_back({ .command_buffer = cb });
+		}
+		const submit_info submit{
+			.wait_semaphores = graphics_leading_waits,
+			.command_buffers = cmd_infos,
+		};
+		m_device->submit(queue_type::graphics, submit, handle<fence>{});
+	}
+
 	{
 		trace::scope_guard _{ trace_id<"end_frame::submit">() };
 		std::vector<command_buffer_submit_info> cmd_infos;
-		cmd_infos.reserve(2 + graphics_buffers.size());
-		cmd_infos.push_back({ .command_buffer = graphics_begin });
+		cmd_infos.reserve(3 + graphics_buffers.size());
+		if (!split_graphics) {
+			cmd_infos.push_back({ .command_buffer = graphics_begin });
+		}
+		if (graphics_acquire) {
+			cmd_infos.push_back({ .command_buffer = *graphics_acquire });
+		}
 		for (const auto cb : graphics_buffers) {
 			cmd_infos.push_back({ .command_buffer = cb });
 		}
@@ -602,12 +648,12 @@ auto gse::gpu::frame::end(std::span<const queue_submission> aux_submissions, std
 			(void)recreate_surface(t, "surface lost on present");
 		}
 		else if (present_result == result::error_out_of_date_khr || present_result == result::suboptimal_khr) {
-			(void)recreate_resources(t);
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			t.present_ids_in_flight.fill(0);
 		}
 		else if (present_result != result::success) {
 			log::println(log::level::error, log::category::render, "present failed ({}), rebuilding swapchain", std::to_underlying(present_result));
-			(void)recreate_resources(t);
+			(void)recreate_resources(t, recreate_cause::swapchain_invalid);
 			t.present_ids_in_flight.fill(0);
 		}
 		else {

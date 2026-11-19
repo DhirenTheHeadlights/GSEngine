@@ -1,0 +1,434 @@
+export module gse.vulkan:instance;
+
+import std;
+import vulkan;
+
+import gse.gpu_backend;
+import :types;
+import :physical_device;
+
+import gse.core;
+import gse.math;
+import gse.assert;
+import gse.log;
+import gse.ecs;
+import gse.os;
+import gse.win32;
+import gse.win32.environment;
+import gse.json;
+import gse.fs;
+
+export namespace gse::vulkan {
+	class instance : public non_copyable {
+	public:
+		~instance() = default;
+
+		instance(
+			instance&&
+		) noexcept = default;
+
+		auto operator=(
+			instance&&
+		) noexcept -> instance& = default;
+
+		[[nodiscard]]
+		static auto create(
+			std::span<const char* const> required_extensions,
+			bool enable_validation
+		) -> gpu::expected<instance>;
+
+		[[nodiscard]] static auto required_window_extensions() -> std::span<const char* const>;
+
+		[[nodiscard]] auto create_surface(
+			native_window_handle handle
+		) -> gpu::expected<void>;
+
+		auto destroy_surface() -> void;
+
+		[[nodiscard]] auto surface() const -> gpu::surface;
+
+		[[nodiscard]] auto create_owned_surface(
+			native_window_handle handle
+		) -> gpu::surface;
+
+		auto destroy_owned_surface(
+			gpu::surface surface
+		) -> void;
+
+		[[nodiscard]] auto monitor_extent_of(
+			gpu::surface surface
+		) const -> vec2u;
+
+		[[nodiscard]] auto enumerate_physical_devices() const -> std::vector<physical_device>;
+
+	private:
+		instance(
+			vk::raii::Context&& context,
+			vk::raii::Instance&& instance,
+			vk::raii::DebugUtilsMessengerEXT&& debug_messenger
+		);
+
+		vk::raii::Context m_context;
+		vk::raii::Instance m_instance;
+		vk::raii::SurfaceKHR m_surface;
+		vk::raii::DebugUtilsMessengerEXT m_debug_messenger;
+		native_window_handle m_surface_window;
+		std::vector<std::pair<gpu::surface, native_window_handle>> m_owned_surface_windows;
+	};
+}
+
+namespace gse::vulkan {
+	constexpr auto implicit_layer_registry_key = L"SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers";
+	constexpr std::uint32_t win32_surface_create_info_type = 1000009000;
+	constexpr std::int32_t vulkan_success = 0;
+
+	struct win32_surface_create_info {
+		std::uint32_t type = win32_surface_create_info_type;
+		const void* next = nullptr;
+		std::uint32_t flags = 0;
+		void* module_instance = nullptr;
+		void* window = nullptr;
+	};
+
+	using get_instance_proc_addr_fn = void* (*)(void*, const char*);
+	using create_win32_surface_fn = std::int32_t (*)(void*, const win32_surface_create_info*, const void*, std::uint64_t*);
+
+	auto create_window_surface(
+		vk::Instance instance,
+		native_window_handle handle
+	) -> gpu::expected<vk::SurfaceKHR>;
+
+	auto suppress_injected_layers() -> void;
+
+	auto suppress_if_always_on(
+		const json::value& layer,
+		const std::filesystem::path& manifest
+	) -> void;
+}
+
+auto gse::vulkan::suppress_injected_layers() -> void {
+	for (const std::wstring& manifest : win32::registry_value_names(implicit_layer_registry_key)) {
+		const auto root = json::parse(fs::read_text(manifest));
+		if (!root) {
+			continue;
+		}
+		if (const json::value* layer = root->find("layer")) {
+			suppress_if_always_on(*layer, manifest);
+		}
+		if (const json::value* layers = root->find("layers")) {
+			for (const json::value& layer : layers->elements()) {
+				suppress_if_always_on(layer, manifest);
+			}
+		}
+	}
+}
+
+auto gse::vulkan::suppress_if_always_on(const json::value& layer, const std::filesystem::path& manifest) -> void {
+	const json::value* disable = layer.find("disable_environment");
+	if (!disable || disable->empty() || layer.contains("enable_environment")) {
+		return;
+	}
+	for (const std::string& variable : disable->keys()) {
+		const json::value* setting = disable->find(variable);
+		win32::SetEnvironmentVariableW(win32::widen(variable).c_str(), win32::widen(setting ? setting->text("1") : "1").c_str());
+	}
+	const json::value* name = layer.find("name");
+	log::println(
+		log::category::vulkan,
+		"Suppressed always-on implicit layer '{}' from {}",
+		name ? name->text() : std::string_view("unnamed"),
+		manifest.generic_display_string()
+	);
+}
+
+gse::vulkan::instance::instance(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::DebugUtilsMessengerEXT&& debug_messenger)
+	: m_context(std::move(context)), m_instance(std::move(instance)), m_surface(nullptr), m_debug_messenger(std::move(debug_messenger)) {
+}
+
+auto gse::vulkan::instance::required_window_extensions() -> std::span<const char* const> {
+	static constexpr std::array<const char*, 2> extensions{
+		"VK_KHR_surface",
+		"VK_KHR_win32_surface",
+	};
+	return extensions;
+}
+
+auto gse::vulkan::create_window_surface(const vk::Instance instance, const native_window_handle handle) -> gpu::expected<vk::SurfaceKHR> {
+	assert(handle.value != nullptr, "Failed to create window surface for Vulkan: window handle is null");
+
+	auto* const raw_instance = std::bit_cast<void*>(instance);
+	const auto get_proc_addr = reinterpret_cast<get_instance_proc_addr_fn>(vk::detail::defaultDispatchLoaderDynamic.vkGetInstanceProcAddr);
+	const auto create_surface = reinterpret_cast<create_win32_surface_fn>(get_proc_addr(raw_instance, "vkCreateWin32SurfaceKHR"));
+	if (create_surface == nullptr) {
+		log::println(log::level::error, log::category::vulkan, "Vulkan instance does not expose vkCreateWin32SurfaceKHR");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+
+	const win32_surface_create_info info{
+		.module_instance = reinterpret_cast<void*>(win32::GetModuleHandleW(nullptr)),
+		.window = handle.value,
+	};
+
+	std::uint64_t surface = 0;
+	const std::int32_t result = create_surface(raw_instance, &info, nullptr, &surface);
+	if (result != vulkan_success) {
+		log::println(log::level::error, log::category::vulkan, "Failed to create window surface for Vulkan: {}", vk::to_string(static_cast<vk::Result>(result)));
+		return std::unexpected{ from_vk(static_cast<vk::Result>(result)) };
+	}
+	return std::bit_cast<vk::SurfaceKHR>(surface);
+}
+
+auto gse::vulkan::instance::create_surface(const native_window_handle handle) -> gpu::expected<void> {
+	const auto raw_surface = create_window_surface(*m_instance, handle);
+	if (!raw_surface) {
+		return std::unexpected{ raw_surface.error() };
+	}
+	m_surface = vk::raii::SurfaceKHR(m_instance, *raw_surface);
+	m_surface_window = handle;
+	return {};
+}
+
+auto gse::vulkan::instance::destroy_surface() -> void {
+	m_surface = nullptr;
+	m_surface_window = {};
+}
+
+auto gse::vulkan::instance::enumerate_physical_devices() const -> std::vector<physical_device> {
+	auto raii_devices = std::move(*m_instance.enumeratePhysicalDevices());
+	std::vector<physical_device> result;
+	result.reserve(raii_devices.size());
+	for (auto& raii_device : raii_devices) {
+		result.emplace_back(std::move(raii_device));
+	}
+	return result;
+}
+
+auto gse::vulkan::instance::surface() const -> gpu::surface {
+	return std::bit_cast<gpu::surface>(*m_surface);
+}
+
+auto gse::vulkan::instance::create_owned_surface(const native_window_handle handle) -> gpu::surface {
+	const auto surface = std::bit_cast<gpu::surface>(gpu::must(create_window_surface(*m_instance, handle)));
+	m_owned_surface_windows.emplace_back(surface, handle);
+	return surface;
+}
+
+auto gse::vulkan::instance::destroy_owned_surface(const gpu::surface surface) -> void {
+	if (!surface) {
+		return;
+	}
+	std::erase_if(m_owned_surface_windows, [surface](const auto& entry) {
+		return entry.first == surface;
+	});
+	vk::Instance(*m_instance).destroySurfaceKHR(std::bit_cast<vk::SurfaceKHR>(surface));
+}
+
+auto gse::vulkan::instance::monitor_extent_of(const gpu::surface surface) const -> vec2u {
+	native_window_handle window = surface == this->surface() ? m_surface_window : native_window_handle{};
+	if (const auto it = std::ranges::find(m_owned_surface_windows, surface, &std::pair<gpu::surface, native_window_handle>::first); it != m_owned_surface_windows.end()) {
+		window = it->second;
+	}
+	if (!window) {
+		return {};
+	}
+	const win32::HMONITOR monitor = win32::MonitorFromWindow(static_cast<win32::HWND>(window.value), win32::monitor_default_to_nearest);
+	win32::MONITORINFO info{};
+	info.cbSize = sizeof(info);
+	if (!win32::GetMonitorInfoW(monitor, &info)) {
+		return {};
+	}
+	return vec2u{
+		static_cast<std::uint32_t>(info.rcMonitor.right - info.rcMonitor.left),
+		static_cast<std::uint32_t>(info.rcMonitor.bottom - info.rcMonitor.top),
+	};
+}
+
+auto gse::vulkan::instance::create(const std::span<const char* const> required_extensions, const bool enable_validation) -> gpu::expected<instance> {
+	suppress_injected_layers();
+	vk::detail::defaultDispatchLoaderDynamic.init();
+	if (!vk::detail::defaultDispatchLoaderDynamic.vkGetInstanceProcAddr) {
+		log::println(log::level::error, log::category::vulkan, "Vulkan loader not found");
+		return std::unexpected{ gpu::result::error_unknown };
+	}
+
+	std::vector<const char*> validation_layers;
+	if (enable_validation) {
+		constexpr auto layer_name = "VK_LAYER_KHRONOS_validation";
+		const auto available = vk::enumerateInstanceLayerProperties();
+		if (available.result != vk::Result::eSuccess) {
+			log::println(log::level::error, log::category::vulkan, "Failed to enumerate Vulkan instance layers: {}", vk::to_string(available.result));
+			return std::unexpected{ from_vk(available.result) };
+		}
+		const bool layer_present = std::ranges::any_of(
+			available.value,
+			[&](const vk::LayerProperties& p) {
+				return std::string_view(p.layerName) == layer_name;
+			}
+		);
+		if (layer_present) {
+			validation_layers.push_back(layer_name);
+		}
+		else {
+			log::println(
+				log::category::vulkan,
+				"Validation layer '{}' requested but not available on this system; continuing without it. "
+				"Install vulkan-validationlayers or set VK_LAYER_PATH to the SDK's explicit_layer.d directory.",
+				layer_name
+			);
+		}
+	}
+
+	const auto instance_version = vk::enumerateInstanceVersion();
+	if (instance_version.result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to query Vulkan instance version: {}", vk::to_string(instance_version.result));
+		return std::unexpected{ from_vk(instance_version.result) };
+	}
+	const std::uint32_t highest_supported_version = instance_version.value;
+	const vk::ApplicationInfo app_info{
+		.pApplicationName = "GSEngine",
+		.applicationVersion = 1,
+		.pEngineName = "GSEngine",
+		.engineVersion = 1,
+		.apiVersion = highest_supported_version,
+	};
+
+	std::vector extensions(required_extensions.begin(), required_extensions.end());
+	extensions.push_back(vk::EXTDebugUtilsExtensionName);
+
+	const auto available_instance_extensions = vk::enumerateInstanceExtensionProperties();
+	if (available_instance_extensions.result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to enumerate Vulkan instance extensions: {}", vk::to_string(available_instance_extensions.result));
+		return std::unexpected{ from_vk(available_instance_extensions.result) };
+	}
+	const auto has_instance_extension = [&](const std::string_view name) {
+		return std::ranges::any_of(
+			available_instance_extensions.value,
+			[&](const auto& p) {
+				return std::string_view(p.extensionName) == name;
+			}
+		);
+	};
+
+	const auto already_enabled = [&](const std::string_view name) {
+		return std::ranges::any_of(
+			extensions,
+			[&](const char* e) {
+				return std::string_view(e) == name;
+			}
+		);
+	};
+
+	for (const auto* name : {
+		vk::KHRGetSurfaceCapabilities2ExtensionName,
+		vk::EXTSurfaceMaintenance1ExtensionName,
+	}) {
+		if (has_instance_extension(name) && !already_enabled(name)) {
+			extensions.push_back(name);
+		}
+	}
+
+	auto debug_callback = [](
+		const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+		vk::DebugUtilsMessageTypeFlagsEXT message_type,
+		const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
+		void* user_data
+	) -> vk::Bool32 {
+		if (message_severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) {
+			return vk::False;
+		}
+
+		if (std::string_view(callback_data->pMessage).find("VK_EXT_debug_utils") != std::string_view::npos) {
+			return vk::False;
+		}
+
+		const auto lvl = message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error
+			: message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning			 ? log::level::warning
+																							 : log::level::info;
+
+		log::println(lvl, log::category::vulkan_validation, "{}", callback_data->pMessage);
+
+		for (std::uint32_t i = 0; i < callback_data->objectCount; ++i) {
+			const auto& object = callback_data->pObjects[i];
+			if (!object.pObjectName || object.pObjectName[0] == '\0') {
+				continue;
+			}
+
+			log::println(
+				lvl,
+				log::category::vulkan_validation,
+				"Object {}: {} 0x{:x} '{}'",
+				i,
+				vk::to_string(object.objectType),
+				object.objectHandle,
+				object.pObjectName
+			);
+		}
+
+		log::flush();
+
+		return vk::False;
+	};
+
+	const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{
+		.flags = {},
+		.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+			vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+			vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
+		.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+		.pfnUserCallback = debug_callback,
+	};
+
+	constexpr vk::ValidationFeatureEnableEXT enables[] = {
+		vk::ValidationFeatureEnableEXT::eBestPractices,
+		vk::ValidationFeatureEnableEXT::eSynchronizationValidation,
+		vk::ValidationFeatureEnableEXT::eDebugPrintf,
+	};
+
+	const vk::ValidationFeaturesEXT features{
+		.pNext = &debug_create_info,
+		.enabledValidationFeatureCount = static_cast<std::uint32_t>(std::size(enables)),
+		.pEnabledValidationFeatures = enables,
+		.disabledValidationFeatureCount = 0,
+		.pDisabledValidationFeatures = nullptr,
+	};
+
+	const vk::InstanceCreateInfo create_info{
+		.pNext = enable_validation ? static_cast<const void*>(&features) : nullptr,
+		.flags = {},
+		.pApplicationInfo = &app_info,
+		.enabledLayerCount = static_cast<std::uint32_t>(validation_layers.size()),
+		.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
+		.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size()),
+		.ppEnabledExtensionNames = extensions.data(),
+	};
+
+	vk::raii::Context context;
+
+	auto [result, instance] = context.createInstance(create_info);
+	if (result != vk::Result::eSuccess) {
+		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", vk::to_string(result));
+		return std::unexpected{ from_vk(result) };
+	}
+	log::println(
+		log::category::vulkan,
+		"Vulkan Instance Created{}!",
+		enable_validation ? " with validation layers" : ""
+	);
+
+	vk::detail::defaultDispatchLoaderDynamic.init(*instance);
+
+	vk::raii::DebugUtilsMessengerEXT debug_messenger = nullptr;
+	if (enable_validation) {
+		auto [messenger_result, messenger] = instance.createDebugUtilsMessengerEXT(debug_create_info);
+		if (messenger_result == vk::Result::eSuccess) {
+			debug_messenger = std::move(messenger);
+			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
+		}
+		else {
+			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", vk::to_string(messenger_result));
+		}
+	}
+
+	return vulkan::instance(std::move(context), std::move(instance), std::move(debug_messenger));
+}

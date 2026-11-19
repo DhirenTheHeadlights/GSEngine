@@ -20,10 +20,13 @@ import :menu_stack;
 import :section_widget;
 import :selectable_widget;
 import :slider_widget;
+import :styles;
+import :surface_paint;
 import :text_input_widget;
 import :text_widget;
 import :toggle_widget;
 import :types;
+import :widget_skin;
 
 export namespace gse::settings {
 	struct dimensioned_input_state {
@@ -158,7 +161,7 @@ namespace gse::settings {
 }
 
 auto gse::settings::field_widget_key(const register_settings_type& entry, const settings_field& field) -> std::uint64_t {
-	return hash_combine(stable_id(entry.category), stable_id(field.key));
+	return hash_of(entry.category, field.key);
 }
 
 auto gse::settings::capture_binding(gui::builder& b, binding& out) -> bool {
@@ -220,7 +223,7 @@ auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, con
 			}
 		}
 
-		const auto row_key = hash_combine(stable_id(entry.category), stable_id(info.name));
+		const auto row_key = hash_of(entry.category, info.name);
 		auto& pending = pending_type.fields[row_key];
 		const std::string live_value = bindings_to_config(info.current);
 		if (!pending.initialized) {
@@ -234,19 +237,11 @@ auto gse::settings::draw_controls_page(void* builder, void* panel_state_ptr, con
 		if (capturing) {
 			shown = "press a key or mouse button, esc to cancel";
 		}
+		else if (std::vector<binding> staged; bindings_from_config(pending.value, staged)) {
+			shown = bindings_to_string(staged);
+		}
 		else {
-			std::vector<binding> staged;
-			if (bindings_from_config(pending.value, staged) && !staged.empty()) {
-				for (const auto& single : staged) {
-					if (!shown.empty()) {
-						shown += " / ";
-					}
-					shown += binding_to_string(single);
-				}
-			}
-			else {
-				shown = "unbound";
-			}
+			shown = "unbound";
 		}
 
 		if (b.draw<gui::selectable>({
@@ -431,16 +426,12 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 		{ unit_width, widget_height }
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = display_label,
-		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+	gui::draw::label(ctx, label_rect, display_label, ctx.style.input.label, {
+		.color = ctx.style.input.label_color,
 		.clip_rect = label_rect,
 	});
 
-	const id input_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##Magnitude")));
+	const id input_id = gui::ids::make_from_key(hash_of(field_key, "##Magnitude"));
 
 	float slider_min = 0.f;
 	float slider_max = 0.f;
@@ -462,7 +453,7 @@ auto gse::settings::draw_dimensioned_field(gui::builder& b, dimensioned_input_st
 	const auto selected = std::ranges::find(field.units, state.unit);
 	const gui::dropdown_result picked = gui::draw::dropdown_in_rect_keyed(
 		ctx,
-		hash_combine(field_key, stable_id("##Unit")),
+		hash_of(field_key, "##Unit"),
 		selected == field.units.end() ? 0 : static_cast<std::size_t>(std::ranges::distance(field.units.begin(), selected)),
 		field.units,
 		state.dropdown_state,
@@ -492,7 +483,7 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 		return;
 	}
 	auto& ctx = b.ctx;
-	const float subline_size = ctx.style.font_size * 0.85f;
+	const float subline_size = ctx.style.font_size * ctx.style.screen.note.size_mult;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float subline_height = text_view->line_height(subline_size) + ctx.style.padding * 0.25f;
 	const rectf content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
@@ -500,13 +491,8 @@ auto gse::settings::draw_restart_marker(gui::builder& b, const bool modified) ->
 		{ content_rect.left() + ctx.style.padding, ctx.layout_cursor.y() },
 		{ content_rect.width() - ctx.style.padding, subline_height }
 	);
-	const vec4f badge_color = modified ? ctx.style.color_accent : ctx.style.color_text_secondary;
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = "Requires restart to take effect",
-		.position = { subline_rect.left(), subline_rect.center().y() + text_view->vertical_center_offset(subline_size) },
-		.scale = subline_size,
-		.color = badge_color,
+	gui::draw::label(ctx, subline_rect, "Requires restart to take effect", ctx.style.screen.note, {
+		.color = modified ? ctx.style.color_accent : ctx.style.color_text_secondary,
 		.clip_rect = subline_rect,
 	});
 	ctx.layout_cursor.y() -= subline_height;
@@ -523,7 +509,7 @@ auto gse::settings::draw_field_tooltip(gui::builder& b, const settings_field& fi
 		{ content_rect.width(), widget_height }
 	);
 	if (b.ctx.hovers(row_rect)) {
-		const id tooltip_id = gui::ids::make_from_key(hash_combine(field_key, stable_id("##tooltip")));
+		const id tooltip_id = gui::ids::make_from_key(hash_of(field_key, "##tooltip"));
 		b.ctx.set_tooltip(tooltip_id, field.description);
 	}
 }
@@ -644,6 +630,9 @@ auto gse::settings::panel_state::apply_all(const change_request_writer channels)
 			}
 		}
 	}
+	channels.push<override_request>({
+		.op = override_op::persist,
+	});
 }
 
 auto gse::settings::panel_state::discard_all(const change_request_writer channels) -> void {
@@ -720,6 +709,9 @@ auto gse::settings::panel(gui::builder& b, panel_state& ps, const panel_writer c
 								entry.reset_to_defaults(channels);
 							}
 							ps.pending_by_type.erase(entry.type_id);
+						});
+						channels.push<override_request>({
+							.op = override_op::persist,
 						});
 						ps.input_buffers.clear();
 						ps.input_states.clear();

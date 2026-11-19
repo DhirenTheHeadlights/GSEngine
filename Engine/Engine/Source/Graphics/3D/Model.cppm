@@ -22,7 +22,7 @@ export namespace gse {
 	class model;
 
 	struct render_queue_entry {
-		resource::handle<model> model;
+		id model;
 		std::size_t index;
 		spatial_matrix model_matrix;
 		spatial_matrix normal_matrix;

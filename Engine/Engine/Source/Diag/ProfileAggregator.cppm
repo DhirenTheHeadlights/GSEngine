@@ -63,6 +63,14 @@ export namespace gse::profile {
 		sample_time duration
 	) -> void;
 
+	constexpr std::array<std::string_view, 3> gpu_queue_names{ "graphics", "compute", "video encode" };
+
+	auto ingest_gpu_queue_frame(
+		std::size_t queue,
+		sample_time busy,
+		sample_time span
+	) -> void;
+
 	auto set_gpu_metric_names(
 		std::span<const std::string> names
 	) -> void;
@@ -127,7 +135,7 @@ export namespace gse::profile {
 	) -> void;
 
 	constexpr std::uint32_t report_magic = 0x47535250;
-	constexpr std::uint32_t report_version = 4;
+	constexpr std::uint32_t report_version = 5;
 
 	struct report_record {
 		std::string tag;
@@ -153,6 +161,7 @@ export namespace gse::profile {
 		std::uint32_t children_count = 0;
 		bool open = false;
 		bool lexical = false;
+		trace::span_kind kind = trace::span_kind::work;
 	};
 
 	struct report_frame {
@@ -163,6 +172,7 @@ export namespace gse::profile {
 		time_t<std::uint64_t> origin;
 		sample_time span;
 		sample_time elapsed;
+		time_t<std::uint64_t> boundary;
 	};
 
 	struct report_file {
@@ -199,6 +209,12 @@ export namespace gse::profile {
 }
 
 namespace gse::profile {
+	auto process_alive(
+		std::uint32_t pid
+	) -> bool;
+
+	auto process_id_text() -> std::string;
+
 	constexpr std::size_t default_recorded_frames = 600;
 	constexpr std::size_t max_recorded_nodes = 4000000;
 	constexpr std::size_t chrome_trace_frames = 8;
@@ -258,6 +274,12 @@ namespace gse::profile {
 		std::uint64_t rows = 0;
 	};
 
+	struct queue_frame_entry {
+		sample_time busy;
+		sample_time span;
+		std::uint64_t frames = 0;
+	};
+
 	struct dag_visit {
 		std::uint32_t index = 0;
 		int depth = 0;
@@ -272,6 +294,7 @@ namespace gse::profile {
 	inline std::array<std::flat_map<id, entry>, 2> entries;
 	inline std::vector<std::string> gpu_metric_names;
 	inline std::flat_map<id, metric_entry> gpu_metric_entries;
+	inline std::array<queue_frame_entry, gpu_queue_names.size()> gpu_queue_frames;
 	inline std::atomic ema_alpha{ 0.1 };
 	inline std::atomic is_enabled{ true };
 	inline std::atomic<std::uint64_t> frame_count{ 0 };
@@ -332,11 +355,15 @@ namespace gse::profile {
 	) -> void;
 
 	auto write_dag(
-		std::ofstream& out
+		std::ofstream& out,
+		const report_frame& frame,
+		std::span<const std::string> tags,
+		std::span<const std::uint32_t> critical,
+		std::uint32_t main_tid
 	) -> void;
 
 	auto flatten_dag(
-		const trace::frame_view& fv,
+		const report_frame& frame,
 		std::vector<dag_visit>& out
 	) -> void;
 

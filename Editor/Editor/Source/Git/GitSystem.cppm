@@ -9,17 +9,62 @@ import :git_status;
 export namespace gse::ide::git_system {
 	struct refresh_request {};
 
-	struct init_request {
+	struct action_request;
+
+	struct action_inputs {
+		git::status_snapshot status;
+		std::span<const std::filesystem::path> rootless;
+	};
+
+	auto build_initialize(
+		const action_inputs& inputs,
+		const action_request& request
+	) -> std::optional<git::command>;
+
+	auto build_commit(
+		const action_inputs& inputs,
+		const action_request& request
+	) -> std::optional<git::command>;
+
+	auto build_push(
+		const action_inputs& inputs,
+		const action_request& request
+	) -> std::optional<git::command>;
+
+	struct action_info {
+		std::optional<git::command> (*build)(const action_inputs&, const action_request&) = nullptr;
+	};
+
+	enum class action {
+		initialize [[= action_info{
+			.build = build_initialize,
+		}]],
+		commit [[= action_info{
+			.build = build_commit,
+		}]],
+		push [[= action_info{
+			.build = build_push,
+		}]],
+	};
+
+	struct [[= reveals<"Source Control">{}]] action_request {
 		std::filesystem::path root;
+		action kind = action::initialize;
+		std::string message;
+		std::vector<std::filesystem::path> paths;
 	};
 
 	struct [[= system_state<"Git">{}]] data {
-		std::shared_ptr<git::status_check> pending;
-		std::shared_ptr<git::init_check> initializing;
+		task::pending<std::vector<git::repository_result>> status_query;
+		task::pending<git::command_result> action;
+		std::string action_error;
+		std::filesystem::path action_error_root;
+		git_system::action action_error_kind = git_system::action::initialize;
+		git_system::action pending_kind = git_system::action::initialize;
 		std::vector<std::filesystem::path> repo_roots;
 		std::vector<std::filesystem::path> rootless;
 		git::status_snapshot status;
-		clock refresh_clock;
+		interval_timer<> refresh_timer{ seconds(30.f) };
 		file_watcher repo_watcher;
 		std::vector<std::filesystem::path> watched_repos;
 		bool refresh_requested = true;
@@ -29,7 +74,7 @@ export namespace gse::ide::git_system {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<init_request, refresh_request> requests_in,
+		channel_read<action_request, refresh_request> requests_in,
 		channel_write<git::status_updated> status_out
 	) -> async::task<>;
 }
@@ -46,6 +91,11 @@ namespace gse::ide::git_system {
 		data& d,
 		std::vector<git::repository_result> results
 	) -> bool;
+
+	auto publish(
+		const data& d,
+		channel_write<git::status_updated> status_out
+	) -> void;
 }
 
 auto gse::ide::git_system::discover_repositories() -> discovery {
@@ -105,36 +155,157 @@ auto gse::ide::git_system::apply_results(data& d, std::vector<git::repository_re
 	return true;
 }
 
-auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_request, refresh_request> requests_in, const channel_write<git::status_updated> status_out) -> async::task<> {
-	if (d.pending && d.pending->done.load(std::memory_order_acquire)) {
-		if (apply_results(d, std::move(d.pending->results))) {
-			status_out.push<git::status_updated>({
-				.status = d.status,
-				.rootless = d.rootless,
-			});
+auto gse::ide::git_system::publish(const data& d, const channel_write<git::status_updated> status_out) -> void {
+	status_out.push<git::status_updated>({
+		.status = d.status,
+		.rootless = d.rootless,
+		.busy = d.action.active(),
+		.action_error = d.action_error,
+	});
+}
+
+auto gse::ide::git_system::build_initialize(const action_inputs& inputs, const action_request& request) -> std::optional<git::command> {
+	if (std::ranges::find(inputs.rootless, request.root) == inputs.rootless.end()) {
+		return std::nullopt;
+	}
+	return git::init_command(request.root);
+}
+
+auto gse::ide::git_system::build_commit(const action_inputs& inputs, const action_request& request) -> std::optional<git::command> {
+	if (request.paths.empty()) {
+		return std::nullopt;
+	}
+	std::unordered_set<std::string> already_staged;
+	std::unordered_map<std::string, std::string> rename_sources;
+	if (const git::repository_snapshot repository = inputs.status->find(request.root)) {
+		for (const git::change& change : repository->changes) {
+			std::string relative = change.relative.generic_display_string();
+			if (!change.original.empty()) {
+				rename_sources.emplace(relative, change.original.generic_display_string());
+			}
+			if (!change.needs_stage) {
+				already_staged.insert(std::move(relative));
+			}
 		}
-		d.pending.reset();
+	}
+	std::string pathspecs;
+	std::string committed;
+	for (const std::filesystem::path& path : request.paths) {
+		std::string relative = path.generic_display_string();
+		if (const auto source = rename_sources.find(relative); source != rename_sources.end()) {
+			committed += source->second;
+			committed.push_back('\0');
+		}
+		if (!already_staged.contains(relative)) {
+			pathspecs += relative;
+			pathspecs.push_back('\0');
+		}
+		committed += std::move(relative);
+		committed.push_back('\0');
 	}
 
-	if (d.initializing && d.initializing->done.load(std::memory_order_acquire)) {
-		if (!d.initializing->result) {
+	const std::filesystem::path message_path = process::temporary_path("git_commit", "txt");
+	std::ofstream message_out(message_path, std::ios::binary);
+	message_out << request.message;
+	message_out.close();
+	if (!message_out) {
+		return std::nullopt;
+	}
+	git::command command{
+		.root = request.root,
+		.scratch = { message_path },
+	};
+	if (!pathspecs.empty()) {
+		const std::filesystem::path pathspec_path = process::temporary_path("git_pathspec", "txt");
+		std::ofstream pathspec_out(pathspec_path, std::ios::binary);
+		pathspec_out.write(pathspecs.data(), static_cast<std::streamsize>(pathspecs.size()));
+		pathspec_out.close();
+		if (!pathspec_out) {
+			return std::nullopt;
+		}
+		command.scratch.push_back(pathspec_path);
+		command.steps.push_back(std::format("git add -A --pathspec-from-file=\"{}\" --pathspec-file-nul", pathspec_path.generic_display_string()));
+	}
+	if (!git::partial_commit_allowed(request.root)) {
+		log::println(
+			log::level::warning,
+			log::category::task,
+			"git: {} has a merge in progress, so the commit records the whole index rather than the selected files",
+			request.root
+		);
+		command.steps.push_back(std::format("git commit -F \"{}\"", message_path.generic_display_string()));
+		return command;
+	}
+	const std::filesystem::path committed_path = process::temporary_path("git_committed", "txt");
+	std::ofstream committed_out(committed_path, std::ios::binary);
+	committed_out.write(committed.data(), static_cast<std::streamsize>(committed.size()));
+	committed_out.close();
+	if (!committed_out) {
+		return std::nullopt;
+	}
+	command.scratch.push_back(committed_path);
+	command.steps.push_back(std::format(
+		"git commit -F \"{}\" --pathspec-from-file=\"{}\" --pathspec-file-nul",
+		message_path.generic_display_string(),
+		committed_path.generic_display_string()
+	));
+	return command;
+}
+
+auto gse::ide::git_system::build_push(const action_inputs& inputs, const action_request& request) -> std::optional<git::command> {
+	const git::repository_snapshot repository = inputs.status->find(request.root);
+	if (!repository) {
+		return std::nullopt;
+	}
+	return git::command{
+		.root = request.root,
+		.steps = { repository->upstream.empty() ? std::format("git push -u origin {}", repository->branch) : std::string("git push") },
+	};
+}
+
+auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<action_request, refresh_request> requests_in, const channel_write<git::status_updated> status_out) -> async::task<> {
+	if (std::optional<std::vector<git::repository_result>> results = d.status_query.take()) {
+		if (apply_results(d, std::move(*results))) {
+			publish(d, status_out);
+		}
+	}
+
+	if (std::optional<git::command_result> finished = d.action.take()) {
+		if (!finished->outcome) {
+			d.action_error = std::move(finished->outcome.error());
+			d.action_error_root = finished->root;
+			d.action_error_kind = d.pending_kind;
 			log::println(
 				log::level::error,
 				log::category::task,
-				"git init failed for {}: {}",
-				d.initializing->root,
-				d.initializing->result.error()
+				"git action failed for {}: {}",
+				finished->root,
+				d.action_error
 			);
 		}
-		d.initializing.reset();
+		else if (d.action_error_root == finished->root && d.action_error_kind == d.pending_kind) {
+			d.action_error.clear();
+		}
 		d.refresh_requested = true;
+		publish(d, status_out);
 	}
 
-	for (const init_request& request : requests_in.of<init_request>()) {
-		if (!d.initializing && std::ranges::find(d.rootless, request.root) != d.rootless.end()) {
-			d.initializing = std::make_shared<git::init_check>();
-			git::init_runner::start(d.initializing, request.root);
+	for (const action_request& request : requests_in.of<action_request>()) {
+		if (d.action.active()) {
+			continue;
 		}
+		std::optional<git::command> command = annotation_from_enum<action_info>(request.kind, {}).build({
+			.status = d.status,
+			.rootless = d.rootless,
+		}, request);
+		if (!command) {
+			continue;
+		}
+		d.pending_kind = request.kind;
+		d.action.start([job = std::move(*command)]() mutable {
+			return git::run_command(std::move(job));
+		}, trace_id<"git::command">(), task::lane::background);
+		publish(d, status_out);
 	}
 
 	for ([[maybe_unused]] const refresh_request& _ : requests_in.of<refresh_request>()) {
@@ -143,11 +314,11 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_re
 	if (d.repo_watcher.poll() > 0) {
 		d.refresh_requested = true;
 	}
-	if (d.refresh_clock.elapsed() >= seconds(30.f)) {
+	if (d.refresh_timer.tick()) {
 		d.refresh_requested = true;
 	}
 
-	if (d.refresh_requested && !d.pending) {
+	if (d.refresh_requested && !d.status_query.active()) {
 		discovery found = discover_repositories();
 		const bool rootless_changed = found.rootless != d.rootless;
 		d.rootless = std::move(found.rootless);
@@ -157,8 +328,9 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_re
 			d.repo_watcher.clear();
 			d.watched_repos = d.repo_roots;
 			for (const std::filesystem::path& root : d.watched_repos) {
-				for (const std::string_view name : { "HEAD", "index" }) {
-					d.repo_watcher.watch(root / ".git" / name, [&d](const std::filesystem::path&) {
+				const std::filesystem::path git_dir = git::git_dir_of(root);
+				for (const std::filesystem::path& watched : { git_dir / "HEAD", git_dir / "index", root / ".gitignore" }) {
+					d.repo_watcher.watch(watched, [&d](const std::filesystem::path&) {
 						d.refresh_requested = true;
 					});
 				}
@@ -170,17 +342,15 @@ auto gse::ide::git_system::run(context& ctx, data& d, const channel_read<init_re
 			d.status = std::make_shared<const git::status_map>();
 		}
 		if (cleared || rootless_changed) {
-			status_out.push<git::status_updated>({
-				.status = d.status,
-				.rootless = d.rootless,
-			});
+			publish(d, status_out);
 		}
 		if (!d.repo_roots.empty()) {
-			d.pending = std::make_shared<git::status_check>();
-			git::status_runner::start(d.pending, d.repo_roots);
+			d.status_query.start([roots = d.repo_roots] {
+				return git::query_repositories(roots);
+			}, trace_id<"git::status">(), task::lane::background);
 		}
 		d.refresh_requested = false;
-		d.refresh_clock.reset();
+		d.refresh_timer.reset();
 	}
 
 	return {};

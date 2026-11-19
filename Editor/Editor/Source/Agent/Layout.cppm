@@ -14,10 +14,13 @@ namespace gse::ide::agent {
 	constexpr std::size_t diff_min_columns = 16;
 	constexpr std::size_t transcript_tab_width = 4;
 	constexpr std::uint32_t row_preview_lines = 8;
-	constexpr std::size_t group_summary_names = 3;
+	constexpr std::uint32_t group_detail_rows = 12;
+	constexpr std::string_view mcp_tool_prefix = "mcp__";
 
 	struct transcript_metrics {
+		const gui::font_set& fonts;
 		const font& face;
+		const font& body;
 		float width = 0.f;
 		float scale = 0.f;
 	};
@@ -30,7 +33,8 @@ namespace gse::ide::agent {
 
 	struct markup_line {
 		std::string text;
-		std::span<const markdown::rendered_run> runs{};
+		std::span<const gui::text_run> runs{};
+		std::span<const markdown::rendered_link> links{};
 		markdown::display_style base;
 	};
 
@@ -48,6 +52,7 @@ namespace gse::ide::agent {
 		std::string_view prefix;
 		std::string_view text;
 		vec4f color;
+		gui::text_face face = gui::text_face::inherit;
 		std::uint32_t row = 0;
 		float wrap_width = 0.f;
 		bool markdown = false;
@@ -63,6 +68,14 @@ namespace gse::ide::agent {
 		row_kind kind
 	) -> row_style;
 
+	auto family_of(
+		gui::text_face face
+	) -> markdown::family;
+
+	auto verbatim_detail(
+		const transcript_row& row
+	) -> bool;
+
 	auto line_base_style(
 		const gui::style& sty,
 		const markdown::line_info& info,
@@ -74,20 +87,61 @@ namespace gse::ide::agent {
 		std::size_t first
 	) -> std::size_t;
 
-	auto align_table(
-		std::span<const std::string> rows
-	) -> std::vector<std::string>;
+	auto push_table(
+		transcript_view& v,
+		const gui::style& sty,
+		std::span<const std::string_view> rows,
+		const transcript_metrics& metrics,
+		transcript_cursor& cursor
+	) -> void;
+
+	auto trailing_blank(
+		const transcript_view& v
+	) -> bool;
+
+	auto push_gap(
+		transcript_view& v,
+		const transcript_cursor& cursor
+	) -> void;
+
+	auto code_fence_language(
+		std::string_view line
+	) -> std::string_view;
+
+	auto highlighted_language(
+		std::string_view tag
+	) -> bool;
+
+	auto style_runs(
+		std::span<const markdown::rendered_run> runs,
+		const gui::style& sty,
+		const markdown::display_style& base,
+		std::vector<gui::text_run>& out
+	) -> void;
+
+	auto highlight_runs(
+		std::span<const gui::text_span> spans,
+		std::uint32_t line,
+		std::vector<gui::text_run>& out
+	) -> void;
 
 	auto push_markup_line(
-		session& s,
-		const gui::style& sty,
+		transcript_view& v,
 		const markup_line& parsed,
 		const transcript_metrics& metrics,
 		transcript_cursor& cursor
 	) -> void;
 
+	auto push_code_block(
+		transcript_view& v,
+		std::span<const std::string> body,
+		const markdown::display_style& base,
+		const transcript_metrics& metrics,
+		transcript_cursor& cursor
+	) -> void;
+
 	auto push_transcript_line(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		const transcript_line& line,
 		const transcript_metrics& metrics
@@ -113,24 +167,37 @@ namespace gse::ide::agent {
 	) -> std::uint32_t;
 
 	auto diff_view_for(
-		session& s,
+		transcript_view& v,
 		std::uint32_t row
 	) -> diff_view&;
 
 	auto relayout_from(
-		session& s,
+		transcript_view& v,
 		std::uint32_t row
 	) -> void;
 
-	auto draw_diff_bars(
-		const gui::draw_context& ctx,
-		session& s,
-		const rectf& area,
-		float advance
+	auto canvas_named(
+		const session& s,
+		std::string_view name
+	) -> const canvas_record*;
+
+	auto push_canvas(
+		const session& s,
+		transcript_view& v,
+		const transcript_row& row,
+		std::uint32_t index,
+		const transcript_metrics& metrics
 	) -> void;
 
+	auto update_diff_scroll(
+		const gui::draw_context& ctx,
+		transcript_view& v,
+		const rectf& area,
+		float advance
+	) -> std::optional<std::uint32_t>;
+
 	auto push_diff_line(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		std::uint32_t index,
 		const diff_layout& layout,
@@ -138,7 +205,7 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_diff_side(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		diff_view& view,
 		std::span<const std::string> lines,
@@ -149,28 +216,48 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto push_diff(
-		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		transcript_row& row,
 		std::uint32_t index,
 		const transcript_metrics& metrics
 	) -> void;
 
+	auto push_change_summary(
+		transcript_view& v,
+		const gui::style& sty,
+		const transcript_row& row,
+		std::uint32_t index
+	) -> void;
+
+	auto quiet_tool(
+		const transcript_row& row
+	) -> bool;
+
 	auto grouped_row(
 		const transcript_row& row
 	) -> bool;
 
 	auto group_summary(
+		const group_marker& group
+	) -> std::string;
+
+	auto group_detail(
 		const session& s,
 		const group_marker& group
 	) -> std::string;
+
+	auto group_at(
+		const transcript_view& v,
+		std::uint32_t line
+	) -> const group_marker*;
 
 	auto chat_row(
 		const transcript_row& row
 	) -> bool;
 
 	auto after_bubble(
-		const session& s
+		const transcript_view& v
 	) -> bool;
 
 	auto chat_bubble(
@@ -181,9 +268,15 @@ namespace gse::ide::agent {
 	) -> gui::text_block;
 
 	auto link_at(
-		const session& s,
+		const transcript_view& v,
 		std::uint32_t line
 	) -> const link_marker*;
+
+	auto target_at(
+		const transcript_view& v,
+		std::uint32_t line,
+		std::uint32_t column
+	) -> const target_marker*;
 
 	auto group_expanded(
 		const session& s,
@@ -192,21 +285,31 @@ namespace gse::ide::agent {
 
 	auto toggle_marker(
 		session& s,
+		transcript_view& v,
 		const group_marker& marker
 	) -> void;
 
 	auto marker_at(
-		const session& s,
+		const transcript_view& v,
 		std::uint32_t line
 	) -> const group_marker*;
 
 	auto truncate_transcript(
-		session& s,
+		transcript_view& v,
 		std::uint32_t line
+	) -> void;
+
+	auto push_answer(
+		transcript_view& v,
+		const gui::style& sty,
+		const transcript_row& row,
+		std::uint32_t index,
+		const transcript_metrics& metrics
 	) -> void;
 
 	auto push_row(
 		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		transcript_row& row,
 		std::uint32_t index,
@@ -215,7 +318,21 @@ namespace gse::ide::agent {
 
 	auto sync_transcript(
 		session& s,
+		transcript_view& v,
 		const gui::style& sty,
 		const transcript_metrics& metrics
 	) -> void;
+
+	auto shows(
+		row_filter filter,
+		const transcript_row& row
+	) -> bool;
+
+	auto reset_view(
+		transcript_view& v
+	) -> void;
+
+	auto views_of(
+		session& s
+	) -> std::array<transcript_view*, 5>;
 }

@@ -6,7 +6,7 @@ import gse.meta;
 
 export namespace gse::introspection {
 	constexpr std::uint32_t system_graph_magic = 0x47535347;
-	constexpr std::uint32_t system_graph_version = 3;
+	constexpr std::uint32_t system_graph_version = 4;
 
 	struct edge_kind_info {
 		char label[48];
@@ -25,8 +25,8 @@ export namespace gse::introspection {
 			.color = 0xd15959,
 			.alpha = 0.85f,
 		}]],
-		data_war [[= edge_kind_info{
-			.label = "write after read",
+		lend [[= edge_kind_info{
+			.label = "lends live state",
 			.color = 0xccb85a,
 			.alpha = 0.85f,
 		}]],
@@ -41,7 +41,7 @@ export namespace gse::introspection {
 			.alpha = 0.90f,
 		}]],
 		lifecycle [[= edge_kind_info{
-			.label = "init / frame order",
+			.label = "declared order",
 			.color = 0x737885,
 			.alpha = 0.70f,
 		}]],

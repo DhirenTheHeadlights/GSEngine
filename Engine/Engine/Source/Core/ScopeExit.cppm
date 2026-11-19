@@ -64,12 +64,7 @@ gse::scope_exit<F>::~scope_exit() noexcept {
 	if (!m_active) {
 		return;
 	}
-	try {
-		std::invoke(m_func);
-	}
-	catch (...) {
-		std::terminate();
-	}
+	std::invoke(m_func);
 }
 
 template <class F>

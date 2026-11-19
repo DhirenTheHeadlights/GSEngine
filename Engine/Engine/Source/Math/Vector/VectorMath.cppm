@@ -2,6 +2,7 @@ export module gse.math:vector_math;
 
 import std;
 
+import :libm;
 import :vector;
 import :units;
 
@@ -173,7 +174,7 @@ export namespace gse {
 		const V1& a,
 		const V2& b,
 		std::size_t index
-	) -> bool;
+	) -> bool pre(index < V1::extent);
 
 	template <is_vec V>
 	constexpr auto rotate(
@@ -181,7 +182,7 @@ export namespace gse {
 		angle_t<typename V::storage_type> angle,
 		std::size_t i = 0,
 		std::size_t j = 1
-	) -> V;
+	) -> V pre(i < V::extent && j < V::extent && i != j);
 
 	template <is_vec V>
 	requires(V::extent == 3)
@@ -212,7 +213,7 @@ constexpr auto gse::dot(const V1& lhs, const V2& rhs) {
 	if constexpr (scale != 1.0f) {
 		sum *= scale;
 	}
-	return result_type(sum);
+	return internal::from_storage<result_type>(sum);
 }
 
 template <gse::is_vec V>
@@ -224,7 +225,7 @@ constexpr auto gse::magnitude(const V& v) {
 	if constexpr (scale != 1.0f) {
 		m *= scale;
 	}
-	return typename V::value_type(m);
+	return internal::from_storage<typename V::value_type>(m);
 }
 
 template <gse::is_vec V>
@@ -299,7 +300,7 @@ constexpr auto gse::angle_between(const V1& a, const V2& b) -> angle_t<typename 
 	const auto ma_val = internal::to_storage(magnitude(a));
 	const auto mb_val = internal::to_storage(magnitude(b));
 	if (ma_val == 0 || mb_val == 0) {
-		return angle_t<storage_type>(storage_type(0));
+		return angle_t<storage_type>{};
 	}
 
 	constexpr float scale = internal::vec_unit_scale_v<typename V1::value_type> * internal::vec_unit_scale_v<typename V2::value_type>;
@@ -413,7 +414,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::sin(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::sin(v[i]);
+		out[i] = libm::sin(v[i]);
 	}
 	return out;
 }
@@ -423,7 +424,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::cos(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::cos(v[i]);
+		out[i] = libm::cos(v[i]);
 	}
 	return out;
 }
@@ -433,7 +434,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::exp(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::exp(v[i]);
+		out[i] = libm::exp(v[i]);
 	}
 	return out;
 }
@@ -443,7 +444,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::logarithm(const vec<T, N>& v) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::log(v[i]);
+		out[i] = libm::log(v[i]);
 	}
 	return out;
 }
@@ -453,7 +454,7 @@ requires std::is_arithmetic_v<T>
 constexpr auto gse::pow(const vec<T, N>& v, T exponent) -> vec<T, N> {
 	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) {
-		out[i] = std::pow(v[i], exponent);
+		out[i] = libm::pow(v[i], exponent);
 	}
 	return out;
 }
@@ -461,10 +462,6 @@ constexpr auto gse::pow(const vec<T, N>& v, T exponent) -> vec<T, N> {
 template <gse::is_vec V1, gse::is_vec V2>
 requires(V1::extent == V2::extent)
 constexpr auto gse::epsilon_equal_index(const V1& a, const V2& b, std::size_t index) -> bool {
-	if (index >= V1::extent) {
-		throw std::out_of_range("Index out of range in epsilon_equal_index");
-	}
-
 	using storage_type = V1::storage_type;
 
 	const storage_type val_a = a.as_storage_span()[index];
@@ -477,10 +474,6 @@ constexpr auto gse::epsilon_equal_index(const V1& a, const V2& b, std::size_t in
 template <gse::is_vec V>
 constexpr auto gse::rotate(const V& v, angle_t<typename V::storage_type> angle, std::size_t i, std::size_t j) -> V {
 	using storage_type = V::storage_type;
-	if (i >= V::extent || j >= V::extent || i == j) {
-		return v;
-	}
-
 	V result = v;
 
 	const storage_type cos_theta = cos(angle);

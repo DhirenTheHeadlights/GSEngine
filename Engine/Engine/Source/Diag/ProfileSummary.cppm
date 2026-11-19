@@ -52,6 +52,11 @@ export namespace gse::profile {
 		bool regressed = false;
 	};
 
+	auto percentile_of(
+		std::span<const sample_time> sorted,
+		double fraction
+	) -> sample_time;
+
 	auto summarize(
 		const report_file& file
 	) -> run_summary;
@@ -80,11 +85,6 @@ namespace gse::profile {
 		sample_time baseline,
 		sample_time current
 	) -> double;
-
-	auto percentile_of(
-		std::span<const sample_time> sorted,
-		double fraction
-	) -> sample_time;
 
 	auto accumulate_frame(
 		const report_frame& frame,

@@ -11,12 +11,13 @@ import gse.meta;
 import gse.time;
 import std;
 
-import :access_token;
+import :access;
 import :context;
 import :registries;
 import :registry;
 import :scheduler;
 import :settings;
+import :system_anno;
 import :system_node;
 import :task_graph;
 import :system_dispatch;
@@ -29,12 +30,12 @@ auto gse::scheduler::set_settings_register_hook(std::function<void(settings::reg
 	m_settings_register_hook = std::move(fn);
 }
 
-auto gse::scheduler::set_actions_register_hook(std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn) -> void {
-	m_actions_register_hook = std::move(fn);
+auto gse::scheduler::set_settings_retire_hook(std::function<void(const void*)> fn) -> void {
+	m_settings_retire_hook = std::move(fn);
 }
 
-auto gse::scheduler::current_phase() const -> scheduler_phase {
-	return m_phase;
+auto gse::scheduler::set_actions_register_hook(std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn) -> void {
+	m_actions_register_hook = std::move(fn);
 }
 
 auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
@@ -75,7 +76,7 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 			.column = node.def_column,
 			.has_init = node.invoke_init_fn != nullptr,
 			.has_run = node.invoke_run_fn != nullptr,
-			.has_frame = node.has_frame,
+			.has_frame = node.invoke_frame_fn != nullptr,
 			.deferred = node.deferred
 		};
 		gn.reads.reserve(node.component_reads.size());
@@ -97,124 +98,70 @@ auto gse::scheduler::snapshot_graph() const -> introspection::system_graph {
 		graph.nodes.push_back(std::move(gn));
 	}
 
-	std::unordered_map<id, std::vector<std::size_t>> writers;
-	std::unordered_map<id, std::vector<std::size_t>> structural_writers;
-	std::vector<std::size_t> entity_structural_nodes;
-	{
-		std::size_t idx = 0;
-		for (const auto& node : m_nodes) {
-			for (const id w : node.component_writes) {
-				writers[w].push_back(idx);
-			}
-			for (const id s : node.component_structural) {
-				structural_writers[s].push_back(idx);
-			}
-			if (node.entity_structural) {
-				entity_structural_nodes.push_back(idx);
-			}
-			++idx;
+	const auto edge_kind_of = [](const dep_reason& reason) -> std::optional<introspection::edge_kind> {
+		switch (reason.kind) {
+			case dep_kind::declared:
+				return std::nullopt;
+			case dep_kind::lend:
+				return introspection::edge_kind::lend;
+			case dep_kind::pinned:
+			case dep_kind::reordered_read:
+				return introspection::edge_kind::data_raw;
+			case dep_kind::structural:
+				return introspection::edge_kind::structural;
+			case dep_kind::output:
+				return reason.via.exists() ? introspection::edge_kind::data_waw : introspection::edge_kind::structural;
 		}
-	}
-
-	std::map<std::tuple<std::size_t, std::size_t, std::uint8_t>, std::vector<std::string>> edge_via;
-
-	const auto add_component = [&](const std::size_t from_idx, const std::size_t to_idx, const introspection::edge_kind kind, const id component) {
-		if (from_idx == to_idx) {
-			return;
-		}
-		auto& via = edge_via[std::tuple{ from_idx, to_idx, static_cast<std::uint8_t>(kind) }];
-		auto name = resolve_name(component);
-		if (std::ranges::find(via, name) == via.end()) {
-			via.push_back(std::move(name));
-		}
+		return std::nullopt;
 	};
 
-	{
-		std::size_t bi = 0;
-		for (const auto& node : m_nodes) {
-			const auto add_structural = [&](const id comp) {
-				const auto it = structural_writers.find(comp);
-				if (it == structural_writers.end()) {
-					return;
+	for (const auto& node : m_nodes) {
+		for (const auto& dep : node.run_deps) {
+			std::vector<introspection::graph_edge> edges;
+			for (const auto& reason : dep.reasons) {
+				const auto kind = edge_kind_of(reason);
+				if (!kind) {
+					continue;
 				}
-				for (const std::size_t ai : it->second) {
-					add_component(ai, bi, introspection::edge_kind::structural, comp);
+				auto edge = std::ranges::find(edges, *kind, &introspection::graph_edge::kind);
+				if (edge == edges.end()) {
+					edges.push_back({
+						.from = dep.state.number(),
+						.to = node.state_id.number(),
+						.kind = *kind,
+					});
+					edge = std::prev(edges.end());
 				}
-			};
-
-			for (const id r : node.component_reads) {
-				if (const auto it = writers.find(r); it != writers.end()) {
-					for (const std::size_t ai : it->second) {
-						add_component(ai, bi, introspection::edge_kind::data_raw, r);
-					}
+				if (!reason.via.exists()) {
+					continue;
 				}
-				add_structural(r);
-			}
-			for (const id w : node.component_writes) {
-				if (const auto wit = writers.find(w); wit != writers.end()) {
-					for (const std::size_t ai : wit->second) {
-						if (ai < bi) {
-							add_component(ai, bi, introspection::edge_kind::data_waw, w);
-						}
-					}
-				}
-				add_structural(w);
-			}
-			for (const id s : node.component_structural) {
-				if (const auto it = structural_writers.find(s); it != structural_writers.end()) {
-					for (const std::size_t ai : it->second) {
-						if (ai < bi) {
-							add_component(ai, bi, introspection::edge_kind::data_waw, s);
-						}
-					}
+				if (auto name = resolve_name(reason.via); !std::ranges::contains(edge->via, name)) {
+					edge->via.push_back(std::move(name));
 				}
 			}
-			++bi;
+			std::ranges::move(edges, std::back_inserter(graph.edges));
 		}
-	}
-
-	for (const std::size_t ai : entity_structural_nodes) {
-		std::size_t bi = 0;
-		for (const auto& node : m_nodes) {
-			const bool touches_components =
-				!node.component_reads.empty() || !node.component_writes.empty() || !node.component_structural.empty();
-			if (ai != bi && touches_components) {
-				graph.edges.push_back(introspection::graph_edge{
-					.from = m_nodes[ai].state_id.number(),
-					.to = node.state_id.number(),
-					.kind = introspection::edge_kind::structural
-				});
-			}
-			++bi;
-		}
-	}
-
-	for (auto& [key, via] : edge_via) {
-		const auto [from_idx, to_idx, kind] = key;
-		graph.edges.push_back(introspection::graph_edge{
-			.from = m_nodes[from_idx].state_id.number(),
-			.to = m_nodes[to_idx].state_id.number(),
-			.kind = static_cast<introspection::edge_kind>(kind),
-			.via = std::move(via)
-		});
 	}
 
 	for (const auto& node : m_nodes) {
 		const auto to_id = node.state_id.number();
-		const auto add_lifecycle = [&](const std::vector<id>& deps) {
-			for (const id dep : deps) {
-				if (dep.number() == to_id) {
-					continue;
-				}
-				graph.edges.push_back(introspection::graph_edge{
-					.from = dep.number(),
-					.to = to_id,
-					.kind = introspection::edge_kind::lifecycle
-				});
+		const auto add_lifecycle = [&](const id dep) {
+			if (dep.number() == to_id) {
+				return;
 			}
+			graph.edges.push_back(introspection::graph_edge{
+				.from = dep.number(),
+				.to = to_id,
+				.kind = introspection::edge_kind::lifecycle
+			});
 		};
-		add_lifecycle(node.init_state_deps);
-		add_lifecycle(node.frame_state_deps);
+		std::ranges::for_each(node.init_state_deps, add_lifecycle);
+		std::ranges::for_each(node.frame_state_deps, add_lifecycle);
+		for (const id dep : node.run_order_deps) {
+			if (std::ranges::contains(node.run_deps, dep, &run_dep::state)) {
+				add_lifecycle(dep);
+			}
+		}
 	}
 
 	for (const auto& node : m_nodes) {
@@ -247,6 +194,10 @@ auto gse::scheduler::make_channel_writer() -> channel_writer {
 	return m_channels_store.make_writer();
 }
 
+auto gse::scheduler::flip_channels() -> void {
+	m_channels_store.flip_all();
+}
+
 auto gse::scheduler::snapshot_all_states() -> void {
 	for (auto& node : m_nodes) {
 		node.invoke_snapshot_fn(node.data.get());
@@ -254,14 +205,6 @@ auto gse::scheduler::snapshot_all_states() -> void {
 }
 
 namespace gse {
-	enum class dep_kind : std::uint8_t {
-		declared,
-		pinned,
-		structural,
-		reordered_read,
-		output
-	};
-
 	enum class dispatch_state : std::uint8_t {
 		unknown,
 		checking,
@@ -269,19 +212,13 @@ namespace gse {
 		blocked
 	};
 
-	struct component_dep {
-		id state;
-		id via;
-		dep_kind kind;
-	};
-
 	auto find_dep_cycle(
-		const std::vector<std::vector<component_dep>>& deps,
+		const std::vector<std::vector<run_dep>>& deps,
 		const std::unordered_map<id, std::size_t>& state_to_index
 	) -> std::vector<std::size_t>;
 
 	auto dep_path_exists(
-		const std::vector<std::vector<component_dep>>& deps,
+		const std::vector<std::vector<run_dep>>& deps,
 		const std::unordered_map<id, std::size_t>& state_to_index,
 		std::size_t from,
 		std::size_t to
@@ -307,13 +244,13 @@ auto gse::scheduler::run_node_frame(context& ctx, system_node& node) -> async::t
 	trace::open_span _(node.frame_wall_id, 0);
 
 	for (const id& dep : node.frame_state_deps) {
-		co_await ctx.after_id(dep);
+		co_await m_frame_graph.wait_state_ready(dep);
 	}
 	co_await node.invoke_frame_fn(ctx, node.data.get());
-	ctx.notify_ready_by_id(node.state_id);
+	m_frame_graph.notify_state_ready(node.state_id);
 }
 
-auto gse::find_dep_cycle(const std::vector<std::vector<component_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index) -> std::vector<std::size_t> {
+auto gse::find_dep_cycle(const std::vector<std::vector<run_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index) -> std::vector<std::size_t> {
 	enum class color : std::uint8_t {
 		white,
 		gray,
@@ -358,7 +295,7 @@ auto gse::find_dep_cycle(const std::vector<std::vector<component_dep>>& deps, co
 	return cycle;
 }
 
-auto gse::dep_path_exists(const std::vector<std::vector<component_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index, const std::size_t from, const std::size_t to) -> bool {
+auto gse::dep_path_exists(const std::vector<std::vector<run_dep>>& deps, const std::unordered_map<id, std::size_t>& state_to_index, const std::size_t from, const std::size_t to) -> bool {
 	std::vector<bool> seen(deps.size(), false);
 	std::vector<std::size_t> stack{ from };
 
@@ -391,9 +328,17 @@ auto gse::scheduler::wire_component_deps() -> void {
 		log::println(log::level::warning, log::category::runtime, "{}", message);
 	};
 
+	const auto vias_of = [](const run_dep& dep, const dep_kind kind) -> std::string {
+		return dep.reasons | std::views::filter([kind](const dep_reason& reason) {
+			return reason.kind == kind && reason.via.exists();
+		}) | std::views::transform([](const dep_reason& reason) {
+			return std::format("{}", reason.via);
+		}) | std::views::join_with(std::string_view(", ")) | std::ranges::to<std::string>();
+	};
+
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> writers;
-	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> structural_writers;
 	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> resource_writers;
+	std::unordered_map<id, std::vector<std::pair<std::size_t, id>>> lenders;
 	std::vector<std::pair<std::size_t, id>> entity_structural_nodes;
 	std::unordered_map<id, std::size_t> state_to_index;
 	{
@@ -402,11 +347,11 @@ auto gse::scheduler::wire_component_deps() -> void {
 			for (const id w : node.component_writes) {
 				writers[w].emplace_back(idx, node.state_id);
 			}
-			for (const id s : node.component_structural) {
-				structural_writers[s].emplace_back(idx, node.state_id);
-			}
 			for (const id w : node.resource_writes) {
 				resource_writers[w].emplace_back(idx, node.state_id);
+			}
+			for (const id c : node.lent_channels) {
+				lenders[c].emplace_back(idx, node.state_id);
 			}
 			if (node.entity_structural) {
 				entity_structural_nodes.emplace_back(idx, node.state_id);
@@ -416,15 +361,18 @@ auto gse::scheduler::wire_component_deps() -> void {
 		}
 	}
 
-	std::vector<std::vector<component_dep>> deps(m_nodes.size());
+	std::vector<std::vector<run_dep>> deps(m_nodes.size());
 	{
 		std::size_t idx = 0;
 		for (const auto& node : m_nodes) {
 			for (const id dep : node.declared_run_state_deps) {
 				deps[idx].push_back({
 					.state = dep,
-					.via = {},
-					.kind = dep_kind::declared,
+					.reasons = {
+						{
+							.kind = dep_kind::declared,
+						},
+					},
 				});
 			}
 			++idx;
@@ -438,25 +386,22 @@ auto gse::scheduler::wire_component_deps() -> void {
 				return;
 			}
 			auto& list = deps[idx];
-			if (const auto existing = std::ranges::find(list, other_state, &component_dep::state); existing != list.end()) {
-				existing->kind = std::min(existing->kind, kind);
+			const dep_reason reason{
+				.kind = kind,
+				.via = via,
+			};
+			if (const auto existing = std::ranges::find(list, other_state, &run_dep::state); existing != list.end()) {
+				if (!std::ranges::contains(existing->reasons, reason)) {
+					existing->reasons.push_back(reason);
+				}
 				return;
 			}
 			list.push_back({
 				.state = other_state,
-				.via = via,
-				.kind = kind,
+				.reasons = {
+					reason,
+				},
 			});
-		};
-
-		auto depend_on_structural = [&](const id comp) {
-			const auto it = structural_writers.find(comp);
-			if (it == structural_writers.end()) {
-				return;
-			}
-			for (const auto& other_state : std::views::values(it->second)) {
-				add_dep(other_state, comp, dep_kind::structural);
-			}
 		};
 
 		for (const id r : node.component_reads) {
@@ -465,7 +410,6 @@ auto gse::scheduler::wire_component_deps() -> void {
 					add_dep(other_state, r, other_idx > idx ? dep_kind::reordered_read : dep_kind::pinned);
 				}
 			}
-			depend_on_structural(r);
 		}
 		for (const id w : node.component_writes) {
 			if (const auto it = writers.find(w); it != writers.end()) {
@@ -474,17 +418,6 @@ auto gse::scheduler::wire_component_deps() -> void {
 						continue;
 					}
 					add_dep(other_state, w, dep_kind::output);
-				}
-			}
-			depend_on_structural(w);
-		}
-		for (const id s : node.component_structural) {
-			if (const auto it = structural_writers.find(s); it != structural_writers.end()) {
-				for (const auto& [other_idx, other_state] : it->second) {
-					if (other_idx >= idx) {
-						continue;
-					}
-					add_dep(other_state, s, dep_kind::output);
 				}
 			}
 		}
@@ -507,8 +440,16 @@ auto gse::scheduler::wire_component_deps() -> void {
 			}
 		}
 
+		for (const id c : node.channel_consumes) {
+			if (const auto it = lenders.find(c); it != lenders.end()) {
+				for (const auto& other_state : std::views::values(it->second)) {
+					add_dep(other_state, c, dep_kind::lend);
+				}
+			}
+		}
+
 		const bool touches_components =
-			!node.component_reads.empty() || !node.component_writes.empty() || !node.component_structural.empty();
+			!node.component_reads.empty() || !node.component_writes.empty();
 
 		if (touches_components || node.entity_structural) {
 			for (const auto& [other_idx, other_state] : entity_structural_nodes) {
@@ -525,7 +466,6 @@ auto gse::scheduler::wire_component_deps() -> void {
 	struct dropped_protection {
 		std::size_t accessor = 0;
 		std::size_t structural_writer = 0;
-		id via;
 	};
 
 	std::vector<dropped_protection> dropped;
@@ -537,13 +477,13 @@ auto gse::scheduler::wire_component_deps() -> void {
 		}
 
 		const auto edge_between = [&](const std::size_t from, const std::size_t to) {
-			return std::ranges::find(deps[from], m_nodes[to].state_id, &component_dep::state);
+			return std::ranges::find(deps[from], m_nodes[to].state_id, &run_dep::state);
 		};
 
 		bool declared_in_cycle = false;
 		for (std::size_t i = 0; i < cycle.size(); ++i) {
 			const auto edge = edge_between(cycle[i], cycle[(i + 1) % cycle.size()]);
-			if (edge != deps[cycle[i]].end() && edge->kind == dep_kind::declared) {
+			if (edge != deps[cycle[i]].end() && edge->kind() == dep_kind::declared) {
 				declared_in_cycle = true;
 				break;
 			}
@@ -558,33 +498,40 @@ auto gse::scheduler::wire_component_deps() -> void {
 				const auto from = cycle[i];
 				const auto to = cycle[(i + 1) % cycle.size()];
 				auto& list = deps[from];
-				const auto edge = std::ranges::find(list, m_nodes[to].state_id, &component_dep::state);
-				if (edge == list.end() || edge->kind != target) {
+				const auto edge = std::ranges::find(list, m_nodes[to].state_id, &run_dep::state);
+				if (edge == list.end() || edge->kind() != target) {
 					continue;
 				}
-				if (target == dep_kind::output) {
+				const std::string via = vias_of(*edge, target);
+				if (target == dep_kind::output && via.empty()) {
+					warn_once(std::format(
+						"scheduler: {} and {} both create or destroy entities and ordering them closes a cycle. dropping the ordering — if one must see the other's entities this frame, it needs an explicit ordering annotation",
+						m_nodes[from].state_id,
+						m_nodes[to].state_id
+					));
+				}
+				else if (target == dep_kind::output) {
 					warn_once(std::format(
 						"scheduler: {} and {} both write {} and ordering them closes a cycle. dropping the write ordering — if both actually mutate it, one needs an explicit ordering annotation",
 						m_nodes[from].state_id,
 						m_nodes[to].state_id,
-						edge->via
+						via
 					));
 				}
 				else if (target == dep_kind::structural) {
 					dropped.push_back({
 						.accessor = from,
 						.structural_writer = to,
-						.via = edge->via,
 					});
 				}
 				else if (target == dep_kind::pinned) {
 					warn_once(std::format(
 						"scheduler: {} reads {} written by {}, but an explicit runs_after in the same cycle asks for the opposite order. honouring the annotation — {} now reads {} from before {} runs",
 						m_nodes[from].state_id,
-						edge->via,
+						via,
 						m_nodes[to].state_id,
 						m_nodes[from].state_id,
-						edge->via,
+						via,
 						m_nodes[to].state_id
 					));
 				}
@@ -592,7 +539,7 @@ auto gse::scheduler::wire_component_deps() -> void {
 					warn_once(std::format(
 						"scheduler: cyclic data dependency; {} reads {} written by {}, but that ordering closes a cycle. falling back to registration order — add an explicit ordering annotation to make this deterministic",
 						m_nodes[from].state_id,
-						edge->via,
+						via,
 						m_nodes[to].state_id
 					));
 				}
@@ -606,17 +553,56 @@ auto gse::scheduler::wire_component_deps() -> void {
 		}
 
 		if (!demoted) {
+			for (std::size_t i = 0; i < cycle.size(); ++i) {
+				const auto from = cycle[i];
+				const auto to = cycle[(i + 1) % cycle.size()];
+				auto& list = deps[from];
+				const auto edge = std::ranges::find(list, m_nodes[to].state_id, &run_dep::state);
+				if (edge == list.end() || edge->kind() != dep_kind::lend) {
+					continue;
+				}
+				run_dep lent = std::move(*edge);
+				list.erase(edge);
+				if (dep_path_exists(deps, state_to_index, to, from)) {
+					warn_once(std::format(
+						"scheduler: {} draws a panel out of {}'s own live state over {}, but {} already runs after {}. they stay serialised by that ordering, so the draw sees the state from {}'s previous run",
+						m_nodes[from].state_id,
+						m_nodes[to].state_id,
+						vias_of(lent, dep_kind::lend),
+						m_nodes[to].state_id,
+						m_nodes[from].state_id,
+						m_nodes[to].state_id
+					));
+					demoted = true;
+					break;
+				}
+				list.push_back(std::move(lent));
+			}
+			if (demoted) {
+				continue;
+			}
+			for (std::size_t i = 0; i < cycle.size(); ++i) {
+				const auto from = cycle[i];
+				const auto to = cycle[(i + 1) % cycle.size()];
+				const auto edge = edge_between(from, to);
+				assert(
+					edge == deps[from].end() || edge->kind() != dep_kind::lend,
+					"scheduler: {} draws a panel out of {}'s own live state over {}, so it must run after it, but that ordering closes a cycle that cannot be broken. the borrow would be left unordered and the draw could race the system that owns the data — give the panel a copied snapshot instead",
+					m_nodes[from].state_id,
+					m_nodes[to].state_id,
+					edge == deps[from].end() ? std::string() : vias_of(*edge, dep_kind::lend)
+				);
+			}
 			break;
 		}
 	}
 
-	for (const auto& [accessor, structural_writer, via] : dropped) {
+	for (const auto& [accessor, structural_writer] : dropped) {
 		if (dep_path_exists(deps, state_to_index, accessor, structural_writer)
 			|| dep_path_exists(deps, state_to_index, structural_writer, accessor)) {
 			warn_once(std::format(
-				"scheduler: {} accesses {} while {} adds or removes it, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the state from before the structural change",
+				"scheduler: {} accesses components while {} creates or destroys entities, and ordering them that way closes a cycle. they stay serialised by the reverse path, so the access sees the entities from before the change",
 				m_nodes[accessor].state_id,
-				via,
 				m_nodes[structural_writer].state_id
 			));
 			continue;
@@ -624,9 +610,8 @@ auto gse::scheduler::wire_component_deps() -> void {
 
 		assert(
 			false,
-			"scheduler: {} accesses {} while {} adds or removes it, and breaking the cycle left them unordered, so they can run concurrently and the storage can reallocate mid-access. annotate one of them with runs_after<> to force an order",
+			"scheduler: {} accesses components while {} creates or destroys entities, and breaking the cycle left them unordered, so they can run concurrently and the storage can reallocate mid-access. annotate one of them with runs_after<> to force an order",
 			m_nodes[accessor].state_id,
-			via,
 			m_nodes[structural_writer].state_id
 		);
 	}
@@ -634,20 +619,9 @@ auto gse::scheduler::wire_component_deps() -> void {
 	{
 		std::size_t write_idx = 0;
 		for (auto& node : m_nodes) {
-			node.run_state_deps.clear();
-			for (const auto& dep : deps[write_idx]) {
-				node.run_state_deps.push_back(dep.state);
-			}
+			node.run_deps = std::move(deps[write_idx]);
 			++write_idx;
 		}
-	}
-
-	m_state_deps.clear();
-	for (const auto& node : m_nodes) {
-		auto combined = node.run_state_deps;
-		combined.insert(combined.end(), node.init_state_deps.begin(), node.init_state_deps.end());
-		combined.insert(combined.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
-		m_state_deps.emplace(node.state_id, std::move(combined));
 	}
 }
 
@@ -655,9 +629,6 @@ auto gse::scheduler::promote_optional_deps() -> void {
 	std::unordered_set<id> registered;
 	for (const auto& node : m_nodes) {
 		registered.insert(node.state_id);
-		if (node.state_type_id.exists()) {
-			registered.insert(node.state_type_id);
-		}
 	}
 
 	for (auto& node : m_nodes) {
@@ -682,69 +653,62 @@ auto gse::scheduler::check_state_dep_cycles() -> void {
 		gray,
 		black
 	};
-	std::unordered_map<id, color> colors;
-	for (const auto& [state_idx, _] : m_state_deps) {
-		colors[state_idx] = color::white;
-	}
+	std::vector<color> colors(m_nodes.size(), color::white);
+	std::vector<std::size_t> stack;
 
-	std::vector<id> stack;
-
-	auto format_cycle = [&](const id from) -> std::string {
+	auto format_cycle = [&](const std::size_t from) -> std::string {
 		const auto cycle_start = std::ranges::find(stack, from);
 		std::string out;
 		for (auto it = cycle_start; it != stack.end(); ++it) {
 			if (!out.empty()) {
 				out += " -> ";
 			}
-			out += std::format("{}", *it);
+			out += std::format("{}", m_nodes[*it].state_id);
 		}
 		out += " -> ";
-		out += std::format("{}", from);
+		out += std::format("{}", m_nodes[from].state_id);
 		return out;
 	};
 
-	auto visit = [&](const id node, auto& self) -> void {
+	auto visit = [&](const std::size_t node, auto& self) -> void {
 		colors[node] = color::gray;
 		stack.push_back(node);
 
-		if (const auto it = m_state_deps.find(node); it != m_state_deps.end()) {
-			for (const auto& dep : it->second) {
-				if (!colors.contains(dep)) {
-					continue;
-				}
-				if (colors[dep] == color::gray) {
-					const auto cycle = format_cycle(dep);
-					log::println(log::level::error, log::category::runtime, "[war-probe] state_deps cycle detected: {}", cycle);
-					log::flush();
-					assert(false, "state_deps cycle detected: {}", cycle);
-					continue;
-				}
-				if (colors[dep] == color::white) {
-					self(dep, self);
-				}
+		const auto follow = [&](const id dep) {
+			const auto it = m_node_index.find(dep);
+			if (it == m_node_index.end()) {
+				return;
 			}
+			if (colors[it->second] == color::gray) {
+				assert(false, "state_deps cycle detected: {}", format_cycle(it->second));
+			}
+			if (colors[it->second] == color::white) {
+				self(it->second, self);
+			}
+		};
+		for (const auto& dep : m_nodes[node].run_deps) {
+			follow(dep.state);
 		}
+		std::ranges::for_each(m_nodes[node].init_state_deps, follow);
+		std::ranges::for_each(m_nodes[node].frame_state_deps, follow);
 
 		stack.pop_back();
 		colors[node] = color::black;
 	};
 
-	for (const auto& [state_idx, _] : m_state_deps) {
-		if (colors[state_idx] == color::white) {
-			visit(state_idx, visit);
+	for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+		if (colors[i] == color::white) {
+			visit(i, visit);
 		}
 	}
 }
 
 auto gse::scheduler::initialize() -> void {
-	m_initialized = true;
 	m_channels_store.flip_all();
 
 	promote_optional_deps();
 
 	run_init_phase();
-
-	check_state_dep_cycles();
 }
 
 auto gse::scheduler::all_settled() const -> bool {
@@ -754,15 +718,7 @@ auto gse::scheduler::all_settled() const -> bool {
 			return false;
 		}
 	}
-	for (const auto& node : m_nodes) {
-		if (node.invoke_init_fn && !node.init_done) {
-			return false;
-		}
-		if (node.invoke_run_fn && !node.ran_once) {
-			return false;
-		}
-	}
-	return true;
+	return std::ranges::all_of(m_nodes, &system_node::settled);
 }
 
 auto gse::scheduler::settle_progress() const -> settle_stats {
@@ -780,21 +736,47 @@ auto gse::scheduler::settle_progress() const -> settle_stats {
 			continue;
 		}
 		++stats.total;
-		const bool init_ok = !node.invoke_init_fn || node.init_done;
-		const bool run_ok = !node.invoke_run_fn || node.ran_once;
-		if (init_ok && run_ok) {
+		if (node.settled()) {
 			++stats.settled;
 		}
 	}
 	return stats;
 }
 
-auto gse::scheduler::dep_init_done(const id dep) const -> bool {
+auto gse::scheduler::has_frame_work() const -> bool {
+	return std::ranges::any_of(m_nodes, [](const system_node& node) {
+		return node.invoke_frame_fn != nullptr;
+	});
+}
+
+auto gse::scheduler::dep_initialized(const id dep) const -> bool {
 	const auto it = m_node_index.find(dep);
 	if (it == m_node_index.end()) {
 		return true;
 	}
-	return m_nodes[it->second].init_done;
+	return m_nodes[it->second].initialized();
+}
+
+auto gse::scheduler::gate_state(const id state, const std::unordered_map<id, const void*>& staged) const -> const void* {
+	if (const void* live = m_states.state_ptr(state)) {
+		return live;
+	}
+	const auto it = staged.find(state);
+	return it != staged.end() ? it->second : nullptr;
+}
+
+auto gse::scheduler::gate_rejection(const std::span<const activation_gate> gates, const std::unordered_map<id, const void*>& staged) const -> std::optional<std::string> {
+	for (const auto& gate : gates) {
+		const void* state = gate_state(gate.state, staged);
+		if (!state) {
+			const auto gated = m_gated_out.find(gate.state);
+			return std::format("dependency '{}' is inactive", gated != m_gated_out.end() ? gated->second : std::string(gate.state.tag()));
+		}
+		if (!gate.holds(state)) {
+			return std::format("requires {}", gate.requirement);
+		}
+	}
+	return std::nullopt;
 }
 
 auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
@@ -810,10 +792,10 @@ auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
 		visited[idx] = dispatch_state::checking;
 
 		const auto& node = m_nodes[idx];
-		bool ready = node.init_done;
+		bool ready = node.initialized();
 		if (ready && node.invoke_run_fn) {
-			for (const id& dep : node.run_state_deps) {
-				const auto it = m_node_index.find(dep);
+			for (const auto& dep : node.run_deps) {
+				const auto it = m_node_index.find(dep.state);
 				if (it != m_node_index.end() && !self(it->second, self)) {
 					ready = false;
 					break;
@@ -833,19 +815,19 @@ auto gse::scheduler::dispatchable_nodes() const -> std::vector<bool> {
 }
 
 auto gse::scheduler::run_init_phase() -> void {
+	const auto progress = [this] {
+		std::size_t count = 0;
+		for (const auto& node : m_nodes) {
+			count += node.stage.state() != system_stage::awaiting_init ? 1 : 0;
+			count += node.initialized() ? 1 : 0;
+		}
+		return count;
+	};
+
 	while (true) {
-		std::size_t before = 0;
-		for (const auto& node : m_nodes) {
-			before += node.init_launched ? 1 : 0;
-			before += node.init_done ? 1 : 0;
-		}
+		const std::size_t before = progress();
 		advance_inits();
-		std::size_t after = 0;
-		for (const auto& node : m_nodes) {
-			after += node.init_launched ? 1 : 0;
-			after += node.init_done ? 1 : 0;
-		}
-		if (after == before) {
+		if (progress() == before) {
 			break;
 		}
 	}
@@ -854,13 +836,14 @@ auto gse::scheduler::run_init_phase() -> void {
 auto gse::scheduler::advance_inits() -> void {
 	std::vector<async::task<>> tasks;
 	for (auto& node : m_nodes) {
-		if (!node.invoke_init_fn || node.init_done || node.init_in_flight) {
+		const system_stage stage = node.stage.state();
+		if (stage != system_stage::awaiting_init && stage != system_stage::init_between_slices) {
 			continue;
 		}
-		if (!node.init_launched) {
+		if (stage == system_stage::awaiting_init) {
 			bool deps_ready = true;
 			for (const id& dep : node.init_state_deps) {
-				if (!dep_init_done(dep)) {
+				if (!dep_initialized(dep)) {
 					deps_ready = false;
 					break;
 				}
@@ -880,11 +863,7 @@ auto gse::scheduler::check_closed_dep_graph() -> void {
 	std::unordered_set<id> registered;
 	for (const auto& node : m_nodes) {
 		registered.insert(node.state_id);
-		if (node.state_type_id.exists()) {
-			registered.insert(node.state_type_id);
-		}
 	}
-	registered.insert(m_external_resources.begin(), m_external_resources.end());
 
 	std::vector<std::string> violations;
 
@@ -930,27 +909,18 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 		for (auto& node : m_nodes) {
 			if (node.invoke_run_fn && dispatchable[idx]) {
 				m_update_graph.reset_state(node.state_id);
-				if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-					m_update_graph.reset_state(node.state_type_id);
-				}
 			}
 			++idx;
 		}
 	}
 
-	if (!m_run_writer) {
-		m_run_writer.emplace(m_channels_store.make_writer());
-	}
 	while (m_run_contexts.size() < m_nodes.size()) {
 		m_run_contexts.push_back(std::make_unique<context>(
-			*this,
+			system_hook::run,
 			m_states,
 			m_resources_store,
 			m_channels_store,
-			*m_run_writer,
-			m_update_graph,
-			*m_registry,
-			m_guard
+			*m_registry
 		));
 	}
 
@@ -966,14 +936,20 @@ auto gse::scheduler::dispatch_run_systems() -> void {
 			}
 			auto& ctx = *m_run_contexts[idx];
 			const int held = ctx.held_lock_count();
-			assert(held == 0, "system {} still held {} component access handle(s) when its next run() was dispatched; scope read<>/write<>/structural<> to the function body", node.trace_id, held);
+			assert(held == 0, "system {} still held {} component access handle(s) when its next run() was dispatched; scope read<>/write<> to the function body", node.trace_id, held);
 			tasks.push_back(run_node_update(ctx, node));
 			++idx;
 		}
 	}
 	{
-		trace::scope_guard _{ trace_id<"sched::run_wait">() };
+		trace::scope_guard _{ trace_id<"sched::run_wait">(), trace::span_kind::wait };
 		sync_wait_or_dump(std::move(tasks), wait_phase::update);
+	}
+	{
+		trace::scope_guard _{ trace_id<"sched::apply_structural">() };
+		for (const auto& ctx : m_run_contexts) {
+			ctx->apply_structural_changes();
+		}
 	}
 }
 
@@ -1006,15 +982,6 @@ auto gse::scheduler::update() -> void {
 	}
 }
 
-auto gse::scheduler::tick(const bool frame_ok, const std::function<void()>& in_frame) -> void {
-	trace::scope_guard _{ trace_id<"scheduler::tick">() };
-	if (!m_initialized) {
-		initialize();
-	}
-	update();
-	render(frame_ok, in_frame);
-}
-
 auto gse::scheduler::drain_hot_add_queue() -> void {
 	std::vector<system_node> drained;
 	{
@@ -1024,60 +991,102 @@ auto gse::scheduler::drain_hot_add_queue() -> void {
 	if (drained.empty()) {
 		return;
 	}
+
+	std::unordered_set<id> provided;
+	std::unordered_map<id, const void*> staged;
+	for (const auto& node : m_nodes) {
+		provided.insert(node.state_id);
+	}
+	for (auto& node : drained) {
+		admit_settings(node);
+		provided.insert(node.state_id);
+		staged[node.state_id] = node.state_ptr;
+	}
+
+	for (auto it = drained.begin(); it != drained.end();) {
+		if (const auto rejection = gate_rejection(it->activation_gates, staged)) {
+			provided.erase(it->state_id);
+			staged.erase(it->state_id);
+			drop_node(std::move(*it), *rejection);
+			it = drained.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+
+	const auto missing_dep = [&](const system_node& node) -> std::optional<id> {
+		for (const id dep : node.required_deps()) {
+			if (!provided.contains(dep)) {
+				return dep;
+			}
+		}
+		return std::nullopt;
+	};
+
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (auto it = drained.begin(); it != drained.end();) {
+			if (const auto dep = missing_dep(*it)) {
+				provided.erase(it->state_id);
+				drop_node(std::move(*it), std::format("dependency {} is inactive", *dep));
+				it = drained.erase(it);
+				changed = true;
+			}
+			else {
+				++it;
+			}
+		}
+	}
+
 	for (auto& node : drained) {
 		register_node(std::move(node));
 	}
 	m_dep_graph_checked = false;
 }
 
-auto gse::scheduler::register_node(system_node node) -> void* {
+auto gse::scheduler::register_node(system_node node) -> void {
 	assert(m_registry != nullptr, "scheduler::set_registry must be called before a system node is registered");
 
-	const auto canonical_idx = node.state_id;
-	auto* state_ptr = node.state_ptr;
-	m_states.register_state(canonical_idx, node.state_ptr, node.state_snapshot_ptr);
-
-	if (node.state_type_id.exists() && node.state_type_id != canonical_idx) {
-		m_states.register_state(node.state_type_id, node.state_ptr, node.state_snapshot_ptr);
-	}
-
-	if (node.invoke_ensure_storages_fn) {
-		node.invoke_ensure_storages_fn(*m_registry);
-	}
-
-	auto combined_deps = node.declared_run_state_deps;
-	combined_deps.insert(combined_deps.end(), node.init_state_deps.begin(), node.init_state_deps.end());
-	combined_deps.insert(combined_deps.end(), node.frame_state_deps.begin(), node.frame_state_deps.end());
-	m_state_deps.emplace(canonical_idx, std::move(combined_deps));
-
-	const bool has_run = node.invoke_run_fn != nullptr;
-	const auto state_id = node.state_id;
-	const auto state_type_id = node.state_type_id;
-
-	if (node.settings_record && m_settings_register_hook) {
-		m_settings_register_hook(std::move(*node.settings_record));
+	m_states.register_state(node.state_id, node.state_ptr, node.state_snapshot_ptr);
+	for (const auto ensure_storage : node.ensure_storage_fns) {
+		(m_registry->*ensure_storage)();
 	}
 
 	if ((!node.action_records.empty() || !node.axis_records.empty()) && m_actions_register_hook) {
 		m_actions_register_hook(std::move(node.action_records), std::move(node.axis_records));
 	}
 
-	const auto node_idx = m_nodes.size();
-	m_node_index.emplace(state_id, node_idx);
-	if (state_type_id.exists() && state_type_id != state_id) {
-		m_node_index.emplace(state_type_id, node_idx);
+	if (const auto rejection = gate_rejection(node.frame_gates, {})) {
+		log::println(log::category::runtime, "system '{}' frame hook not wired: {}", node.system_name, *rejection);
+		node.invoke_frame_fn = nullptr;
+		node.frame_state_deps.clear();
 	}
 
+	m_update_graph.add_state(node.state_id, !node.invoke_run_fn);
+	m_frame_graph.add_state(node.state_id, false);
+
+	m_node_index.emplace(node.state_id, m_nodes.size());
 	m_nodes.push_back(std::move(node));
+}
 
-	if (!has_run) {
-		m_update_graph.notify_state_ready(state_id);
-		if (state_type_id.exists() && state_type_id != state_id) {
-			m_update_graph.notify_state_ready(state_type_id);
-		}
+auto gse::scheduler::drop_node(system_node node, const std::string_view reason) -> void {
+	log::println(log::category::runtime, "system '{}' not registered: {}", node.system_name, reason);
+	if (m_settings_retire_hook) {
+		m_settings_retire_hook(node.state_ptr);
 	}
+}
 
-	return state_ptr;
+auto gse::scheduler::admit_settings(system_node& node) -> void {
+	if (!node.settings_record || !m_settings_register_hook) {
+		return;
+	}
+	std::erase_if(node.settings_record->fallbacks, [this](const settings::settings_fallback& fallback) {
+		const void* state = gate_state(fallback.gate.state, {});
+		return !state || fallback.gate.holds(state);
+	});
+	m_settings_register_hook(std::move(*node.settings_record));
+	node.settings_record.reset();
 }
 
 auto gse::scheduler::add_system_node(system_node node) -> void {
@@ -1085,11 +1094,18 @@ auto gse::scheduler::add_system_node(system_node node) -> void {
 	assert(m_phase != scheduler_phase::shutdown, "scheduler::add_system_node called during shutdown");
 
 	if (m_staging) {
+		admit_settings(node);
 		m_candidates.push_back(std::move(node));
 		return;
 	}
 
 	if (m_phase == scheduler_phase::boot) {
+		admit_settings(node);
+		if (const auto rejection = gate_rejection(node.activation_gates, {})) {
+			m_gated_out.emplace(node.state_id, node.system_name);
+			drop_node(std::move(node), *rejection);
+			return;
+		}
 		register_node(std::move(node));
 		return;
 	}
@@ -1103,51 +1119,46 @@ auto gse::scheduler::begin_staging() -> void {
 	m_staging = true;
 }
 
-auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_roots) -> void {
-	const auto required = [](const system_node& n) {
-		std::vector<id> deps = n.declared_run_state_deps;
-		deps.insert(deps.end(), n.init_state_deps.begin(), n.init_state_deps.end());
-		deps.insert(deps.end(), n.frame_state_deps.begin(), n.frame_state_deps.end());
-		return deps;
-	};
-
+auto gse::scheduler::resolve_activation() -> void {
 	std::unordered_set<id> provided;
 	std::unordered_map<id, std::string> name_of;
+	std::unordered_map<id, const void*> candidate_state;
+	for (const auto& n : m_nodes) {
+		provided.insert(n.state_id);
+	}
 	for (const auto& n : m_candidates) {
 		provided.insert(n.state_id);
 		name_of[n.state_id] = n.system_name;
+		candidate_state[n.state_id] = n.state_ptr;
 	}
 
-	std::unordered_map<id, std::vector<id>> publishers;
+	std::unordered_map<id, std::string> failed_requirement;
+
+	std::unordered_set<id> published;
 	for (const auto& n : m_candidates) {
-		for (const id ch : n.channel_publishes) {
-			publishers[ch].push_back(n.state_id);
-		}
+		published.insert(n.channel_publishes.begin(), n.channel_publishes.end());
 	}
 
 	std::unordered_map<id, std::vector<id>> dependents;
 	std::unordered_set<id> inactive;
 	std::vector<id> work;
 
-	const auto has_active_producer = [&](const id ch) {
-		const auto it = publishers.find(ch);
-		if (it == publishers.end()) {
-			return true;
-		}
-		return std::ranges::any_of(it->second, [&](const id p) {
-			return !inactive.contains(p);
-		});
-	};
+	for (const auto& [state_id, system_name] : m_gated_out) {
+		provided.insert(state_id);
+		name_of.emplace(state_id, system_name);
+		inactive.insert(state_id);
+		work.push_back(state_id);
+	}
 
 	std::unordered_set<id> unproduced_channels;
 
 	for (const auto& n : m_candidates) {
 		for (const id ch : n.channel_consumes) {
-			if (!publishers.contains(ch)) {
+			if (!published.contains(ch)) {
 				unproduced_channels.insert(ch);
 			}
 		}
-		for (const id dep : required(n)) {
+		for (const id dep : n.required_deps()) {
 			dependents[dep].push_back(n.state_id);
 			if (!provided.contains(dep)) {
 				log::println(
@@ -1161,7 +1172,8 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 				}
 			}
 		}
-		if (disabled_roots.contains(n.state_id)) {
+		if (auto rejection = gate_rejection(n.activation_gates, candidate_state)) {
+			failed_requirement.emplace(n.state_id, std::move(*rejection));
 			if (inactive.insert(n.state_id).second) {
 				work.push_back(n.state_id);
 			}
@@ -1185,35 +1197,12 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 		);
 	}
 
-	std::size_t propagated = 0;
-	const auto propagate = [&] {
-		for (; propagated < work.size(); ++propagated) {
-			for (const id dep : dependents[work[propagated]]) {
-				if (inactive.insert(dep).second) {
-					work.push_back(dep);
-				}
+	for (std::size_t i = 0; i < work.size(); ++i) {
+		for (const id dep : dependents[work[i]]) {
+			if (inactive.insert(dep).second) {
+				work.push_back(dep);
 			}
 		}
-	};
-
-	propagate();
-	for (bool changed = true; changed;) {
-		changed = false;
-		for (const auto& n : m_candidates) {
-			if (inactive.contains(n.state_id)) {
-				continue;
-			}
-			const bool starved = std::ranges::any_of(n.channel_consumes, [&](const id ch) {
-				return !has_active_producer(ch);
-			});
-			if (!starved) {
-				continue;
-			}
-			inactive.insert(n.state_id);
-			work.push_back(n.state_id);
-			changed = true;
-		}
-		propagate();
 	}
 
 	std::unordered_set<id> deferred;
@@ -1241,9 +1230,12 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 			}
 			continue;
 		}
-		std::string reason = disabled_roots.contains(n.state_id) ? std::string("disabled in this mode") : std::string{};
+		std::string reason;
+		if (const auto it = failed_requirement.find(n.state_id); it != failed_requirement.end()) {
+			reason = it->second;
+		}
 		if (reason.empty()) {
-			for (const id dep : required(n)) {
+			for (const id dep : n.required_deps()) {
 				if (inactive.contains(dep)) {
 					const auto it = name_of.find(dep);
 					reason = std::format("dependency '{}' is inactive", it != name_of.end() ? it->second : std::string("<unprovided>"));
@@ -1252,14 +1244,9 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 			}
 		}
 		if (reason.empty()) {
-			for (const id ch : n.channel_consumes) {
-				if (!has_active_producer(ch)) {
-					reason = std::format("channel {} has no active producer", ch);
-					break;
-				}
-			}
+			reason = "a required dependency is not provided by any registered system";
 		}
-		log::println(log::category::runtime, "system '{}' not registered: {}", n.system_name, reason);
+		drop_node(std::move(n), reason);
 	}
 
 	m_candidates.clear();
@@ -1268,78 +1255,65 @@ auto gse::scheduler::resolve_activation(const std::unordered_set<id>& disabled_r
 
 auto gse::scheduler::register_deferred() -> void {
 	for (auto& n : m_deferred_nodes) {
-		add_system_node(std::move(n));
+		if (m_phase == scheduler_phase::boot) {
+			register_node(std::move(n));
+		}
+		else {
+			add_system_node(std::move(n));
+		}
 	}
 	m_deferred_nodes.clear();
 }
 
-auto gse::scheduler::queue_system_node(system_node node) -> void {
-	assert(m_registry != nullptr, "scheduler::set_registry must be called before queue_system_node");
-	assert(m_phase != scheduler_phase::shutdown, "scheduler::queue_system_node called during shutdown");
-
-	std::lock_guard _(m_hot_add_mutex);
-	m_hot_add_queue.push_back(std::move(node));
-	frame_demand::request_redraw();
-}
-
-auto gse::context::add_system_node(system_node node) -> void {
-	m_sched.queue_system_node(std::move(node));
-}
-
 auto gse::scheduler::advance_one_init_system(system_node& node) -> async::task<> {
-	node.init_in_flight = true;
+	const bool launching = node.stage.try_enter(system_stage::awaiting_init, system_stage::init_in_slice);
+	if (!launching) {
+		node.stage.try_enter(system_stage::init_between_slices, system_stage::init_in_slice);
+	}
 	auto _ = make_scope_exit([&node] {
-		node.init_in_flight = false;
+		node.stage.try_enter(system_stage::init_in_slice, system_stage::init_between_slices);
 	});
 
 	if (!node.init_ctx) {
-		node.init_writer = std::make_unique<channel_writer>(m_channels_store.make_writer());
 		node.init_ctx = std::make_unique<context>(
-			*this,
+			*node.yield,
 			m_states,
 			m_resources_store,
 			m_channels_store,
-			*node.init_writer,
-			m_update_graph,
-			*m_registry,
-			m_guard,
-			node.resume_event.get(),
-			node.paused_event.get()
+			*m_registry
 		);
 	}
 
-	if (!node.init_launched) {
-		node.init_launched = true;
+	if (launching) {
 		node.init_task = wrap_run_task(
 			node.invoke_init_fn(*node.init_ctx, node.data.get()),
 			[&node] {
-				node.init_done = true;
-				node.paused_event->set();
+				node.stage.enter(system_stage::initialized);
+				node.yield->paused.set();
 			}
 		);
 		node.init_task.start();
 	}
 	else if (!node.init_task.done()) {
-		node.paused_event->reset();
-		node.resume_event->set();
-		co_await node.paused_event->wait();
+		node.yield->paused.reset();
+		node.yield->resume.set();
+		co_await node.yield->paused.wait();
 	}
 }
 
 auto gse::scheduler::run_node_update(context& ctx, system_node& node) -> async::task<> {
 	trace::open_span _(node.update_wall_id, 0);
 
-	for (const id& dep : node.run_state_deps) {
-		co_await m_update_graph.wait_state_ready(dep);
+	for (const auto& dep : node.run_deps) {
+		co_await m_update_graph.wait_state_ready(dep.state);
 	}
 
 	co_await node.invoke_run_fn(ctx, node.data.get());
-	node.ran_once = true;
+	if (node.stage.state() != system_stage::ran) {
+		node.stage.enter(system_stage::ran);
+	}
 
 	m_update_graph.notify_state_ready(node.state_id);
-	if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-		m_update_graph.notify_state_ready(node.state_type_id);
-	}
 }
 
 auto gse::wait_section_for(const wait_phase phase) -> wait_section_info {
@@ -1357,6 +1331,9 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 		return;
 	}
 
+	const bool unwatched = phase == wait_phase::init && m_init_stall_dump > time{};
+	const std::size_t task_count = tasks.size();
+
 	std::atomic<bool> done_flag{ false };
 	auto wrapper = [&]() -> async::task<> {
 		co_await async::when_all(std::move(tasks));
@@ -1371,14 +1348,38 @@ auto gse::scheduler::sync_wait_or_dump(std::vector<async::task<>>&& tasks, const
 	clock wait_clock;
 	auto seen_pulse = watchdog::dump_pulse();
 	int dump_count = 0;
+	time last_dump{};
+	constexpr int unwatched_dump_limit = 3;
 
 	while (!done_flag.load(std::memory_order_acquire) || !w.done()) {
 		if (!task::try_run_one()) {
 			std::this_thread::yield();
 		}
+		bool dump = false;
 		if (const auto pulse = watchdog::dump_pulse(); pulse != seen_pulse) {
 			seen_pulse = pulse;
+			dump = true;
+		}
+		else if (unwatched && dump_count < unwatched_dump_limit) {
+			if (const auto elapsed = wait_clock.elapsed<float>(); elapsed - last_dump >= m_init_stall_dump) {
+				last_dump = elapsed;
+				dump = true;
+			}
+		}
+		if (dump) {
 			++dump_count;
+			if (unwatched) {
+				log::println(
+					log::level::warning,
+					log::category::runtime,
+					"STALL [phase=init elapsed={::ms} dump=#{}] wait over {} task(s) (done_flag={} wrapper_done={})",
+					wait_clock.elapsed<float>(),
+					dump_count,
+					task_count,
+					done_flag.load(std::memory_order_acquire),
+					w.done()
+				);
+			}
 			log_stall_state(phase, wait_clock.elapsed<float>(), dump_count);
 			if (m_stall_probe) {
 				m_stall_probe();
@@ -1392,13 +1393,14 @@ auto gse::scheduler::set_stall_probe(std::function<void()> probe) -> void {
 	m_stall_probe = std::move(probe);
 }
 
-auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
-	constexpr std::array<std::string_view, 3> phase_names{ "init", "update", "frame" };
-	const auto phase_name = phase_names[static_cast<std::size_t>(phase)];
+auto gse::scheduler::set_init_stall_dump(const time interval) -> void {
+	m_init_stall_dump = interval;
+}
 
+auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float> elapsed, const int dump_count) -> void {
 	if (phase == wait_phase::frame) {
 		for (const auto& node : m_nodes) {
-			if (!node.has_frame) {
+			if (!node.invoke_frame_fn) {
 				continue;
 			}
 			if (m_frame_graph.is_state_ready(node.state_id)) {
@@ -1418,7 +1420,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} stuck inside frame() (all deps ready)",
-					phase_name,
+					phase,
 					elapsed,
 					dump_count,
 					node.trace_id
@@ -1429,7 +1431,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 					log::level::error,
 					log::category::runtime,
 					"STALL [phase={} elapsed={::ms} dump=#{}] frame system {} waiting on deps: {}",
-					phase_name,
+					phase,
 					elapsed,
 					dump_count,
 					node.trace_id,
@@ -1441,37 +1443,48 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 	}
 
 	for (const auto& node : m_nodes) {
-		if (!node.invoke_init_fn || node.init_done) {
+		if (node.initialized()) {
 			continue;
+		}
+		std::string pending;
+		for (const id& dep : node.init_state_deps) {
+			if (!dep_initialized(dep)) {
+				if (!pending.empty()) {
+					pending += ", ";
+				}
+				pending += std::format("{}", dep);
+			}
 		}
 		log::println(
 			log::level::warning,
 			log::category::runtime,
-			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (slow load or stuck setup)",
-			phase_name,
+			"STALL [phase={} elapsed={::ms} dump=#{}] system {} init() not complete (stage={} waiting on deps: {})",
+			phase,
 			elapsed,
 			dump_count,
-			node.trace_id
+			node.trace_id,
+			node.stage.state(),
+			pending.empty() ? "none" : pending
 		);
 	}
 
 	for (const auto& node : m_nodes) {
-		if (!node.invoke_run_fn || !node.init_done) {
+		if (!node.invoke_run_fn || !node.initialized()) {
 			continue;
 		}
 		if (m_update_graph.is_state_ready(node.state_id)) {
 			continue;
 		}
 		std::string missing;
-		for (const id& dep : node.run_state_deps) {
-			if (!dep_init_done(dep)) {
+		for (const auto& dep : node.run_deps) {
+			if (!dep_initialized(dep.state)) {
 				continue;
 			}
-			if (!m_update_graph.is_state_ready(dep)) {
+			if (!m_update_graph.is_state_ready(dep.state)) {
 				if (!missing.empty()) {
 					missing += ", ";
 				}
-				missing += std::format("{}", dep);
+				missing += std::format("{}", dep.state);
 			}
 		}
 		if (missing.empty()) {
@@ -1479,7 +1492,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::level::error,
 				log::category::runtime,
 				"STALL [phase={} elapsed={::ms} dump=#{}] system {} stuck inside run() (all deps ready)",
-				phase_name,
+				phase,
 				elapsed,
 				dump_count,
 				node.trace_id
@@ -1490,7 +1503,7 @@ auto gse::scheduler::log_stall_state(const wait_phase phase, const time_t<float>
 				log::level::error,
 				log::category::runtime,
 				"STALL [phase={} elapsed={::ms} dump=#{}] system {} waiting on upstream deps: {}",
-				phase_name,
+				phase,
 				elapsed,
 				dump_count,
 				node.trace_id,
@@ -1506,32 +1519,23 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 	}
 
 	trace::scope_guard _{ trace_id<"scheduler::render">() };
-	auto writer = m_channels_store.make_writer();
 
-	context f_ctx(*this, m_states, m_resources_store, m_channels_store, writer, m_frame_graph, *m_registry, m_guard, nullptr, nullptr, false);
+	context f_ctx(system_hook::frame, m_states, m_resources_store, m_channels_store, *m_registry);
 
 	for (auto& node : m_nodes) {
-		const bool run_satisfied = node.ran_once || !node.invoke_run_fn;
-		const bool frame_ready = node.has_frame && node.init_done && run_satisfied;
-		if (frame_ready) {
+		if (node.invoke_frame_fn && node.settled()) {
 			continue;
 		}
 		m_frame_graph.notify_state_ready(node.state_id);
-		if (node.state_type_id.exists() && node.state_type_id != node.state_id) {
-			m_frame_graph.notify_state_ready(node.state_type_id);
-		}
-	}
-	for (const id& type_id : m_external_resources) {
-		m_frame_graph.notify_state_ready(type_id);
 	}
 
 	std::vector<async::task<>> tasks;
 	std::vector<system_node*> task_nodes;
 	for (auto& node : m_nodes) {
-		if (!node.has_frame) {
+		if (!node.invoke_frame_fn) {
 			continue;
 		}
-		if (!node.init_done || (node.invoke_run_fn && !node.ran_once)) {
+		if (!node.settled()) {
 			continue;
 		}
 		tasks.push_back(run_node_frame(f_ctx, node));
@@ -1565,27 +1569,39 @@ auto gse::scheduler::render(const bool frame_ok, const std::function<void()>& in
 auto gse::scheduler::shutdown() -> void {
 	m_channels_store.clear();
 	m_run_contexts.clear();
-	m_run_writer.reset();
 	m_node_index.clear();
 
 	while (!m_nodes.empty()) {
 		auto& node = m_nodes.back();
-		node.invoke_shutdown_fn(node.data.get());
+		persist_node(node);
+		if (node.invoke_shutdown_fn) {
+			node.invoke_shutdown_fn(node.data.get());
+		}
 		m_nodes.pop_back();
+	}
+}
+
+auto gse::scheduler::persist() const -> void {
+	trace::scope_guard _{ trace_id<"scheduler::persist">() };
+	for (const system_node& node : m_nodes) {
+		persist_node(node);
+	}
+}
+
+auto gse::scheduler::persist_node(const system_node& node) -> void {
+	if (node.invoke_persist_fn && node.stage.state() == system_stage::ran) {
+		node.invoke_persist_fn(node.data.get());
 	}
 }
 
 auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
 	m_node_index.clear();
+	m_gated_out.clear();
 	m_run_contexts.clear();
-	m_run_writer.reset();
 	m_states.clear();
 	m_resources_store.clear();
 	m_channels_store.clear();
-	m_state_deps.clear();
-	m_external_resources.clear();
-	m_initialized = false;
 	m_dep_graph_checked = false;
 	m_phase = scheduler_phase::boot;
 }

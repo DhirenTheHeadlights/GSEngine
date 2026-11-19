@@ -11,6 +11,8 @@ export namespace gse::ide::terminal {
 
 	using command_runner = spawn::output_stream;
 
+	using level_palette = std::array<vec4f, enum_values<log::level>().size()>;
+
 	struct line {
 		std::uint64_t seq;
 		log::level lvl;
@@ -65,6 +67,8 @@ export namespace gse::ide::terminal {
 		gui::text_buffer buffer;
 		std::vector<log::level> line_levels;
 		std::vector<gui::text_span> spans;
+		level_palette palette{};
+		std::size_t dropped_lines = 0;
 		gui::text_area_state view;
 		std::string input;
 		gui::text_input_state input_state;
@@ -73,12 +77,15 @@ export namespace gse::ide::terminal {
 		std::vector<dispatch_marker> dispatches;
 		bool interactive = true;
 		build_runner::stream_kind kind = build_runner::stream_kind::none;
+		std::uint32_t run = 0;
+		std::optional<std::uint32_t> attached_instance;
+		std::optional<build_runner::attached_fatal_reported> fatal;
 	};
 
 	struct [[= system_state<"Terminal">{}]] data {
 		ring_sink* sink = nullptr;
-		std::vector<instance> instances;
-		id active;
+		[[= shared]] std::vector<instance> instances;
+		[[= shared]] id active;
 		std::uint32_t next_number = 1;
 		std::uint64_t next_id = 1;
 		std::string prompt;
@@ -97,6 +104,7 @@ export namespace gse::ide::terminal {
 		gui::dropdown_state profile_dropdown;
 		gui::dropdown_state config_dropdown;
 		gui::text_input_state profile_name_state;
+		std::string profile_name_draft;
 		std::size_t editing_index = 0;
 		bool editing_profiles = false;
 	};
@@ -110,8 +118,8 @@ export namespace gse::ide::terminal {
 	auto run(
 		context& ctx,
 		data& d,
-		channel_read<build_runner::stream_opened, agent::blame_offer> stream_in,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
+		channel_read<build_runner::stream_opened, build_runner::attached_fatal_reported, agent::blame_offer> stream_in,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> ui_out,
 		shared_view<build_runner::data> build_d
 	) -> async::task<>;
 
@@ -127,7 +135,7 @@ export namespace gse::ide::terminal {
 	auto draw_panel(
 		gui::builder& ui,
 		data& d,
-		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
+		channel_write<agent::start_request, agent::dispatch_request, build_runner::build_request, build_runner::select_profile_request, build_runner::edit_profiles_request, package_sdk::request, gui::menu_content, jump_to_request, set_cursor_shape_request> channels,
 		bool building
 	) -> void;
 }

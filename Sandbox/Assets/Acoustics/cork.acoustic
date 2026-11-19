@@ -1,0 +1,7 @@
+[Material]
+mass_density = 240 kg/m^3
+young_modulus = 0.03 GPa
+poisson_ratio = 0.1
+absorption = 0.3
+mass_damping = 100 1/s
+stiffness_damping = 500 ns

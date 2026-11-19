@@ -34,7 +34,8 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 			.path = browse.path,
 			.name = browse.name,
 			.compile_commands = browse.compile_commands,
-			.is_project = browse.is_project
+			.is_project = browse.is_project,
+			.counts_loc = browse.counts_loc
 		});
 
 		std::error_code compile_commands_ec;
@@ -78,7 +79,7 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 	}
 
 	search::request_symbol_build(*d.index);
-	task::post([index = d.index.get()] {
+	task::post_background([index = d.index.get()] {
 		search::build_files_and_content(*index, index->roots);
 	});
 	return {};
@@ -86,7 +87,7 @@ auto gse::ide::search_system::init(data& d) -> async::task<> {
 
 auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_read<search::index_file_update_request, search::index_merge_request, build_runner::build_finished> requests_in, const channel_write<build_runner::source_changed> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	d.index->cancel.store(build_runner::analysis_pause_requested(), std::memory_order_release);
-	build_runner::report_analysis_busy(d.index->building.load(std::memory_order_acquire));
+	build_runner::report_analysis_busy(search::index_busy(d.index->phase.load(std::memory_order_acquire)));
 
 	search::publish_file_build(*d.index);
 	search::publish_symbol_build(*d.index);
@@ -109,13 +110,12 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 		}
 		if (build_runner::is_build_source(path)) {
 			std::error_code time_ec;
-			const std::filesystem::file_time_type mtime = std::filesystem::last_write_time(path, time_ec);
-			if (!time_ec) {
-				events_out.push<build_runner::source_changed>({
-					.path = path,
-					.mtime = static_cast<std::int64_t>(mtime.time_since_epoch().count()),
-				});
-			}
+			const std::filesystem::file_time_type written = std::filesystem::last_write_time(path, time_ec);
+			const std::filesystem::file_time_type mtime = time_ec ? std::filesystem::file_time_type::clock::now() : written;
+			events_out.push<build_runner::source_changed>({
+				.path = path,
+				.mtime = static_cast<std::int64_t>(mtime.time_since_epoch().count()),
+			});
 		}
 	}
 	for (const auto& req : requests_in.of<search::index_file_update_request>()) {
@@ -133,7 +133,7 @@ auto gse::ide::search_system::frame(const context& ctx, data& d, const channel_r
 		d.symbols_dirty = true;
 		d.last_index_change = {};
 	}
-	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !d.index->building.load(std::memory_order_acquire)) {
+	if (d.symbols_dirty && now - d.last_index_change > milliseconds(500.f) && !build_d.building && !search::index_busy(d.index->phase.load(std::memory_order_acquire))) {
 		d.symbols_dirty = false;
 		search::request_symbol_build(*d.index);
 	}

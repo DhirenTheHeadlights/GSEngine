@@ -21,9 +21,11 @@ import :font;
 import :gui;
 import :gui_frame;
 import :gui_scale;
+import :image_attachments;
 import :interaction;
 import :layout;
 import :menu_stack;
+import :motion;
 import :render_layer;
 import :save;
 import :styles;
@@ -35,6 +37,35 @@ import :ui_renderer;
 
 auto gse::gui::is_popout(const viewport_state& vp) -> bool {
 	return vp.window.exists();
+}
+
+auto gse::gui::widget_context_init(data& d, viewport_state& vp, const render_layer layer, const std::uint32_t z_order, const widget_context_info& info) -> draw_context_init {
+	return {
+		.current_menu = &info.current_menu,
+		.style = info.style,
+		.fonts = d.fonts,
+		.blank_texture = d.blank_texture,
+		.layout_cursor = info.layout_cursor,
+		.sprites = d.sprite_commands,
+		.texts = d.text_commands,
+		.text_pool = d.text_pools[d.text_pool_slot],
+		.text_pool_used = d.text_pool_used,
+		.motion = d.motion,
+		.widget_scrolls = d.widget_scrolls,
+		.widget_tree_open = d.widget_tree_open,
+		.current_layer = layer,
+		.current_z_order = z_order,
+		.input_layer = vp.input_layer_render,
+		.input_suppressed = vp.input_suppressed,
+		.owns_keyboard = vp.owns_keyboard,
+		.hit_regions = &vp.input_layers_data,
+		.tooltip = &vp.tooltip,
+		.context_menu = &vp.context_menu,
+		.pending_text_edit = &vp.pending_text_edit,
+		.image_paste = vp.image_paste,
+		.clip_stack = { info.clip },
+		.frame_rect = vp.frame_rect,
+	};
 }
 
 auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
@@ -94,12 +125,16 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 	}
 
 	d.primary.display_scale = window_s.primary.content_scale;
-	d.ui_scale_by_monitor = load_ui_scales(d.file_path);
+	if (d.restore_layout) {
+		d.ui_scale_by_monitor = load_ui_scales(d.file_path);
+	}
 	sync_monitor_scale(d, d.primary, window_s.primary.monitor_key);
 
-	const auto viewport_size = vec2f(window::viewport(window_s));
+	const auto viewport_size = vec2f(window::viewport(window_s.primary.handle));
 	d.primary.frame_rect = rectf::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
-	d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
+	if (d.restore_layout) {
+		d.primary.menus = load(d.file_path, d.primary.menus, viewport_size, scale_factor_for(d, d.primary, viewport_size.y()));
+	}
 
 	d.last_ui_font = d.ui_font.value;
 	d.last_code_font = d.code_font.value;
@@ -180,13 +215,13 @@ auto gse::gui::init(context& ctx, const shared_view<window::data> window_s, cons
 		d.primary.visible_menu_ids_last_frame.push_back(m.id());
 	}
 
-	d.primary.previous_viewport_size = vec2f(window::viewport(window_s));
+	d.primary.previous_viewport_size = vec2f(window::viewport(window_s.primary.handle));
 	d.primary.previous_scale_factor = scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y());
 }
 
-auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out, data& d) -> async::task<> {
+auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, const shared_view<input::data> input_state, const channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in, const channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_icon_request> ui_out, data& d) -> async::task<> {
 	const auto current_viewport_size = vec2f(gpu_s.render_graph->extent());
-	const auto window_size = vec2f(window::viewport(window_s));
+	const auto window_size = vec2f(window::viewport(window_s.primary.handle));
 
 	d.primary.frame_rect = rectf::from_position_size({ 0.f, window_size.y() }, window_size);
 	for (const auto& req : requests_in.of<window_opened>()) {
@@ -241,16 +276,6 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		d.last_code_font = d.code_font.value;
 	}
 
-	update_viewport_interaction(d, d.primary, window_s, input_state);
-	for (const auto& vp : d.secondaries) {
-		update_viewport_interaction(d, *vp, window_s, input_state);
-	}
-
-	if (d.save_clock.elapsed() > data::update_interval) {
-		save(d);
-		d.save_clock.reset();
-	}
-
 	if (!d.primary.fstate.active) {
 		d.primary.fstate = {};
 		for (const auto& vp : d.secondaries) {
@@ -259,7 +284,19 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		co_return;
 	}
 
+	update_viewport_interaction(d, d.primary, window_s, input_state);
+	for (const auto& vp : d.secondaries) {
+		update_viewport_interaction(d, *vp, window_s, input_state);
+	}
+
+	resolve_image_paste(d.primary.image_paste, assets_s);
+	for (const auto& vp : d.secondaries) {
+		resolve_image_paste(vp->image_paste, assets_s);
+	}
+
 	const input::state& input_st = input::current_state(input_state);
+
+	d.motion.sweep();
 
 	for (const auto& req : requests_in.of<push_screen_request>()) {
 		if (viewport_state* target = viewport_for_window(d, req.window)) {
@@ -310,7 +347,7 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 
 	const std::size_t primary_sprite_start = d.sprite_commands.size();
 	const std::size_t primary_text_start = d.text_commands.size();
-	update_viewport(d, d.primary, input_st, requests_in, ui_out);
+	update_viewport(ctx, d, d.primary, input_st, requests_in, ui_out);
 	select_text_in_viewport(d.primary, primary_text_start);
 	stamp_viewport(primary_sprite_start, primary_text_start, d.primary.window, d.primary.frame_rect);
 
@@ -318,7 +355,7 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 		viewport_state& vp = *d.secondaries[i];
 		const std::size_t sprite_start = d.sprite_commands.size();
 		const std::size_t text_start = d.text_commands.size();
-		update_viewport(d, vp, input_st, requests_in, ui_out);
+		update_viewport(ctx, d, vp, input_st, requests_in, ui_out);
 		select_text_in_viewport(vp, text_start);
 		stamp_viewport(sprite_start, text_start, vp.window, vp.frame_rect);
 	}
@@ -412,11 +449,10 @@ auto gse::gui::run(context& ctx, const shared_view<window::data> window_s, const
 	co_return;
 }
 
-auto gse::gui::shutdown(data& d) -> void {
-	save(d);
-}
-
-auto gse::gui::save(data& d) -> void {
+auto gse::gui::persist(const data& d) -> void {
+	if (!d.persist_layout) {
+		return;
+	}
 	save(d.primary.menus, d.file_path, d.primary.previous_viewport_size, scale_factor_for(d, d.primary, d.primary.previous_viewport_size.y()));
 	save_ui_scales(d.ui_scale_by_monitor, d.file_path);
 }

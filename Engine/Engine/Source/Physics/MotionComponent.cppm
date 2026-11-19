@@ -13,22 +13,32 @@ import gse.ecs;
 import gse.math;
 
 export namespace gse::physics {
+	struct mass_distribution {
+		vec3<displacement> center;
+		mat3<inertia> tensor;
+	};
+
 	struct dynamic_body {
 		[[= networked]] mass mass = kilograms(1.f);
 		[[= networked]] float restitution = 0.3f;
 		[[= networked]] bool affected_by_gravity = true;
 		[[= networked]] bool update_orientation = true;
+		std::optional<mass_distribution> distribution;
 	};
+
+	constexpr std::uint8_t reset_pose = 1;
+	constexpr std::uint8_t reset_pose_keep_solver_state = 2;
+	constexpr std::uint8_t reset_orientation = 3;
 
 	struct kinematic_body {};
 
 	struct static_body {};
 
-	struct motion_component {
+	struct [[= gse::written_by<^^gse::physics>{}]] motion_component {
 		[[= networked]] vec3<velocity> current_velocity;
 		[[= networked]] vec3<angular_velocity> angular_velocity;
 		[[= networked]] std::variant<dynamic_body, kinematic_body, static_body> body = dynamic_body{};
-		std::uint8_t reset_pending = 0;
+		std::uint8_t reset_pending = 1;
 	};
 
 	struct impulse_request {

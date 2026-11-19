@@ -12,6 +12,7 @@ export namespace gse::ide::config {
 		std::string name;
 		std::string game_target;
 		bool has_manifest = false;
+		bool installed = false;
 		std::filesystem::path engine_root;
 		std::filesystem::path engine_source;
 		std::filesystem::path project_root;
@@ -31,6 +32,7 @@ export namespace gse::ide::config {
 		std::filesystem::path compile_commands;
 		bool is_project = false;
 		bool analyzable = true;
+		bool counts_loc = true;
 	};
 
 	auto worktrees() -> std::span<const worktree>;
@@ -44,6 +46,11 @@ export namespace gse::ide::config {
 	auto worktree_for(
 		const std::filesystem::path& file
 	) -> const worktree&;
+
+	auto owns_request(
+		const std::filesystem::path& cwd,
+		const std::filesystem::path& project
+	) -> bool;
 
 	auto canonical_path(
 		const std::filesystem::path& file

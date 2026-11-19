@@ -1,5 +1,6 @@
 export module gse.ide.diagnostic;
 
+import gse.analysis;
 import std;
 
 export namespace gse::ide {
@@ -49,13 +50,6 @@ export namespace gse::ide {
 		}]],
 	};
 
-	enum class severity {
-		error,
-		warning,
-		note,
-		hint
-	};
-
 	struct document_revision {
 		std::uint64_t value = 0;
 
@@ -85,24 +79,12 @@ export namespace gse::ide {
 		text_edit edit;
 	};
 
-	struct diagnostic {
-		std::uint32_t line = 0;
-		std::uint32_t end_line = 0;
-		std::uint32_t start_col = 0;
-		std::uint32_t end_col = 0;
-		severity level = severity::error;
+	struct diagnostic : gse::analysis::diagnostic {
 		std::optional<lint_rule> rule;
-		std::string message;
-		std::filesystem::path file;
 		std::optional<fix_it> fix;
 	};
 
 	struct fix_engine {
-		static auto display_to_byte(
-			std::string_view row,
-			std::uint32_t display_col
-		) -> std::uint32_t;
-
 		static auto rule_edits(
 			std::span<const diagnostic> diagnostics,
 			lint_rule rule
@@ -113,18 +95,6 @@ export namespace gse::ide {
 			std::span<const text_edit> edits
 		) -> std::size_t;
 	};
-}
-
-auto gse::ide::fix_engine::display_to_byte(const std::string_view row, const std::uint32_t display_col) -> std::uint32_t {
-	constexpr std::size_t gcc_tab_width = 8;
-	std::size_t display = 0;
-	for (std::size_t i = 0; i < row.size(); ++i) {
-		if (display >= display_col) {
-			return static_cast<std::uint32_t>(i);
-		}
-		display += row[i] == '\t' ? gcc_tab_width - display % gcc_tab_width : 1;
-	}
-	return static_cast<std::uint32_t>(row.size());
 }
 
 auto gse::ide::fix_engine::rule_edits(const std::span<const diagnostic> diagnostics, const lint_rule rule) -> std::vector<text_edit> {
@@ -188,9 +158,9 @@ auto gse::ide::fix_engine::apply(std::vector<std::string>& lines, const std::spa
 		}
 
 		std::string& row = lines[edit.line];
-		const std::uint32_t byte_start = display_to_byte(row, edit.start_col);
+		const std::uint32_t byte_start = gse::analysis::display_to_byte(row, edit.start_col);
 		if (last_line == edit.line) {
-			const std::uint32_t byte_end = display_to_byte(row, edit.end_col);
+			const std::uint32_t byte_end = gse::analysis::display_to_byte(row, edit.end_col);
 			if (byte_end < byte_start || byte_end > row.size()) {
 				continue;
 			}
@@ -212,7 +182,7 @@ auto gse::ide::fix_engine::apply(std::vector<std::string>& lines, const std::spa
 				continue;
 			}
 			const std::string& last = lines[last_line];
-			const std::uint32_t byte_end = display_to_byte(last, edit.end_col);
+			const std::uint32_t byte_end = gse::analysis::display_to_byte(last, edit.end_col);
 			row = row.substr(0, byte_start) + edit.replacement + last.substr(byte_end);
 			lines.erase(lines.begin() + edit.line + 1, lines.begin() + last_line + 1);
 		}

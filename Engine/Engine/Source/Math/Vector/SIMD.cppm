@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -9,10 +10,13 @@ module;
 #include <span>
 #include <type_traits>
 
+#if !defined(GSE_NO_SIMD_X86) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#define GSE_SIMD_X86 1
 #ifdef _MSC_VER
 #include <intrin.h>
 #else
 #include <immintrin.h>
+#endif
 #endif
 
 export module gse.math:simd;
@@ -29,6 +33,9 @@ concept is_double = std::same_as<double, std::remove_cvref_t<T>>;
 template <typename T>
 concept simd_val = is_int32<T> || is_float<T> || is_double<T>;
 
+template <typename T, std::size_t Size>
+concept x86_lanes = ((is_float<T> || is_int32<T>) && (Size == 4 || Size == 8)) || (is_double<T> && (Size == 2 || Size == 4));
+
 template <typename T>
 concept span = requires {
 	typename T::element_type;
@@ -39,103 +46,104 @@ export namespace gse::simd {
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto sub(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto mul(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto div(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto dot(
 		const span auto& lhs,
 		const span auto& rhs,
 		simd_val auto& result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size());
 
 	auto abs(
 		const span auto& v,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == v.size());
 
 	auto min(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto max(
 		const span auto& lhs,
 		const span auto& rhs,
 		span auto result
-	) -> void;
+	) -> void pre(rhs.size() == lhs.size() && result.size() == lhs.size());
 
 	auto clamp(
 		const span auto& v,
 		const span auto& min_v,
 		const span auto& max_v,
 		span auto result
-	) -> void;
+	) -> void pre(min_v.size() == v.size() && max_v.size() == v.size() && result.size() == v.size());
 
 	auto mul_mat4(
 		const float* lhs,
 		const float* rhs,
 		float* result
-	) -> void;
+	) -> void pre(lhs != nullptr && rhs != nullptr && result != nullptr);
 
 	auto add_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto sub_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto mul_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto div_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto min_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 
 	auto max_s(
 		const span auto& lhs,
 		const simd_val auto& scalar,
 		span auto result
-	) -> void;
+	) -> void pre(result.size() == lhs.size());
 }
 
 auto gse::simd::add(const span auto& lhs, const span auto& rhs, span auto result) -> void {
 	using type = std::remove_cvref_t<decltype(lhs[0] + rhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_add_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -166,7 +174,9 @@ auto gse::simd::add(const span auto& lhs, const span auto& rhs, span auto result
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] + rhs[i];
 		}
@@ -177,6 +187,7 @@ auto gse::simd::sub(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] - rhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_sub_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -207,7 +218,9 @@ auto gse::simd::sub(const span auto& lhs, const span auto& rhs, span auto result
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] - rhs[i];
 		}
@@ -218,6 +231,7 @@ auto gse::simd::mul(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] * rhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_mul_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -248,7 +262,9 @@ auto gse::simd::mul(const span auto& lhs, const span auto& rhs, span auto result
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] * rhs[i];
 		}
@@ -259,6 +275,7 @@ auto gse::simd::div(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0] / rhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_div_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -271,7 +288,9 @@ auto gse::simd::div(const span auto& lhs, const span auto& rhs, span auto result
 	else if constexpr (is_double<type> && size == 2) {
 		_mm_storeu_pd(result.data(), _mm_div_pd(_mm_loadu_pd(lhs.data()), _mm_loadu_pd(rhs.data())));
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] / rhs[i];
 		}
@@ -282,6 +301,7 @@ auto gse::simd::dot(const span auto& lhs, const span auto& rhs, simd_val auto& r
 	using type = std::remove_cvref_t<decltype(lhs[0] * rhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		const __m256 product = _mm256_mul_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data()));
 		__m128 sum = _mm_add_ps(_mm256_castps256_ps128(product), _mm256_extractf128_ps(product, 1));
@@ -321,6 +341,26 @@ auto gse::simd::dot(const span auto& lhs, const span auto& rhs, simd_val auto& r
 		sum = _mm_hadd_epi32(sum, sum);
 		result = _mm_cvtsi128_si32(sum);
 	}
+	else
+#endif
+	if constexpr (x86_lanes<type, size> && !is_int32<type>) {
+		std::array<type, size> product{};
+		for (std::size_t i = 0; i < size; ++i) {
+			product[i] = lhs[i] * rhs[i];
+		}
+		if constexpr (is_float<type> && size == 8) {
+			result = ((product[0] + product[4]) + (product[1] + product[5])) + ((product[2] + product[6]) + (product[3] + product[7]));
+		}
+		else if constexpr (is_float<type>) {
+			result = (product[0] + product[1]) + (product[2] + product[3]);
+		}
+		else if constexpr (size == 4) {
+			result = (product[0] + product[2]) + (product[1] + product[3]);
+		}
+		else {
+			result = product[0] + product[1];
+		}
+	}
 	else {
 		result = 0;
 		for (std::size_t i = 0; i < size; ++i) {
@@ -333,6 +373,7 @@ auto gse::simd::abs(const span auto& v, span auto result) -> void {
 	using type = std::remove_cvref_t<decltype(v[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(v)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		const __m256 mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
 		_mm256_storeu_ps(result.data(), _mm256_and_ps(_mm256_loadu_ps(v.data()), mask));
@@ -361,7 +402,9 @@ auto gse::simd::abs(const span auto& v, span auto result) -> void {
 			_mm_abs_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(v.data())))
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = std::abs(v[i]);
 		}
@@ -372,6 +415,7 @@ auto gse::simd::min(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_min_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -402,9 +446,16 @@ auto gse::simd::min(const span auto& lhs, const span auto& rhs, span auto result
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::min(lhs[i], rhs[i]);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] < rhs[i] ? lhs[i] : rhs[i];
+			}
+			else {
+				result[i] = std::min(lhs[i], rhs[i]);
+			}
 		}
 	}
 }
@@ -413,6 +464,7 @@ auto gse::simd::max(const span auto& lhs, const span auto& rhs, span auto result
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_max_ps(_mm256_loadu_ps(lhs.data()), _mm256_loadu_ps(rhs.data())));
 	}
@@ -443,9 +495,16 @@ auto gse::simd::max(const span auto& lhs, const span auto& rhs, span auto result
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::max(lhs[i], rhs[i]);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] > rhs[i] ? lhs[i] : rhs[i];
+			}
+			else {
+				result[i] = std::max(lhs[i], rhs[i]);
+			}
 		}
 	}
 }
@@ -454,6 +513,7 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 	using type = std::remove_cvref_t<decltype(v[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(v)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		const __m256 upper = _mm256_min_ps(_mm256_loadu_ps(v.data()), _mm256_loadu_ps(max_v.data()));
 		_mm256_storeu_ps(result.data(), _mm256_max_ps(upper, _mm256_loadu_ps(min_v.data())));
@@ -490,14 +550,23 @@ auto gse::simd::clamp(const span auto& v, const span auto& min_v, const span aut
 			_mm_max_epi32(upper, _mm_loadu_si128(reinterpret_cast<const __m128i*>(min_v.data())))
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::clamp(v[i], min_v[i], max_v[i]);
+			if constexpr (x86_lanes<type, size>) {
+				const type upper = v[i] < max_v[i] ? v[i] : max_v[i];
+				result[i] = upper > min_v[i] ? upper : min_v[i];
+			}
+			else {
+				result[i] = std::clamp(v[i], min_v[i], max_v[i]);
+			}
 		}
 	}
 }
 
 auto gse::simd::mul_mat4(const float* lhs, const float* rhs, float* result) -> void {
+#ifdef GSE_SIMD_X86
 	const __m128 a0 = _mm_loadu_ps(lhs);
 	const __m128 a1 = _mm_loadu_ps(lhs + 4);
 	const __m128 a2 = _mm_loadu_ps(lhs + 8);
@@ -513,12 +582,26 @@ auto gse::simd::mul_mat4(const float* lhs, const float* rhs, float* result) -> v
 
 		_mm_storeu_ps(result + col * 4, result_col);
 	}
+#else
+	for (int col = 0; col < 4; ++col) {
+		const float* b_col = rhs + col * 4;
+
+		for (int row = 0; row < 4; ++row) {
+			result[col * 4 + row] =
+				lhs[row] * b_col[0] +
+				lhs[4 + row] * b_col[1] +
+				lhs[8 + row] * b_col[2] +
+				lhs[12 + row] * b_col[3];
+		}
+	}
+#endif
 }
 
 auto gse::simd::add_s(const span auto& lhs, const simd_val auto& scalar, span auto result) -> void {
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_add_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -549,7 +632,9 @@ auto gse::simd::add_s(const span auto& lhs, const simd_val auto& scalar, span au
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] + scalar;
 		}
@@ -560,6 +645,7 @@ auto gse::simd::sub_s(const span auto& lhs, const simd_val auto& scalar, span au
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_sub_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -590,7 +676,9 @@ auto gse::simd::sub_s(const span auto& lhs, const simd_val auto& scalar, span au
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] - scalar;
 		}
@@ -601,6 +689,7 @@ auto gse::simd::mul_s(const span auto& lhs, const simd_val auto& scalar, span au
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_mul_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -631,7 +720,9 @@ auto gse::simd::mul_s(const span auto& lhs, const simd_val auto& scalar, span au
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] * scalar;
 		}
@@ -642,6 +733,7 @@ auto gse::simd::div_s(const span auto& lhs, const simd_val auto& scalar, span au
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_div_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -654,7 +746,9 @@ auto gse::simd::div_s(const span auto& lhs, const simd_val auto& scalar, span au
 	else if constexpr (is_double<type> && size == 2) {
 		_mm_storeu_pd(result.data(), _mm_div_pd(_mm_loadu_pd(lhs.data()), _mm_set1_pd(scalar)));
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
 			result[i] = lhs[i] / scalar;
 		}
@@ -665,6 +759,7 @@ auto gse::simd::min_s(const span auto& lhs, const simd_val auto& scalar, span au
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_min_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -695,9 +790,16 @@ auto gse::simd::min_s(const span auto& lhs, const simd_val auto& scalar, span au
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::min(lhs[i], scalar);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] < scalar ? lhs[i] : scalar;
+			}
+			else {
+				result[i] = std::min(lhs[i], scalar);
+			}
 		}
 	}
 }
@@ -706,6 +808,7 @@ auto gse::simd::max_s(const span auto& lhs, const simd_val auto& scalar, span au
 	using type = std::remove_cvref_t<decltype(lhs[0])>;
 	constexpr std::size_t size = std::decay_t<decltype(lhs)>::extent;
 
+#ifdef GSE_SIMD_X86
 	if constexpr (is_float<type> && size == 8) {
 		_mm256_storeu_ps(result.data(), _mm256_max_ps(_mm256_loadu_ps(lhs.data()), _mm256_set1_ps(scalar)));
 	}
@@ -736,9 +839,16 @@ auto gse::simd::max_s(const span auto& lhs, const simd_val auto& scalar, span au
 			)
 		);
 	}
-	else {
+	else
+#endif
+	{
 		for (std::size_t i = 0; i < size; ++i) {
-			result[i] = std::max(lhs[i], scalar);
+			if constexpr (x86_lanes<type, size>) {
+				result[i] = lhs[i] > scalar ? lhs[i] : scalar;
+			}
+			else {
+				result[i] = std::max(lhs[i], scalar);
+			}
 		}
 	}
 }

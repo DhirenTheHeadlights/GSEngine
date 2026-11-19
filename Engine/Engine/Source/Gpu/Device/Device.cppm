@@ -4,6 +4,7 @@ import std;
 
 import :video_encoder;
 import :command_contract;
+import :device_contract;
 
 import gse.gpu_backend;
 import gse.assert;
@@ -16,8 +17,6 @@ import gse.save;
 import gse.math;
 
 export namespace gse::gpu {
-	struct gpu_dispatch;
-
 	class device final : public non_copyable {
 	public:
 		[[nodiscard]]
@@ -257,6 +256,11 @@ export namespace gse::gpu {
 			swap_chain_handle old_handle = {}
 		) -> expected<swap_chain_info>;
 
+		[[nodiscard]] auto resize_swapchain_in_place(
+			swap_chain_handle swapchain,
+			vec2i framebuffer_size
+		) -> bool;
+
 		[[nodiscard]] auto boot_surface() const -> surface;
 
 		[[nodiscard]] auto recreate_surface(
@@ -301,7 +305,8 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto create_blas(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) -> blas;
 
 		[[nodiscard]]
@@ -312,7 +317,8 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto query_blas_build_sizes(
 			const acceleration_structure_geometry& geometry,
-			std::uint32_t prim_count
+			std::uint32_t prim_count,
+			build_acceleration_structure_flags flags
 		) const -> acceleration_structure_build_sizes;
 
 		[[nodiscard]]
@@ -332,6 +338,15 @@ export namespace gse::gpu {
 		[[nodiscard]]
 		auto create_buffer(
 			const buffer_desc& desc,
+			std::string_view tag = "",
+			const std::source_location& loc = std::source_location::current()
+		) -> buffer;
+
+		template <typename T>
+		[[nodiscard]]
+		auto create_buffer(
+			std::size_t count,
+			buffer_desc desc,
 			std::string_view tag = "",
 			const std::source_location& loc = std::source_location::current()
 		) -> buffer;
@@ -398,6 +413,12 @@ export namespace gse::gpu {
 			device_size size
 		) -> void;
 
+		auto write_storage_buffer(
+			bindless_slot slot,
+			gpu::handle<buffer> buf,
+			device_size size
+		) -> void;
+
 		auto write_acceleration_structure(
 			bindless_slot slot,
 			device_address as_address
@@ -427,6 +448,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]]
 		auto max_push_data_size() const -> std::uint32_t;
+
+		[[nodiscard]] auto capabilities() const -> backend_capabilities;
 
 		auto collect_garbage() -> void;
 
@@ -569,6 +592,12 @@ export namespace gse::gpu {
 			bool pass_checkpoints_enabled
 		);
 
+		template <typename B, typename Creation>
+		[[nodiscard]] static auto from_backend(
+			Creation&& created,
+			bool pass_checkpoints
+		) -> std::unique_ptr<device>;
+
 		auto set_slot_resource(
 			std::uint32_t slot_index,
 			const resource_ref& ref
@@ -596,4 +625,11 @@ export namespace gse::gpu {
 
 		std::array<pass_marker_ring, pass_marker_domain_count> m_pass_marker_rings;
 	};
+}
+
+template <typename T>
+auto gse::gpu::device::create_buffer(const std::size_t count, buffer_desc desc, const std::string_view tag, const std::source_location& loc) -> buffer {
+	desc.size = count * sizeof(T);
+	desc.stride = sizeof(T);
+	return create_buffer(desc, tag, loc);
 }

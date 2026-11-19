@@ -15,7 +15,10 @@ import gse.save;
 import gse.time;
 import std;
 
+import :body_requests;
+import :bounding_box;
 import :collision_component;
+import :contact_events;
 import :convex_hull;
 import :joint_drive_component;
 import :joint_spec;
@@ -41,9 +44,9 @@ export namespace gse::physics {
 		displacement target_distance = {};
 		linear_compliance compliance = {};
 		float damping = 0.f;
-		angle limit_lower = radians(-std::numbers::pi_v<float>);
-		angle limit_upper = radians(std::numbers::pi_v<float>);
-		bool limits_enabled = false;
+		vec3<angle> limit_lower = {};
+		vec3<angle> limit_upper = {};
+		std::uint32_t limited_rows = 0;
 		quat rest_orientation;
 		bool rest_orientation_initialized = false;
 
@@ -51,21 +54,73 @@ export namespace gse::physics {
 		vec3<stiffness> pos_penalty;
 		vec3<torque> ang_lambda;
 		vec3<angular_stiffness> ang_penalty;
-		torque limit_lambda = {};
-		angular_stiffness limit_penalty = {};
 
 		vec3<angular_stiffness> soft_ang_stiffness = {};
-
-		float activation = 0.f;
-		force max_force = newtons(0.f);
 
 		vec3<angle> drive_target = {};
 		vec3<angular_stiffness> drive_stiffness = {};
 		float drive_damping = 0.f;
 		torque drive_max_torque = {};
+		std::uint32_t curve_words = 0;
+	};
+
+	struct muscle_frame {
+		std::uint32_t words = 0;
+		id body;
+	};
+
+	struct muscle_definition {
+		std::array<muscle_attachment, max_muscle_path_points> path{};
+		std::array<std::optional<muscle_frame>, max_muscle_path_points> frames{};
+		std::uint32_t path_count = 0;
+		std::array<muscle_wrap, max_muscle_wraps> wraps{};
+		std::array<std::uint32_t, max_muscle_wraps> wrap_words{};
+		std::uint32_t wrap_count = 0;
+		force max_force = {};
+		length optimal_fiber_length = {};
+		length tendon_slack_length = {};
+		angle pennation_at_optimal = {};
+		velocity max_contraction_velocity = {};
+		float tendon_shape = 0.f;
+		float excitation = 0.f;
+		float activation = 0.f;
+		length fiber_projection = {};
 	};
 
 	struct reset_physics_request {};
+
+	struct joint_seed {
+		id entity_a;
+		id entity_b;
+		vec3<force> pos_lambda;
+		vec3<stiffness> pos_penalty;
+		vec3<torque> ang_lambda;
+		vec3<angular_stiffness> ang_penalty;
+	};
+
+	struct muscle_seed {
+		id owner;
+		float activation = 0.f;
+		length fiber_projection = {};
+	};
+
+	struct contact_seed {
+		id entity_a;
+		id entity_b;
+		vbd::contact_constraint contact;
+	};
+
+	struct body_seed {
+		id owner;
+		float accel_weight = 0.f;
+	};
+
+	struct solver_seed_request {
+		std::vector<joint_seed> joints;
+		std::vector<muscle_seed> muscles;
+		std::vector<contact_seed> contacts;
+		std::vector<body_seed> bodies;
+	};
 
 	struct motor_input {
 		id owner;
@@ -112,6 +167,10 @@ export namespace gse::physics {
 
 	struct rollback_history_request {
 		int steps = 0;
+	};
+
+	struct contact_interest_request {
+		bool wanted = false;
 	};
 
 	struct carried_body_state {
@@ -200,6 +259,7 @@ export namespace gse::physics {
 		std::vector<carried_body_state> carried;
 		sleep_counter_table sleep_counters;
 		id_mapped_collection<joint_definition> joints;
+		id_mapped_collection<muscle_definition> muscles;
 		vbd::contact_cache contact_cache;
 		step_inputs inputs;
 	};
@@ -210,16 +270,23 @@ export namespace gse::physics {
 	};
 
 	struct gpu_solver_frame_info {
-		const gpu::buffer* snapshot = nullptr;
+		gpu::handle<gpu::buffer> snapshot;
 		std::uint32_t body_count = 0;
 		std::uint32_t body_stride = 0;
 		std::uint32_t position_offset = 0;
+		std::array<gpu::handle<gpu::buffer>, gpu::max_frames_in_flight> external_force{};
+		std::uint32_t external_force_stamp_word = 0;
 	};
 
 	struct interpolation_state {
 		bool advancing = true;
 		int steps = 0;
 		int readback_age_steps = 0;
+	};
+
+	struct joint_drive_change {
+		std::uint32_t joint = 0;
+		std::uint32_t drive = 0;
 	};
 
 	struct gpu_tick_plan {
@@ -230,7 +297,11 @@ export namespace gse::physics {
 		std::uint64_t first_tick = 0;
 		std::optional<std::uint64_t> restore_tick;
 		std::vector<step_inputs> per_tick;
+		std::vector<joint_drive_change> joint_drive_changes;
+		bool full_joint_inputs = true;
 		std::uint64_t generation = 0;
+		std::vector<contact_seed> contact_seeds;
+		std::vector<body_seed> body_seeds;
 	};
 
 	struct joint_rest_orientation {
@@ -244,7 +315,7 @@ export namespace gse::physics {
 	};
 
 	struct gpu_upload_report {
-		std::flat_map<id, std::uint32_t> body_index;
+		std::optional<std::flat_map<id, std::uint32_t>> body_index;
 		std::vector<joint_rest_orientation> rest_orientations;
 		std::vector<recorded_tick_inputs> recorded;
 	};
@@ -269,99 +340,98 @@ export namespace gse::physics {
 		const interpolation_state& interpolation
 	) -> transform_component;
 
-	struct [[= system_state<"Physics">{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
+	struct shadow_step_trace_settings {
+		[[
+			= settings::describe<
+				"Step a second, GPU-resident copy of the solver from the CPU solver's pre-step state "
+				"every tick and log the one-step residual, then discard it. A parity instrument: it "
+				"denies divergence any time to amplify, so a residual is a defect rather than chaos. "
+				"Stalls the device once per tick, so timings from such a run are meaningless. "
+				"Requires a restart, and requires the CPU solver."
+			>{},
+			= settings::restart_required{}
+		]]
+		bool enabled = false;
+
+		[[
+			= settings::describe<"Dump every body's one-step residual at this shadow step, once; -1 dumps nothing. "
+									  "Choose the step from the aggregate column rather than letting a magnitude trigger "
+									  "choose it: the steps just after first contact carry a large backend-independent "
+									  "residual from the per-tick reseed, so any threshold fires there instead of at the "
+									  "step where the backends actually part company.">{}
+		]]
+		int detail_step = -1;
+	};
+
+	struct trace_settings {
+		[[
+			= settings::describe<"Owner id of the one body every physics instrument traces. The cpu solver logs each of "
+									  "its contacts' violation, dual force and penalty before every dual update; the gpu "
+									  "solver records the same for its first substep into the collision state header; and "
+									  "the contact traces print its retired per-tick contact state. 0 traces nothing. The "
+									  "gpu instruments resolve this to a solver body index once the body map exists, so a "
+									  "trace starts on the body's second tick rather than its first.">{}
+		]]
+		std::uint64_t body = 0;
+
+		[[
+			= settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so the contact "
+									  "trace can print the pass-hash line. Off keeps the dispatch stream lean; the solve "
+									  "itself is identical either way.">{}
+		]]
+		bool hashes = false;
+
+		[[
+			= settings::describe<"Log the age in ticks of the gpu body snapshot the solver served each step. The control "
+									  "loop is act -> dispatch -> readback -> observe, so this age is the loop length the "
+									  "policy actually faces, and one extra tick of it costs most of a locomotion policy.">{}
+		]]
+		bool readback_age = false;
+
+		[[
+			= settings::describe<"Count, for every gpu island solve iteration, how many islands already meet the "
+									  "adaptive convergence tolerance on their own constraints, and log the running "
+									  "histogram. Measures what a per-island early-out could skip; the solve itself runs "
+									  "every iteration either way.">{}
+		]]
+		bool island_convergence = false;
+
+		[[
+			= settings::describe<"Ticks of gpu island convergence counts summed into each island_convergence line.">{},
+			= settings::range<1, 100000>{}
+		]]
+		int island_convergence_ticks = 600;
+
+		[[
+			= settings::describe<"Track the gpu solver's per-tick diagnostic counters (contact and colour peaks, "
+									  "coloring conflicts, stale reads, joint extremes) and log them whenever a peak "
+									  "moves or every 60 ticks. Reads the diagnostics header the solver already reads "
+									  "back each dispatch, so the solve itself is untouched.">{}
+		]]
+		bool gpu_diagnostics = true;
+
+		[[
+			= settings::describe<"The shadow-step parity harness, which steps a throwaway gpu copy of the solver from "
+									  "the cpu solver's state every tick.">{}
+		]]
+		shadow_step_trace_settings shadow_step;
+	};
+
+	struct [[= system_state<"Physics">{}, = requires_setting<^^launch::data::simulate_world, true>{}, = settings::category<"Physics">{}, = deferred_system{}]] data {
 		[[= settings::describe<"Step the physics world each frame.">{}]] bool update_phys = true;
 
 		[[
-			= settings::describe<"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
-									  "buffers are built once during startup, so this requires a restart.">{},
+			= settings::describe<
+				"Run the constraint solver on the GPU instead of the CPU. The GPU pipelines and "
+				"buffers are built once during startup, so this requires a restart."
+			>{},
 			= settings::restart_required{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::shader_target>>{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::shader_int64>>{},
+			= settings::fallback_unless<false, gpu::requires_capability<^^gpu::backend_capabilities::untyped_atomics>>{},
 			= shared
 		]]
 		bool use_gpu_solver = false;
-
-		[[
-			= settings::describe<"Most rigid bodies the GPU solver can hold. Sizes the body, contact-adjacency, "
-									  "colouring and grounded buffers once at startup and is baked into the solver's "
-									  "shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<64, 1048576>{}
-		]]
-		int gpu_max_bodies = 20480;
-
-		[[
-			= settings::describe<"Most contacts the GPU solver can carry per tick; contacts past this are dropped "
-									  "and counted by the diagnostics. Sizes the contact, warm-start and frozen-Jacobian "
-									  "buffers once at startup and is baked into the solver's shaders, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
-		]]
-		int gpu_max_contacts = 262144;
-
-		[[
-			= settings::describe<"Most broad-phase pairs the GPU solver's grid can emit per tick. Sized once at "
-									  "startup and baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
-		]]
-		int gpu_max_collision_pairs = 262144;
-
-		[[
-			= settings::describe<"Most joints the GPU solver can hold. Sized once at startup and baked into the "
-									  "solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 262144>{}
-		]]
-		int gpu_max_joints = 8192;
-
-		[[
-			= settings::describe<"Most jointed islands the GPU solver can sweep serially. Sized once at startup "
-									  "and baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1, 65536>{}
-		]]
-		int gpu_max_islands = 512;
-
-		[[
-			= settings::describe<"Most impulses the GPU solver accepts per upload. Sized once at startup, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 262144>{}
-		]]
-		int gpu_max_impulses = 4096;
-
-		[[
-			= settings::describe<"Most velocity motors the GPU solver accepts per upload, summed over every tick "
-									  "in a replay batch. Sized once at startup, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<16, 262144>{}
-		]]
-		int gpu_max_motors = 4096;
-
-		[[
-			= settings::describe<"Cells in the GPU solver's broad-phase hash grid. Sized once at startup and "
-									  "baked into the solver's shaders, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 1048576>{}
-		]]
-		int gpu_grid_table_size = 32768;
-
-		[[
-			= settings::describe<"Bodies each rollback ring slot can hold; a scene with more bodies runs with the "
-									  "ring off. Sized once at startup, so this requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<64, 1048576>{}
-		]]
-		int gpu_ring_max_bodies = 4096;
-
-		[[
-			= settings::describe<"Contacts each rollback ring slot can hold. Sized once at startup, so this "
-									  "requires a restart.">{},
-			= settings::restart_required{},
-			= settings::range<1024, 4194304>{}
-		]]
-		int gpu_ring_max_contacts = 16384;
 
 		[[
 			= settings::describe<"Dispatch at most one GPU solver tick per frame and skip while the previous "
@@ -373,23 +443,94 @@ export namespace gse::physics {
 		bool gpu_async_dispatch = false;
 
 		[[
-			= settings::describe<"Wait for the compute queue before reading the GPU solver's results each tick, "
-									  "so simulation consumers observe the previous tick's state instead of a "
-									  "snapshot that is max_frames_in_flight frames old. Costs the GPU/CPU overlap; "
-									  "for training and benches, not interactive play.">{},
+			= settings::describe<
+				"Wait for the compute queue before reading the GPU solver's results each tick, "
+				"so simulation consumers observe the previous tick's state instead of a "
+				"snapshot that is max_frames_in_flight frames old. Costs the GPU/CPU overlap; "
+				"for training and benches, not interactive play."
+			>{},
 			= settings::restart_required{},
 			= shared
 		]]
 		bool gpu_sync_readback = false;
 
 		[[
-			= settings::describe<"Deliver the solver upload on the same-frame channel so the dispatch happens in the "
-									  "frame that produced it, instead of a next-frame channel that costs the control loop "
-									  "a tick. Implied by gpu_sync_readback.">{},
+			= settings::describe<
+				"Deliver the solver upload on the same-frame channel so the dispatch happens in the "
+				"frame that produced it, instead of a next-frame channel that costs the control loop "
+				"a tick. Implied by gpu_sync_readback."
+			>{},
 			= settings::restart_required{},
 			= shared
 		]]
 		bool gpu_same_frame_upload = false;
+
+		[[
+			= settings::describe<
+				"Read the GPU solver's full per-body state back to the host every tick, not only the "
+				"slim pose and velocity snapshot the simulation consumes. Debug and parity tools that "
+				"inspect solver internals need it; it multiplies the per-tick readback about five times."
+			>{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_full_snapshot = false;
+
+		[[
+			= settings::describe<
+				"Read every GPU joint constraint back to the host every tick, duals and stabilisation "
+				"offsets included, so a diagnostic can see each joint's separation and multiplier. "
+				"Off by default; the copy scales with the joint count."
+			>{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_joint_snapshot = false;
+
+		[[
+			= settings::describe<
+				"Read every active GPU contact constraint back to the host every tick, warm-start "
+				"multipliers, penalties and feature keys included, so a diagnostic can capture the "
+				"contact state a replay needs. Off by default; the copy scales with the contact count."
+			>{},
+			= settings::restart_required{},
+			= shared
+		]]
+		bool gpu_contact_snapshot = false;
+
+		[[
+			= settings::describe<
+				"Solve each gpu island with a coloured Gauss-Seidel sweep: bodies that share no "
+				"constraint are solved together, so a sweep takes one round per colour instead of "
+				"one per dependency level. Changes the solve order, so results differ from the "
+				"ordered sweep."
+			>{},
+			= shared
+		]]
+		bool gpu_island_colored_sweep = true;
+
+		[[
+			= settings::describe<
+				"Fewest gpu islands at which island packing turns on. Packing divides the solve "
+				"workgroup count, so below this count the packed dispatch leaves the device "
+				"underfilled and runs slower than one island per workgroup."
+			>{},
+			= settings::range<0, 1048576>{},
+			= shared
+		]]
+		int gpu_island_pack_min_islands = 2048;
+
+		[[
+			= settings::describe<
+				"Solver iterations recorded per GPU queue submission. Each submission ends with its "
+				"own signal, so a heavy solve reaches the driver as several short packets instead "
+				"of one long one that the OS can mistake for a hang and remove the device. "
+				"Zero records every iteration of a substep in one submission."
+			>{},
+			= settings::range<0, 64>{},
+			= shared
+		]]
+		int gpu_solve_iterations_per_submit = 10;
 
 		[[
 			= settings::describe<"Fold the GPU solver's per-colour Gauss-Seidel dispatches into one sweep dispatch "
@@ -416,28 +557,34 @@ export namespace gse::physics {
 		int gpu_color_cap = 0;
 
 		[[
-			= settings::describe<"Workgroups per folded sweep dispatch. More workgroups widen the sweep's stride "
-									  "and raise occupancy on large scenes, but every workgroup must be co-resident "
-									  "for the colour barrier; oversubscribing residency trips the sweep's bail "
-									  "fallback. 0 keeps the built-in width of 32.">{},
+			= settings::describe<
+				"Workgroups per folded sweep dispatch. More workgroups widen the sweep's stride "
+				"and raise occupancy on large scenes, but every workgroup must be co-resident "
+				"for the colour barrier; oversubscribing residency trips the sweep's bail "
+				"fallback. 0 keeps the built-in width of 32."
+			>{},
 			= settings::range<0, 256>{}
 		]]
 		int gpu_sweep_workgroups = 0;
 
 		[[
-			= settings::describe<"Constraint solver iterations per substep. With adaptive_solver_iterations off "
-									  "both solvers run exactly this many every substep; with it on this is the cap "
-									  "and either solver may stop as early as the first iteration. Higher values "
-									  "reduce jitter at the cost of frame time.">{},
+			= settings::describe<
+				"Constraint solver iterations per substep. With adaptive_solver_iterations off "
+				"both solvers run exactly this many every substep; with it on this is the cap "
+				"and either solver may stop as early as the first iteration. Higher values "
+				"reduce jitter at the cost of frame time."
+			>{},
 			= settings::range<1, 64>{},
 			= shared
 		]]
 		int solver_iterations = 15;
 
 		[[
-			= settings::describe<"Stop iterating as soon as the worst violation falls below the convergence "
-									  "thresholds or stops shrinking, checked from the first iteration with no "
-									  "lower bound. Off runs a fixed solver_iterations every substep.">{},
+			= settings::describe<
+				"Stop iterating as soon as the worst violation falls below the convergence "
+				"thresholds or stops shrinking, checked from the first iteration with no "
+				"lower bound. Off runs a fixed solver_iterations every substep."
+			>{},
 			= shared
 		]]
 		bool adaptive_solver_iterations = false;
@@ -455,21 +602,25 @@ export namespace gse::physics {
 		angle convergence_threshold_angular = radians(1e-3f);
 
 		[[
-			= settings::describe<"Scale the linear convergence threshold with scene motion: the effective "
-									  "threshold becomes the larger of convergence_threshold_linear and this fraction "
-									  "of the fastest dynamic body's travel per substep. Churning scenes stop "
-									  "iterating once residual error is invisible against their own motion while "
-									  "settling stacks keep the tight threshold and the full adaptive budget. Applies "
-									  "to both solvers identically; 0 disables.">{},
+			= settings::describe<
+				"Scale the linear convergence threshold with scene motion: the effective "
+				"threshold becomes the larger of convergence_threshold_linear and this fraction "
+				"of the fastest dynamic body's travel per substep. Churning scenes stop "
+				"iterating once residual error is invisible against their own motion while "
+				"settling stacks keep the tight threshold and the full adaptive budget. Applies "
+				"to both solvers identically; 0 disables."
+			>{},
 			= settings::range<0.f, 0.25f>{},
 			= shared
 		]]
 		float convergence_speed_scale = 0.f;
 
 		[[
-			= settings::describe<"Fraction of each contact's pre-existing penetration carried forward per substep; "
-									  "the remainder is corrected as position error. Lower values depenetrate faster "
-									  "but inject more energy.">{},
+			= settings::describe<
+				"Fraction of each contact's pre-existing penetration carried forward per substep; "
+				"the remainder is corrected as position error. Lower values depenetrate faster "
+				"but inject more energy."
+			>{},
 			= settings::range<0.f, 1.f>{}
 		]]
 		float solver_alpha = 0.99f;
@@ -481,10 +632,69 @@ export namespace gse::physics {
 		stiffness_per_length solver_beta = newtons_per_meter_squared(100000.f);
 
 		[[
+			= settings::describe<"Angular penalty ramp rate. Each dual update grows a violated joint angular or "
+									  "limit row's penalty by this stiffness per radian of violation.">{}
+		]]
+		angular_stiffness_per_angle solver_ang_beta = newton_meters_per_radian_squared(100000.f);
+
+		[[
 			= settings::describe<"Per-substep decay factor for contact penalties and warm-started duals.">{},
 			= settings::range<0.5f, 1.f>{}
 		]]
 		float solver_gamma = 0.99f;
+
+		[[
+			= settings::describe<"Run the iterations at alpha 1 and correct the carried constraint error in one "
+									  "extra position-only sweep at alpha 0. Off, every iteration runs at "
+									  "solver_alpha and the warm-started contact duals decay by alpha * gamma.">{}
+		]]
+		bool solver_post_stabilize = true;
+
+		[[
+			= settings::describe<"Measure coupled-joint limit rows in rotation, not coordinate, units: each row's "
+									  "error and axis are divided by the length of its coordinate axis. Same limit "
+									  "surface; near a coordinate-chart singularity the coordinate row's stiffness "
+									  "grows without bound and the solve stops converging.">{}
+		]]
+		bool solver_coupled_limit_normalized = false;
+
+		[[
+			= settings::describe<
+				"Slowest speed at which a joint's carried positional gap is closed when "
+				"solver_alpha keeps part of it. Each step corrects at least this speed times "
+				"the step, and never less than solver_alpha would. Zero keeps solver_alpha "
+				"alone, where a millimetre gap closes at 1 % a step."
+			>{},
+			= settings::range<0.f, 10.f>{}
+		]]
+		velocity joint_correction_speed = meters_per_second(0.f);
+
+		[[
+			= settings::describe<"Start every muscle crossing a body whose pose is reset at the activation its "
+									  "excitation commands on the reset tick, instead of carrying the activation it "
+									  "had before the reset. Off keeps the carried activation.">{}
+		]]
+		bool muscle_reset_activation = false;
+
+		[[
+			= settings::describe<
+				"Trust region of one body Newton step: the largest translation a single solver "
+				"iteration may apply to a body. Both solvers clamp to it. Light bodies held by "
+				"stiff joints overshoot when a wound-up joint dual unwinds, so articulated bodies "
+				"with light distal links need a smaller region."
+			>{},
+			= settings::range<0.0001f, 1.f>{}
+		]]
+		length max_linear_step = meters(0.1f);
+
+		[[
+			= settings::describe<
+				"Trust region of one body Newton step in rotation: the largest rotation a single "
+				"solver iteration may apply to a body. Both solvers clamp to it."
+			>{},
+			= settings::range<0.0001f, 3.1415927f>{}
+		]]
+		angle max_angular_step = radians(0.5f);
 
 		[[
 			= settings::describe<"Base penalty stiffness for inactive contact rows. Active rows floor at the "
@@ -508,6 +718,15 @@ export namespace gse::physics {
 									  "warm-start stiffness memory.">{}
 		]]
 		gap stick_threshold = meters(0.01f);
+
+		[[
+			= settings::describe<
+				"Coulomb friction coefficient for every contact: tangential force is capped at "
+				"this multiple of the normal force."
+			>{},
+			= settings::range<0.f, 2.f>{}
+		]]
+		float friction_coefficient = 0.6f;
 
 		[[
 			= settings::describe<"Linear speed below which a body may begin falling asleep. Zero disables sleeping "
@@ -543,99 +762,133 @@ export namespace gse::physics {
 		bool use_jacobi = false;
 
 		[[
-			= settings::describe<"Record the gpu solver's per-stage diagnostic hash dispatches every tick so ContactTrace "
-									  "can print the pass-hash line. Off keeps the dispatch stream lean; the solve itself is "
-									  "identical either way.">{},
+			= settings::describe<"Every physics instrument: which body they trace, and which of them run.">{},
 			= shared
 		]]
-		bool trace_hashes = false;
+		trace_settings trace;
 
 		[[
-			= settings::describe<"Log the age in ticks of the gpu body snapshot the solver served each step. The control "
-									  "loop is act -> dispatch -> readback -> observe, so this age is the loop length the "
-									  "policy actually faces, and one extra tick of it costs most of a locomotion policy.">{},
-			= shared
-		]]
-		bool trace_readback_age = false;
-
-		[[
-			= settings::describe<"Relaxation factor for the Jacobi solver. Lower values are more stable; "
-									  "higher values converge faster.">{},
+			= settings::describe<
+				"Relaxation factor for the Jacobi solver. Lower values are more stable; "
+				"higher values converge faster."
+			>{},
 			= settings::range<0.1f, 1.0f>{},
 			= shared
 		]]
 		float jacobi_omega = 0.67f;
 
 		[[
-			= settings::describe<"Solve bodies serially in height order, alternating sweep direction each "
-									  "iteration, instead of the parallel colour sweep. Trades parallelism for "
-									  "convergence on tall stacks.">{},
+			= settings::describe<
+				"Every convergence_probe_interval cpu solves, also solve a copy at this many "
+				"iterations with the default penalty ramp and log how far the real solve lands "
+				"from it. 0 is off."
+			>{},
+			= settings::range<0, 256>{}
+		]]
+		int convergence_probe_iterations = 0;
+
+		[[
+			= settings::describe<"Cpu solves between convergence probes.">{},
+			= settings::range<1, 100000>{}
+		]]
+		int convergence_probe_interval = 64;
+
+		[[
+			= settings::describe<
+				"Solve bodies serially in height order, alternating sweep direction each "
+				"iteration, instead of the parallel colour sweep. Trades parallelism for "
+				"convergence on tall stacks."
+			>{},
 			= shared
 		]]
 		bool use_ordered_sweep = false;
 
 		[[
-			= settings::describe<"Number of substeps per simulation tick. More substeps improve stability for "
-									  "fast-moving bodies.">{},
+			= settings::describe<
+				"Number of substeps per simulation tick. More substeps improve stability for "
+				"fast-moving bodies."
+			>{},
 			= settings::range<1, 8>{},
 			= shared
 		]]
 		int physics_substeps = 2;
 
 		[[
-			= settings::describe<"Bodies per parallel chunk in the constraint solver colour sweep. Lower values "
-									  "spread the sweep across more threads at the cost of scheduling overhead.">{},
+			= settings::describe<
+				"Bodies per parallel chunk in the constraint solver colour sweep. Lower values "
+				"spread the sweep across more threads at the cost of scheduling overhead."
+			>{},
 			= settings::range<1, 256>{}
 		]]
 		int color_chunk_grain = 8;
 
 		[[
-			= settings::describe<"Parallel chunks per worker in the broad phase. The pair test does more work for "
-									  "early objects than late ones, so higher values balance the load at the cost of "
-									  "scheduling overhead.">{},
+			= settings::describe<
+				"Parallel chunks per worker in the broad phase. The pair test does more work for "
+				"early objects than late ones, so higher values balance the load at the cost of "
+				"scheduling overhead."
+			>{},
 			= settings::range<1, 32>{}
 		]]
 		int broad_phase_chunks_per_worker = 8;
 
 		[[
-			= settings::describe<"Fixed steps of physics history kept for rollback. Zero keeps no history; the "
-									  "netcode and the rollback parity scenarios set it.">{},
+			= settings::describe<
+				"Fixed steps of physics history kept for rollback. Zero keeps no history; the "
+				"netcode and the rollback parity scenarios set it."
+			>{},
 			= settings::range<0, 600>{}
 		]]
 		int rollback_history_steps = 0;
 
-		[[
-			= settings::describe<"Solver body index of one body whose contacts both solvers trace per iteration: "
-									  "the cpu solver logs each contact's violation, dual force and penalty before "
-									  "every dual update, and the gpu solver records the same for its first substep "
-									  "into the collision state header, printed by ContactTrace. An index rather than "
-									  "an owner id so the trace covers the very first tick, before the body map exists; "
-									  "-1 traces nothing.">{},
-			= settings::range<-1, 5119>{},
-			= shared
-		]]
-		int trace_body = -1;
-
 		bool gpu_unavailable_reported = false;
 		int rollback_history_floor = 0;
+		bool contact_interest = false;
 		[[= shared]] std::uint64_t step_index = 0;
 		[[= shared]] std::uint64_t observed_step = 0;
 		[[= shared]] std::vector<step_snapshot> rollback_ring;
 		[[= shared]] id_mapped_collection<joint_definition> joints;
 		bool joint_rest_orientations_pending = true;
 		std::vector<id> results_ensured_owners;
+		std::vector<std::uint32_t> drive_joint_slots;
+		std::vector<joint_drive_component> applied_drives;
+		std::vector<id> applied_drive_owners;
+		std::uint64_t applied_drives_joints_generation = 0;
+		std::vector<std::uint8_t> drive_change_marks;
+		std::vector<std::vector<joint_drive_change>> drive_change_scan;
+		std::vector<joint_drive_change> drive_changes;
+		bool drive_changes_full = true;
 		[[= shared]] std::uint64_t joints_generation = 1;
 		[[= shared]] std::uint64_t joint_inputs_generation = 1;
+		std::size_t exclusion_count = 0;
+		[[= shared]] std::flat_set<std::pair<std::uint64_t, std::uint64_t>> non_colliding_pairs;
+		std::uint64_t non_colliding_generation = 0;
+		[[= shared]] id_mapped_collection<muscle_definition> muscles;
+		[[= shared]] std::uint64_t muscles_generation = 1;
+		[[= shared]] std::uint64_t muscle_inputs_generation = 1;
 		[[= shared]] std::vector<convex_hull> hulls;
+		std::map<std::vector<std::uint32_t>, std::uint32_t> hull_blocks;
+		[[= shared]] std::vector<std::uint32_t> curve_words;
+		std::map<std::vector<std::uint32_t>, std::uint32_t> curve_blocks;
 
 		[[= shared]] vbd::solver vbd_solver;
-		vbd::contact_cache contact_cache;
+		[[= shared]] vbd::contact_cache contact_cache;
+		std::vector<contact_seed> pending_contact_seeds;
+		std::vector<body_seed> pending_body_seeds;
+		contact_tracker contact_history;
+		std::vector<contact_event> contact_events;
+		[[= shared]] std::vector<moving_contact> moving_contacts;
 		[[= shared]] sleep_counter_table sleep_counters;
 		[[= shared]] std::flat_map<id, std::uint32_t> id_to_body_index;
 		std::vector<std::pair<id, std::uint32_t>> id_to_body_index_entries;
+		[[= shared]] std::uint64_t body_index_generation = 1;
+		std::vector<id> gpu_body_owners;
 		std::flat_map<id, transform_component> kinematic_step_start;
 		std::vector<impulse_request> gpu_pending_impulses;
 		std::unordered_map<id, std::uint64_t> gpu_reset_ticks;
+		[[= shared]] std::vector<id> reset_bodies;
+		std::vector<id> reset_scan_owners;
+		[[= shared]] std::uint64_t shape_generation = 1;
 		[[= shared]] gpu_tick_plan gpu_plan;
 		[[= shared]] interpolation_state interpolation;
 		bool gpu_sweep_fold_bailed = false;
@@ -646,6 +899,9 @@ export namespace gse::physics {
 		int gpu_color_cap_resolved = 0;
 		int gpu_color_cap_dwell = 0;
 		int gpu_color_cap_min = 0;
+		std::array<std::uint64_t, vbd::limits.island_convergence_count> island_convergence_totals{};
+		std::uint64_t island_convergence_generation = 0;
+		int island_convergence_samples = 0;
 
 		[[= shared]] std::vector<std::uint8_t> body_airborne;
 		[[= shared]] std::vector<std::uint8_t> body_sleeping;
@@ -657,27 +913,69 @@ export namespace gse::physics {
 	namespace gpu_upload {
 		struct upload_scratch {
 			std::vector<vbd::body_state> bodies;
+			std::vector<vbd::body_scan_entry> body_scan;
 			std::vector<mass_properties> body_props;
 			std::vector<vbd::velocity_motor_constraint> motors;
 			std::vector<vbd::joint_constraint> joints;
+			std::vector<std::pair<std::uint32_t, std::uint32_t>> non_colliding_pairs;
+			std::vector<vbd::body_collision_filter> body_filters;
 			std::vector<vbd::joint_drive_input> joint_inputs;
+			std::vector<std::uint32_t> joint_input_slots;
+			std::vector<vbd::muscle_constraint> muscles;
+			std::vector<vbd::muscle_path_point> muscle_points;
+			std::vector<float> muscle_excitations;
+			std::vector<std::uint32_t> hull_data;
+			std::vector<std::uint32_t> curve_data;
 			std::vector<vbd::impulse_constraint> impulses;
 		};
 
-		struct [[= system_state<"Physics GPU Upload">{}, = deferred_system{}]] data {
+		struct body_cache {
+			std::vector<id> motion_owners;
+			std::vector<id> transform_owners;
+			std::vector<id> collision_owners;
+			std::uint64_t shape_generation = 0;
+			std::size_t hull_count = 0;
+			std::vector<vbd::body_scan_entry> rest_scan;
+			std::vector<mass_properties> props;
+			std::vector<std::uint8_t> has_transform;
+			std::vector<std::uint32_t> transform_slot;
+			std::vector<std::uint32_t> collision_slot;
+			std::vector<std::uint32_t> locked;
+			bool valid = false;
+		};
+
+		struct [[= system_state<"Physics GPU Upload">{}, = requires_setting<^^physics::data::use_gpu_solver, true>{}, = deferred_system{}]] data {
 			std::uint64_t built_generation = 0;
 			std::uint64_t uploaded_joints_generation = 0;
 			std::uint64_t uploaded_joint_inputs_generation = 0;
+			std::uint64_t uploaded_muscles_generation = 0;
+			std::uint64_t uploaded_muscle_inputs_generation = 0;
+			std::vector<muscle_definition> muscles;
+			std::vector<std::uint32_t> muscle_slots;
+			std::uint32_t uploaded_muscle_count = 0;
+			std::vector<std::uint32_t> hull_data;
+			std::vector<std::uint32_t> hull_offsets;
+			std::size_t packed_hull_count = 0;
+			std::uint64_t hull_generation = 0;
 			std::uint32_t uploaded_body_count = 0;
 			std::uint32_t uploaded_joint_count = 0;
 			bool force_full_joints = false;
+			bool joint_inputs_full_pending = true;
 			std::vector<joint_definition> joints;
 			std::vector<std::uint32_t> joint_slots;
+			std::vector<std::uint32_t> joint_drive_slots;
+			std::size_t joint_drive_count = 0;
 			[[= shared]] std::flat_map<id, std::uint32_t> joint_gpu_slots;
 			[[= shared]] std::uint64_t joint_gpu_slots_generation = 0;
+			[[= shared]] std::flat_map<id, std::uint32_t> muscle_gpu_slots;
+			[[= shared]] std::uint64_t muscle_gpu_slots_generation = 0;
 			std::vector<std::pair<id, std::uint32_t>> joint_body_index_entries;
 			std::flat_map<id, std::uint32_t> body_index;
 			std::vector<std::pair<id, std::uint32_t>> body_index_entries;
+			std::vector<std::pair<id, std::uint32_t>> reported_body_index_entries;
+			std::vector<std::uint32_t> motor_body_slots;
+			std::vector<std::uint32_t> wake_body_slots;
+			body_cache cached_bodies;
 			std::array<upload_scratch, 3> scratch;
 			std::size_t scratch_slot = 0;
 		};
@@ -691,8 +989,7 @@ export namespace gse::physics {
 			read<motion_component> motion,
 			read<collision_component> collision,
 			read<motor_component> motor,
-			read<joint_drive_component> drives,
-			read<muscle_component> muscles
+			read<joint_drive_component> drives
 		) -> async::task<>;
 	}
 
@@ -719,6 +1016,7 @@ export namespace gse::physics {
 		std::span<const id> collision_owners;
 		std::span<const collision_component> collisions;
 		std::span<const convex_hull> hulls;
+		std::span<const std::uint32_t> hull_offsets;
 		std::span<const mass_properties> mass_props;
 	};
 
@@ -727,19 +1025,37 @@ export namespace gse::physics {
 		std::span<const convex_hull> hulls
 	) -> const convex_hull*;
 
+	auto body_mass_properties(
+		const motion_component& mc,
+		const collision_shape* shape,
+		const convex_hull* hull
+	) -> mass_properties;
+
 	auto solver_config_from_settings(
 		const data& d
 	) -> vbd::solver_config;
 
-	auto capacities_from_settings(
+	auto trace_body_index(
 		const data& d
-	) -> vbd::vbd_capacities;
+	) -> std::optional<std::uint32_t>;
+
+	auto trace_body_index(
+		shared_view<data> d
+	) -> std::optional<std::uint32_t>;
 
 	auto gpu_solver_active(
 		const data& d
 	) -> bool;
 
 	auto gpu_solver_active(
+		shared_view<data> d
+	) -> bool;
+
+	auto gpu_solver_driving(
+		const data& d
+	) -> bool;
+
+	auto gpu_solver_driving(
 		shared_view<data> d
 	) -> bool;
 
@@ -752,21 +1068,92 @@ export namespace gse::physics {
 		std::vector<mass_properties>& out
 	) -> void;
 
+	struct body_scan_fill {
+		std::span<vbd::body_scan_entry> entries;
+		bool sparse = false;
+
+		auto active(
+			std::size_t body_count
+		) const -> bool;
+		auto filled(
+			std::size_t body_index
+		) const -> bool;
+	};
+
+	auto body_state_of(
+		const motion_component& mc,
+		const transform_component& tc,
+		const mass_properties& props,
+		std::uint32_t sleep_counter
+	) -> vbd::body_state;
+
 	auto build_body_states(
 		const body_build_view& view,
 		const sleep_counter_table& sleep_counters,
 		std::vector<vbd::body_state>& bodies,
 		std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::vector<std::pair<id, std::uint32_t>>& id_to_body_index_entries,
-		std::vector<std::uint8_t>& has_transform
-	) -> void;
+		std::vector<std::uint8_t>& has_transform,
+		const body_scan_fill& scan = {}
+	) -> bool;
+
+	auto shape_bounds_of(
+		const collision_component& cc,
+		const transform_component& tc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets,
+		vec3<displacement>& shape_params,
+		std::uint32_t& hull_offset
+	) -> bounding_box;
+
+	auto rest_max_half_extent(
+		const collision_component& cc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets
+	) -> displacement;
+
+	auto write_body_bounds(
+		vbd::body_state& b,
+		const collision_component& cc,
+		std::span<const convex_hull> hulls,
+		std::span<const std::uint32_t> hull_offsets
+	) -> displacement;
 
 	auto build_body_bounds(
 		const body_build_view& view,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const std::uint8_t> has_transform,
-		std::span<vbd::body_state> bodies
+		std::span<vbd::body_state> bodies,
+		const body_scan_fill& scan = {}
 	) -> void;
+
+	namespace gpu_upload {
+		auto cache_matches(
+			const body_cache& cache,
+			const body_build_view& view,
+			std::uint64_t shape_generation,
+			std::size_t hull_count
+		) -> bool;
+
+		auto refresh_body_cache(
+			body_cache& cache,
+			const body_build_view& view,
+			std::span<const vbd::body_scan_entry> scan,
+			std::span<const std::uint8_t> has_transform,
+			std::uint64_t shape_generation
+		) -> void;
+
+		auto fill_cached_bodies(
+			body_cache& cache,
+			const body_build_view& view,
+			const std::flat_map<id, std::uint32_t>& body_index,
+			std::span<const id> reset_bodies,
+			const sleep_counter_table& sleep_counters,
+			std::vector<vbd::body_state>& bodies,
+			std::vector<vbd::body_scan_entry>& scan,
+			std::vector<std::uint8_t>& has_transform
+		) -> void;
+	}
 
 	auto build_joint_constraints(
 		std::span<joint_definition> definitions,
@@ -776,12 +1163,41 @@ export namespace gse::physics {
 		std::vector<std::uint32_t>* definition_slots = nullptr
 	) -> void;
 
+	auto build_body_filters(
+		std::span<const id> collision_owners,
+		std::span<const collision_component> collisions,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::size_t body_count,
+		std::vector<vbd::body_collision_filter>& out
+	) -> void;
+
+	auto build_non_colliding_slots(
+		const std::flat_set<std::pair<std::uint64_t, std::uint64_t>>& pairs,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::vector<std::pair<std::uint32_t, std::uint32_t>>& out
+	) -> void;
+
+	struct body_slot_cache {
+		std::span<const id> body_owners;
+		std::span<const std::uint8_t> has_transform;
+		std::span<std::uint32_t> slots;
+	};
+
+	auto resolve_body_slot(
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		const body_slot_cache& cache,
+		std::size_t i,
+		id owner
+	) -> std::optional<std::uint32_t>;
+
 	auto build_motor_constraints(
 		std::span<const motor_input> motors,
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const std::uint8_t> body_airborne,
 		std::span<vbd::body_state> bodies,
-		std::vector<vbd::velocity_motor_constraint>& out
+		std::vector<vbd::velocity_motor_constraint>& out,
+		const body_slot_cache& cache = {},
+		const body_scan_fill& scan = {}
 	) -> void;
 
 	auto apply_joint_drive(
@@ -789,16 +1205,29 @@ export namespace gse::physics {
 		const joint_drive_component& drive
 	) -> void;
 
-	auto apply_muscle_activation(
-		joint_definition& jd,
+	auto apply_muscle_excitation(
+		muscle_definition& md,
 		const muscle_component& muscle
 	) -> bool;
 
 	auto copy_joints_with_inputs(
 		shared_view<data> phys,
 		read<joint_drive_component>& drives,
-		read<muscle_component>& muscles,
 		std::vector<joint_definition>& out
+	) -> void;
+
+	auto build_muscle_constraints(
+		std::span<const muscle_definition> definitions,
+		const std::flat_map<id, std::uint32_t>& id_to_body_index,
+		std::vector<vbd::muscle_constraint>& out,
+		std::vector<vbd::muscle_path_point>& out_points,
+		std::vector<std::uint32_t>* definition_slots = nullptr
+	) -> void;
+
+	auto pack_gpu_hulls(
+		std::span<const convex_hull> hulls,
+		std::vector<std::uint32_t>& out_data,
+		std::vector<std::uint32_t>& out_offsets
 	) -> void;
 
 	[[= system_init{}]]
@@ -808,17 +1237,25 @@ export namespace gse::physics {
 		data& d
 	) -> async::task<>;
 
-	[[= system_run<>{}, = runs_after_optional<^^gpu::context::data>{}]]
+	[[
+		= system_run<>{},
+		= runs_after_optional<^^gpu::context::data>{}
+	]]
 	auto prepare(
 		context& ctx,
 		data& d,
 		channel_write<interpolation_state> interp_out,
+		set_request_read set_requests_in,
+		channel_write<component_events<transform_component>, component_events<motion_component>, component_events<collision_component>> events_out,
 		write<joint_spec> specs,
+		write<muscle_spec> muscle_specs,
 		read<muscle_component> muscles,
 		read<joint_drive_component> drives,
 		read<kinematic_target_component> targets,
+		read<collision_exclusion> exclusions,
 		write<transform_component> transform,
-		write<motion_component> motion
+		write<motion_component> motion,
+		write<collision_component> collision
 	) -> async::task<>;
 
 	[[= system_run<1>{}]]
@@ -826,15 +1263,16 @@ export namespace gse::physics {
 		context& ctx,
 		data& d,
 		write<collision_component> collision,
-		structural<collision_result_component> results
+		read<collision_result_component> results
 	) -> async::task<>;
 
 	[[= system_run<2>{}]]
 	auto integrate(
 		context& ctx,
 		data& d,
-		channel_read<impulse_request, reset_physics_request, rollback_request, rollback_history_request, gpu_upload_report> requests_in,
+		channel_read<impulse_request, reset_physics_request, solver_seed_request, rollback_request, rollback_history_request, contact_interest_request, gpu_upload_report> requests_in,
 		channel_write<gpu_solver_frame_info> solver_out,
+		channel_write<contact_event> contacts_out,
 		write<transform_component> transform,
 		write<motion_component> motion,
 		read<motor_component> motor,
@@ -843,7 +1281,7 @@ export namespace gse::physics {
 		write<hull_definition> hull_definitions
 	) -> async::task<>;
 
-	[[= system_frame{}]]
+	[[= system_frame{}, = requires_setting<^^data::use_gpu_solver, true>{}]]
 	auto frame(
 		context& ctx,
 		std::optional<shared_view<gpu::context::data>> gpu_s,
@@ -879,6 +1317,28 @@ export namespace gse::physics {
 		id entity_id
 	) -> bool;
 
+	template <std::meta::info Member>
+	auto set_request_target(
+		id target,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision
+	) -> auto*;
+
+	template <typename T>
+	auto publish_component_events(
+		const write<T>& components,
+		const channel_write<component_events<transform_component>, component_events<motion_component>, component_events<collision_component>> events_out
+	) -> void;
+
+	auto apply_set_requests(
+		data& d,
+		const set_request_read& requests,
+		write<transform_component>& transform,
+		write<motion_component>& motion,
+		write<collision_component>& collision
+	) -> void;
+
 	auto apply_kinematic_targets(
 		read<kinematic_target_component>& targets,
 		write<transform_component>& transform,
@@ -894,6 +1354,11 @@ export namespace gse::physics {
 		const std::flat_map<id, std::uint32_t>& id_to_body_index,
 		std::span<const convex_hull> hulls
 	) -> std::vector<collision_pair>;
+
+	auto non_colliding_pairs_of(
+		std::span<const joint_definition> joints,
+		read<collision_exclusion>& exclusions
+	) -> std::flat_set<std::pair<std::uint64_t, std::uint64_t>>;
 
 	auto build_pair_set(
 		std::vector<collision_pair>& objects,
@@ -934,6 +1399,12 @@ export namespace gse::physics {
 	) -> void;
 
 	auto step_all_asleep(
+		const step_inputs& inputs,
+		const data& d,
+		write<motion_component>& motion
+	) -> bool;
+
+	auto gpu_world_quiescent(
 		const step_inputs& inputs,
 		const data& d,
 		write<motion_component>& motion
@@ -986,7 +1457,8 @@ export namespace gse::physics {
 		std::span<const rollback_request> rollbacks,
 		std::span<const gpu_upload_report> reports,
 		channel_write<gpu_solver_frame_info> frame_info_out,
-		bool reset
+		bool reset,
+		bool quiescent
 	) -> void;
 }
 
@@ -997,10 +1469,7 @@ auto gse::physics::gather_step_inputs(read<motor_component>& motor, access<trans
 	const auto motor_ids = motor.owner_ids();
 	inputs.motors.reserve(motor.size());
 	for (std::size_t i = 0; i < motor.size(); ++i) {
-		inputs.motors.push_back({
-			.owner = motor_ids[i],
-			.motor = motor[i],
-		});
+		inputs.motors.push_back({ .owner = motor_ids[i], .motor = motor[i] });
 	}
 
 	const auto motion_ids = motion.owner_ids();

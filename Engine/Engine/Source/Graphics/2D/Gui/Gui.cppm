@@ -19,6 +19,7 @@ import :builder;
 import :ids;
 import :input_layers;
 import :menu_stack;
+import :motion;
 import :render_layer;
 import :save;
 import :styles;
@@ -35,6 +36,8 @@ namespace gse::gui {
 }
 
 export namespace gse::gui {
+	struct [[= namespace_gates{}, = requires_setting<^^launch::data::render, true>{}, = gpu::requires_capability<^^gpu::backend_capabilities::shader_target>{}]] gates {};
+
 	struct viewport_chrome {
 		float caption_height = 0.f;
 		float controls_width = 0.f;
@@ -68,12 +71,15 @@ export namespace gse::gui {
 		context_menu_state context_menu;
 		text_selection_state text_selection;
 		std::optional<text_edit_request> pending_text_edit;
+		image_paste_state image_paste;
 		std::optional<menu> screen_surface;
+		std::optional<menu> hud_surface;
 		bool manual_cursor = false;
 		std::vector<id> pending_popout_close_ids;
 		std::optional<std::pair<id, std::uint32_t>> pending_tab_close;
 		std::optional<caption_action> pending_caption_action;
 		viewport_chrome chrome;
+		std::optional<std::uint64_t> icon_style_key;
 
 		frame_state fstate{};
 		id window;
@@ -88,11 +94,12 @@ export namespace gse::gui {
 	struct [[= system_state<"Gui">{}, = settings::category<"UI">{}]] data {
 		[[
 			= settings::describe<"Color theme applied to all UI panels and widgets.">{},
-			= settings::project_scope{}
+			= settings::user_scope{}
 		]]
 		theme current_theme = theme::midnight;
 
 		std::optional<style> style_override;
+		std::function<window_icon_request(const style&)> icon_source;
 
 		[[
 			= settings::
@@ -118,6 +125,16 @@ export namespace gse::gui {
 		bool show_dev_overlays = false;
 
 		[[
+			= settings::describe<"Build and draw the UI. Off drops every panel, screen, HUD and overlay together "
+									  "with their input, so the presented frame, and any screenshot or recording of "
+									  "it, holds the scene alone. Pinned off by scenarios that compare captures. "
+									  "App scope, because turning it off from a settings file would leave no UI to "
+									  "turn it back on with.">{},
+			= settings::app_scope{}
+		]]
+		bool visible = true;
+
+		[[
 			= settings::describe<"Derive UI scale from viewport height instead of the monitor display scale.">{},
 			= settings::app_scope{}
 		]]
@@ -140,7 +157,21 @@ export namespace gse::gui {
 			= settings::app_scope{}
 		]]
 		std::filesystem::path file_path = config::user_config_dir() / "gui_layout.ini";
-		clock save_clock;
+
+		[[
+			= settings::describe<"Restore the dock layout and per-monitor UI scale from the layout file at startup. "
+									  "Off starts from the layout the code builds. The engine pins it to whether the "
+									  "run loads settings, so a hermetic run does not inherit saved panels.">{},
+			= settings::app_scope{}
+		]]
+		bool restore_layout = true;
+
+		[[
+			= settings::describe<"Write the dock layout and per-monitor UI scale back to the layout file. The "
+									  "engine pins it to whether the run persists settings.">{},
+			= settings::app_scope{}
+		]]
+		bool persist_layout = true;
 
 		draw_context* context = nullptr;
 
@@ -156,13 +187,11 @@ export namespace gse::gui {
 		std::size_t text_pool_used = 0;
 
 		std::unordered_map<std::uint64_t, scroll_state> widget_scrolls;
-		std::unordered_map<std::uint64_t, vec4f> widget_anim_colors;
+		motion_store motion;
 		std::unordered_map<std::uint64_t, std::unordered_set<std::uint64_t>> widget_tree_open;
 
 		[[= shared]] viewport_state primary{ .adopts_unclaimed_content = true };
 		std::vector<std::unique_ptr<viewport_state>> secondaries;
-
-		static constexpr time update_interval = seconds(30.f);
 	};
 
 	[[= system_init{}]]
@@ -180,17 +209,14 @@ export namespace gse::gui {
 		shared_view<gpu::context::data> gpu_s,
 		shared_view<asset::data> assets_s,
 		shared_view<input::data> input_state,
-		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
-		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request> ui_out,
+		channel_read<push_screen_request, pop_screen_request, clear_screens_request, set_manual_cursor_request, menu_content, hud_content, popout_closed, menu_migrate_request, window_opened, window_closed, window_resized> requests_in,
+		channel_write<ui_focus_request, popout_toggle, set_cursor_shape_request, renderer::sprite_command, renderer::text_command, context_menu_result, window_close_request, window_minimize_request, window_toggle_maximize_request, window_chrome_metrics_request, window_icon_request> ui_out,
 		data& d
 	) -> async::task<>;
 
-	auto shutdown(
-		data& d
-	) -> void;
-
-	auto save(
-		data& d
+	[[= system_persist{}]]
+	auto persist(
+		const data& d
 	) -> void;
 }
 
@@ -198,4 +224,19 @@ namespace gse::gui {
 	[[nodiscard]] auto is_popout(
 		const viewport_state& vp
 	) -> bool;
+
+	struct widget_context_info {
+		menu& current_menu;
+		const style& style;
+		vec2f& layout_cursor;
+		rectf clip;
+	};
+
+	[[nodiscard]] auto widget_context_init(
+		data& d,
+		viewport_state& vp,
+		render_layer layer,
+		std::uint32_t z_order,
+		const widget_context_info& info
+	) -> draw_context_init;
 }

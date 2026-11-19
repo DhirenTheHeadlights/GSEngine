@@ -4,19 +4,20 @@ public float remap(float value, float old_lo, float old_hi, float new_lo, float 
     return new_lo + (value - old_lo) * (new_hi - new_lo) / max(old_hi - old_lo, 1e-6);
 }
 
-public float hash13(float3 p) {
-    p = frac(p * 0.1031);
-    p += dot(p, p.yzx + 33.33);
-    return frac((p.x + p.y) * p.z);
+public uint3 pcg3d(uint3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
 }
 
 public float3 hash33(float3 p) {
-    p = float3(
-        dot(p, float3(127.1, 311.7, 74.7)),
-        dot(p, float3(269.5, 183.3, 246.1)),
-        dot(p, float3(113.5, 271.9, 124.6))
-    );
-    return frac(sin(p) * 43758.5453);
+    return float3(pcg3d(uint3(int3(floor(p))))) * (1.0 / 4294967296.0);
 }
 
 public float worley_3d(float3 p, float tiling) {
@@ -74,33 +75,58 @@ public float perlin_worley(float3 p, float tiling) {
     return saturate(remap(perlin, worley - 1.0, 1.0, 0.0, 1.0));
 }
 
-public float cloud_altitude_gradient(float height_fraction, float cloud_type) {
-    float cumulus_lo = 0.05;
-    float cumulus_hi = 0.45;
-    float stratus_lo = 0.0;
-    float stratus_hi = 0.15;
+public static const float3 cloud_octave_weights = float3(0.625, 0.25, 0.125);
+public static const float cloud_billow_floor = 0.80;
+public static const float cloud_billow_ceiling = 0.90;
 
-    float type_lo = lerp(stratus_lo, cumulus_lo, cloud_type);
-    float type_hi = lerp(stratus_hi, cumulus_hi, cloud_type);
-
-    float bottom = smoothstep(0.0, type_lo, height_fraction);
-    float top = 1.0 - smoothstep(type_hi, 1.0, height_fraction);
-    return bottom * top;
+public float cloud_height_profile(float height_fraction, float cloud_type) {
+    float base_ramp = smoothstep(0.0, lerp(0.03, 0.12, cloud_type), height_fraction);
+    float top_height = lerp(0.2, 1.0, cloud_type);
+    float top_falloff = saturate(remap(height_fraction, top_height * lerp(0.5, 0.65, cloud_type), top_height, 1.0, 0.0));
+    return base_ramp * top_falloff;
 }
 
-public float cloud_weather_coverage(float weather, float global_coverage, float contrast) {
-    float gate = saturate((weather - 0.5) * max(contrast, 1e-3) + 0.5);
-    return saturate(global_coverage * 2.0 * gate);
+public float cloud_height_density(float height_fraction, float cloud_type) {
+    return lerp(1.0, saturate(remap(height_fraction, 0.0, 0.5, 0.35, 1.0)), cloud_type);
 }
 
-public float cloud_coverage_from_shape(float shape, float height_fraction, float cloud_type, float coverage) {
-    float gradient = cloud_altitude_gradient(height_fraction, cloud_type);
-    return saturate(remap(shape * gradient, 1.0 - coverage, 1.0, 0.0, 1.0));
+public float cloud_weather_coverage_gate(float weather_coverage, float global_coverage, float contrast) {
+    return saturate((weather_coverage - (1.0 - global_coverage)) * contrast + global_coverage);
 }
 
-public float cloud_carve_density(float base, float erosion, float detail_strength, float density_multiplier) {
-    float carved = base - erosion * detail_strength * (1.0 - base);
-    return saturate(carved) * density_multiplier;
+public bool cloud_layer_contains(float height_fraction) {
+    return height_fraction > 0.0 && height_fraction < 1.0;
+}
+
+public bool cloud_base_possible(float coverage, float cloud_type, float height_fraction) {
+    return cloud_height_profile(height_fraction, cloud_type) > 1.0 - coverage;
+}
+
+public float cloud_billow_signal(float perlin_worley_base, float3 worley_octaves) {
+    float fbm = dot(worley_octaves, cloud_octave_weights);
+    return remap(perlin_worley_base, fbm - 1.0, 1.0, 0.0, 1.0);
+}
+
+public float cloud_base_density(float billow_signal, float coverage, float cloud_type, float core, float height_fraction) {
+    float billows = saturate(remap(billow_signal, cloud_billow_floor, cloud_billow_ceiling, 0.0, 1.0));
+    float profiled = billows * cloud_height_profile(height_fraction, cloud_type);
+    float base = saturate(remap(profiled, 1.0 - coverage, 1.0, 0.0, 1.0));
+    return base * cloud_height_density(height_fraction, cloud_type) * (1.0 + core);
+}
+
+public static const float cloud_detail_tiling = 4.0;
+public static const float3 cloud_detail_octave_frequencies = float3(1.0, 2.0, 4.0);
+
+public float3 cloud_detail_resolvable(float3 detail, float detail_scale, float step_length) {
+    float3 cell = 1.0 / (detail_scale * cloud_detail_tiling * cloud_detail_octave_frequencies);
+    float3 weight = saturate(cell / max(step_length, 1e-6) - 1.0);
+    return lerp(float3(0.5, 0.5, 0.5), detail, weight);
+}
+
+public float cloud_erode(float base, float3 detail, float height_fraction, float erosion) {
+    float fbm = dot(detail, cloud_octave_weights);
+    float shaped = lerp(fbm, 1.0 - fbm, saturate(height_fraction * 4.0));
+    return max(remap(base, shaped * erosion, 1.0, 0.0, 1.0), 0.0);
 }
 
 public float henyey_greenstein(float cos_theta, float g) {
@@ -111,16 +137,57 @@ public float henyey_greenstein(float cos_theta, float g) {
 
 public float dual_henyey_greenstein(float cos_theta, float g_forward, float g_back, float blend) {
     return lerp(
-        henyey_greenstein(cos_theta, g_forward),
         henyey_greenstein(cos_theta, g_back),
+        henyey_greenstein(cos_theta, g_forward),
         blend
     );
 }
 
-public float beer_powder(float density, float step_length) {
-    float beer = exp(-density * step_length);
-    float powder = 1.0 - exp(-density * step_length * 2.0);
-    return beer * powder * 2.0;
+public void cloud_scatter_lobes<let N : int>(float cos_theta, float g_forward, float g_back, float blend, float strength, out float lobes[N]) {
+    float scatter = 1.0;
+    float eccentricity = 1.0;
+    for (int i = 0; i < N; ++i) {
+        lobes[i] = scatter * dual_henyey_greenstein(cos_theta, g_forward * eccentricity, g_back * eccentricity, blend);
+        scatter *= strength;
+        eccentricity *= 0.5;
+    }
+}
+
+public float cloud_scatter_through<let N : int>(float lobes[N], float light_optical_depth, float extinction_falloff) {
+    float result = 0.0;
+    float extinction = 1.0;
+    for (int i = 0; i < N; ++i) {
+        result += lobes[i] * exp(-light_optical_depth * extinction);
+        extinction *= extinction_falloff;
+    }
+    return result;
+}
+
+public float cloud_powder(float optical_depth, float strength) {
+    return lerp(1.0, 1.0 - exp(-2.0 * optical_depth), strength);
+}
+
+public static const float cloud_skipped_transmittance = 2.0;
+
+public bool cloud_sample_usable(float4 texel) {
+    return texel.a < 0.5 * (1.0 + cloud_skipped_transmittance);
+}
+
+public bool cloud_taps_traced(float4 tap_max) {
+    return tap_max.a <= 1.0;
+}
+
+public uint2 cloud_trace_pixel(uint2 cell, uint block_size, uint2 sample_offset, uint2 resolve_extent) {
+    return min(cell * block_size + sample_offset, resolve_extent - 1);
+}
+
+public float interleaved_gradient_noise(float2 pixel, float frame) {
+    float2 p = pixel + 5.588238 * frac(frame * 0.0618034) * 64.0;
+    return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+public float neighbour_decorrelated_noise(float2 pixel, float frame) {
+    return frac(interleaved_gradient_noise(pixel, frame) + hash33(float3(pixel, 0.0)).x);
 }
 
 public float2 ray_layer_intersect(float3 origin, float3 dir, float layer_radius) {

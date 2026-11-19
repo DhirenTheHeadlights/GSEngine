@@ -190,7 +190,7 @@ auto gse::network::endpoint::local_address() const -> std::optional<address> {
 
 auto gse::network::endpoint::start_thread() -> void {
 	m_thread = task::spawn(log::thread_role::network, [this](const std::stop_token& st) {
-		const time_t<std::uint32_t> max_sleep = milliseconds(4);
+		const auto max_sleep = time_t<std::uint32_t>::from<milliseconds>(4);
 		std::array<std::byte, max_packet_size> buffer;
 
 		while (!st.stop_requested()) {

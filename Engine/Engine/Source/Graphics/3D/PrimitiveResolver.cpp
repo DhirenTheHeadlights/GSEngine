@@ -3,11 +3,14 @@ module gse.graphics:primitive_resolver_impl;
 import std;
 
 import :primitive_resolver;
+import :hull_mesh;
+import :mesh;
 import :model;
 import :mountain_ring;
 import :primitive_specs;
 import :primitives;
 import :render_component;
+import :texture;
 
 
 import gse.assets;
@@ -16,6 +19,7 @@ import gse.core;
 import gse.ecs;
 import gse.math;
 import gse.meta;
+import gse.physics;
 
 namespace gse::primitive_resolver {
 	auto attach_box(
@@ -45,6 +49,45 @@ namespace gse::primitive_resolver {
 	auto mountain_ring_asset_name(
 		const primitive_mountain_ring_spec& spec
 	) -> std::string;
+
+	auto attach_hull(
+		const primitive_hull_spec& spec,
+		const resource::handle<model>& handle,
+		render_component& render
+	) -> void;
+
+	auto hull_asset_name(
+		const primitive_hull_spec& spec,
+		std::span<const vec3<length>> points
+	) -> std::string;
+
+	auto textured(
+		const material_spec& material,
+		std::string_view shape,
+		const resource::handle<model>& untextured,
+		shared_view<asset::data> assets,
+		std::invocable auto build
+	) -> resource::handle<model>;
+}
+
+auto gse::primitive_resolver::textured(const material_spec& material, const std::string_view shape, const resource::handle<model>& untextured, const shared_view<asset::data> assets, std::invocable auto build) -> resource::handle<model> {
+	if (!material.diffuse_texture_name && !material.normal_texture_name && !material.specular_texture_name) {
+		return untextured;
+	}
+	const auto name = std::format("Primitives/{}_{:016x}", shape, hash_of(material.diffuse_texture_name, material.normal_texture_name, material.specular_texture_name));
+	if (auto handle = asset::try_get<model>(assets, name); handle.state() != resource::state::unloaded) {
+		return handle;
+	}
+	const auto texture_of = [&](const std::optional<std::string>& texture_name) {
+		return texture_name ? asset::get<texture>(assets, *texture_name) : resource::handle<texture>{};
+	};
+	std::vector<mesh_data> meshes = build();
+	for (auto& mesh : meshes) {
+		mesh.material.diffuse_texture = texture_of(material.diffuse_texture_name);
+		mesh.material.normal_texture = texture_of(material.normal_texture_name);
+		mesh.material.specular_texture = texture_of(material.specular_texture_name);
+	}
+	return asset::queue<model>(assets, name, std::move(meshes));
 }
 
 auto gse::primitive_resolver::attach_box(const primitive_box_spec& spec, const resource::handle<model>& handle, render_component& render) -> void {
@@ -86,64 +129,50 @@ auto gse::primitive_resolver::attach_mountain_ring(const primitive_mountain_ring
 	}
 	const auto idx = render.model_count;
 	render.models[idx] = handle;
-	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.material.opacity);
+	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.opacity);
 	render.sizes[idx] = vec3<length>(meters(1.0f));
 	++render.model_count;
 }
 
 auto gse::primitive_resolver::mountain_ring_asset_name(const primitive_mountain_ring_spec& spec) -> std::string {
-	std::uint64_t key = 1469598103934665603ull;
-	key = hash_combine(key, spec.material.base_color.x());
-	key = hash_combine(key, spec.material.base_color.y());
-	key = hash_combine(key, spec.material.base_color.z());
-	key = hash_combine(key, spec.material.roughness);
-	key = hash_combine(key, spec.material.metallic);
-	key = hash_combine(key, spec.snow_color.x());
-	key = hash_combine(key, spec.snow_color.y());
-	key = hash_combine(key, spec.snow_color.z());
-	key = hash_combine(key, spec.snow_line);
-	key = hash_combine(key, spec.snow_slope);
-	key = hash_combine(key, spec.snow_roughness);
-	key = hash_combine(key, spec.inner_radius);
-	key = hash_combine(key, spec.outer_radius);
-	key = hash_combine(key, spec.peak_height);
-	key = hash_combine(key, spec.ridge_base);
-	key = hash_combine(key, spec.massif_depth);
-	key = hash_combine(key, spec.massif_cells);
-	key = hash_combine(key, spec.angular_segments);
-	key = hash_combine(key, spec.radial_segments);
-	key = hash_combine(key, spec.ridge_cells);
-	key = hash_combine(key, spec.radial_cells);
-	key = hash_combine(key, spec.octaves);
-	key = hash_combine(key, spec.seed);
-	return std::format("Primitives/mountain_ring_{:016x}", key);
+	return std::format("Primitives/mountain_ring_{:016x}", hash_of(spec.shape));
 }
 
-auto gse::primitive_resolver::ensure_renders(write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, structural<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::attach_hull(const primitive_hull_spec& spec, const resource::handle<model>& handle, render_component& render) -> void {
+	if (render.model_count >= render_component::max_models) {
+		return;
+	}
+	const auto idx = render.model_count;
+	render.models[idx] = handle;
+	render.tints[idx] = vec4f(1.0f, 1.0f, 1.0f, spec.opacity);
+	render.sizes[idx] = vec3<length>(meters(1.0f));
+	++render.model_count;
+}
+
+auto gse::primitive_resolver::hull_asset_name(const primitive_hull_spec& spec, const std::span<const vec3<length>> points) -> std::string {
+	return std::format("Primitives/hull_{:016x}", hash_of(spec.surface, points));
+}
+
+auto gse::primitive_resolver::ensure_renders(context& ctx, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<primitive_hull_spec> hulls) -> async::task<> {
 	for (const auto eid : boxes.drain(component_event::added)) {
-		if (!renders.contains(eid)) {
-			renders.add(eid);
-		}
+		ctx.add_component<render_component>(eid);
 	}
 	for (const auto eid : spheres.drain(component_event::added)) {
-		if (!renders.contains(eid)) {
-			renders.add(eid);
-		}
+		ctx.add_component<render_component>(eid);
 	}
 	for (const auto eid : cylinders.drain(component_event::added)) {
-		if (!renders.contains(eid)) {
-			renders.add(eid);
-		}
+		ctx.add_component<render_component>(eid);
 	}
 	for (const auto eid : mountain_rings.drain(component_event::added)) {
-		if (!renders.contains(eid)) {
-			renders.add(eid);
-		}
+		ctx.add_component<render_component>(eid);
+	}
+	for (const auto eid : hulls.drain(component_event::added)) {
+		ctx.add_component<render_component>(eid);
 	}
 	co_return;
 }
 
-auto gse::primitive_resolver::populate(context& ctx, const primitives::data& prims, shared_view<asset::data> assets, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<render_component> renders) -> async::task<> {
+auto gse::primitive_resolver::populate(context& ctx, const primitives::data& prims, shared_view<asset::data> assets, write<primitive_box_spec> boxes, write<primitive_sphere_spec> spheres, write<primitive_cylinder_spec> cylinders, write<primitive_mountain_ring_spec> mountain_rings, write<primitive_hull_spec> hulls, read<physics::hull_definition> hull_definitions, write<render_component> renders) -> async::task<> {
 	(void)ctx;
 
 	const auto box_owners = boxes.owner_ids();
@@ -156,7 +185,9 @@ auto gse::primitive_resolver::populate(context& ctx, const primitives::data& pri
 		if (!render) {
 			continue;
 		}
-		attach_box(spec, prims.unit_box, *render);
+		attach_box(spec, textured(spec.material, "box", prims.unit_box, assets, [] {
+			return primitives::build_box_meshes();
+		}), *render);
 		spec.resolved = true;
 	}
 
@@ -173,7 +204,13 @@ auto gse::primitive_resolver::populate(context& ctx, const primitives::data& pri
 		const auto& handle = (spec.lod == sphere_lod::lo) ? prims.sphere_lo
 			: (spec.lod == sphere_lod::hi)				  ? prims.sphere_hi
 														  : prims.sphere_mid;
-		attach_sphere(spec, handle, *render);
+		const auto resolution = (spec.lod == sphere_lod::lo) ? primitives::sphere_lo_resolution
+			: (spec.lod == sphere_lod::hi)					 ? primitives::sphere_hi_resolution
+															 : primitives::sphere_mid_resolution;
+		const auto shape = std::format("sphere_{}x{}", resolution.sectors, resolution.stacks);
+		attach_sphere(spec, textured(spec.material, shape, handle, assets, [resolution] {
+			return primitives::build_sphere_meshes(resolution.sectors, resolution.stacks);
+		}), *render);
 		spec.resolved = true;
 	}
 
@@ -187,7 +224,9 @@ auto gse::primitive_resolver::populate(context& ctx, const primitives::data& pri
 		if (!render) {
 			continue;
 		}
-		attach_cylinder(spec, prims.unit_cylinder, *render);
+		attach_cylinder(spec, textured(spec.material, "cylinder", prims.unit_cylinder, assets, [] {
+			return primitives::build_cylinder_meshes(primitives::unit_cylinder_segments);
+		}), *render);
 		spec.resolved = true;
 	}
 
@@ -204,9 +243,29 @@ auto gse::primitive_resolver::populate(context& ctx, const primitives::data& pri
 		const auto name = mountain_ring_asset_name(spec);
 		auto handle = asset::try_get<model>(assets, name);
 		if (handle.state() == resource::state::unloaded) {
-			handle = asset::queue<model>(assets, name, build_mountain_ring_meshes(spec));
+			handle = asset::queue<model>(assets, name, build_mountain_ring_meshes(spec.shape));
 		}
 		attach_mountain_ring(spec, handle, *render);
+		spec.resolved = true;
+	}
+
+	const auto hull_owners = hulls.owner_ids();
+	for (std::size_t i = 0; i < hulls.size(); ++i) {
+		auto& spec = hulls[i];
+		if (spec.resolved) {
+			continue;
+		}
+		auto* render = renders.find(hull_owners[i]);
+		const auto* definition = hull_definitions.find(hull_owners[i]);
+		if (!render || !definition) {
+			continue;
+		}
+		const auto name = hull_asset_name(spec, definition->points);
+		auto handle = asset::try_get<model>(assets, name);
+		if (handle.state() == resource::state::unloaded) {
+			handle = asset::queue<model>(assets, name, build_hull_meshes(spec.surface, definition->points));
+		}
+		attach_hull(spec, handle, *render);
 		spec.resolved = true;
 	}
 

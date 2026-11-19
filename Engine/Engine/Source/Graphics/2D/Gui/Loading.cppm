@@ -1,90 +1,59 @@
 export module gse.graphics:loading;
 
-import gse.core;
+import gse.diag;
 import gse.log;
 import std;
 
 export namespace gse::loading {
-	class state : public non_copyable, public non_movable {
-	public:
-		state() {}
-		~state() = default;
+	struct boot_stage_info {
+		char label[48];
+	};
 
-		auto set_phase(
-			std::string p
-		) -> void;
+	enum class boot_stage : std::uint8_t {
+		configuring,
+		initializing [[
+			= entered_from({ configuring })
+		]],
+		presenting [[
+			= entered_from({ initializing }),
+			= boot_stage_info{
+				.label = "Starting",
+			}
+		]],
+		app_setup [[
+			= entered_from({ presenting }),
+			= boot_stage_info{
+				.label = "Loading application",
+			}
+		]],
+		settling [[
+			= entered_from({ initializing, app_setup }),
+			= boot_stage_info{
+				.label = "Starting systems",
+			}
+		]],
+		ready [[
+			= entered_from({ settling })
+		]],
+	};
 
+	struct state {
 		auto set_progress(
-			std::uint32_t done,
-			std::uint32_t total
+			std::uint32_t settled,
+			std::uint32_t expected
 		) -> void;
 
-		auto mark_finished() -> void;
-
-		auto mark_rendered() -> void;
-
-		[[nodiscard]] auto phase() const -> std::string;
-
-		[[nodiscard]] auto done() const -> std::uint32_t;
-
-		[[nodiscard]] auto total() const -> std::uint32_t;
-
-		[[nodiscard]] auto finished() const -> bool;
-
-		[[nodiscard]] auto rendered_once() const -> bool;
-
-	private:
-		mutable std::mutex m_mutex;
-		std::string m_phase;
-		std::uint32_t m_done = 0;
-		std::uint32_t m_total = 0;
-		std::atomic<bool> m_finished = false;
-		std::atomic<bool> m_rendered_once = false;
+		std::uint32_t done = 0;
+		std::uint32_t total = 0;
+		bool awaiting_first_draw = false;
 	};
 }
 
-auto gse::loading::state::set_phase(std::string p) -> void {
-	std::lock_guard _(m_mutex);
-	m_phase = std::move(p);
-}
-
-auto gse::loading::state::set_progress(const std::uint32_t done, const std::uint32_t total) -> void {
-	std::lock_guard _(m_mutex);
-	const bool changed = done != m_done || total != m_total;
-	m_done = done;
-	m_total = total;
-	if (changed) {
-		log::println(log::category::runtime, "loading::set_progress done={} total={}", done, total);
+auto gse::loading::state::set_progress(const std::uint32_t settled, const std::uint32_t expected) -> void {
+	if (settled == done && expected == total) {
+		return;
 	}
-}
-
-auto gse::loading::state::mark_finished() -> void {
-	m_finished.store(true, std::memory_order_release);
-}
-
-auto gse::loading::state::mark_rendered() -> void {
-	m_rendered_once.store(true, std::memory_order_release);
-}
-
-auto gse::loading::state::phase() const -> std::string {
-	std::lock_guard _(m_mutex);
-	return m_phase;
-}
-
-auto gse::loading::state::done() const -> std::uint32_t {
-	std::lock_guard _(m_mutex);
-	return m_done;
-}
-
-auto gse::loading::state::total() const -> std::uint32_t {
-	std::lock_guard _(m_mutex);
-	return m_total;
-}
-
-auto gse::loading::state::finished() const -> bool {
-	return m_finished.load(std::memory_order_acquire);
-}
-
-auto gse::loading::state::rendered_once() const -> bool {
-	return m_rendered_once.load(std::memory_order_acquire);
+	done = settled;
+	total = expected;
+	log::println(log::category::runtime, "loading::set_progress done={} total={}", done, total);
 }

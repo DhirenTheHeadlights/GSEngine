@@ -1,0 +1,223 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (leave blank to auto-generate v<YYYY.MMDD>.<n>)"
+        required: false
+      draft:
+        description: "Create release as draft"
+        required: false
+        default: "true"
+      verify_game:
+        description: "Run the packed game through its scenario on the runner (open question: it needs a window, see below)"
+        required: false
+        default: "false"
+      scenario:
+        description: "Scenario the packed game is verified with when verify_game is true"
+        required: false
+        default: "render_stress"
+      server:
+        description: "Server address the launcher points the game at (host:port, blank for none)"
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.r.outputs.tag }}
+      draft: ${{ steps.r.outputs.draft }}
+    steps:
+      - id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          set -euo pipefail
+
+          # A tag push publishes exactly that tag. A dispatch without one gets
+          # v<YYYY.MMDD>.<n>: orderable, which is what phase 3's launcher needs to
+          # answer "is the feed newer than what I have installed". The 12-hex engine
+          # sha cannot answer that, so it stays in the manifest as `engine` while
+          # this string becomes the image's `version`.
+          tag="${INPUT_TAG:-}"
+          if [[ -z "$tag" && "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ -z "$tag" ]]; then
+            date=$(date -u +%Y.%m%d)
+            used=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq '.[].tag_name' \
+              | grep -c "^v${date}\." || true)
+            tag="v${date}.$((used + 1))"
+          fi
+
+          # The toolchain is resolved by .github/actions/gse-build-setup, which both this
+          # workflow and ci.yml share, so there is one copy of that lookup.
+          {
+            echo "tag=$tag"
+            echo "draft=${INPUT_DRAFT:-true}"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: tag=$tag"
+
+  build:
+    needs: resolve
+    runs-on: windows-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    env:
+      PRESET: x64-mingw-gcc-Release
+      BUILD_DIR: .generated/out/build/x64-mingw-gcc-Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # The environment, the two caches and the configure are shared with ci.yml. Composite
+      # rather than a reusable workflow: these steps have to run in this job, because the
+      # packaging steps below need the tree they produce.
+      - id: setup
+        uses: ./.github/actions/gse-build-setup
+        with:
+          preset: ${{ env.PRESET }}
+
+      # Not the Editor: it is the heaviest target in the tree and ships in neither image.
+      - name: Build the game, the installer stubs, the launcher and the packager
+        shell: pwsh
+        run: cmake --build $env:BUILD_DIR --target Sandbox Installer Setup Launcher Packer
+
+      # The baked tree under <build>/Engine/Resources is written by the engine at runtime,
+      # never by a build target, so a clean runner has none. Both packs stage it as
+      # Engine/Baked, which is the only asset tree an installed game reads.
+      - name: Bake the engine and game assets
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Sandbox/Sandbox.exe" --engine-bake-assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The SDK verify builds and runs the shipped consumer through GSEEngineSdk.cmake,
+      # which reads gse.link and gse.modules out of the image - so it is the step that
+      # catches an image staged without them. It needs no window.
+      - name: Package the SDK image
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Packer/Packer.exe" `
+            --build-dir $env:BUILD_DIR `
+            --kind sdk `
+            --version ${{ needs.resolve.outputs.tag }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Staged without the scenario verify: render_stress needs a window, and the headless
+      # scenarios never touch shaders, so there is no equivalent headless predicate yet.
+      # The verify_game input runs it anyway when you want to find out whether the DX12
+      # backend's WARP software rasteriser is enough on a hosted runner - it is kept out of
+      # the default path so that experiment cannot block a release.
+      #
+      # --feed-url is baked into the image's manifest, so the launcher shipped inside this
+      # pack knows where to look for its successor; --asset-base is where this release's
+      # setup exe will be downloadable from, and the packager writes feed.json naming it
+      # with the hash it computed over the exe it just produced.
+      - name: Package the game pack
+        shell: pwsh
+        run: |
+          & "$env:BUILD_DIR/Packer/Packer.exe" `
+            --build-dir $env:BUILD_DIR `
+            --kind game `
+            --version ${{ needs.resolve.outputs.tag }} `
+            --feed-url "https://github.com/${{ github.repository }}/releases/latest/download/feed.json" `
+            --asset-base "https://github.com/${{ github.repository }}/releases/download/${{ needs.resolve.outputs.tag }}" `
+            --server "${{ inputs.server }}" `
+            --no-verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify the packed game
+        if: inputs.verify_game == 'true'
+        shell: pwsh
+        run: |
+          $stage = ".generated/dist/game/x64-mingw-gcc-Release"
+          Push-Location $stage
+          & "./Bin/Sandbox.exe" --engine-bench-scenario ${{ inputs.scenario || 'render_stress' }} | Tee-Object -Variable output
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0 -or -not ($output -match "frames measured")) {
+            Write-Error "the packed game did not complete the scenario on this runner (exit $code)"
+            exit 1
+          }
+
+      # The zip is the download for anyone who would rather not meet SmartScreen's
+      # unsigned-exe warning. Compress-Archive rather than a zip writer in the packager:
+      # the runner already has one and nothing in the engine needs to read these back.
+      - name: Zip the game image
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ".generated/dist/game/x64-mingw-gcc-Release/*" `
+            -DestinationPath ".generated/dist/Sandbox-${{ needs.resolve.outputs.tag }}-windows-x64.zip"
+
+      - name: Compute asset hashes
+        id: hashes
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem .generated/dist/game/*-setup.exe, .generated/dist/engine-sdk/*-setup.exe, .generated/dist/*.zip
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Algorithm SHA256 $asset).Hash.ToLower()
+            "- ``$($asset.Name)`` - ``$hash``"
+          }
+          $body = $lines -join "`n"
+          "digest<<EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "EOF" >> $env:GITHUB_OUTPUT
+          Write-Output $body
+
+      # The Packer writes every transcript line to .generated/dist/<kind>/packer-<kind>.log on both
+      # success and failure, and on a hosted runner that file is the only account of why a
+      # pack failed - the step log carries the one-line error, the transcript carries the
+      # commands and their output. Uploaded on failure only, and late enough to also catch
+      # the verify, zip and hash steps.
+      - name: Upload the packaging transcripts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-transcripts-${{ needs.resolve.outputs.tag }}
+          path: .generated/dist/*/packer-*.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
+          draft: ${{ needs.resolve.outputs.draft == 'true' }}
+          generate_release_notes: true
+          files: |
+            .generated/dist/game/*-setup.exe
+            .generated/dist/game/feed.json
+            .generated/dist/engine-sdk/*-setup.exe
+            .generated/dist/*.zip
+          body: |
+            **Sandbox ${{ needs.resolve.outputs.tag }}** for Windows x64, built with `${{ steps.setup.outputs.toolchain }}`.
+
+            ## Play it
+
+            Download the `Sandbox-...-setup.exe` and run it. Windows SmartScreen warns on an
+            unsigned installer: choose **More info** then **Run anyway**. The `.zip` avoids
+            most of that warning if you would rather unpack it yourself and run `Bin/Sandbox.exe`.
+
+            Once installed, `Bin/Launcher.exe` inside the install folder updates the game to
+            the newest release before starting it, so you only download a setup exe once.
+
+            The `GSEngine-...-setup.exe` is the engine SDK, for building games against this
+            engine. It is not needed to play.
+
+            ## SHA256
+
+            ${{ steps.hashes.outputs.digest }}

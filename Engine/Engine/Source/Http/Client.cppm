@@ -50,3 +50,21 @@ export namespace gse::http {
 		std::shared_ptr<session> m_session;
 	};
 }
+
+namespace gse::http {
+	using native_session = void*;
+
+	auto open_session(
+		std::string_view user_agent
+	) -> native_session;
+
+	auto close_session(
+		native_session handle
+	) -> void;
+
+	auto perform(
+		native_session session_handle,
+		const request& req,
+		const std::atomic<bool>& cancelled
+	) -> result;
+}

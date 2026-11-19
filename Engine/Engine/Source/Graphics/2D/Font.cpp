@@ -256,24 +256,40 @@ auto gse::font::wrap(const std::string_view text, const float max_width, const f
 		return lines;
 	}
 
-	std::size_t start = 0;
-	while (start < text.size()) {
-		std::size_t accepted = std::string_view::npos;
-		std::size_t cursor = start;
-		while (cursor < text.size()) {
-			const std::size_t space = text.find(' ', cursor);
-			const std::size_t candidate = space == std::string_view::npos ? text.size() : space + 1;
-			if (accepted != std::string_view::npos && width(text.substr(start, candidate - start), scale) > max_width) {
-				break;
-			}
-			accepted = candidate;
-			cursor = candidate;
+	std::size_t paragraph = 0;
+	while (paragraph <= text.size()) {
+		const std::size_t hard_break = std::min(text.find('\n', paragraph), text.size());
+		std::string_view rest = text.substr(paragraph, hard_break - paragraph);
+		paragraph = hard_break + 1;
+
+		if (!rest.empty() && rest.back() == '\r') {
+			rest.remove_suffix(1);
 		}
 
-		const std::size_t line_end = accepted == std::string_view::npos ? text.size() : accepted;
-		const std::size_t taken = break_at_width(*this, text.substr(start, line_end - start), max_width, scale);
-		lines.push_back(text.substr(start, taken));
-		start += taken;
+		if (rest.empty()) {
+			lines.push_back(rest);
+			continue;
+		}
+
+		std::size_t start = 0;
+		while (start < rest.size()) {
+			std::size_t accepted = std::string_view::npos;
+			std::size_t cursor = start;
+			while (cursor < rest.size()) {
+				const std::size_t space = rest.find(' ', cursor);
+				const std::size_t candidate = space == std::string_view::npos ? rest.size() : space + 1;
+				if (accepted != std::string_view::npos && width(rest.substr(start, candidate - start), scale) > max_width) {
+					break;
+				}
+				accepted = candidate;
+				cursor = candidate;
+			}
+
+			const std::size_t line_end = accepted == std::string_view::npos ? rest.size() : accepted;
+			const std::size_t taken = break_at_width(*this, rest.substr(start, line_end - start), max_width, scale);
+			lines.push_back(rest.substr(start, taken));
+			start += taken;
+		}
 	}
 	return lines;
 }

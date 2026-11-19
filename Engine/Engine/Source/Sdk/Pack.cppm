@@ -1,0 +1,246 @@
+export module gse.sdk:pack;
+
+import std;
+
+import gse.containers;
+import gse.meta;
+
+export namespace gse::sdk {
+	struct pack_kind_info {
+		char uninstall_prefix[32]{};
+		char install_subdir[16]{};
+		bool registers_image = false;
+		bool scoped_by_product = false;
+	};
+
+	enum class pack_kind : std::uint8_t {
+		sdk [[= pack_kind_info{ .uninstall_prefix = "GSEngineSDK", .install_subdir = "sdk", .registers_image = true, .scoped_by_product = false }]],
+		game [[= pack_kind_info{ .uninstall_prefix = "GSEngineGame", .install_subdir = "game", .registers_image = false, .scoped_by_product = true }]]
+	};
+
+	auto traits_of(
+		pack_kind kind
+	) -> pack_kind_info;
+
+	struct pack_stamp {
+		std::string version;
+		std::string preset;
+		std::string product;
+		pack_kind kind = pack_kind::sdk;
+	};
+
+	struct pack_entry {
+		std::string path;
+		std::uint64_t offset = 0;
+		std::uint64_t compressed = 0;
+		std::uint64_t size = 0;
+	};
+
+	struct pack_table {
+		pack_stamp stamp;
+		std::vector<pack_entry> entries;
+	};
+
+	struct pack_view {
+		std::filesystem::path file;
+		std::uint64_t payload_offset = 0;
+		pack_table table;
+	};
+
+	auto append_pack(
+		const std::filesystem::path& root,
+		const std::filesystem::path& target,
+		const pack_stamp& stamp
+	) -> std::expected<pack_table, std::string>;
+
+	auto read_pack(
+		const std::filesystem::path& file
+	) -> std::expected<pack_view, std::string>;
+
+	auto extract_entry(
+		std::ifstream& payload,
+		const pack_entry& entry,
+		const std::filesystem::path& destination
+	) -> std::expected<void, std::string>;
+
+	auto digest_of(
+		const std::filesystem::path& file
+	) -> std::expected<std::string, std::string>;
+}
+
+namespace gse::sdk {
+	constexpr std::uint32_t pack_magic = 0x4B504553;
+	constexpr std::uint32_t pack_version = 2;
+	constexpr std::uint64_t trailer_magic = 0x4B41504B44534553;
+	constexpr std::size_t sha256_digest_size = 32;
+
+	struct pack_trailer {
+		std::uint64_t payload_offset = 0;
+		std::uint64_t table_offset = 0;
+		std::uint64_t magic = trailer_magic;
+	};
+
+	auto read_bytes(
+		const std::filesystem::path& path
+	) -> std::expected<std::vector<char>, std::string>;
+
+	auto compress(
+		const std::vector<char>& data
+	) -> std::expected<std::vector<char>, std::string>;
+
+	auto decompress(
+		std::span<const char> packed,
+		std::span<char> out
+	) -> bool;
+
+	auto sha256(
+		std::span<const char> data,
+		std::span<unsigned char> digest
+	) -> bool;
+
+	auto write_file(
+		const std::filesystem::path& path,
+		std::span<const char> bytes
+	) -> std::expected<void, std::string>;
+}
+
+auto gse::sdk::traits_of(const pack_kind kind) -> pack_kind_info {
+	return annotation_from_enum(kind, pack_kind_info{});
+}
+
+auto gse::sdk::read_bytes(const std::filesystem::path& path) -> std::expected<std::vector<char>, std::string> {
+	std::ifstream in(path, std::ios::binary | std::ios::ate);
+	if (!in) {
+		return std::unexpected(std::format("could not open {}", path.generic_display_string()));
+	}
+	const std::streamoff size = in.tellg();
+	if (!std::in_range<std::size_t>(size)) {
+		return std::unexpected(std::format("{} is {} bytes, which does not fit this build's address space", path.generic_display_string(), size));
+	}
+	std::vector<char> bytes(static_cast<std::size_t>(size));
+	in.seekg(0);
+	in.read(bytes.data(), size);
+	if (!in && size > 0) {
+		return std::unexpected(std::format("could not read {}", path.generic_display_string()));
+	}
+	return bytes;
+}
+
+auto gse::sdk::write_file(const std::filesystem::path& path, const std::span<const char> bytes) -> std::expected<void, std::string> {
+	std::error_code ec;
+	std::filesystem::create_directories(path.parent_path(), ec);
+	std::ofstream out(path, std::ios::binary);
+	out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+	if (!out) {
+		return std::unexpected(std::format("could not write {}", path.generic_display_string()));
+	}
+	return {};
+}
+
+auto gse::sdk::append_pack(const std::filesystem::path& root, const std::filesystem::path& target, const pack_stamp& stamp) -> std::expected<pack_table, std::string> {
+	std::fstream out(target, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate);
+	if (!out) {
+		return std::unexpected(std::format("could not open {} for appending", target.generic_display_string()));
+	}
+	pack_trailer trailer{ .payload_offset = static_cast<std::uint64_t>(out.tellp()) };
+	pack_table table{ .stamp = stamp };
+
+	std::error_code ec;
+	for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+		if (!entry.is_regular_file()) {
+			continue;
+		}
+		const auto bytes = read_bytes(entry.path());
+		if (!bytes) {
+			return std::unexpected(bytes.error());
+		}
+		const auto packed = compress(*bytes);
+		if (!packed) {
+			return std::unexpected(std::format("{}: {}", entry.path().generic_display_string(), packed.error()));
+		}
+		table.entries.push_back({
+			.path = entry.path().lexically_relative(root).generic_native_encoded_string(),
+			.offset = static_cast<std::uint64_t>(out.tellp()),
+			.compressed = packed->size(),
+			.size = bytes->size(),
+		});
+		out.write(packed->data(), static_cast<std::streamsize>(packed->size()));
+	}
+	if (ec) {
+		return std::unexpected(std::format("could not walk {}: {}", root.generic_display_string(), ec.message()));
+	}
+	if (table.entries.empty()) {
+		return std::unexpected(std::format("{} holds no files to pack", root.generic_display_string()));
+	}
+
+	trailer.table_offset = static_cast<std::uint64_t>(out.tellp());
+	binary_writer writer(out, pack_magic, pack_version);
+	writer & table;
+	out.write(reinterpret_cast<const char*>(&trailer), sizeof(trailer));
+	if (!out) {
+		return std::unexpected(std::format("could not write the pack table to {}", target.generic_display_string()));
+	}
+	return table;
+}
+
+auto gse::sdk::read_pack(const std::filesystem::path& file) -> std::expected<pack_view, std::string> {
+	std::ifstream in(file, std::ios::binary | std::ios::ate);
+	if (!in) {
+		return std::unexpected(std::format("could not open {}", file.generic_display_string()));
+	}
+	const std::streamoff end = in.tellg();
+	if (end < static_cast<std::streamoff>(sizeof(pack_trailer))) {
+		return std::unexpected(std::format("{} carries no SDK payload", file.generic_display_string()));
+	}
+	pack_trailer trailer{};
+	in.seekg(end - static_cast<std::streamoff>(sizeof(pack_trailer)));
+	in.read(reinterpret_cast<char*>(&trailer), sizeof(trailer));
+	if (!in || trailer.magic != trailer_magic || trailer.table_offset >= static_cast<std::uint64_t>(end)) {
+		return std::unexpected(std::format("{} carries no SDK payload", file.generic_display_string()));
+	}
+
+	in.seekg(static_cast<std::streamoff>(trailer.table_offset));
+	auto reader = binary_reader::open(in, pack_magic, pack_version);
+	if (!reader) {
+		return std::unexpected(std::format("{} carries a payload table this installer cannot read", file.generic_display_string()));
+	}
+	pack_view view{ .file = file, .payload_offset = trailer.payload_offset };
+	*reader & view.table;
+	if (!reader->valid()) {
+		return std::unexpected(std::format("{} carries a truncated payload table", file.generic_display_string()));
+	}
+	return view;
+}
+
+auto gse::sdk::digest_of(const std::filesystem::path& file) -> std::expected<std::string, std::string> {
+	const auto bytes = read_bytes(file);
+	if (!bytes) {
+		return std::unexpected(bytes.error());
+	}
+	std::array<unsigned char, sha256_digest_size> digest{};
+	if (!sha256(*bytes, digest)) {
+		return std::unexpected(std::format("could not hash {}", file.generic_display_string()));
+	}
+	std::string hex;
+	for (const unsigned char byte : digest) {
+		std::format_to(std::back_inserter(hex), "{:02x}", byte);
+	}
+	return hex;
+}
+
+auto gse::sdk::extract_entry(std::ifstream& payload, const pack_entry& entry, const std::filesystem::path& destination) -> std::expected<void, std::string> {
+	if (!std::in_range<std::size_t>(entry.compressed) || !std::in_range<std::size_t>(entry.size)) {
+		return std::unexpected(std::format("{}: {} bytes compressed and {} uncompressed, which does not fit this build's address space", entry.path, entry.compressed, entry.size));
+	}
+	std::vector<char> packed(static_cast<std::size_t>(entry.compressed));
+	payload.seekg(static_cast<std::streamoff>(entry.offset));
+	payload.read(packed.data(), static_cast<std::streamsize>(packed.size()));
+	if (!payload) {
+		return std::unexpected(std::format("{}: payload truncated", entry.path));
+	}
+	std::vector<char> bytes(static_cast<std::size_t>(entry.size));
+	if (!bytes.empty() && !decompress(packed, bytes)) {
+		return std::unexpected(std::format("{}: LZMS decompression failed", entry.path));
+	}
+	return write_file(destination / entry.path, bytes);
+}

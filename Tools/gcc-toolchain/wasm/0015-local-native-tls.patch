@@ -1,0 +1,252 @@
+Native thread-local storage for wasm32.
+
+The target had none, so GCC routed every `__thread' access through emulated
+TLS: a control object plus a per-thread copy handed back by
+__emutls_get_address.  That model cannot share a variable with a library built
+by another compiler, and every prebuilt wasm library in existence is built by
+clang -- which gives a thread-local a real .tdata segment and no control object
+at all.  wasi-libc's errno is exactly that variable, and `__emutls_v.errno'
+undefined is where step 17 met this and worked around it, by rewriting the
+header to claim errno was not thread-local.  On the threads sysroot that header
+is telling the truth, so the workaround becomes the bug and this replaces it.
+
+Four pieces:
+
+  - TARGET_HAVE_TLS, which is what stops the emutls lowering.
+
+  - A thread-local definition goes in a `.tdata' section carrying the "T" flag.
+    The flag is the whole difference -- the section name alone leaves an
+    ordinary data symbol -- and it is what gives the symbol the `tls' kind and
+    makes a relocation against it MEMORY_ADDR_TLS.  emit_symbol_section grows a
+    flags argument for that rather than gaining a near-copy.
+
+  - The address itself, which is not a link-time constant: `global.get
+    __tls_base', `i32.const sym@TLSREL', `i32.add'.  Three instructions where
+    an ordinary symbol pushes one, needing no new pattern in wasm.md and no
+    legitimize_address hook -- an operand code emitting text for a stack machine
+    may push its value with as many instructions as it likes, provided it leaves
+    exactly one.
+
+  - The features: `-mattr' in ASM_SPEC, and a target_features custom section in
+    the object.  Both are needed and the section cannot be left to the
+    assembler, because `-mattr' says what llvm-mc should accept and records
+    nothing -- while wasm-ld refuses thread-local storage outright unless the
+    object declares atomics AND bulk-memory.  That is also why this and the
+    atomic instructions of 0016 cannot be delivered one at a time.
+
+    Measured, because the first version of this header guessed: TLS itself
+    ASSEMBLES with no -mattr at all and needs the features only at the link,
+    while an atomic instruction without them is REJECTED outright
+    ("instruction requires: atomics").  The header had claimed llvm-mc
+    "mis-type-checks rather than rejecting" for both, by analogy with the
+    exception-handling flag, where that is what step 12 actually measured.
+
+Measured.  The `tls' subject in Tools/wasm_dialect_probe.py asserts the TLS
+relocation and the `tls' symbol kind by name rather than inferring them from a
+green run, and a GCC-compiled `__thread' variable read through this sequence
+returns the right value under node.
+
+--- a/gcc/config/wasm/wasm.h
++++ b/gcc/config/wasm/wasm.h
+@@ -41,8 +41,26 @@
+    them, while the annotations it emitted were rwat's, which could not place a
+    static or form a function pointer.  The triple is spelled in full rather than
+    taken from the configured one: LLVM names the OS-less wasm target
+-   `unknown', GCC's config.sub canonicalises the same target to `none'.  */
+-#define ASM_SPEC "-triple=wasm32-unknown-unknown -filetype=obj %{v:--show-encoding} %{Wa,*:%*}"
++   `unknown', GCC's config.sub canonicalises the same target to `none'.
++
++   -mattr=+atomics,+bulk-memory is what lets the atomic memory instructions be
++   assembled: llvm-mc keeps them behind the feature flag and REJECTS them without
++   it, "instruction requires: atomics".  Unlike the exception-handling proposal's
++   instructions, which the `eh_instructions' subject in
++   Tools/wasm_dialect_probe.py found are mis-type-checked rather than refused --
++   so a missing feature flag is not one failure mode here, it is two, and only
++   this one announces itself.
++
++   Thread-local storage ASSEMBLES without the flag; what it needs the features for
++   is the link, through the target_features section wasm_asm_file_end emits.
++   wasm-ld refuses TLS outright unless atomics AND bulk-memory are declared
++   ("'bulk-memory' feature must be used in order to use thread-local storage"), so
++   the two are enabled as a pair even for a unit that uses only TLS.
++
++   Tools/build_gcc_wasm.py's ASM_FEATURES has to carry the same list, because that
++   script assembles every probe by hand rather than through this spec, and
++   check_asm_features refuses to run when the two disagree.  */
++#define ASM_SPEC "-triple=wasm32-unknown-unknown -mattr=+atomics,+bulk-memory " 		 "-filetype=obj %{v:--show-encoding} %{Wa,*:%*}"
+ 
+ /* Where the target's headers live inside the sysroot.  wasi-libc puts them
+    directly under it, not under a usr/, which is the only reason this differs from
+--- a/gcc/config/wasm/wasm.cc
++++ b/gcc/config/wasm/wasm.cc
+@@ -123,6 +123,18 @@
+ 
+ #define TARGET_EXCEPT_UNWIND_INFO [] (auto ...) { return UI_NONE; }
+ 
++/* Native thread-local storage, rather than the emulated TLS that is the default
++   for a target which does not say this.  The distinction is not an optimisation:
++   emutls makes a `__thread' variable a control object plus a per-thread copy
++   allocated by __emutls_get_address, and that model cannot share a variable with
++   a library compiled by another compiler.  wasi-libc's errno is exactly that
++   case -- clang gives it real wasm TLS in a .tdata segment, and a GCC that asked
++   for `__emutls_v.errno' instead would want a symbol nothing defines, which is
++   where step 17 met this.  There is no emutls-to-native bridge to write; the
++   target either addresses the segment the way the rest of the toolchain does or
++   it cannot see libc's errno at all.  */
++#define TARGET_HAVE_TLS true
++
+ #define TARGET_HAVE_STRUB_SUPPORT_FOR hook_bool_tree_false
+ #define TARGET_ALLOCATE_STACK_SLOTS_FOR_ARGS hook_bool_void_false
+ #define TARGET_STRICT_ARGUMENT_NAMING [] (auto ...) { return true; }
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -107,6 +107,13 @@
+    header is written after the body, so by then the answer is known.  */
+ bool table_used;
+ 
++/* Whether anything in this unit defined or addressed a thread-local, so that
++   `.globaltype __tls_base' is declared only where it is wanted.  Same reason as
++   table_used above: declaring a global nothing uses still produces an import,
++   and an unused import is a module that fails to instantiate against a host
++   which was not told to supply it.  */
++bool tls_used;
++
+ /* The data symbol currently being emitted, and its size.  An object is closed
+    with a `.size' naming it, but TARGET_ASM_END_DECL is handed nothing, so what
+    ASM_DECLARE_OBJECT_NAME was given has to be carried across the contents.  */
+@@ -451,16 +458,17 @@
+    Tools/wasm_dialect_probe.py is the measurement.  */
+ void
+ emit_symbol_section (FILE *stream, const char *prefix, const char *name,
+-		     tree group)
++		     tree group, const char *flags)
+ {
+   fprintf (stream, "\t.section\t%s", prefix);
+   assemble_name (stream, name);
+   if (!group)
+     {
+-      fprintf (stream, ",\"\",@\n");
++      fprintf (stream, ",\"%s\",@\n", flags);
+       return;
+     }
+-  fprintf (stream, ",\"G\",@,%s,comdat\n", IDENTIFIER_POINTER (group));
++  fprintf (stream, ",\"G%s\",@,%s,comdat\n", flags,
++	   IDENTIFIER_POINTER (group));
+ }
+ 
+ /* The comdat group DECL belongs to, or null.  DECL is null on the constant-pool
+@@ -634,6 +642,11 @@
+   /* ??? All wasm globals should become builtin decls.  */
+   fprintf (saved_asm_out_file, "\t.globaltype\t__stack_pointer, i32\n");
+ 
++  /* __tls_base is the linker's as well, and declared on the same terms as the
++     table below: only where something in the unit reached for it.  */
++  if (tls_used)
++    fprintf (saved_asm_out_file, "\t.globaltype\t__tls_base, i32\n");
++
+   /* The memory is the linker's to define.  The table is too, but declaring one
+      that is never used still produces an import, so it is named only if
+      something reached for it.  */
+@@ -659,6 +672,34 @@
+ 
+   flush_buffer (code_out_file);
+   flush_buffer (data_out_file);
++
++  /* The features this object was assembled for, as a custom section the linker
++     reads.  It has to be written here rather than left to the assembler: the
++     `-mattr' in ASM_SPEC tells llvm-mc what instructions to ACCEPT and does not
++     put the section in the object, which was measured -- a hand-written subject
++     with thread-local storage and -mattr but no section is rejected by wasm-ld
++     with "'bulk-memory' feature must be used in order to use thread-local
++     storage", and the same subject links once the section is there.
++
++     Unconditional, matching ASM_SPEC: every object this compiler produces is
++     built for a target with these features, whether or not a given unit reached
++     for them, and recording the same set everywhere is what lets wasm-ld's
++     default --check-features succeed against the threads sysroot, whose own
++     objects declare exactly these two.
++
++     Encoded by hand because there is no directive for it: a count, then per
++     feature a `+' (0x2b, meaning the object uses it), the name's length, and
++     the name unterminated.  */
++  fprintf (saved_asm_out_file,
++	   "\t.section\t.custom_section.target_features,\"\",@\n"
++	   "\t.int8\t2\n"
++	   "\t.int8\t43\n"
++	   "\t.int8\t7\n"
++	   "\t.ascii\t\"atomics\"\n"
++	   "\t.int8\t43\n"
++	   "\t.int8\t11\n"
++	   "\t.ascii\t\"bulk-memory\"\n");
++
+   /* Hand the real output file back, so that toplev closes that and not the buffer.  */
+   asm_out_file = saved_asm_out_file;
+ }
+@@ -773,7 +814,7 @@
+     sorry ("returning more than one value is not yet implemented for this "
+ 	   "architecture");
+ 
+-  emit_symbol_section (stream, ".text.", name, group_of (decl));
++  emit_symbol_section (stream, ".text.", name, group_of (decl), "");
+   fprintf (stream, "\t.type\t");
+   assemble_name (stream, name);
+   fprintf (stream, ",@function\n");
+@@ -990,7 +1031,24 @@
+   fprintf (stream, "\t.type\t");
+   assemble_name (stream, name);
+   fprintf (stream, ",@object\n");
+-  emit_symbol_section (stream, ".data.", name, group_of (decl));
++  /* A thread-local goes in a `.tdata' section carrying the "T" flag, and the
++     flag is the whole difference: the section name alone leaves an ordinary
++     data symbol that happens to be spelled .tdata.  "T" is what makes the
++     assembler give the symbol the `tls' kind and a relocation against it
++     MEMORY_ADDR_TLS rather than MEMORY_ADDR.  Getting it wrong is a bug that
++     works until there are two threads -- a single-threaded link places the
++     block where reading it through __tls_base still returns the right value --
++     so `tls binding=local' is asserted by name in the `tls' subject of
++     Tools/wasm_dialect_probe.py.
++
++     .tdata and not .tbss for a zero initialiser, because this target never set
++     up a bss section at all; see the comment above on `const' arriving here
++     nominally in .text.  */
++  bool tls = decl && VAR_P (decl) && DECL_THREAD_LOCAL_P (decl);
++  if (tls)
++    tls_used = true;
++  emit_symbol_section (stream, tls ? ".tdata." : ".data.", name,
++		       group_of (decl), tls ? "T" : "");
+   assemble_linkage (stream, decl, name, pub);
+   fprintf (stream, "\t.p2align\t%d\n", floor_log2 (align_real));
+   assemble_name (stream, name);
+@@ -1126,6 +1184,32 @@
+ 	rtx offset = NULL_RTX;
+ 	if (GET_CODE (op) == PLUS)
+ 	  offset = XEXP (op, 1), op = XEXP (op, 0);
++	/* A thread-local's address is not a link-time constant: it is an offset
++	   from the running thread's own block, so it has to be computed.  Three
++	   instructions leaving one i32 where an ordinary symbol leaves one,
++	   which is why this needs neither a new pattern in wasm.md nor a
++	   legitimize_address hook -- an operand code emitting text for a stack
++	   machine may push its value with as many instructions as it likes
++	   provided it leaves exactly one.
++
++	   Under `i' only.  Reached without it the symbol is being named rather
++	   than addressed, which happens in data, where a TLS offset cannot be
++	   relocated at all -- so the assert is the honest answer and `@TLSREL'
++	   there would be silently wrong instead.  */
++	if (SYMBOL_REF_P (op) && SYMBOL_REF_TLS_MODEL (op) != TLS_MODEL_NONE)
++	  {
++	    gcc_assert (mode == 'i');
++	    tls_used = true;
++	    fprintf (stream, "global.get\t__tls_base" "\n\t"
++			     "i32.const\t");
++	    output_addr_const (stream, op);
++	    fprintf (stream, "@TLSREL");
++	    if (offset)
++	      fprintf (stream, "%+" HOST_WIDE_INT_PRINT "d", INTVAL (offset));
++	    fprintf (stream, "\n\ti32.add");
++	    break;
++	  }
++
+ 	if (mode == 'i')
+ 	  fprintf (stream, "i32.const\t");
+ 

@@ -19,6 +19,11 @@ export namespace gse {
 		auto register_with(
 			R& registrar
 		) const -> void;
+
+		template <typename Markers, system_node_registrar R>
+		auto register_gated_with(
+			R& registrar
+		) const -> void;
 	};
 
 	template <std::meta::info... Namespaces, system_node_registrar R>
@@ -65,6 +70,11 @@ namespace gse {
 		void* data_ptr
 	) -> void;
 
+	template <std::meta::info FnInfo, typename State>
+	auto invoke_annotated_persist(
+		const void* data_ptr
+	) -> void;
+
 	template <typename State>
 	auto invoke_annotated_snapshot(
 		void* data_ptr
@@ -82,22 +92,22 @@ namespace gse {
 	) -> void;
 
 	template <std::meta::info FnInfo, typename State>
-	auto extract_fn_init_deps() -> phase_state_deps;
-
-	template <std::meta::info FnInfo, typename State>
-	auto extract_fn_frame_deps() -> std::vector<id>;
-
-	template <std::meta::info FnInfo, typename State>
 	auto wire_annotated_fn(
-		system_node& node,
-		run_signature_metadata& run_meta,
-		phase_state_deps& init_deps,
-		std::vector<id>& frame_deps
+		system_node& node
 	) -> void;
 
 	consteval auto is_run_phase_fn(
 		std::meta::info fn
 	) -> bool;
+
+	consteval auto run_phase_fns(
+		std::vector<std::meta::info> fns
+	) -> std::vector<std::meta::info>;
+
+	template <std::meta::info... FnInfos>
+	struct run_phases_of {
+		static constexpr auto value = std::define_static_array(run_phase_fns(std::vector<std::meta::info>{ FnInfos... }));
+	};
 
 	template <typename State, std::meta::info... RunInfos>
 	auto invoke_run_phases(
@@ -110,32 +120,6 @@ namespace gse {
 		context& ctx,
 		State& state
 	) -> async::task<>;
-
-	template <std::meta::info FnInfo>
-	auto collect_fn_shared_views(
-		std::vector<id>& out
-	) -> void;
-
-	template <std::meta::info FnInfo>
-	auto collect_fn_channels(
-		std::vector<id>& reads_out,
-		std::vector<id>& writes_out
-	) -> void;
-
-	template <typename Arg>
-	auto ensure_arg_storage(
-		registry& reg
-	) -> void;
-
-	template <std::meta::info FnInfo>
-	auto ensure_fn_storages(
-		registry& reg
-	) -> void;
-
-	template <std::meta::info... FnInfos>
-	auto ensure_node_storages(
-		registry& reg
-	) -> void;
 
 	template <std::meta::info StateInfo, std::meta::info... FnInfos>
 	auto make_annotated_system_node(
@@ -152,6 +136,24 @@ namespace gse {
 	template <std::meta::info... Namespaces>
 	struct namespace_system_entries {
 		static constexpr auto value = std::define_static_array(collect_all_namespace_systems<Namespaces...>());
+	};
+
+	consteval auto collect_namespace_gate_markers(
+		std::vector<std::meta::info> namespaces
+	) -> std::vector<std::meta::info>;
+
+	consteval auto encloses(
+		std::meta::info outer,
+		std::meta::info inner
+	) -> bool;
+
+	template <std::meta::info... Namespaces>
+	struct namespace_gate_markers {
+		static constexpr auto value = std::define_static_array(collect_namespace_gate_markers({ Namespaces... }));
+	};
+
+	struct no_gate_markers {
+		static constexpr std::span<const std::meta::info> value{};
 	};
 
 	consteval auto is_system_state_entry(
@@ -180,6 +182,11 @@ namespace gse {
 		std::meta::info ns,
 		std::vector<std::meta::info> entries
 	) -> std::vector<std::meta::info>;
+
+	template <std::meta::info Ns, std::meta::info... Entries>
+	struct namespace_hook_fns {
+		static constexpr auto value = std::define_static_array(hook_fns_in_namespace(Ns, std::vector<std::meta::info>{ Entries... }));
+	};
 
 	consteval auto page_fn_for_state(
 		std::meta::info state,
@@ -238,6 +245,11 @@ namespace gse::settings {
 	) -> void;
 
 	template <typename State>
+	auto collect_setting_fallbacks(
+		std::string_view category
+	) -> std::vector<settings_fallback>;
+
+	template <typename State>
 	auto build_annotated_settings_record(
 		State& obj,
 		std::string_view category,
@@ -293,6 +305,12 @@ auto gse::invoke_annotated_shutdown(void* data_ptr) -> void {
 	[:FnInfo:](d.state);
 }
 
+template <std::meta::info FnInfo, typename State>
+auto gse::invoke_annotated_persist(const void* data_ptr) -> void {
+	const auto& d = *static_cast<const annotated_system_data<State>*>(data_ptr);
+	[:FnInfo:](d.state);
+}
+
 template <typename State>
 auto gse::invoke_annotated_snapshot(void* data_ptr) -> void {
 	auto& d = *static_cast<annotated_system_data<State>*>(data_ptr);
@@ -317,56 +335,45 @@ auto gse::annotated_data_delete(void* data_ptr) -> void {
 }
 
 template <std::meta::info FnInfo, typename State>
-auto gse::extract_fn_init_deps() -> phase_state_deps {
-	phase_state_deps out;
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		(([&] {
-			using arg_t = arg_type_of<FnInfo, Is>;
-			append_arg_state_dep<arg_t, State>(out.required);
-			append_arg_view_deps<arg_t>(out.required, out.optional);
-		}()), ...);
-	}(std::make_index_sequence<arity_of<FnInfo>>{});
-	return out;
-}
-
-template <std::meta::info FnInfo, typename State>
-auto gse::extract_fn_frame_deps() -> std::vector<id> {
-	std::vector<id> out;
-	std::vector<id> optional_discard;
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		(([&] {
-			using arg_t = arg_type_of<FnInfo, Is>;
-			append_arg_state_dep<arg_t, State>(out);
-			append_arg_view_deps<arg_t>(out, optional_discard);
-		}()), ...);
-	}(std::make_index_sequence<arity_of<FnInfo>>{});
-
-	template for (constexpr auto s : std::define_static_array(meta::required_order_deps_of(FnInfo))) {
-		out.push_back(id_of<typename[:s:]>());
-	}
-
-	return out;
-}
-
-template <std::meta::info FnInfo, typename State>
-auto gse::wire_annotated_fn(system_node& node, run_signature_metadata& run_meta, phase_state_deps& init_deps, std::vector<id>& frame_deps) -> void {
+auto gse::wire_annotated_fn(system_node& node) -> void {
 	constexpr auto hook = meta::hook_kind_of(meta::find_system_hook_anno(FnInfo));
+	static_assert(hook == system_hook::frame || meta::activation_gates_of(FnInfo).empty(), "only a system_frame hook takes activation gates; gate the system's state instead");
+	const hook_signature signature = hook_signature_of<FnInfo, State>();
+	node.ensure_storage_fns.append_range(signature.ensure_storage_fns);
+	node.channel_consumes.append_range(signature.channel_reads);
+	node.channel_publishes.append_range(signature.channel_writes);
+	node.lent_channels.append_range(signature.channel_lends);
+	node.shared_view_reads.append_range(signature.views);
+	node.shared_view_reads.append_range(signature.optional_views);
 	if constexpr (hook == system_hook::init) {
 		node.invoke_init_fn = &invoke_annotated_fn<FnInfo, State>;
-		node.resume_event = std::make_unique<async::manual_event>();
-		node.paused_event = std::make_unique<async::manual_event>();
-		auto deps = extract_fn_init_deps<FnInfo, State>();
-		init_deps.required.insert(init_deps.required.end(), deps.required.begin(), deps.required.end());
-		init_deps.optional.insert(init_deps.optional.end(), deps.optional.begin(), deps.optional.end());
+		node.yield = std::make_unique<init_yield>();
+		node.init_state_deps.append_range(signature.views);
+		node.optional_init_state_deps.append_range(signature.optional_views);
 	}
 	else if constexpr (hook == system_hook::run) {
-		append_signature_run_metadata<FnInfo, State>(run_meta);
+		node.declared_run_state_deps.append_range(signature.views);
+		node.declared_run_state_deps.append_range(signature.order);
+		node.optional_run_state_deps.append_range(signature.optional_views);
+		node.optional_run_state_deps.append_range(signature.optional_order);
+		node.run_order_deps.append_range(signature.order);
+		node.run_order_deps.append_range(signature.optional_order);
+		node.component_reads.append_range(signature.component_reads);
+		node.component_writes.append_range(signature.component_writes);
+		node.resource_reads.append_range(signature.resource_reads);
+		node.resource_writes.append_range(signature.resource_writes);
+		node.entity_structural = node.entity_structural || signature.entity_structural;
 	}
 	else if constexpr (hook == system_hook::frame) {
 		node.invoke_frame_fn = &invoke_annotated_fn<FnInfo, State>;
-		node.has_frame = true;
-		auto deps = extract_fn_frame_deps<FnInfo, State>();
-		frame_deps.insert(frame_deps.end(), deps.begin(), deps.end());
+		node.frame_state_deps.append_range(signature.views);
+		node.frame_state_deps.append_range(signature.order);
+		template for (constexpr auto gate : std::define_static_array(meta::activation_gates_of(FnInfo))) {
+			node.frame_gates.push_back(activation_gate_for<typename [:gate:]>());
+		}
+	}
+	else if constexpr (hook == system_hook::persist) {
+		node.invoke_persist_fn = &invoke_annotated_persist<FnInfo, State>;
 	}
 	else {
 		node.invoke_shutdown_fn = &invoke_annotated_shutdown<FnInfo, State>;
@@ -376,6 +383,16 @@ auto gse::wire_annotated_fn(system_node& node, run_signature_metadata& run_meta,
 consteval auto gse::is_run_phase_fn(const std::meta::info fn) -> bool {
 	const auto anno = meta::find_system_hook_anno(fn);
 	return anno != std::meta::info{} && meta::hook_kind_of(anno) == system_hook::run;
+}
+
+consteval auto gse::run_phase_fns(std::vector<std::meta::info> fns) -> std::vector<std::meta::info> {
+	std::erase_if(fns, [](const std::meta::info fn) {
+		return !is_run_phase_fn(fn);
+	});
+	std::ranges::sort(fns, {}, [](const std::meta::info fn) {
+		return meta::run_order_of(meta::find_system_hook_anno(fn));
+	});
+	return fns;
 }
 
 template <typename State, std::meta::info First, std::meta::info... Rest>
@@ -392,43 +409,6 @@ auto gse::invoke_run_phases(context& ctx, void* data_ptr) -> async::task<> {
 	co_await run_phase_chain<State, RunInfos...>(ctx, d.state);
 }
 
-template <std::meta::info FnInfo>
-auto gse::collect_fn_shared_views(std::vector<id>& out) -> void {
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((append_arg_shared_view<arg_type_of<FnInfo, Is>>(out)), ...);
-	}(std::make_index_sequence<arity_of<FnInfo>>{});
-}
-
-template <std::meta::info FnInfo>
-auto gse::collect_fn_channels(std::vector<id>& reads_out, std::vector<id>& writes_out) -> void {
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((append_arg_channel_ids<arg_type_of<FnInfo, Is>>(reads_out, writes_out)), ...);
-	}(std::make_index_sequence<arity_of<FnInfo>>{});
-}
-
-template <typename Arg>
-auto gse::ensure_arg_storage(registry& reg) -> void {
-	using U = std::remove_cvref_t<Arg>;
-	if constexpr (is_access_v<U>) {
-		reg.ensure_storage<access_element_t<U>>();
-	}
-	else if constexpr (is_structural_v<U>) {
-		reg.ensure_storage<structural_element_t<U>>();
-	}
-}
-
-template <std::meta::info FnInfo>
-auto gse::ensure_fn_storages(registry& reg) -> void {
-	[&]<std::size_t... Is>(std::index_sequence<Is...>) {
-		((ensure_arg_storage<arg_type_of<FnInfo, Is>>(reg)), ...);
-	}(std::make_index_sequence<arity_of<FnInfo>>{});
-}
-
-template <std::meta::info... FnInfos>
-auto gse::ensure_node_storages(registry& reg) -> void {
-	(ensure_fn_storages<FnInfos>(reg), ...);
-}
-
 template <std::meta::info StateInfo, std::meta::info... FnInfos>
 auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> system_node {
 	using state_t = [:StateInfo:];
@@ -438,79 +418,26 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	system_node node;
 	node.data = std::unique_ptr<void, void (*)(void*)>(d, &annotated_data_delete<state_t>);
 
-	run_signature_metadata run_meta;
-	phase_state_deps init_deps;
-	std::vector<id> frame_deps;
-	(wire_annotated_fn<FnInfos, state_t>(node, run_meta, init_deps, frame_deps), ...);
+	(wire_annotated_fn<FnInfos, state_t>(node), ...);
 
-	constexpr auto run_phases = std::define_static_array([] consteval {
-		std::vector<std::meta::info> rs;
-		for (const auto fn : std::array<std::meta::info, sizeof...(FnInfos)>{ FnInfos... }) {
-			if (is_run_phase_fn(fn)) {
-				rs.push_back(fn);
-			}
-		}
-		std::ranges::sort(rs, {}, [](const std::meta::info fn) {
-			return meta::run_order_of(meta::find_system_hook_anno(fn));
-		});
-		return rs;
-	}());
-
-	static_assert(
-		run_phases.size() <= 4,
-		"a system namespace declares more than four [[= gse::system_run]] phases; extend the invoke_run_phases chain in make_annotated_system_node, otherwise the extra phases would never be dispatched"
-	);
-
-	if constexpr (run_phases.size() == 1) {
-		node.invoke_run_fn = &invoke_annotated_fn<run_phases[0], state_t>;
+	using run_phases = run_phases_of<FnInfos...>;
+	if constexpr (run_phases::value.size() == 1) {
+		node.invoke_run_fn = &invoke_annotated_fn<run_phases::value[0], state_t>;
 	}
-	else if constexpr (run_phases.size() == 2) {
-		node.invoke_run_fn = &invoke_run_phases<state_t, run_phases[0], run_phases[1]>;
-	}
-	else if constexpr (run_phases.size() == 3) {
-		node.invoke_run_fn = &invoke_run_phases<state_t, run_phases[0], run_phases[1], run_phases[2]>;
-	}
-	else if constexpr (run_phases.size() == 4) {
-		node.invoke_run_fn = &invoke_run_phases<state_t, run_phases[0], run_phases[1], run_phases[2], run_phases[3]>;
+	else if constexpr (run_phases::value.size() > 1) {
+		node.invoke_run_fn = []<std::size_t... I>(std::index_sequence<I...>) {
+			return &invoke_run_phases<state_t, run_phases::value[I]...>;
+		}(std::make_index_sequence<run_phases::value.size()>{});
 	}
 
-	node.invoke_ensure_storages_fn = &ensure_node_storages<FnInfos...>;
-
-	node.declared_run_state_deps = std::move(run_meta.state_deps);
-	node.optional_run_state_deps = std::move(run_meta.optional_state_deps);
-	node.component_reads = std::move(run_meta.component_reads);
-	node.component_writes = std::move(run_meta.component_writes);
-	node.component_structural = std::move(run_meta.component_structural);
-	node.resource_reads = std::move(run_meta.resource_reads);
-	node.resource_writes = std::move(run_meta.resource_writes);
-	node.entity_structural = run_meta.entity_structural;
-	node.init_state_deps = std::move(init_deps.required);
-	node.optional_init_state_deps = std::move(init_deps.optional);
-	node.frame_state_deps = std::move(frame_deps);
-
-	std::vector<id> channel_reads;
-	std::vector<id> channel_writes;
-	(collect_fn_channels<FnInfos>(channel_reads, channel_writes), ...);
-	node.channel_consumes = std::move(channel_reads);
-	node.channel_publishes = std::move(channel_writes);
-
-	std::vector<id> shared_views;
-	(collect_fn_shared_views<FnInfos>(shared_views), ...);
-	std::ranges::sort(shared_views, [](const id a, const id b) {
+	std::ranges::sort(node.shared_view_reads, [](const id a, const id b) {
 		return a.number() < b.number();
 	});
-	const auto shared_dup = std::ranges::unique(shared_views);
-	shared_views.erase(shared_dup.begin(), shared_dup.end());
-	node.shared_view_reads = std::move(shared_views);
+	const auto shared_dup = std::ranges::unique(node.shared_view_reads);
+	node.shared_view_reads.erase(shared_dup.begin(), shared_dup.end());
 
-	if (!node.invoke_shutdown_fn) {
-		node.invoke_shutdown_fn = &noop_shutdown;
-	}
-	if (!node.invoke_frame_fn) {
-		node.invoke_frame_fn = &noop_dispatchers::noop_frame_for<state_t>;
-	}
 	if (!node.invoke_init_fn) {
-		node.init_done = true;
+		node.stage.enter(system_stage::initialized);
 	}
 	node.invoke_snapshot_fn = &invoke_annotated_snapshot<state_t>;
 
@@ -545,6 +472,9 @@ auto gse::make_annotated_system_node(settings::draw_page_thunk page_thunk) -> sy
 	node.def_line = state_loc.line();
 	node.def_column = state_loc.column();
 	node.deferred = meta::is_deferred_system(StateInfo);
+	template for (constexpr auto gate : std::define_static_array(meta::activation_gates_of(StateInfo))) {
+		node.activation_gates.push_back(activation_gate_for<typename [:gate:]>());
+	}
 
 	constexpr std::string_view settings_category = settings::category_of<state_t>().empty()
 		? meta::system_state_name<state_t>()
@@ -662,11 +592,13 @@ auto gse::settings::make_annotated_field(std::string key) -> settings_field {
 			}
 		}
 	}
-	if constexpr (is_dimensioned_field<F>) {
+	if constexpr (is_unit_suffixed_field<F>) {
 		field.units = field_unit_names<F>();
+		field.normalize = &normalize_field_value<F>;
+	}
+	if constexpr (is_dimensioned_field<F>) {
 		field.default_unit = field_default_unit<F>();
 		field.convert_unit = &convert_field_unit<F>;
-		field.normalize = &normalize_field_value<F>;
 	}
 	if constexpr (constexpr auto range_t = meta::find_range(leaf); range_t != std::meta::info{}) {
 		if constexpr (is_dimensioned_field<F>) {
@@ -730,6 +662,25 @@ auto gse::settings::reset_annotated_defaults(const change_request_writer channel
 }
 
 template <typename State>
+auto gse::settings::collect_setting_fallbacks(const std::string_view category) -> std::vector<settings_fallback> {
+	std::vector<settings_fallback> out;
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^State, std::meta::access_context::unchecked()))) {
+		template for (constexpr auto f : std::define_static_array(meta::find_class_template_annotations(m, ^^fallback_unless))) {
+			using fallback_t = [:f:];
+			out.push_back({
+				.gate = activation_gate_for<typename fallback_t::gate>(),
+				.pin = {
+					.category = std::string(category),
+					.key = std::string(meta::member_name(m)),
+					.value = meta::write_field(fallback_t::value),
+				},
+			});
+		}
+	}
+	return out;
+}
+
+template <typename State>
 auto gse::settings::build_annotated_settings_record(State& obj, const std::string_view category, draw_page_thunk page) -> register_settings_type {
 	return {
 		.category = std::string(category),
@@ -741,6 +692,7 @@ auto gse::settings::build_annotated_settings_record(State& obj, const std::strin
 		.read = &read_settings_for<State>,
 		.reset_to_defaults = &reset_annotated_defaults<State>,
 		.draw_page = page,
+		.fallbacks = collect_setting_fallbacks<State>(category),
 	};
 }
 
@@ -1022,13 +974,45 @@ template <std::meta::info... Namespaces, gse::system_node_registrar R>
 auto gse::register_systems(R& registrar) -> void {
 	using entries = namespace_system_entries<Namespaces...>;
 	[&]<std::size_t... I>(std::index_sequence<I...>) {
-		system_manifest<entries::value[I]...>{}.register_with(registrar);
+		system_manifest<entries::value[I]...>{}.template register_gated_with<namespace_gate_markers<Namespaces...>>(registrar);
 	}(std::make_index_sequence<entries::value.size()>{});
+}
+
+consteval auto gse::collect_namespace_gate_markers(std::vector<std::meta::info> namespaces) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	while (!namespaces.empty()) {
+		const auto current = namespaces.back();
+		namespaces.pop_back();
+		for (const auto m : std::meta::members_of(current, std::meta::access_context::unchecked())) {
+			if (std::meta::is_type(m) && find_annotation<namespace_gates>(m) != std::meta::info{}) {
+				out.push_back(m);
+			}
+			else if (std::meta::is_namespace(m)) {
+				namespaces.push_back(m);
+			}
+		}
+	}
+	return out;
+}
+
+consteval auto gse::encloses(const std::meta::info outer, const std::meta::info inner) -> bool {
+	for (auto current = inner; std::meta::is_namespace(current) && current != ^^::; current = std::meta::parent_of(current)) {
+		if (current == outer) {
+			return true;
+		}
+	}
+	return false;
 }
 
 template <std::meta::info... Entries>
 template <gse::system_node_registrar R>
 auto gse::system_manifest<Entries...>::register_with(R& registrar) const -> void {
+	register_gated_with<no_gate_markers>(registrar);
+}
+
+template <std::meta::info... Entries>
+template <typename Markers, gse::system_node_registrar R>
+auto gse::system_manifest<Entries...>::register_gated_with(R& registrar) const -> void {
 	static_assert(
 		unrecognized_manifest_entry(std::vector<std::meta::info>{ Entries... }) == std::meta::info{},
 		"system_manifest entry is neither a [[= gse::system_state]] struct, an annotated hook function, nor a settings page function. pass member reflections (^^ns::data, ^^ns::run), never the namespace itself — a namespace matches nothing and silently registers no systems"
@@ -1036,16 +1020,12 @@ auto gse::system_manifest<Entries...>::register_with(R& registrar) const -> void
 
 	template for (constexpr auto sys_ns : std::define_static_array(system_namespaces(std::vector<std::meta::info>{ Entries... }))) {
 		constexpr auto state_entry = state_entry_for_namespace(sys_ns, std::vector<std::meta::info>{ Entries... });
-		constexpr auto fns = std::define_static_array(hook_fns_in_namespace(sys_ns, std::vector<std::meta::info>{ Entries... }));
+		using fns = namespace_hook_fns<sys_ns, Entries...>;
 		constexpr auto state_info = state_entry != std::meta::info{} ? state_entry : ^^stateless_system<sys_ns>;
 
 		static_assert(
 			state_entry_count_for_namespace(sys_ns, std::vector<std::meta::info>{ Entries... }) <= 1,
 			"a system namespace declares more than one [[= gse::system_state]] struct; every hook function in the namespace would be attributed to the first one and the rest would silently never run"
-		);
-		static_assert(
-			fns.size() <= 6,
-			"a system namespace declares more than six annotated hook functions; extend the make_annotated_system_node chain in register_with, otherwise the extra hooks would never be wired"
 		);
 
 		settings::draw_page_thunk page = nullptr;
@@ -1056,26 +1036,16 @@ auto gse::system_manifest<Entries...>::register_with(R& registrar) const -> void
 			}
 		}
 
-		if constexpr (fns.size() == 0) {
-			registrar.add_system_node(make_annotated_system_node<state_info>(page));
+		system_node node = [page]<std::size_t... I>(std::index_sequence<I...>) {
+			return make_annotated_system_node<state_info, fns::value[I]...>(page);
+		}(std::make_index_sequence<fns::value.size()>{});
+		template for (constexpr auto marker : Markers::value) {
+			if constexpr (encloses(std::meta::parent_of(marker), sys_ns)) {
+				template for (constexpr auto gate : std::define_static_array(meta::activation_gates_of(marker))) {
+					node.activation_gates.push_back(activation_gate_for<typename [:gate:]>());
+				}
+			}
 		}
-		else if constexpr (fns.size() == 1) {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0]>(page));
-		}
-		else if constexpr (fns.size() == 2) {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0], fns[1]>(page));
-		}
-		else if constexpr (fns.size() == 3) {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0], fns[1], fns[2]>(page));
-		}
-		else if constexpr (fns.size() == 4) {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0], fns[1], fns[2], fns[3]>(page));
-		}
-		else if constexpr (fns.size() == 5) {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0], fns[1], fns[2], fns[3], fns[4]>(page));
-		}
-		else {
-			registrar.add_system_node(make_annotated_system_node<state_info, fns[0], fns[1], fns[2], fns[3], fns[4], fns[5]>(page));
-		}
+		registrar.add_system_node(std::move(node));
 	}
 }

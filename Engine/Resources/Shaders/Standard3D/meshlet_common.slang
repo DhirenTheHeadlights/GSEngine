@@ -16,7 +16,7 @@ public bool frustum_cull_sphere(float3 center, float radius, float4x4 view, floa
         else if (i == 1) plane = vp[3] - vp[0];
         else if (i == 2) plane = vp[3] + vp[1];
         else if (i == 3) plane = vp[3] - vp[1];
-        else if (i == 4) plane = vp[3] + vp[2];
+        else if (i == 4) plane = vp[2];
         else plane = vp[3] - vp[2];
 
         float len = length(plane.xyz);

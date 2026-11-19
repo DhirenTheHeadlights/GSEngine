@@ -1,0 +1,14 @@
+export module sandbox:net_directory;
+
+import gse.concurrency;
+import gse.ecs;
+import gse.network;
+
+export namespace sandbox::net_directory {
+	[[= gse::system_init{}]]
+	auto init(
+		gse::context& ctx,
+		const gse::network::config& net_cfg,
+		gse::channel_write<gse::network::clear_providers_request, gse::network::add_provider_request, gse::network::refresh_servers_request> net_out
+	) -> gse::async::task<>;
+}

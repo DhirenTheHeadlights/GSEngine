@@ -2,24 +2,41 @@ export module gse.scenario;
 
 import std;
 
+import gse.assert;
 import gse.core;
 import gse.math;
 import gse.time;
 import gse.meta;
 import gse.ecs;
 import gse.concurrency;
+import gse.test;
 
 export namespace gse::scenario {
+	enum class pacing : std::uint8_t {
+		lockstep,
+		unpaced,
+		wall_clock
+	};
+
 	struct info {
 		char name[64];
 		char scene[64] = "";
 		bool headless = false;
 		bool gpu_solver = false;
+		bool backend_variants = false;
 		bool video_encode = false;
-		bool real_time = false;
+		scenario::pacing pacing = scenario::pacing::lockstep;
 		int warmup_frames = 120;
 		int frames = 600;
-		char settings[16][96] = {};
+	};
+
+	template <std::meta::info... Path>
+	struct pin {
+		using path = settings::member_path<Path...>;
+
+		typename path::value_type value;
+
+		[[nodiscard]] auto assignment() const -> std::string;
 	};
 
 	struct wait_gate {
@@ -29,16 +46,29 @@ export namespace gse::scenario {
 		async::checked_handle resume{};
 	};
 
-	class context {
+	class context : public test::check_sink {
 	public:
 		context(
 			channel_writer writer,
-			wait_gate* gate
+			wait_gate* gate,
+			gse::registry* reg,
+			test::report_fn report = nullptr
 		);
 
 		[[nodiscard]] auto frame() const -> std::uint64_t;
 
 		auto channels() -> channel_writer&;
+
+		template <typename C>
+		[[nodiscard]] auto owners() const -> std::span<const id>;
+
+		template <typename C>
+		[[nodiscard]] auto components() const -> std::span<const C>;
+
+		template <typename C>
+		[[nodiscard]] auto try_component(
+			id owner
+		) const -> const C*;
 
 		auto advance_frame() -> void;
 
@@ -47,6 +77,7 @@ export namespace gse::scenario {
 	private:
 		channel_writer m_writer;
 		wait_gate* m_gate = nullptr;
+		gse::registry* m_registry = nullptr;
 		std::uint64_t m_frame = 0;
 	};
 
@@ -84,6 +115,7 @@ export namespace gse::scenario {
 		id id;
 		info info;
 		body_fn body = nullptr;
+		std::vector<std::string> settings;
 	};
 
 	template <std::meta::info Ns>
@@ -98,10 +130,60 @@ export namespace gse::scenario {
 namespace gse::scenario {
 	template <std::meta::info Ns>
 	consteval auto scenario_members() -> std::vector<std::meta::info>;
+
+	consteval auto is_pin(
+		std::meta::info annotation
+	) -> bool;
+
+	template <std::meta::info M>
+	auto pinned_settings() -> std::vector<std::string>;
+
+	[[nodiscard]] auto backend_variant_of(
+		const info& declared,
+		std::string_view suffix,
+		bool gpu_solver
+	) -> info;
 }
 
-gse::scenario::context::context(channel_writer writer, wait_gate* gate)
-	: m_writer(writer), m_gate(gate) {
+template <std::meta::info... Path>
+auto gse::scenario::pin<Path...>::assignment() const -> std::string {
+	return std::format("{}.{}={}", path::category, path::key, meta::write_field(value));
+}
+
+consteval auto gse::scenario::is_pin(const std::meta::info annotation) -> bool {
+	const auto type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(annotation)));
+	return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^pin;
+}
+
+template <std::meta::info M>
+auto gse::scenario::pinned_settings() -> std::vector<std::string> {
+	std::vector<std::string> out;
+	template for (constexpr auto a : std::define_static_array(std::meta::annotations_of(M))) {
+		if constexpr (is_pin(a)) {
+			static constexpr auto declared = [:std::meta::constant_of(a):];
+			out.push_back(declared.assignment());
+		}
+	}
+	return out;
+}
+
+auto gse::scenario::backend_variant_of(const info& declared, const std::string_view suffix, const bool gpu_solver) -> info {
+	const std::string_view stem(declared.name);
+	assert(stem.size() + suffix.size() < std::size(declared.name), "scenario '{}' with suffix '{}' exceeds the {} character name limit", stem, suffix, std::size(declared.name) - 1);
+
+	info out = declared;
+	out.gpu_solver = gpu_solver;
+	out.backend_variants = false;
+
+	auto* cursor = std::ranges::copy(stem, std::begin(out.name)).out;
+	cursor = std::ranges::copy(suffix, cursor).out;
+	*cursor = '\0';
+
+	return out;
+}
+
+gse::scenario::context::context(channel_writer writer, wait_gate* gate, gse::registry* reg, const test::report_fn report)
+	: check_sink(report), m_writer(writer), m_gate(gate), m_registry(reg) {
 }
 
 auto gse::scenario::context::frame() const -> std::uint64_t {
@@ -110,6 +192,21 @@ auto gse::scenario::context::frame() const -> std::uint64_t {
 
 auto gse::scenario::context::channels() -> channel_writer& {
 	return m_writer;
+}
+
+template <typename C>
+auto gse::scenario::context::owners() const -> std::span<const id> {
+	return m_registry ? m_registry->owner_ids<C>() : std::span<const id>{};
+}
+
+template <typename C>
+auto gse::scenario::context::components() const -> std::span<const C> {
+	return m_registry ? std::span<const C>(m_registry->components<C>()) : std::span<const C>{};
+}
+
+template <typename C>
+auto gse::scenario::context::try_component(const id owner) const -> const C* {
+	return m_registry ? m_registry->try_component<C>(owner) : nullptr;
 }
 
 auto gse::scenario::context::advance_frame() -> void {
@@ -172,11 +269,30 @@ auto gse::scenario::registry() -> std::span<const entry> {
 		template for (constexpr auto m : std::define_static_array(scenario_members<Ns>())) {
 			constexpr auto ann = first_annotation_of_type(m, ^^info);
 			static constexpr info declared = [:std::meta::constant_of(ann):];
-			built.push_back({
-				.id = find_or_generate_id(std::string_view(declared.name)),
-				.info = declared,
-				.body = &[:m:],
-			});
+			const std::vector<std::string> settings = pinned_settings<m>();
+			if constexpr (declared.backend_variants) {
+				constexpr std::array<std::pair<std::string_view, bool>, 2> variants = {
+					std::pair{ std::string_view("_cpu"), false },
+					std::pair{ std::string_view("_gpu"), true },
+				};
+				for (const auto& [suffix, gpu_solver] : variants) {
+					const info resolved = backend_variant_of(declared, suffix, gpu_solver);
+					built.push_back({
+						.id = find_or_generate_id(std::string_view(resolved.name)),
+						.info = resolved,
+						.body = &[:m:],
+						.settings = settings,
+					});
+				}
+			}
+			else {
+				built.push_back({
+					.id = find_or_generate_id(std::string_view(declared.name)),
+					.info = declared,
+					.body = &[:m:],
+					.settings = settings,
+				});
+			}
 		}
 		return built;
 	}();

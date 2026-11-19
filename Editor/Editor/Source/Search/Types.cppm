@@ -1,5 +1,6 @@
 export module gse.ide.search:types;
 
+import gse.complete;
 import gse.core;
 import gse.graphics;
 import gse.ide.analysis;
@@ -38,10 +39,7 @@ export namespace gse::ide::search {
 		std::uint32_t column = 0;
 	};
 
-	struct match_range {
-		std::uint32_t start = 0;
-		std::uint32_t length = 0;
-	};
+	using match_range = complete::match_range;
 
 	struct result {
 		domain source = domain::file;
@@ -93,9 +91,7 @@ export namespace gse::ide::search {
 		bool include_files = true;
 	};
 
-	auto to_lower(
-		std::string_view text
-	) -> std::string;
+	using complete::to_lower;
 
 	auto jump_target(
 		const result& match
@@ -111,13 +107,4 @@ auto gse::ide::search::jump_target(const result& match) -> jump_to_request {
 		.end_column = match.column + match.length,
 		.highlight = match.source == domain::file ? jump_highlight::caret : jump_highlight::span,
 	};
-}
-
-auto gse::ide::search::to_lower(const std::string_view text) -> std::string {
-	std::string out;
-	out.reserve(text.size());
-	for (const char c : text) {
-		out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-	}
-	return out;
 }

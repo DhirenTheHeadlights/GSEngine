@@ -1,0 +1,18 @@
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -1159,7 +1159,14 @@
+ 	 never for the typed constant a `.const' template spells itself.  */
+       if (mode == 'i')
+ 	fprintf (stream, "i32.const\t");
+-      fprintf (stream, "%ld", INTVAL (value));
++      /* HOST_WIDE_INT_PRINT_DEC, not "%ld".  INTVAL is a HOST_WIDE_INT and so
++	 always 64-bit, while `long' is 32-bit on an LLP64 host, so "%ld" read
++	 half the argument: a DImode 0xffffffff came out as `-1', and
++	 `x & 0xffffffff' therefore assembled as `x & ~0'.  A miscompile rather
++	 than a rejected instruction, and invisible on a Linux host, which is
++	 where this series is developed.  assemble_const_int above already
++	 spells it this way; this path did not.  */
++      fprintf (stream, HOST_WIDE_INT_PRINT_DEC, INTVAL (value));
+       break;
+     case CONST_DOUBLE:
+       {

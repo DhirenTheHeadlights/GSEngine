@@ -128,6 +128,11 @@ export namespace gse::gpu {
 		std::span<std::byte> vendor_binary;
 	};
 
+	struct queue_checkpoint {
+		std::string stage;
+		std::uint64_t marker = 0;
+	};
+
 	struct acquire_next_image_result {
 		gpu::result result = gpu::result::error_unknown;
 		std::uint32_t image_index = 0;

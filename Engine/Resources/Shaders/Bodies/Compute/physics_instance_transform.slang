@@ -37,14 +37,8 @@ void physics_instance_transform(uint3 dispatch_id) {
 
     body_state body = body_data[m.body_index];
 
-    float4x4 existing = instance_data_buffer[m.instance_index].model_matrix;
-    float3 scale_axes = float3(
-        length(float3(existing[0].x, existing[1].x, existing[2].x)),
-        length(float3(existing[0].y, existing[1].y, existing[2].y)),
-        length(float3(existing[0].z, existing[1].z, existing[2].z))
-    );
-
-    float3 pivot = m.center_of_mass;
+    float3 scale_axes = m.scale;
+    float3 pivot = m.pivot;
     float3 velocity = body.velocity.xyz;
     float3 angular_velocity = body.angular_velocity.xyz;
 

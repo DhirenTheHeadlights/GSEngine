@@ -4,7 +4,6 @@ Single source of truth for the rendering pipeline. Lifetime tracker of what ship
 
 For workstream-specific deep dives, see:
 - [restir_plan.md](restir_plan.md) — phased ReSTIR (DI → GI → PT) rollout
-- [native_capture.md](native_capture.md) — Vulkan Video screenshot/clip system (shipped, kept as design record)
 - [water_physics_plan.md](water_physics_plan.md) — fluid simulation and rendering (parked, design record only)
 
 ---
@@ -262,7 +261,7 @@ Examples in the codebase: atmosphere's `sky_raster_push_constants` uses `vec3<ir
 
 - **Visibility buffer**. Revisit if/when Nanite-style virtual geometry becomes a goal.
 - **Work graphs / cooperative matrices / Gaussian splatting**. Not on the runway.
-- **Audio capture, network streaming, GIF support**. Per `native_capture.md` non-goals.
+- **Audio capture, network streaming, GIF support**. Out of scope for the native capture system. Validate any clip with `ffmpeg -v error -i <file> -f null -` and require zero errors; "the clip plays" is not a test.
 - **Custom shift mappings for ReSTIR variants** (e.g., ReSTIR for our SDF tracer or VBD-driven physics). PhD-level math; explicitly research scope.
 - **Neural radiance caching with runtime training.** Tracked separately; 4–6+ month commitment, requires GPU intrinsics work and numerical-debugging stamina that AI agents are weak at.
 

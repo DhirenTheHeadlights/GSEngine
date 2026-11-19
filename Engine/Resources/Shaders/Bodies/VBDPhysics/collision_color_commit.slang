@@ -2,12 +2,16 @@ void collision_color_commit(uint3 dispatch_id) {
     uint bi = dispatch_id.x;
     if (bi >= pc.body_count) return;
 
-    coloring_scratch[bi] = coloring_scratch[max_bodies + bi];
+    coloring_scratch[bi] = coloring_scratch[max_bodies() + bi];
 
     if (bi == 0) {
         uint pending;
         InterlockedAdd(collision_state[state_color_pending_index], 0, pending);
         uint groups = (pc.body_count + workgroup_size - 1) / workgroup_size;
+        if (pending != 0) {
+            uint rounds_before;
+            InterlockedMax(collision_state[state_color_rounds_index], pc.iteration + 1, rounds_before);
+        }
         indirect_args[2 + max_colors].x = pending != 0 ? groups : 0;
         indirect_args[2 + max_colors].y = 1;
         indirect_args[2 + max_colors].z = 1;

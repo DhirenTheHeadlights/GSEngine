@@ -5,7 +5,7 @@ import gse.diag;
 auto operator new(const std::size_t size) -> void* {
 	auto* block = gse::alloc::allocate(size, __builtin_return_address(0));
 	if (block == nullptr) {
-		throw std::bad_alloc();
+		std::abort();
 	}
 	return block;
 }
@@ -13,7 +13,7 @@ auto operator new(const std::size_t size) -> void* {
 auto operator new[](const std::size_t size) -> void* {
 	auto* block = gse::alloc::allocate(size, __builtin_return_address(0));
 	if (block == nullptr) {
-		throw std::bad_alloc();
+		std::abort();
 	}
 	return block;
 }
@@ -21,7 +21,7 @@ auto operator new[](const std::size_t size) -> void* {
 auto operator new(const std::size_t size, const std::align_val_t alignment) -> void* {
 	auto* block = gse::alloc::allocate_aligned(size, alignment, __builtin_return_address(0));
 	if (block == nullptr) {
-		throw std::bad_alloc();
+		std::abort();
 	}
 	return block;
 }
@@ -29,7 +29,7 @@ auto operator new(const std::size_t size, const std::align_val_t alignment) -> v
 auto operator new[](const std::size_t size, const std::align_val_t alignment) -> void* {
 	auto* block = gse::alloc::allocate_aligned(size, alignment, __builtin_return_address(0));
 	if (block == nullptr) {
-		throw std::bad_alloc();
+		std::abort();
 	}
 	return block;
 }

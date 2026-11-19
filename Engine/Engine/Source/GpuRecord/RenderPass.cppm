@@ -34,6 +34,7 @@ export namespace gse::gpu {
 		std::vector<color_attachment> colors;
 		std::optional<depth_attachment> depth;
 		std::vector<id> after_deps;
+		std::vector<id> extends;
 		id chain_id;
 		std::uint32_t chain_index = 0;
 		bool early_signal = false;
@@ -119,6 +120,13 @@ export namespace gse::gpu {
 		template <std::meta::info... Hooks>
 		auto after() && -> pass_builder&&;
 
+		auto after(
+			std::span<const id> passes
+		) && -> pass_builder&&;
+
+		template <std::meta::info... Hooks>
+		auto extends() && -> pass_builder&&;
+
 		auto operator co_await() && -> request_pass_awaitable;
 
 	private:
@@ -141,6 +149,9 @@ export namespace gse::gpu {
 		channel_write<render_pass_request> channels
 	) -> pass_builder;
 
+	template <std::meta::info Hook>
+	[[nodiscard]] auto pass_id() -> id;
+
 	auto clear_color(
 		color_clear value
 	) -> color_attachment;
@@ -160,12 +171,27 @@ export namespace gse::gpu {
 		depth_clear value
 	) -> depth_attachment;
 
+	auto clear_depth(
+		depth_clear value,
+		const image& target
+	) -> depth_attachment;
+
 	auto load_depth() -> depth_attachment;
+
+	auto load_depth(
+		const image& target
+	) -> depth_attachment;
 }
 
 export namespace gse::gpu::context {
 	auto execute_frame(
 		data& d,
+		scheduler& s
+	) -> void;
+}
+
+export namespace gse::gpu {
+	auto report_late_pass_requests(
 		scheduler& s
 	) -> void;
 }
@@ -223,10 +249,26 @@ auto gse::gpu::pass_builder::after() && -> pass_builder&& {
 	return std::move(*this);
 }
 
+template <std::meta::info... Hooks>
+auto gse::gpu::pass_builder::extends() && -> pass_builder&& {
+	static constexpr std::array<std::string_view, sizeof...(Hooks)> names{ hook_name<Hooks>()... };
+	for (const auto pass_name : names) {
+		m_desc.extends.push_back(find_or_generate_id(pass_name));
+	}
+	return std::move(*this);
+}
+
 template <std::meta::info Hook>
 auto gse::gpu::pass(const channel_write<render_pass_request> channels) -> pass_builder {
 	constexpr auto name = hook_name<Hook>();
 	static const id hook_id = find_or_generate_id(name);
 	static const id record_id = find_or_generate_id(std::format("record<{}>", name));
 	return pass_builder{ channels, hook_id, name, record_id };
+}
+
+template <std::meta::info Hook>
+auto gse::gpu::pass_id() -> id {
+	constexpr auto name = hook_name<Hook>();
+	static const id hook_id = find_or_generate_id(name);
+	return hook_id;
 }

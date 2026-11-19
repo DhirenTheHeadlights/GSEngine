@@ -10,11 +10,12 @@ import gse.meta;
 import gse.time;
 import std;
 
-import :access_token;
+import :access;
 import :context;
 import :registries;
 import :registry;
 import :settings;
+import :system_anno;
 import :system_node;
 import :task_graph;
 
@@ -45,11 +46,13 @@ export namespace gse {
 			std::function<void(settings::register_settings_type)> fn
 		) -> void;
 
+		auto set_settings_retire_hook(
+			std::function<void(const void*)> fn
+		) -> void;
+
 		auto set_actions_register_hook(
 			std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> fn
 		) -> void;
-
-		[[nodiscard]] auto current_phase() const -> scheduler_phase;
 
 		auto enter_running() -> void;
 
@@ -66,19 +69,18 @@ export namespace gse {
 
 		[[nodiscard]] auto settle_progress() const -> settle_stats;
 
+		[[nodiscard]] auto has_frame_work() const -> bool;
+
 		[[nodiscard]] auto snapshot_graph() const -> introspection::system_graph;
 
 		auto update() -> void;
-
-		auto tick(
-			bool frame_ok,
-			const std::function<void()>& in_frame = {}
-		) -> void;
 
 		auto render(
 			bool frame_ok,
 			const std::function<void()>& in_frame = {}
 		) -> void;
+
+		auto persist() const -> void;
 
 		auto shutdown() -> void;
 
@@ -88,54 +90,27 @@ export namespace gse {
 			system_node node
 		) -> void;
 
-		auto queue_system_node(
-			system_node node
-		) -> void;
-
 		template <typename T>
 		auto register_external_resource(
 			T* ptr
 		) -> void;
 
 		template <typename State>
-		auto state(
-			this scheduler& self
-		) -> State&;
+		auto state() -> State&;
 
 		template <typename State>
-		auto state(
-			this const scheduler& self
-		) -> const State&;
-
-		template <typename State>
-		auto try_state_of(
-			this scheduler& self
-		) -> State*;
-
-		template <typename State>
-		auto try_state_of(
-			this const scheduler& self
-		) -> const State*;
-
-		template <typename State>
-		auto has() const -> bool;
-
-		template <typename Resources>
-		auto resources_of() const -> const Resources&;
+		auto try_state_of() -> State*;
 
 		template <typename T>
-		auto channel() -> gse::channel<T>&;
-
-		template <typename T>
-		auto read_channel() -> channel_read_guard<T>;
+		auto read_channel() -> std::span<const T>;
 
 		auto make_channel_writer() -> channel_writer;
 
+		auto flip_channels() -> void;
+
 		auto begin_staging() -> void;
 
-		auto resolve_activation(
-			const std::unordered_set<id>& disabled_roots
-		) -> void;
+		auto resolve_activation() -> void;
 
 		auto register_deferred() -> void;
 
@@ -147,10 +122,23 @@ export namespace gse {
 			std::function<void()> probe
 		) -> void;
 
+		auto set_init_stall_dump(
+			time interval
+		) -> void;
+
 	private:
+		static auto persist_node(
+			const system_node& node
+		) -> void;
+
 		auto register_node(
 			system_node node
-		) -> void*;
+		) -> void;
+
+		auto drop_node(
+			system_node node,
+			std::string_view reason
+		) -> void;
 
 		auto wire_component_deps() -> void;
 
@@ -180,13 +168,27 @@ export namespace gse {
 			system_node& node
 		) -> async::task<>;
 
-		[[nodiscard]] auto dep_init_done(
+		[[nodiscard]] auto dep_initialized(
 			id dep
 		) const -> bool;
+
+		[[nodiscard]] auto gate_state(
+			id state,
+			const std::unordered_map<id, const void*>& staged
+		) const -> const void*;
+
+		[[nodiscard]] auto gate_rejection(
+			std::span<const activation_gate> gates,
+			const std::unordered_map<id, const void*>& staged
+		) const -> std::optional<std::string>;
 
 		[[nodiscard]] auto dispatchable_nodes() const -> std::vector<bool>;
 
 		auto drain_hot_add_queue() -> void;
+
+		auto admit_settings(
+			system_node& node
+		) -> void;
 
 		auto snapshot_all_states() -> void;
 
@@ -204,14 +206,12 @@ export namespace gse {
 		std::deque<system_node> m_nodes;
 		std::unordered_map<id, std::size_t> m_node_index;
 		std::vector<std::unique_ptr<context>> m_run_contexts;
-		std::optional<channel_writer> m_run_writer;
 		std::vector<system_node> m_candidates;
 		std::vector<system_node> m_deferred_nodes;
+		std::unordered_map<id, std::string> m_gated_out;
 		bool m_staging = false;
 		scheduler_phase m_phase = scheduler_phase::boot;
 		state_registry m_states;
-		std::unordered_map<id, std::vector<id>> m_state_deps;
-		std::unordered_set<id> m_external_resources;
 		std::unordered_set<std::size_t> m_logged_cycle_warnings;
 		resource_registry m_resources_store;
 		channel_registry m_channels_store;
@@ -219,70 +219,36 @@ export namespace gse {
 		mutable std::mutex m_hot_add_mutex;
 		registry* m_registry = nullptr;
 		std::function<void(settings::register_settings_type)> m_settings_register_hook;
+		std::function<void(const void*)> m_settings_retire_hook;
 		std::function<void(std::vector<actions::registration>, std::vector<actions::axis_registration>)> m_actions_register_hook;
 		std::function<void()> m_stall_probe;
-		task_graph m_update_graph;
-		task_graph m_frame_graph;
-		access_guard m_guard;
-		bool m_initialized = false;
+		time m_init_stall_dump{};
+		task_graph m_update_graph{ task_graph::resume_policy::fan_out };
+		task_graph m_frame_graph{ task_graph::resume_policy::inline_all };
 		bool m_dep_graph_checked = false;
 	};
 }
 
 template <typename State>
-auto gse::scheduler::state(this scheduler& self) -> State& {
-	auto* p = self.m_states.state_ptr(id_of<State>());
+auto gse::scheduler::state() -> State& {
+	auto* p = m_states.state_ptr(id_of<State>());
 	assert(p != nullptr, "state not found");
 	return *static_cast<State*>(p);
 }
 
 template <typename State>
-auto gse::scheduler::state(this const scheduler& self) -> const State& {
-	const auto* p = self.m_states.state_ptr(id_of<State>());
-	assert(p != nullptr, "state not found");
-	return *static_cast<const State*>(p);
-}
-
-template <typename State>
-auto gse::scheduler::try_state_of(this scheduler& self) -> State* {
-	auto* p = self.m_states.state_ptr(id_of<State>());
-	return static_cast<State*>(p);
-}
-
-template <typename State>
-auto gse::scheduler::try_state_of(this const scheduler& self) -> const State* {
-	const auto* p = self.m_states.state_ptr(id_of<State>());
-	return static_cast<const State*>(p);
-}
-
-template <typename State>
-auto gse::scheduler::has() const -> bool {
-	return m_states.contains(id_of<State>());
-}
-
-template <typename Resources>
-auto gse::scheduler::resources_of() const -> const Resources& {
-	const auto* ptr = m_resources_store.resources_ptr(id_of<Resources>());
-	assert(ptr != nullptr, "resources not found");
-	return *static_cast<const Resources*>(ptr);
+auto gse::scheduler::try_state_of() -> State* {
+	return static_cast<State*>(m_states.state_ptr(id_of<State>()));
 }
 
 template <typename T>
 auto gse::scheduler::register_external_resource(T* ptr) -> void {
-	const auto type_id = id_of<T>();
-	m_resources_store.register_resource(type_id, ptr);
-	m_external_resources.insert(type_id);
-	m_update_graph.notify_state_ready(type_id);
+	m_resources_store.register_resource(id_of<T>(), ptr);
 }
 
 template <typename T>
-auto gse::scheduler::channel() -> gse::channel<T>& {
-	return m_channels_store.ensure_typed<T>().data;
-}
-
-template <typename T>
-auto gse::scheduler::read_channel() -> channel_read_guard<T> {
-	return channel_read_guard<T>(m_channels_store.ensure_typed<T>().data.read_raw());
+auto gse::scheduler::read_channel() -> std::span<const T> {
+	return m_channels_store.ensure_typed<T>().data.read_raw();
 }
 
 template <typename T>

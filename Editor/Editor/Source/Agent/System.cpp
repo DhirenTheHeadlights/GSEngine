@@ -2,7 +2,6 @@ module gse.ide.agent:system_impl;
 
 import std;
 import gse;
-import gse.win32;
 
 import gse.ide.build;
 import gse.ide.config;
@@ -13,14 +12,16 @@ import :blame;
 import :chats;
 import :model;
 import :panel;
+import :phase;
 import :session;
 import :system;
 
-auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, build_runner::build_request> events_out, const shared_view<asset::data> assets_d, const shared_view<build_runner::data> build_d) -> async::task<> {
+auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_request, dispatch_request, sync_request, gui::context_menu_result, build_runner::build_finished, build_runner::source_changed> requests_in, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request, blame_offer, sync_finished, build_runner::build_request> events_out, const shared_view<build_runner::data> build_d) -> async::task<> {
 	if (!d.initialized) {
 		load_sessions(d);
 		adopt_inherited(d);
-		d.built = build_runner::build_times();
+		resume_interrupted(d);
+		triage_crashes(d);
 		d.default_model.options.emplace_back();
 		for (const model_option& option : available_models()) {
 			d.default_model.options.push_back(option.value);
@@ -28,8 +29,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		d.initialized = true;
 	}
 
-	if (d.sessions.empty()) {
-		create_session(d, config::primary().project_root);
+	if (std::ranges::none_of(d.sessions, is_chat)) {
+		create_session(d, config::primary().project_root, chat_kind::chat);
 	}
 
 	for (session& s : d.sessions) {
@@ -41,19 +42,72 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	if (session* shown = active_session(d)) {
 		hydrate_session(*shown);
 	}
+	for (session& s : d.sessions) {
+		finish_hydration(s);
+	}
 
-	if (std::optional<window::clipboard_image> pasted = window::take_clipboard_image()) {
-		attach_image(d, assets_d, std::move(*pasted));
+	if (std::exchange(d.token_requests_cancelled, false)) {
+		for (const sync_request& request : d.token_pending_syncs) {
+			events_out.push<sync_finished>({ .root = request.root, .failure = "Claude token setup was cancelled" });
+		}
+		d.token_pending_starts.clear();
+		d.token_pending_syncs.clear();
 	}
 
 	for (const start_request& request : requests_in.of<start_request>()) {
-		session& started = create_session(d, request.cwd);
+		d.token_pending_starts.push_back(request);
+	}
+	for (const sync_request& request : requests_in.of<sync_request>()) {
+		d.token_pending_syncs.push_back(request);
+	}
+	const bool authenticated = agent_credentials().token;
+	if (!authenticated && (!requests_in.of<start_request>().empty() || !requests_in.of<sync_request>().empty())) {
+		d.token_prompt_open = true;
+	}
+	const auto starts = authenticated ? std::exchange(d.token_pending_starts, {}) : std::vector<start_request>{};
+	const auto syncs = authenticated ? std::exchange(d.token_pending_syncs, {}) : std::vector<sync_request>{};
+	for (const start_request& request : starts) {
+		session& started = create_session(d, request.cwd, chat_kind::chat, task_phase::apply);
 		if (!launch_session(started)) {
 			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' - is it on PATH?");
 			d.sessions.pop_back();
 			continue;
 		}
-		send_to_session(started, request.prompt, {});
+		send_to_session(started, request.prompt, {}, true);
+	}
+
+	for (const sync_request& request : syncs) {
+		if (const auto running = std::ranges::find_if(d.sessions, [](const session& s) { return s.sync && is_busy(s); }); running != d.sessions.end()) {
+			log::println(log::level::warning, log::category::task, "agent: a sync chat for {} is already open, so the one asked for {} was refused", running->sync->root, request.root);
+			events_out.push<sync_finished>({
+				.root = request.root,
+				.failure = "a sync conversation is already open",
+			});
+			continue;
+		}
+
+		session& started = create_sync_session(d, request);
+		if (!launch_session(started)) {
+			const std::filesystem::path root = started.sync->root;
+			erase_session(d, started.id);
+			log::println(log::level::error, log::category::task, "agent: failed to launch 'claude' for the {} sync - is it on PATH?", root);
+			events_out.push<sync_finished>({
+				.root = root,
+				.failure = "could not launch 'claude' - is it on PATH?",
+			});
+			continue;
+		}
+		send_to_session(started, sync_opening, {}, true);
+	}
+
+	for (session& reported : d.sessions) {
+		if (reported.sync && reported.sync_report && !reported.sync_announced && !is_busy(reported)) {
+			events_out.push<sync_finished>({
+				.root = reported.sync->root,
+				.summary = *reported.sync_report,
+			});
+			reported.sync_announced = true;
+		}
 	}
 
 	for (const gui::context_menu_result& result : requests_in.of<gui::context_menu_result>()) {
@@ -77,11 +131,11 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	}
 
 	for (session& s : d.sessions) {
-		if (s.running) {
-			pump_session(s);
+		if (s.fork.process) {
+			pump_inquiry(*s.fork.process);
 		}
-		else if (win32::valid_handle(s.process)) {
-			close_session(s);
+		if (s.link) {
+			pump_session(s);
 		}
 	}
 
@@ -97,10 +151,17 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		}
 		wake_observers(d, finished);
 	}
+	service_inquiry(d, events_out);
 
-	accept_hibernations(d);
+	bool state_changed = poll_build_inbox(d, events_out, build_d.building, build_d.agent_game_attached);
+	for (session& s : d.sessions) {
+		state_changed = service_phase(s, static_cast<std::uint32_t>(d.goal_steer_budget)) || state_changed;
+	}
+	if (state_changed) {
+		save_sessions(d);
+	}
+
 	refresh_presence(d);
-	poll_build_inbox(d, events_out, build_d.building);
 
 	for (const dispatch_request& request : requests_in.of<dispatch_request>()) {
 		if (request.session == 0) {
@@ -111,6 +172,8 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 		}
 	}
 
+	refresh_build_times(d);
+	wake_covered(d);
 	refresh_stale(d);
 	service_link(d);
 	refresh_usage(d);
@@ -118,25 +181,30 @@ auto gse::ide::agent::run(context& ctx, data& d, const channel_read<start_reques
 	events_out.push<gui::menu_content>({
 		.menu = std::string(panel_name),
 		.layer = render_layer::content,
-		.build = [d = &d, jump_out = events_out](gui::builder& b) {
-			draw_panel(b, *d, jump_out);
+		.build = [](gui::builder& b, data& panel_d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) {
+			draw_panel(b, panel_d, jump_out);
 		},
 	});
+
+	if (std::ranges::any_of(d.sessions, std::not_fn(is_chat))) {
+		events_out.push<gui::menu_content>({
+			.menu = std::string(source_control_panel_name),
+			.layer = render_layer::content,
+			.build = [](gui::builder& b, data& panel_d, const channel_write<gui::menu_content, jump_to_request, set_cursor_shape_request> jump_out) {
+				draw_sync_chat(b, panel_d, b.ctx.clip_stack.back(), jump_out);
+			},
+		});
+	}
 
 	return {};
 }
 
+auto gse::ide::agent::persist(const data& d) -> void {
+	save_sessions(d);
+}
+
 auto gse::ide::agent::shutdown(data& d) -> void {
 	const bool relaunching = app::relaunch_pending();
-
-	if (!relaunching) {
-		for (session& s : d.sessions) {
-			if (is_busy(s) && !s.retry.prompt.empty() && !s.retry.waiting) {
-				s.retry.waiting = true;
-				log::println(log::level::info, log::category::task, "agent: chat '{}' was mid-turn - holding it to resend on the next start", s.name);
-			}
-		}
-	}
 
 	save_sessions(d);
 	net::cancel(d.link);
@@ -147,6 +215,7 @@ auto gse::ide::agent::shutdown(data& d) -> void {
 	}
 
 	retire_presence(d);
+	cancel_inquiry(d);
 	hand_off_builds(d, relaunching);
 
 	for (session& s : d.sessions) {

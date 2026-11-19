@@ -4,11 +4,29 @@ import std;
 
 import :core;
 import :enums;
+import :image;
 import :pipeline;
 
 import gse.core;
 
 export namespace gse::gpu {
+	enum class binding_kind : std::uint8_t {
+		read_only_storage_buffer,
+		storage_buffer,
+		sampled_texture_2d,
+		sampled_texture_3d,
+		storage_texture_2d,
+		storage_texture_3d,
+		sampler,
+		acceleration_structure,
+	};
+
+	struct binding_layout_entry {
+		binding_kind kind = binding_kind::storage_buffer;
+		std::uint32_t args_offset = 0;
+		image_format storage_format = image_format::undefined;
+	};
+
 	struct specialization_entry {
 		std::uint32_t constant_id = 0;
 		std::uint32_t offset = 0;
@@ -27,9 +45,11 @@ export namespace gse::gpu {
 	};
 
 	struct shader_program_create_info {
+		std::string_view label;
 		std::span<const shader_object_create_info> stages;
 		std::uint32_t push_offset_start = 0;
 		std::uint32_t binding_args_size = 0;
+		std::span<const binding_layout_entry> bindings;
 		std::optional<gpu::push_constant_range> push_constant_range;
 		dynamic_pipeline_state state;
 		std::array<color_format, 8> color_targets{};

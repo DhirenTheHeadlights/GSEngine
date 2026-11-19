@@ -49,6 +49,13 @@ export namespace gse::vbd {
 			Fn&& fn
 		) -> std::size_t;
 
+		template <std::invocable<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, const cached_lambda&> Fn>
+		auto for_each_entry(
+			Fn&& fn
+		) const -> void;
+
+		auto prepare_pair_queries() -> void;
+
 		auto advance() -> void;
 
 		auto reserve(
@@ -84,6 +91,7 @@ export namespace gse::vbd {
 		std::vector<slot_key> m_keys;
 		std::vector<cached_lambda> m_payloads;
 		std::vector<std::uint32_t> m_index;
+		std::vector<std::uint32_t> m_tail_by_pair;
 		std::size_t m_sorted_count = 0;
 		std::uint32_t m_stamp = 1;
 		bool m_stored_since_advance = false;
@@ -129,7 +137,7 @@ auto gse::vbd::swapped_payload(const cached_lambda& data) -> cached_lambda {
 }
 
 auto gse::vbd::key_hash(const std::uint64_t key_lo, const std::uint64_t key_hi, const std::uint64_t feature) -> std::size_t {
-	return static_cast<std::size_t>(hash_combine(hash_combine(key_lo, key_hi), feature));
+	return static_cast<std::size_t>(hash_of(key_lo, key_hi, feature));
 }
 
 auto gse::vbd::contact_cache::find_handle(const std::uint64_t key_lo, const std::uint64_t key_hi, const std::uint64_t feature) const -> std::uint32_t {
@@ -216,6 +224,16 @@ auto gse::vbd::contact_cache::touch(const id body_a, const id body_b, const feat
 	}
 	m_keys[handle].last_seen = m_stamp;
 	return true;
+}
+
+auto gse::vbd::contact_cache::prepare_pair_queries() -> void {
+	m_tail_by_pair.clear();
+	for (std::size_t handle = m_sorted_count; handle < m_keys.size(); ++handle) {
+		m_tail_by_pair.push_back(static_cast<std::uint32_t>(handle));
+	}
+	std::ranges::stable_sort(m_tail_by_pair, std::ranges::less{}, [this](const std::uint32_t handle) {
+		return std::pair(m_keys[handle].key_lo, m_keys[handle].key_hi);
+	});
 }
 
 auto gse::vbd::contact_cache::advance() -> void {
@@ -329,12 +347,20 @@ auto gse::vbd::contact_cache::for_each_pair(const id body_a, const id body_b, Fn
 		emit(static_cast<std::uint32_t>(it - m_keys.begin()));
 	}
 
-	for (std::size_t handle = m_sorted_count; handle < m_keys.size(); ++handle) {
-		const slot_key& k = m_keys[handle];
-		if (k.key_lo == key_lo && k.key_hi == key_hi) {
-			emit(static_cast<std::uint32_t>(handle));
-		}
+	const auto tail = std::ranges::equal_range(m_tail_by_pair, std::pair(key_lo, key_hi), std::ranges::less{}, [this](const std::uint32_t handle) {
+		return std::pair(m_keys[handle].key_lo, m_keys[handle].key_hi);
+	});
+	for (const auto handle : tail) {
+		emit(handle);
 	}
 
 	return emitted;
+}
+
+template <std::invocable<std::uint64_t, std::uint64_t, std::uint64_t, std::uint32_t, const gse::vbd::cached_lambda&> Fn>
+auto gse::vbd::contact_cache::for_each_entry(Fn&& fn) const -> void {
+	for (std::size_t handle = 0; handle < m_keys.size(); ++handle) {
+		const slot_key& k = m_keys[handle];
+		fn(k.key_lo, k.key_hi, k.feature, m_stamp - k.last_seen, m_payloads[handle]);
+	}
 }

@@ -38,7 +38,7 @@ void nn_reduce_loss(uint3 dispatch_id) {
         return;
     }
     float mean = sum * pc.inv_n;
-    nn_scratch[nn_scalars_off + pc.mode] = mean;
+    nn_scratch[nn_scalars_off + pc.scalar_slot] = mean;
     if (pc.mode < 2) {
         nn_scratch[nn_scalars_off + nn_scalar_loss_acc + pc.mode] += mean;
     }

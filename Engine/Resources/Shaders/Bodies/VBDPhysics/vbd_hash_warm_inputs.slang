@@ -12,16 +12,16 @@ void vbd_hash_warm_inputs(uint3 dispatch_id, uint3 group_thread_id) {
     uint local_hash = 0;
 
     for (uint bi = tid; bi < pc.body_count; bi += adjacency_workgroup_size) {
-        uint count = min(contact_counts[bi], max_contact_adjacency);
+        uint count = min(contact_counts[bi], max_contact_adjacency());
         uint offset = contact_offsets[bi];
         local_hash ^= (bi + 1) * 0x9E3779B1u ^ count * 0x85EBCA77u;
         for (uint k = 0; k < count; k++) {
             uint slot = offset + k;
-            if (slot >= max_contact_adjacency) {
+            if (slot >= max_contact_adjacency()) {
                 break;
             }
             uint ci = contact_adjacency[slot];
-            if (ci >= max_contacts) {
+            if (ci >= max_contacts()) {
                 continue;
             }
             contact_constraint w = warm_starts[ci];

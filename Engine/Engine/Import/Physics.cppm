@@ -2,8 +2,10 @@ export module gse.physics;
 
 export import gse.math;
 
+export import :body_requests;
 export import :bounding_box;
 export import :collision_component;
+export import :contact_events;
 export import :contact_manifold;
 export import :convex_hull;
 export import :hull_collision;
@@ -14,6 +16,7 @@ export import :motion_component;
 export import :motor_component;
 export import :muscle_component;
 export import :narrow_phase_collision;
+export import :ray_query;
 export import :skeleton;
 export import :system;
 export import :transform_component;

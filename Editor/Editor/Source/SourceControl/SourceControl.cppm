@@ -1,0 +1,732 @@
+export module gse.ide.source_control;
+
+import std;
+import gse;
+
+import gse.ide.agent;
+import gse.ide.git;
+import gse.ide.navigation;
+
+export namespace gse::ide {
+	struct repository_edit {
+		std::string key;
+		std::string commit_key;
+		std::string push_key;
+		std::string sync_key;
+		std::string message;
+		gui::text_input_state input;
+	};
+
+	struct message_banner {
+		std::string shown;
+		float wrapped_width = 0.f;
+		gui::text_buffer text;
+		gui::text_area_state view;
+		std::vector<gui::text_span> spans;
+	};
+
+	struct repository_view {
+		git::repository_snapshot status;
+		std::unordered_set<id> selected;
+		std::size_t selectable = 0;
+	};
+
+	struct source_control_view {
+		git::status_snapshot status;
+		std::filesystem::path project_root;
+		std::filesystem::path engine_root;
+		std::uint64_t style_key = 0;
+		float font_size = 0.f;
+		std::vector<repository_view> repositories;
+		float counter_width = 0.f;
+		std::string size_warning;
+	};
+
+	struct source_control_state {
+		std::unordered_map<id, repository_edit> edits;
+		source_control_view view;
+		std::filesystem::path sync_root;
+		std::string sync_summary;
+		message_banner error_banner;
+		message_banner summary_banner;
+		message_banner size_banner;
+	};
+
+	struct source_control_inputs {
+		git::status_snapshot status;
+		bool busy = false;
+		std::string_view action_error;
+		std::filesystem::path project_root;
+		std::filesystem::path engine_root;
+		std::string_view engine_pin;
+		bool sync_open = false;
+		bool sync_history = false;
+	};
+
+	[[nodiscard]] auto edit_for(
+		source_control_state& state,
+		const std::filesystem::path& root
+	) -> repository_edit&;
+
+	auto apply_sync_finished(
+		source_control_state& state,
+		const agent::sync_finished& finished
+	) -> void;
+
+	auto draw_source_control_panel(
+		gui::builder& ui,
+		const rectf& rect,
+		source_control_state& state,
+		const source_control_inputs& inputs,
+		channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels
+	) -> void;
+}
+
+namespace gse::ide {
+	struct row_context {
+		gui::builder& ui;
+		const rectf& rect;
+		const rectf& visible;
+		bool hovered = false;
+		float counter_width = 0.f;
+		source_control_state& state;
+		const source_control_inputs& inputs;
+		repository_view& repository;
+		const git::change* change = nullptr;
+		channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels;
+	};
+
+	auto draw_header_row(
+		const row_context& row
+	) -> void;
+
+	auto draw_controls_row(
+		const row_context& row
+	) -> void;
+
+	auto draw_change_row(
+		const row_context& row
+	) -> void;
+
+	struct source_control_row_info {
+		void (*draw)(const row_context&) = nullptr;
+	};
+
+	enum class source_control_row_kind {
+		header [[= source_control_row_info{
+			.draw = draw_header_row,
+		}]],
+		controls [[= source_control_row_info{
+			.draw = draw_controls_row,
+		}]],
+		file [[= source_control_row_info{
+			.draw = draw_change_row,
+		}]],
+	};
+
+	struct source_control_row {
+		source_control_row_kind kind = source_control_row_kind::header;
+		repository_view* repository = nullptr;
+		const git::change* change = nullptr;
+	};
+
+	[[nodiscard]] auto contains_path(
+		const std::filesystem::path& root,
+		const std::filesystem::path& path
+	) -> bool;
+
+	[[nodiscard]] auto change_ids(
+		const git::repository_status& repository
+	) -> std::unordered_set<id>;
+
+	auto refresh_view(
+		source_control_view& view,
+		const gui::draw_context& ctx,
+		const source_control_inputs& inputs
+	) -> void;
+
+	auto append_size_warning(
+		std::string& out,
+		const git::repository_status& repository
+	) -> void;
+
+	[[nodiscard]] auto lead_rows() -> std::span<const source_control_row_kind>;
+
+	[[nodiscard]] auto row_count(
+		const source_control_view& view
+	) -> std::size_t;
+
+	[[nodiscard]] auto row_at(
+		source_control_view& view,
+		std::size_t index
+	) -> source_control_row;
+
+	[[nodiscard]] auto all_selected(
+		const repository_view& repository
+	) -> bool;
+
+	auto select_all(
+		repository_view& repository,
+		bool selected
+	) -> void;
+
+	[[nodiscard]] auto selected_paths(
+		const repository_view& repository
+	) -> std::vector<std::filesystem::path>;
+
+	[[nodiscard]] auto checkbox_rect(
+		const gui::draw_context& ctx,
+		const rectf& row,
+		float left
+	) -> rectf;
+
+	[[nodiscard]] auto counter_column_width(
+		const font& face,
+		std::span<const repository_view> repositories,
+		float scale
+	) -> float;
+
+	constexpr float banner_room_share = 0.4f;
+
+	auto draw_banner(
+		gui::builder& ui,
+		message_banner& banner,
+		std::string_view name,
+		std::string_view text,
+		const vec4f& color,
+		rectf& room
+	) -> void;
+}
+
+auto gse::ide::contains_path(const std::filesystem::path& root, const std::filesystem::path& path) -> bool {
+	const std::filesystem::path relative = path.lexically_normal().lexically_relative(root.lexically_normal());
+	return !relative.empty() && *relative.begin() != "..";
+}
+
+auto gse::ide::change_ids(const git::repository_status& repository) -> std::unordered_set<id> {
+	return repository.changes
+		| std::views::transform(&git::change::path_id)
+		| std::ranges::to<std::unordered_set<id>>();
+}
+
+auto gse::ide::refresh_view(source_control_view& view, const gui::draw_context& ctx, const source_control_inputs& inputs) -> void {
+	const std::uint64_t key = gui::style_key(ctx.style);
+	if (view.status == inputs.status && view.project_root == inputs.project_root && view.engine_root == inputs.engine_root && view.style_key == key && view.font_size == ctx.style.font_size) {
+		return;
+	}
+
+	std::vector<repository_view> repositories;
+	std::string size_warning;
+	for (const git::repository_snapshot& status : inputs.status->repositories()) {
+		if (!contains_path(status->root, inputs.project_root) && !contains_path(status->root, inputs.engine_root)) {
+			continue;
+		}
+		const std::unordered_set<id> present = change_ids(*status);
+		const id root_id = generate_temp_id(status->root);
+		const auto previous = std::ranges::find_if(view.repositories, [root_id](const repository_view& repository) {
+			return generate_temp_id(repository.status->root) == root_id;
+		});
+		std::unordered_set<id> selected;
+		if (previous != view.repositories.end()) {
+			selected = std::move(previous->selected);
+			std::erase_if(selected, [&present](const id file) {
+				return !present.contains(file);
+			});
+		}
+		if (status->changes.size() > git::large_change_count) {
+			append_size_warning(size_warning, *status);
+		}
+		repositories.push_back({
+			.status = status,
+			.selected = std::move(selected),
+			.selectable = present.size(),
+		});
+	}
+
+	const auto text_view = ctx.fonts.text.resolve();
+	const float counter_width = counter_column_width(*text_view, repositories, ctx.style.font_size);
+	view = {
+		.status = inputs.status,
+		.project_root = inputs.project_root,
+		.engine_root = inputs.engine_root,
+		.style_key = key,
+		.font_size = ctx.style.font_size,
+		.repositories = std::move(repositories),
+		.counter_width = counter_width,
+		.size_warning = std::move(size_warning),
+	};
+}
+
+auto gse::ide::append_size_warning(std::string& out, const git::repository_status& repository) -> void {
+	std::unordered_map<std::filesystem::path, std::size_t> by_directory;
+	for (const git::change& change : repository.changes) {
+		if (change.relative.has_parent_path()) {
+			++by_directory[*change.relative.begin()];
+		}
+	}
+
+	if (!out.empty()) {
+		out += ' ';
+	}
+	std::format_to(std::back_inserter(out), "{} lists {} changes", repository.root.filename().generic_display_string(), repository.changes.size());
+	const auto heaviest = std::ranges::max_element(by_directory, {}, [](const auto& entry) {
+		return entry.second;
+	});
+	if (heaviest != by_directory.end()) {
+		const auto& [directory, count] = *heaviest;
+		std::format_to(std::back_inserter(out), ", {} of them under {}/", count, directory.generic_display_string());
+	}
+	out += ". If that tree is generated, add it to .gitignore.";
+}
+
+auto gse::ide::lead_rows() -> std::span<const source_control_row_kind> {
+	static constexpr std::array kinds = {
+		source_control_row_kind::header,
+		source_control_row_kind::controls,
+	};
+	return kinds;
+}
+
+auto gse::ide::row_count(const source_control_view& view) -> std::size_t {
+	return std::ranges::fold_left(view.repositories | std::views::transform([](const repository_view& repository) {
+		return lead_rows().size() + repository.status->changes.size();
+	}), std::size_t{}, std::plus{});
+}
+
+auto gse::ide::row_at(source_control_view& view, std::size_t index) -> source_control_row {
+	for (repository_view& repository : view.repositories) {
+		const std::span<const git::change> changes = repository.status->changes;
+		if (index < lead_rows().size()) {
+			return {
+				.kind = lead_rows()[index],
+				.repository = &repository,
+			};
+		}
+		index -= lead_rows().size();
+		if (index < changes.size()) {
+			return {
+				.kind = source_control_row_kind::file,
+				.repository = &repository,
+				.change = &changes[index],
+			};
+		}
+		index -= changes.size();
+	}
+	std::unreachable();
+}
+
+auto gse::ide::edit_for(source_control_state& state, const std::filesystem::path& root) -> repository_edit& {
+	const id root_id = generate_temp_id(root);
+	const auto found = state.edits.find(root_id);
+	if (found != state.edits.end()) {
+		return found->second;
+	}
+	const std::string root_key = root.generic_display_string();
+	return state.edits.emplace(root_id, repository_edit{
+		.key = "##source_control_message_" + root_key,
+		.commit_key = "##source_control_commit_" + root_key,
+		.push_key = "##source_control_push_" + root_key,
+		.sync_key = "##source_control_sync_" + root_key,
+	}).first->second;
+}
+
+auto gse::ide::apply_sync_finished(source_control_state& state, const agent::sync_finished& finished) -> void {
+	state.sync_root.clear();
+	state.sync_summary = finished.failure.empty()
+		? std::string{}
+		: "the sync could not start: " + finished.failure;
+}
+
+auto gse::ide::all_selected(const repository_view& repository) -> bool {
+	return repository.selectable > 0 && repository.selected.size() == repository.selectable;
+}
+
+auto gse::ide::select_all(repository_view& repository, const bool selected) -> void {
+	if (selected) {
+		repository.selected = change_ids(*repository.status);
+	}
+	else {
+		repository.selected.clear();
+	}
+}
+
+auto gse::ide::selected_paths(const repository_view& repository) -> std::vector<std::filesystem::path> {
+	return repository.status->changes
+		| std::views::filter([&repository](const git::change& change) {
+			return repository.selected.contains(change.path_id);
+		})
+		| std::views::transform(&git::change::relative)
+		| std::ranges::to<std::vector<std::filesystem::path>>();
+}
+
+auto gse::ide::checkbox_rect(const gui::draw_context& ctx, const rectf& row, const float left) -> rectf {
+	const float extent = gui::checkbox_extent(ctx.style);
+	return rectf::from_position_size(
+		{ left, row.center().y() + extent * 0.5f },
+		{ extent, extent }
+	);
+}
+
+auto gse::ide::counter_column_width(const font& face, const std::span<const repository_view> repositories, const float scale) -> float {
+	float widest = 0.f;
+	for (const repository_view& repository : repositories) {
+		for (const git::change& change : repository.status->changes) {
+			if (!change.lines) {
+				continue;
+			}
+			widest = std::max({
+				widest,
+				face.width(std::format("+{}", change.lines->added), scale),
+				face.width(std::format("-{}", change.lines->deleted), scale),
+			});
+		}
+	}
+	return widest;
+}
+
+auto gse::ide::draw_header_row(const row_context& row) -> void {
+	const auto& ctx = row.ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const git::repository_status& repository = *row.repository.status;
+
+	ctx.queue_sprite({
+		.rect = row.rect,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ row.rect.left(), row.rect.top() }, { sty.accent_bar_width, row.rect.height() }),
+		.color = sty.color_accent,
+		.texture = ctx.blank_texture,
+	});
+
+	const rectf box = checkbox_rect(ctx, row.rect, row.rect.left() + sty.accent_bar_width + pad);
+	const bool all = all_selected(row.repository);
+	if (!repository.changes.empty() && ctx.clicked_in_rect(box.intersection(row.visible))) {
+		select_all(row.repository, !all);
+	}
+	gui::draw_checkbox(ctx, box, all, {
+		.color_frame = sty.checkbox.frame.idle,
+		.color_mark = sty.checkbox.mark.idle,
+		.extent = gui::checkbox_extent(sty),
+	});
+
+	const std::string name = repository.root.filename().generic_display_string();
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = name,
+		.position = { box.right() + pad, row.rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = sty.color_text,
+		.clip_rect = row.rect,
+	});
+
+	const bool engine = generate_temp_id(repository.root) == generate_temp_id(row.inputs.engine_root);
+	const std::string_view pin = row.inputs.engine_pin;
+	std::string branch = repository.branch;
+	if (repository.ahead > 0) {
+		branch += std::format(" +{}", repository.ahead);
+	}
+	if (repository.behind > 0) {
+		branch += std::format(" -{}", repository.behind);
+	}
+	if (repository.upstream.empty()) {
+		branch += " (no upstream)";
+	}
+	const bool drifted = engine && !pin.empty() && pin != repository.head;
+	if (engine) {
+		branch += pin.empty() ? " · unpinned" : drifted ? std::format(" · drifted from {}", pin.substr(0, 7)) : " · pinned";
+	}
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = branch,
+		.position = { row.rect.right() - pad - text_view->width(branch, sty.font_size), row.rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
+		.scale = sty.font_size,
+		.color = drifted ? sty.color_warning : sty.color_text_secondary,
+		.clip_rect = row.rect,
+	});
+}
+
+auto gse::ide::draw_controls_row(const row_context& row) -> void {
+	gui::builder& ui = row.ui;
+	const auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const float button_w = text_view->width("Commit", sty.font_size) + pad * 2.f;
+	const float control_h = std::max(0.f, row.rect.height() - pad * 0.5f);
+	const float top = row.rect.top() - pad * 0.25f;
+	const git::repository_status& repository = *row.repository.status;
+	repository_edit& edit = edit_for(row.state, repository.root);
+
+	const rectf push_rect = rectf::from_position_size({ row.rect.right() - pad - button_w, top }, { button_w, control_h });
+	const rectf commit_rect = rectf::from_position_size({ push_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
+	const rectf sync_rect = rectf::from_position_size({ commit_rect.left() - pad * 0.5f - button_w, top }, { button_w, control_h });
+	const rectf input_rect = rectf::from_position_size({ row.rect.left() + pad, top }, { std::max(0.f, sync_rect.left() - pad - row.rect.left() - pad), control_h });
+
+	ui.draw<gui::text_input>({
+		.name = edit.key,
+		.buffer = edit.message,
+		.state = edit.input,
+		.rect = input_rect,
+	});
+	if (edit.message.empty()) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = "Commit message",
+			.position = { input_rect.left() + pad, input_rect.center().y() + text_view->vertical_center_offset(sty.font_size) },
+			.scale = sty.font_size,
+			.color = sty.color_text_secondary,
+			.clip_rect = input_rect,
+		});
+	}
+
+	const bool any_selected = !row.repository.selected.empty();
+	const bool can_sync = !row.inputs.busy && any_selected;
+	if (ui.draw<gui::button>({ .text = "Sync", .rect = sync_rect, .key = edit.sync_key, .enabled = can_sync })) {
+		std::vector<agent::sync_file> files;
+		for (const git::change& change : repository.changes) {
+			if (!row.repository.selected.contains(change.path_id)) {
+				continue;
+			}
+			files.push_back({
+				.relative = change.relative,
+				.code = annotation_from_enum<git::file_status_info>(change.state, {}).code,
+				.lines = change.lines,
+			});
+		}
+		row.channels.push<agent::sync_request>({
+			.root = repository.root,
+			.branch = repository.branch,
+			.upstream = repository.upstream,
+			.message = edit.message,
+			.ahead = repository.ahead,
+			.behind = repository.behind,
+			.files = std::move(files),
+		});
+		row.state.sync_root = repository.root;
+		row.state.sync_summary.clear();
+		select_all(row.repository, false);
+		edit.message.clear();
+		edit.input = {};
+	}
+
+	const bool can_commit = !row.inputs.busy && !edit.message.empty() && any_selected;
+	if (ui.draw<gui::button>({ .text = "Commit", .rect = commit_rect, .key = edit.commit_key, .enabled = can_commit })) {
+		std::vector<std::filesystem::path> paths = selected_paths(row.repository);
+		select_all(row.repository, false);
+		row.channels.push<git_system::action_request>({
+			.root = repository.root,
+			.kind = git_system::action::commit,
+			.message = edit.message,
+			.paths = std::move(paths),
+		});
+		edit.message.clear();
+		edit.input = {};
+	}
+
+	const bool can_push = !row.inputs.busy && (repository.ahead > 0 || repository.upstream.empty());
+	if (ui.draw<gui::button>({ .text = "Push", .rect = push_rect, .key = edit.push_key, .enabled = can_push })) {
+		row.channels.push<git_system::action_request>({
+			.root = repository.root,
+			.kind = git_system::action::push,
+		});
+	}
+}
+
+auto gse::ide::draw_change_row(const row_context& row) -> void {
+	const auto& ctx = row.ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const float text_y = row.rect.center().y() + text_view->vertical_center_offset(sty.font_size);
+	const git::change& change = *row.change;
+
+	if (row.hovered) {
+		ctx.queue_sprite({
+			.rect = row.rect,
+			.color = sty.list_item.surfaces.hot.fill,
+			.texture = ctx.blank_texture,
+		});
+	}
+
+	const rectf box = checkbox_rect(ctx, row.rect, row.rect.left() + sty.accent_bar_width + pad);
+	std::unordered_set<id>& selected = row.repository.selected;
+	if (ctx.clicked_in_rect(box.intersection(row.visible))) {
+		if (!selected.erase(change.path_id)) {
+			selected.insert(change.path_id);
+		}
+	}
+	else if (ctx.clicked_in_rect(row.visible)) {
+		row.channels.push<jump_to_request>({
+			.path = row.repository.status->root / change.relative,
+		});
+	}
+	gui::draw_checkbox(ctx, box, selected.contains(change.path_id), {
+		.color_frame = sty.checkbox.frame.idle,
+		.color_mark = sty.checkbox.mark.idle,
+		.extent = gui::checkbox_extent(sty),
+	});
+
+	const float added_right = row.rect.right() - pad - row.counter_width - pad * 0.5f;
+	if (change.lines) {
+		const std::string deleted = std::format("-{}", change.lines->deleted);
+		const float deleted_x = row.rect.right() - pad - text_view->width(deleted, sty.font_size);
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = deleted,
+			.position = { deleted_x, text_y },
+			.scale = sty.font_size,
+			.color = git::status_color(git::file_status::deleted),
+			.clip_rect = row.rect,
+		});
+
+		const std::string added = std::format("+{}", change.lines->added);
+		const float added_x = added_right - text_view->width(added, sty.font_size);
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = added,
+			.position = { added_x, text_y },
+			.scale = sty.font_size,
+			.color = git::status_color(git::file_status::added),
+			.clip_rect = row.rect,
+		});
+	}
+
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ row.rect.left(), row.rect.top() }, { sty.accent_bar_width, row.rect.height() }),
+		.color = git::status_color(change.state),
+		.texture = ctx.blank_texture,
+	});
+
+	const float text_x = box.right() + pad;
+	const float text_right = added_right - row.counter_width - pad;
+	ctx.queue_text({
+		.font = ctx.fonts.text,
+		.text = change.relative.generic_display_string(),
+		.position = { text_x, text_y },
+		.scale = sty.font_size,
+		.color = git::status_color(change.state),
+		.clip_rect = rectf::from_position_size({ text_x, row.rect.top() }, { std::max(0.f, text_right - text_x), row.rect.height() }),
+	});
+}
+
+auto gse::ide::draw_banner(gui::builder& ui, message_banner& banner, const std::string_view name, const std::string_view text, const vec4f& color, rectf& room) -> void {
+	if (text.empty()) {
+		return;
+	}
+
+	const gui::draw_context& ctx = ui.ctx;
+	const gui::style& sty = ctx.style;
+	const float pad = sty.padding;
+	const float wrap_width = std::max(sty.font_size, room.width() - sty.accent_bar_width - pad * 2.f - gui::scroll_config{}.scrollbar_width);
+
+	if (banner.shown != text || banner.wrapped_width != wrap_width) {
+		banner.shown.assign(text);
+		banner.wrapped_width = wrap_width;
+		banner.text.lines.clear();
+		banner.spans.clear();
+		for (const std::string_view line : ctx.fonts.text.resolve()->wrap(text, wrap_width, sty.font_size)) {
+			banner.spans.push_back({
+				.line = static_cast<std::uint32_t>(banner.text.lines.size()),
+				.start_col = 0,
+				.end_col = static_cast<std::uint32_t>(line.size()),
+				.color = color,
+			});
+			banner.text.lines.emplace_back(line);
+		}
+	}
+
+	const float line_h = gui::text_area_line_height(ctx, ctx.fonts.text);
+	const float wanted = static_cast<float>(banner.text.lines.size()) * line_h + pad;
+	const float extent = std::min(wanted, std::max(line_h + pad, room.height() * banner_room_share));
+	const rectf area = rectf::from_position_size(room.top_left(), { room.width(), extent });
+
+	ctx.queue_sprite({
+		.rect = area,
+		.color = sty.panel_alt.fill,
+		.texture = ctx.blank_texture,
+	});
+	ctx.queue_sprite({
+		.rect = rectf::from_position_size({ area.left(), area.top() }, { sty.accent_bar_width, area.height() }),
+		.color = color,
+		.texture = ctx.blank_texture,
+	});
+
+	ui.draw<gui::text_area>({
+		.buffer = banner.text,
+		.state = banner.view,
+		.name = name,
+		.spans = banner.spans,
+		.rect = rectf::from_position_size(
+			{ area.left() + sty.accent_bar_width + pad, area.top() - pad * 0.5f },
+			{ std::max(0.f, area.width() - sty.accent_bar_width - pad), std::max(0.f, area.height() - pad) }
+		),
+		.read_only = true,
+		.blink_interval = time{},
+		.font = ctx.fonts.text,
+	});
+
+	room = rectf::from_position_size(
+		{ room.left(), room.top() - extent },
+		{ room.width(), std::max(0.f, room.height() - extent) }
+	);
+}
+
+auto gse::ide::draw_source_control_panel(gui::builder& ui, const rectf& rect, source_control_state& state, const source_control_inputs& inputs, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) -> void {
+	if (inputs.sync_open || !state.sync_root.empty()) {
+		return;
+	}
+
+	auto& ctx = ui.ctx;
+	const auto& sty = ctx.style;
+	const auto text_view = ctx.fonts.text.resolve();
+	const float pad = sty.padding;
+	const float row_h = text_view->line_height(sty.font_size) + pad;
+
+	const float strip = inputs.sync_history ? agent::sync_strip_extent(ctx) : 0.f;
+	rectf list_rect = rectf::from_position_size(
+		{ rect.left(), rect.top() - strip },
+		{ rect.width(), std::max(0.f, rect.height() - strip) }
+	);
+	draw_banner(ui, state.error_banner, "##source_control_error", inputs.action_error, sty.color_error, list_rect);
+	draw_banner(ui, state.summary_banner, "##source_control_summary", state.sync_summary, sty.color_text_secondary, list_rect);
+
+	if (!inputs.status || inputs.status->empty()) {
+		ctx.queue_text({
+			.font = ctx.fonts.text,
+			.text = "No git repositories in the open roots.",
+			.position = { list_rect.left() + pad, list_rect.top() - row_h },
+			.scale = sty.font_size,
+			.color = sty.color_text_secondary,
+			.clip_rect = list_rect,
+		});
+		return;
+	}
+
+	refresh_view(state.view, ctx, inputs);
+	draw_banner(ui, state.size_banner, "##source_control_size", state.view.size_warning, sty.color_warning, list_rect);
+
+	ui.row_list({
+		.id = "##source_control_list",
+		.bounds = list_rect,
+		.row_height = row_h,
+		.row_count = row_count(state.view),
+	}, [&](gui::builder& b, const gui::row& r) {
+		const source_control_row item = row_at(state.view, r.index);
+		annotation_from_enum<source_control_row_info>(item.kind, {}).draw({
+			.ui = b,
+			.rect = r.rect,
+			.visible = r.visible,
+			.hovered = r.hovered,
+			.counter_width = state.view.counter_width,
+			.state = state,
+			.inputs = inputs,
+			.repository = *item.repository,
+			.change = item.change,
+			.channels = channels,
+		});
+	});
+}

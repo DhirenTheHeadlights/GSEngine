@@ -53,8 +53,13 @@ auto gse::animation::source_reader::open(const std::filesystem::path& path, cons
 		return std::unexpected(source_error::unreadable);
 	}
 
+	const std::streamoff size = file.tellg();
+	if (!std::in_range<std::size_t>(size)) {
+		return std::unexpected(source_error::unreadable);
+	}
+
 	source_reader reader;
-	reader.m_data.resize(static_cast<std::size_t>(file.tellg()));
+	reader.m_data.resize(static_cast<std::size_t>(size));
 	file.seekg(0);
 	file.read(reinterpret_cast<char*>(reader.m_data.data()), static_cast<std::streamsize>(reader.m_data.size()));
 

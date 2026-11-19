@@ -1,12 +1,15 @@
 export module gse.os;
 
 export import :window;
+export import :clipboard;
 export import :keys;
 export import :input;
 export import :input_events;
+export import :mouse_latch;
 export import :input_state;
 export import :image_loader;
 export import :actions;
 export import :player_controller;
 export import :player_input;
 export import :app;
+export import :process;

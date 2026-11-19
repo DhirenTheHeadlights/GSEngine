@@ -30,7 +30,7 @@ auto gse::gui::draw_struct(builder& b, T& value, settings::panel_state& state, c
 			using F = [:std::meta::type_of(m):];
 			constexpr std::string_view label = meta::member_name(m);
 			constexpr std::uint64_t label_hash = stable_id(label);
-			const std::uint64_t field_key = hash_combine(prefix_hash, label_hash);
+			const std::uint64_t field_key = hash_of(prefix_hash, label_hash);
 
 			if constexpr (has_annotation<settings::draw_with>(m)) {
 				constexpr auto dw = annotation_of<settings::draw_with, m>();

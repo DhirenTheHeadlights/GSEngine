@@ -30,7 +30,8 @@ export namespace gse::log {
 		assets,
 		task,
 		save_system,
-		physics
+		physics,
+		test
 	};
 
 	enum class thread_role : std::uint8_t {
@@ -41,7 +42,6 @@ export namespace gse::log {
 		background,
 		watchdog,
 		network,
-		build,
 		terminal
 	};
 
@@ -96,6 +96,8 @@ export namespace gse::log {
 		thread_role role,
 		std::size_t index
 	) -> void;
+
+	auto current_thread_role() -> thread_role;
 
 	struct record {
 		level lvl;
@@ -234,9 +236,19 @@ export namespace gse::log {
 	) -> void;
 
 	auto flush() -> void;
+
+	auto active_file() -> const std::filesystem::path&;
 }
 
 namespace gse::log {
+	auto thread_display() -> std::string;
+
+	auto process_id_text() -> std::string;
+
+	auto describe_os_thread() -> void;
+
+	auto console_output() -> bool;
+
 	auto write_line(
 		level lvl,
 		category cat,

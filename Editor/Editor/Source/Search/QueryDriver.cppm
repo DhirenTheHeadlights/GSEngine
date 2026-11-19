@@ -1,5 +1,6 @@
 export module gse.ide.search:query_driver;
 
+import gse.concurrency;
 import gse.core;
 import gse.math;
 import gse.time;
@@ -14,7 +15,7 @@ export namespace gse::ide::search {
 	public:
 		query_driver() = default;
 
-		~query_driver();
+		~query_driver() = default;
 
 		query_driver(
 			query_driver&&
@@ -36,13 +37,10 @@ export namespace gse::ide::search {
 		auto accept() -> void;
 
 	private:
-		auto cancel_pending() -> void;
-
 		std::string m_last_query;
 		options m_last_options;
-		std::shared_ptr<query_buffer> m_pending;
+		task::pending<query_result> m_pending;
 		std::uint64_t m_last_index_generation = 0;
-		std::uint64_t m_active_request_id = 0;
 		bool m_dirty = false;
 		deadline_timer m_debounce;
 	};
@@ -70,25 +68,10 @@ auto gse::ide::search::same_options(const options& lhs, const options& rhs) -> b
 }
 
 auto gse::ide::search::generation_of(const search_snapshot& snapshot, const options& opts) -> std::uint64_t {
-	std::uint64_t generation = 0;
-	if (opts.include_files || opts.include_content) {
-		generation = hash_combine(generation, snapshot.files->file_generation);
-	}
-	if (opts.include_symbols) {
-		generation = hash_combine(generation, snapshot.symbols->symbol_generation);
-	}
-	return generation;
-}
-
-gse::ide::search::query_driver::~query_driver() {
-	cancel_pending();
-}
-
-auto gse::ide::search::query_driver::cancel_pending() -> void {
-	if (m_pending) {
-		m_pending->cancelled.store(true, std::memory_order_release);
-		m_pending.reset();
-	}
+	return hash_of(
+		opts.include_files || opts.include_content ? snapshot.files->file_generation : 0,
+		opts.include_symbols ? snapshot.symbols->symbol_generation : 0
+	);
 }
 
 auto gse::ide::search::query_driver::update(const index_state* index, const options& opts) -> bool {
@@ -100,7 +83,7 @@ auto gse::ide::search::query_driver::update(const index_state* index, const opti
 	bool visible_changed = false;
 
 	if (query_changed || options_changed || index_changed) {
-		cancel_pending();
+		m_pending.cancel();
 		m_last_query = query;
 		m_last_options = opts;
 		m_last_index_generation = index_generation;
@@ -126,22 +109,23 @@ auto gse::ide::search::query_driver::update(const index_state* index, const opti
 	if (m_dirty && (!m_debounce.armed() || m_debounce.due())) {
 		m_dirty = false;
 		m_debounce.disarm();
-		++m_active_request_id;
-		m_pending = std::make_shared<query_buffer>();
-		m_pending->request_id = m_active_request_id;
-		m_pending->index_generation = index_generation;
-		engine::submit(m_pending, snapshot, query, opts);
+		m_pending.start([snapshot, text = query, opts, index_generation](const std::stop_token& stop) {
+			return query_result{
+				.index_generation = index_generation,
+				.results = engine::rank(*snapshot, text, opts, stop),
+			};
+		}, trace_id<"search::query">(), task::lane::worker);
 	}
 
-	if (!m_pending || !m_pending->done.load(std::memory_order_acquire)) {
+	std::optional<query_result> completed = m_pending.take();
+	if (!completed) {
 		return visible_changed;
 	}
 
-	std::shared_ptr<query_buffer> completed = std::move(m_pending);
 	const std::shared_ptr<const search_snapshot> current = index ? index->query_snapshot() : nullptr;
 	const std::uint64_t current_generation = current ? generation_of(*current, opts) : 0;
-	if (completed->cancelled.load(std::memory_order_acquire) || completed->request_id != m_active_request_id || !current || completed->index_generation != current_generation) {
-		if (current && completed->index_generation != current_generation) {
+	if (!current || completed->index_generation != current_generation) {
+		if (current) {
 			m_last_index_generation = current_generation;
 			m_dirty = true;
 			m_debounce.disarm();
@@ -155,7 +139,7 @@ auto gse::ide::search::query_driver::update(const index_state* index, const opti
 }
 
 auto gse::ide::search::query_driver::accept() -> void {
-	cancel_pending();
+	m_pending.cancel();
 	query.clear();
 	m_last_query.clear();
 	results.clear();

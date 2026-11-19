@@ -1,8 +1,5 @@
 export module gse.math:circle;
 
-
-import gse.assert;
-
 import :primitive_math_shared;
 
 export namespace gse {
@@ -20,7 +17,7 @@ export namespace gse {
 
 		constexpr circle_t(
 			const circle_params& p
-		);
+		) pre(p.radius >= 0);
 
 		constexpr auto center() const -> const T&;
 		constexpr auto radius() const -> value_type;
@@ -39,9 +36,7 @@ export namespace gse {
 }
 
 template <gse::is_vec2 T>
-constexpr gse::circle_t<T>::circle_t(const circle_params& p) : m_center(p.center), m_radius(p.radius) {
-	assert(m_radius >= 0, "Circle radius cannot be negative");
-}
+constexpr gse::circle_t<T>::circle_t(const circle_params& p) : m_center(p.center), m_radius(p.radius) {}
 
 template <gse::is_vec2 T>
 constexpr auto gse::circle_t<T>::center() const -> const T& {

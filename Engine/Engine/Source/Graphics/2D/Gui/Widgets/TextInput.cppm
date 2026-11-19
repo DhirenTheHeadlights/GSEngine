@@ -18,8 +18,10 @@ import :ids;
 import :input_layers;
 import :interaction;
 import :styles;
+import :surface_paint;
 import :text_select;
 import :types;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct text_input_state {
@@ -33,6 +35,13 @@ export namespace gse::gui {
 		int select_granularity = 0;
 		int select_origin = 0;
 		bool selecting = false;
+		bool password = false;
+	};
+
+	enum class text_input_result : std::uint8_t {
+		editing,
+		submitted,
+		cancelled,
 	};
 }
 
@@ -46,7 +55,7 @@ namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id,
 		resource::handle<font> font = {}
-	) -> void;
+	) -> text_input_result;
 
 	auto text_input(
 		const draw_context& ctx,
@@ -56,12 +65,12 @@ namespace gse::gui::draw {
 		id& hot_widget_id,
 		id& focus_widget_id,
 		resource::handle<font> font = {}
-	) -> void;
+	) -> text_input_result;
 }
 
 export namespace gse::gui {
 	struct text_input {
-		using result = void;
+		using result = text_input_result;
 		struct params {
 			std::string_view name;
 			std::string& buffer;
@@ -70,12 +79,11 @@ export namespace gse::gui {
 			id widget_id{};
 			resource::handle<font> font{};
 		};
-		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> void {
+		static auto draw(const draw_context& ctx, const params& p, id& hot, id&, id& focus) -> text_input_result {
 			if (p.rect) {
-				draw::text_input_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), p.buffer, p.state, *p.rect, hot, focus, p.font);
-				return;
+				return draw::text_input_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), p.buffer, p.state, *p.rect, hot, focus, p.font);
 			}
-			draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
+			return draw::text_input(ctx, std::string(p.name), p.buffer, p.state, hot, focus, p.font);
 		}
 	};
 }
@@ -104,13 +112,12 @@ auto gse::gui::draw::flatten_newlines(const std::string text) -> std::string {
 	return out;
 }
 
-auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
+auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name, std::string& buffer, text_input_state& state, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> text_input_result {
 	if (!ctx.current_menu) {
-		return;
+		return text_input_result::editing;
 	}
 
-	constexpr std::uint64_t input_suffix_hash = stable_id("##Input");
-	const id widget_id = ids::make_from_key(hash_combine(stable_id(name), input_suffix_hash));
+	const id widget_id = ids::make_from_key(hash_of(name, "##Input"));
 
 	const auto text_view = ctx.fonts.text.resolve();
 	const float widget_height = text_view->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
@@ -133,25 +140,25 @@ auto gse::gui::draw::text_input(const draw_context& ctx, const std::string& name
 		{ content_rect.width() - label_width, widget_height }
 	);
 
-	ctx.queue_text({
-		.font = ctx.fonts.text,
-		.text = name,
-		.position = { label_rect.left(), label_rect.center().y() + text_view->vertical_center_offset(ctx.style.font_size) },
-		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
-		.clip_rect = label_rect
+	draw::label(ctx, label_rect, name, ctx.style.input.label, {
+		.color = ctx.style.input.label_color,
+		.font = font,
+		.clip_rect = label_rect,
 	});
 
-	text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
+	const text_input_result result = text_input_in_rect(ctx, widget_id, buffer, state, box_rect, hot_widget_id, focus_widget_id, font);
 
 	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+	return result;
 }
 
-auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> void {
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget_id, std::string& buffer, text_input_state& state, const rectf& box_rect, id& hot_widget_id, id& focus_widget_id, const resource::handle<font> font) -> text_input_result {
+	text_input_result result = text_input_result::editing;
+	const auto fnt = ctx.fonts.face_or(font);
 	const auto fnt_view = fnt.resolve();
-	constexpr float text_padding = 5.f;
-	constexpr float caret_extent = 2.f;
+	const input_skin& skin = ctx.style.input;
+	const float text_padding = skin.text_padding;
+	const float caret_extent = skin.caret_width;
 	constexpr time blink_interval = milliseconds(500.f);
 	constexpr time repeat_delay = milliseconds(400.f);
 	constexpr time repeat_interval = milliseconds(33.f);
@@ -179,7 +186,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	auto pick_index_from_x = [&](const float x_local) -> int {
 		const int n = static_cast<int>(buffer.size());
-		const std::vector<float> offsets = fnt_view->caret_offsets(buffer, ctx.style.font_size);
+		const std::vector<float> offsets = fnt_view->caret_offsets(state.password ? std::string(buffer.size(), '*') : buffer, ctx.style.font_size);
 		float best_dx = std::numeric_limits<float>::max();
 		int best_k = 0;
 
@@ -297,12 +304,12 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				{
 					.label = "Copy",
 					.action_id = static_cast<std::uint32_t>(text_edit_action::copy),
-					.enabled = selection_now,
+					.enabled = selection_now && !state.password,
 				},
 				{
 					.label = "Cut",
 					.action_id = static_cast<std::uint32_t>(text_edit_action::cut),
-					.enabled = selection_now,
+					.enabled = selection_now && !state.password,
 				},
 				{
 					.label = "Paste",
@@ -317,13 +324,13 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	switch (ctx.take_text_edit(widget_id)) {
 		case text_edit_action::copy:
-			if (has_sel(state)) {
+			if (!state.password && has_sel(state)) {
 				auto [a, b] = sel_range(state);
 				ctx.set_clipboard(buffer.substr(a, b - a));
 			}
 			break;
 		case text_edit_action::cut:
-			if (has_sel(state)) {
+			if (!state.password && has_sel(state)) {
 				auto [a, b] = sel_range(state);
 				ctx.set_clipboard(buffer.substr(a, b - a));
 				buffer.erase(a, b - a);
@@ -398,7 +405,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			return i;
 		};
 
-		if (ctrl && ctx.key_pressed_for(key::c) && has_sel(state)) {
+		if (!state.password && ctrl && ctx.key_pressed_for(key::c) && has_sel(state)) {
 			auto [a, b] = sel_range(state);
 			ctx.set_clipboard(buffer.substr(a, b - a));
 		}
@@ -411,7 +418,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = true;
 		}
 
-		if (ctrl && ctx.key_pressed_for(key::x) && has_sel(state)) {
+		if (!state.password && ctrl && ctx.key_pressed_for(key::x) && has_sel(state)) {
 			auto [a, b] = sel_range(state);
 			ctx.set_clipboard(buffer.substr(a, b - a));
 			buffer.erase(a, b - a);
@@ -514,7 +521,7 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.repeat.disarm();
 		}
 
-		const float caret_x = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size);
+		const float caret_x = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, state.caret), ctx.style.font_size);
 
 		if (const float inner_r = std::max(0.f, box_rect.width() - text_padding * 2.f - caret_extent); caret_x - state.scroll_x > inner_r) {
 			state.scroll_x = caret_x - inner_r;
@@ -536,17 +543,17 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 			state.blink_on = !state.blink_on;
 		}
 
-		if (ctx.key_pressed_for(key::enter) || ctx.key_pressed_for(key::escape)) {
+		if (ctx.key_pressed_for(key::enter) || ctx.key_pressed_for(key::kp_enter)) {
+			result = text_input_result::submitted;
+			focus_widget_id = {};
+		}
+		else if (ctx.key_pressed_for(key::escape)) {
+			result = text_input_result::cancelled;
 			focus_widget_id = {};
 		}
 	}
 
-	ctx.queue_sprite({
-		.rect = box_rect,
-		.color = ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-		.corner_radius = ctx.style.corner_radius_input
-	});
+	draw::fill_surface(ctx, box_rect, skin.box, {});
 
 	const rectf clip_rect = box_rect.inset({ text_padding, 0.f });
 	const vec2f text_pos = { box_rect.left() + text_padding,
@@ -554,8 +561,8 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 
 	if (focused && has_sel(state)) {
 		auto [a, b] = sel_range(state);
-		const float ax = fnt_view->width(buffer.substr(0, a), ctx.style.font_size) - state.scroll_x;
-		const float bx = fnt_view->width(buffer.substr(0, b), ctx.style.font_size) - state.scroll_x;
+		const float ax = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, a), ctx.style.font_size) - state.scroll_x;
+		const float bx = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, b), ctx.style.font_size) - state.scroll_x;
 
 		const rectf sel_rect = rectf::from_position_size(
 			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
@@ -563,35 +570,31 @@ auto gse::gui::draw::text_input_in_rect(const draw_context& ctx, const id widget
 				ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({
-			.rect = sel_rect,
-			.color = ctx.style.color_selection,
-			.texture = ctx.blank_texture,
-			.clip_rect = clip_rect
+		draw::fill_surface(ctx, sel_rect, skin.selection, {
+			.clip_rect = clip_rect,
 		});
 	}
 
 	ctx.queue_text({
 		.font = fnt,
-		.text = buffer,
+		.text = state.password ? std::string(buffer.size(), '*') : buffer,
 		.position = { text_pos.x() - state.scroll_x, text_pos.y() },
 		.scale = ctx.style.font_size,
-		.color = ctx.style.color_text,
+		.color = skin.text_color,
 		.clip_rect = clip_rect
 	});
 
 	if (focused && state.blink_on) {
-		const float cx = fnt_view->width(buffer.substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
+		const float cx = fnt_view->width((state.password ? std::string(buffer.size(), '*') : buffer).substr(0, state.caret), ctx.style.font_size) - state.scroll_x;
 		const rectf cursor_rect = rectf::from_position_size(
 			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - ctx.style.font_size) / 2.f },
 			{ caret_extent, ctx.style.font_size }
 		);
 
-		ctx.queue_sprite({
-			.rect = cursor_rect,
-			.color = ctx.style.color_caret,
-			.texture = ctx.blank_texture,
-			.clip_rect = clip_rect
+		draw::fill_surface(ctx, cursor_rect, skin.caret, {
+			.clip_rect = clip_rect,
 		});
 	}
+
+	return result;
 }

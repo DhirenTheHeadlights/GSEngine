@@ -22,6 +22,11 @@ export namespace gse::config {
 		const std::filesystem::path& value
 	) -> std::filesystem::path;
 
+	auto manifest_value(
+		std::string_view text,
+		std::string_view key
+	) -> std::string;
+
 	auto root_dir() -> const std::filesystem::path&;
 
 	auto build_root() -> const std::filesystem::path&;
@@ -34,6 +39,12 @@ export namespace gse::config {
 
 	constexpr std::string_view engine_asset_prefix = "engine:";
 
+	constexpr std::string_view project_assets_subdir = "Assets";
+	constexpr std::string_view project_baked_subdir = ".gse/baked";
+	constexpr std::string_view project_data_subdir = ".gse/data";
+	constexpr std::string_view project_config_subdir = "Config";
+	constexpr std::string_view project_settings_name = "settings.ini";
+
 	struct content_root {
 		std::filesystem::path source;
 		std::filesystem::path baked;
@@ -42,6 +53,12 @@ export namespace gse::config {
 	};
 
 	auto content_roots() -> std::span<const content_root>;
+
+	auto shader_roots() -> std::span<const std::filesystem::path>;
+
+	auto shader_file(
+		const std::filesystem::path& relative
+	) -> std::filesystem::path;
 
 	auto project_assets_path() -> const std::filesystem::path&;
 
@@ -89,6 +106,8 @@ export namespace gse::config {
 		const std::filesystem::path& root
 	) -> std::filesystem::path;
 
+	auto shipped_project_settings_path() -> std::filesystem::path;
+
 	auto project_data_path(
 		const std::filesystem::path& relative
 	) -> std::filesystem::path;
@@ -102,4 +121,18 @@ export namespace gse::config {
 	auto profile_dir() -> const std::filesystem::path&;
 
 	auto captures_dir() -> const std::filesystem::path&;
+}
+
+namespace gse::config {
+	enum class known_directory : std::uint8_t {
+		roaming_app_data,
+		user_profile,
+		local_app_data,
+	};
+
+	auto executable_path() -> std::filesystem::path;
+
+	auto known_folder(
+		known_directory folder
+	) -> std::filesystem::path;
 }

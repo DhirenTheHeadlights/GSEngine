@@ -1,0 +1,137 @@
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -247,14 +247,28 @@
+       return true;
+     case SYMBOL_REF:
+       /* A function's address is its table index, so a function pointer in data
+-	 is what makes the module need a table.  */
++	 is what makes the module need a table -- and it is also the one place a
++	 function is referenced without being called, so it is where the
++	 declaration the assembler needs has to be asked for.
++
++	 The assembler does pick MEMORY_ADDR or TABLE_INDEX from the symbol's own
++	 kind, which is why nothing about the relocation is said below.  But a
++	 symbol it has never been told about has no kind, and it settles on data:
++	 the module then defines the name as data where another defines it as a
++	 function, and wasm-ld refuses the pair with `symbol type mismatch'.
++	 Nothing calls `std::terminate' in eh_unex_handler.cc -- it only stores
++	 its address -- which is the first place this bites and the reason it
++	 survived every probe that links a call.
++
++	 Routed through the undefined-decl hook rather than declared here, so
++	 that a signature is still derived in one place; both it and declare_func
++	 are idempotent, so a function defined in this unit is unaffected.  */
+       if (SYMBOL_REF_DECL (x) && TREE_CODE (SYMBOL_REF_DECL (x)) == FUNCTION_DECL)
+-	table_used = true;
++	{
++	  table_used = true;
++	  wasm_handle_import (stream, XSTR (x, 0), SYMBOL_REF_DECL (x));
++	}
+ 
+-      /* A relocation is just a symbol in the operand.  The assembler picks
+-	 MEMORY_ADDR or TABLE_INDEX from the symbol's own kind, so a function
+-	 pointer in data needs nothing said about it here -- which is the whole
+-	 of what the annotated dialect could not express.  */
+       fprintf (stream, "\t.int%d\t", size * 8);
+       assemble_name (stream, XSTR (x, 0));
+       if (addend)
+@@ -475,6 +489,72 @@
+   outside_data_file = nullptr;
+ }
+ 
++/* Whether DECL is one of the `__atomic_compare_exchange_N' builtins, whose
++   decl does not describe the library function it is called through.
++
++   The builtin takes six parameters and the library function takes five: GCC
++   drops `weak' on the way out, because libatomic's ABI never had it.  Both
++   places that do it say so and then rebuild the CALL_EXPR keeping the original
++   CALL_EXPR_FN -- builtins.cc's BUILT_IN_ATOMIC_COMPARE_EXCHANGE_* case under
++   `the weak parameter must be dropped to match the expected parameter list',
++   and expand_ifn_atomic_compare_exchange_into_call -- so the decl reached from
++   the call still carries the six-parameter prototype.  Every other target may
++   ignore that, nothing there comparing a call against its callee's parameter
++   list; here the import is emitted from the decl's type and the assembler does
++   compare, so the prototype as written rejects the call that upstream
++   deliberately emitted.  `src/c++20/tzdb.cc' is the first thing to reach it.  */
++bool
++drops_weak_param_p (const_tree decl)
++{
++  if (!DECL_P (decl) || !fndecl_built_in_p (decl, BUILT_IN_NORMAL))
++    return false;
++  switch (DECL_FUNCTION_CODE (decl))
++    {
++    case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_1:
++    case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_2:
++    case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_4:
++    case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_8:
++    case BUILT_IN_ATOMIC_COMPARE_EXCHANGE_16:
++      return true;
++    default:
++      return false;
++    }
++}
++
++/* The type an import should be described by, which is the decl's own except
++   where the decl is one the middle end calls with a shorter argument list.
++   Returning a type rather than a signature is what keeps signature_of the only
++   place a signature is derived from a type.  */
++const_tree
++imported_type_of (const_tree decl)
++{
++  const_tree type = DECL_P (decl) ? TREE_TYPE (decl) : decl;
++  if (!drops_weak_param_p (decl) || !FUNC_OR_METHOD_TYPE_P (type))
++    return type;
++
++  auto_vec<tree> params;
++  tree param;
++  function_args_iterator it;
++  FOREACH_FUNCTION_ARGS (type, param, it)
++    if (!VOID_TYPE_P (param))
++      params.safe_push (param);
++
++  /* Refused rather than trimmed blind.  The index is only meaningful against
++     the prototype upstream documents, so a prototype of another shape is a
++     change that has to be read and not a parameter that can be guessed at --
++     and gcc_assert says nothing in a release build, which is the one this is
++     built as.  */
++  if (params.length () != 6)
++    {
++      sorry ("%qD is expected to take 6 parameters, not %u", decl,
++	     params.length ());
++      return type;
++    }
++  params.ordered_remove (3);
++  return build_function_type_array (TREE_TYPE (type), params.length (),
++				    params.address ());
++}
++
+ /* Note a symbol this unit refers to but does not define.  Only a function needs
+    anything said about it: a data symbol is a plain undefined reference that the
+    linker resolves, while a call cannot even be assembled without its callee's
+@@ -482,7 +562,7 @@
+ void
+ assemble_import (const char *name, const_tree decl)
+ {
+-  const_tree type = DECL_P (decl) ? TREE_TYPE (decl) : decl;
++  const_tree type = imported_type_of (decl);
+   if (!FUNC_OR_METHOD_TYPE_P (type))
+     return;
+   declare_func (name, signature_of (type).c_str ());
+--- a/libstdc++-v3/src/c++23/print.cc
++++ b/libstdc++-v3/src/c++23/print.cc
+@@ -113,7 +113,14 @@
+ #ifdef _WIN32
+     if (auto fb = dynamic_cast<filebuf*>(sb))
+       return check_for_console(fb->native_handle());
+-#elif defined _GLIBCXX_HAVE_UNISTD_H && ! defined __AVR__
++// WASI has no dup, by design rather than by omission -- wasi-libc's <unistd.h>
++// says exactly that where the declaration would be -- so there is no way here
++// to hand back an independently closeable FILE* for the same descriptor.
++// Excluded rather than declared: the caller fcloses what this returns, so a
++// declared-and-undefined dup would archive libstdc++ and then fail to link in
++// any program that prints to a terminal.  __open_terminal above needs only
++// fileno and isatty, which WASI does have, and so is left alone.
++#elif defined _GLIBCXX_HAVE_UNISTD_H && ! defined __AVR__ && ! defined __wasi__
+     if (auto fb = dynamic_cast<filebuf*>(sb))
+       if (int fd = fb->native_handle(); fd >= 0 && ::isatty(fd))
+ 	return ::fdopen(::dup(fd), "w"); // Caller must call fclose.

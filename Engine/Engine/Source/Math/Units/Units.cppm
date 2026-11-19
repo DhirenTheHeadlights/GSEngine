@@ -3,6 +3,7 @@ export module gse.math:units;
 import std;
 
 import :dimension;
+import :libm;
 import :quant;
 
 export namespace gse::inline quantities {
@@ -136,9 +137,14 @@ export namespace gse::inline quantities {
 	struct [[= internal::quantity_root<^^internal::dimi<0, -1, 0, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/s">]] inverse_time_tag {};
 
 	constexpr internal::unit<inverse_time_tag, std::ratio<1>, "1/s"> per_second;
+	constexpr internal::unit<inverse_time_tag, std::ratio<1>, "Hz"> hertz;
+	constexpr internal::unit<inverse_time_tag, std::kilo, "kHz"> kilohertz;
 
 	template <typename T = float, auto... U> using inverse_time_t = internal::quantity_t<inverse_time_tag, T, U...>;
 	using inverse_time = inverse_time_t<>;
+
+	template <typename T = float, auto... U> using frequency_t = inverse_time_t<T, U...>;
+	using frequency = frequency_t<>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "kg">]] mass_tag {};
 
@@ -303,9 +309,14 @@ export namespace gse::inline quantities {
 	struct [[= internal::quantity_root<^^internal::dimi<-1, -2, 1, 0>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N/m^2">]] stiffness_per_length_tag {};
 
 	constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "N/m^2"> newtons_per_meter_squared;
+	constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "Pa"> pascals;
+	constexpr internal::unit<stiffness_per_length_tag, std::giga, "GPa"> gigapascals;
 
 	template <typename T = float, auto... U> using stiffness_per_length_t = internal::quantity_t<stiffness_per_length_tag, T, U...>;
 	using stiffness_per_length = stiffness_per_length_t<>;
+
+	template <typename T = float, auto... U> using elastic_modulus_t = stiffness_per_length_t<T, U...>;
+	using elastic_modulus = elastic_modulus_t<>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<2, -2, 1, -2>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "N-m/rad">]] angular_stiffness_tag {};
 
@@ -313,6 +324,20 @@ export namespace gse::inline quantities {
 
 	template <typename T = float, auto... U> using angular_stiffness_t = internal::quantity_t<angular_stiffness_tag, T, U...>;
 	using angular_stiffness = angular_stiffness_t<>;
+
+	struct [[= internal::quantity_root<^^internal::dimi<0, 0, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "1/rad">]] inverse_angle_tag {};
+
+	constexpr internal::unit<inverse_angle_tag, std::ratio<1>, "1/rad"> per_radian;
+
+	template <typename T = float, auto... U> using inverse_angle_t = internal::quantity_t<inverse_angle_tag, T, U...>;
+	using inverse_angle = inverse_angle_t<>;
+
+	struct [[= internal::quantity_root<^^internal::dimi<0, 1, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "s/rad">]] inverse_angular_velocity_tag {};
+
+	constexpr internal::unit<inverse_angular_velocity_tag, std::ratio<1>, "s/rad"> seconds_per_radian;
+
+	template <typename T = float, auto... U> using inverse_angular_velocity_t = internal::quantity_t<inverse_angular_velocity_tag, T, U...>;
+	using inverse_angular_velocity = inverse_angular_velocity_t<>;
 
 	struct [[= internal::quantity_root<^^internal::dimi<1, 0, 0, -1>, internal::quantity_semantic_kind::measurement, std::ratio<1>, "m/rad">]] angular_jacobian_tag {};
 
@@ -388,57 +413,59 @@ export namespace gse {
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto sin(const Q& a) -> typename Q::value_type {
-		return std::sin(internal::value_in<angle::default_unit>(a));
+		return libm::sin(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto cos(const Q& a) -> typename Q::value_type {
-		return std::cos(internal::value_in<angle::default_unit>(a));
+		return libm::cos(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
 	constexpr auto tan(const Q& a) -> typename Q::value_type {
-		return std::tan(internal::value_in<angle::default_unit>(a));
+		return libm::tan(internal::value_in<angle::default_unit>(a));
 	}
 
 	template <std::floating_point T>
-	constexpr auto asin(const T v) -> angle_t<T> {
-		return radians(std::asin(v));
+	constexpr auto asin(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
+		return radians(libm::asin(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
-	constexpr auto asin(const Q& q) -> angle_t<typename Q::value_type> {
-		return radians(std::asin(internal::value_in<typename Q::default_unit>(q)));
+	constexpr auto asin(const Q& q) -> angle_t<typename Q::value_type>
+		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
+		return radians(libm::asin(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
-	constexpr auto acos(const T v) -> angle_t<T> {
-		return radians(std::acos(v));
+	constexpr auto acos(const T v) -> angle_t<T> pre(v >= T(-1) && v <= T(1)) {
+		return radians(libm::acos(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
-	constexpr auto acos(const Q& q) -> angle_t<typename Q::value_type> {
-		return radians(std::acos(internal::value_in<typename Q::default_unit>(q)));
+	constexpr auto acos(const Q& q) -> angle_t<typename Q::value_type>
+		pre(internal::value_in<typename Q::default_unit>(q) >= -1 && internal::value_in<typename Q::default_unit>(q) <= 1) {
+		return radians(libm::acos(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
 	constexpr auto atan(const T v) -> angle_t<T> {
-		return radians(std::atan(v));
+		return radians(libm::atan(v));
 	}
 
 	template <internal::is_quantity Q>
 	requires internal::has_same_dimensions<typename Q::dimension, internal::dimensionless>
 	constexpr auto atan(const Q& q) -> angle_t<typename Q::value_type> {
-		return radians(std::atan(internal::value_in<typename Q::default_unit>(q)));
+		return radians(libm::atan(internal::value_in<typename Q::default_unit>(q)));
 	}
 
 	template <std::floating_point T>
 	constexpr auto atan2(const T y, const T x) -> angle_t<T> {
-		return radians(std::atan2(y, x));
+		return radians(libm::atan2(y, x));
 	}
 
 	template <internal::is_quantity Q1, internal::is_quantity Q2>
@@ -447,11 +474,19 @@ export namespace gse {
 		using common_type = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
 		using reference_unit = internal::quantity_base_unit_t<Q1>;
 		return radians(
-			std::atan2(
+			libm::atan2(
 				static_cast<common_type>(internal::value_in<reference_unit>(y)),
 				static_cast<common_type>(internal::value_in<reference_unit>(x))
 			)
 		);
+	}
+
+	template <internal::is_quantity Q>
+	requires internal::has_same_dimensions<typename Q::dimension, typename angle::dimension>
+	constexpr auto wrap_angle(const Q& a) -> Q {
+		using value_type = typename Q::value_type;
+		const Q full_turn = radians(static_cast<value_type>(2) * std::numbers::pi_v<value_type>);
+		return Q(a - full_turn * std::round(a / full_turn));
 	}
 }
 
@@ -517,15 +552,24 @@ namespace gse::internal {
 		!std::same_as<tag_canonical_unit_t<time_tag>, time::default_unit>
 	);
 	static_assert(
-		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() > 0.999f &&
-		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))).as<seconds>() < 1.001f
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))) > seconds(0.999f) &&
+		time(gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f))) < seconds(1.001f)
 	);
 	static_assert(
 		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) > seconds(0.5f) &&
 		gse::sqrt(meters(9.81f) / meters_per_second_squared(9.81f)) < seconds(2.f)
 	);
 	static_assert(
-		time(1.f / per_second(4.f)).as<seconds>() > 0.249f &&
-		time(1.f / per_second(4.f)).as<seconds>() < 0.251f
+		time(1.f / per_second(4.f)) > seconds(0.249f) &&
+		time(1.f / per_second(4.f)) < seconds(0.251f)
+	);
+	static_assert(
+		kilohertz(48.f) * milliseconds(10.f) > 479.9f &&
+		kilohertz(48.f) * milliseconds(10.f) < 480.1f
+	);
+	static_assert(
+		gse::abs(wrap_angle(radians(7.f)) - radians(7.f - 2.f * std::numbers::pi_v<float>)) < radians(1e-5f) &&
+		gse::abs(wrap_angle(radians(-4.f)) - radians(2.f * std::numbers::pi_v<float> - 4.f)) < radians(1e-5f) &&
+		gse::abs(wrap_angle(radians(1.f)) - radians(1.f)) < radians(1e-6f)
 	);
 }

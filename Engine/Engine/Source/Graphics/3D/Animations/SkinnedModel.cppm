@@ -237,13 +237,11 @@ auto gse::skinned_model::load(asset::load_ctx& ctx) -> async::task<asset_result>
 	m_influence_buffers.reserve(influences.size());
 	for (const auto& mesh_influences : influences) {
 		m_influence_buffers.push_back(
-			gpu_s.device->create_buffer(
+			gpu_s.device->create_buffer<skin_influence>(
+				mesh_influences.size(),
 				{
-					.size = mesh_influences.size() * sizeof(skin_influence),
-					.stride = sizeof(skin_influence),
 					.usage = gpu::buffer_flag::storage,
 					.data = mesh_influences.data(),
-					.bindless = true,
 				},
 				"skinned_model.influences"
 			)

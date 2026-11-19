@@ -36,4 +36,10 @@ export namespace gse::gpu {
 		float min_lod = 0.0f;
 		float max_lod = 0.0f;
 	};
+
+	constexpr sampler_desc linear_clamp_sampler{
+		.address_u = sampler_address_mode::clamp_to_edge,
+		.address_v = sampler_address_mode::clamp_to_edge,
+		.address_w = sampler_address_mode::clamp_to_edge,
+	};
 }

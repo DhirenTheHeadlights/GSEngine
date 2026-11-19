@@ -7,6 +7,7 @@ import gse.fs;
 import gse.log;
 import gse.math;
 import gse.os;
+import gse.sdk;
 import gse.win32;
 
 namespace gse::ide::project {
@@ -230,26 +231,37 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set by the editor when it configures this project, from the .gseproj [engine] section.
-if(NOT DEFINED GSE_ENGINE_DIR)
-    set(GSE_ENGINE_DIR "$ENV{{GSE_ENGINE_DIR}}")
+# Set by the editor when it configures this project, from the .gseproj [engine] section:
+# GSE_SDK_DIR for a packaged engine image ([engine] version = ...), GSE_ENGINE_DIR for a source tree.
+if(GSE_SDK_DIR)
+    if(NOT EXISTS "${{GSE_SDK_DIR}}/Engine/cmake/GSEEngineSdk.cmake")
+        message(FATAL_ERROR "GSE_SDK_DIR does not point at an engine SDK image:\n  ${{GSE_SDK_DIR}}")
+    endif()
+    include("${{GSE_SDK_DIR}}/Engine/cmake/GSEEngineSdk.cmake")
+else()
+    if(NOT DEFINED GSE_ENGINE_DIR)
+        set(GSE_ENGINE_DIR "$ENV{{GSE_ENGINE_DIR}}")
+    endif()
+    if(NOT GSE_ENGINE_DIR)
+        message(FATAL_ERROR "Neither GSE_SDK_DIR nor GSE_ENGINE_DIR is set. Pass -DGSE_ENGINE_DIR=<path to the engine tree> or -DGSE_SDK_DIR=<path to an SDK image>.")
+    endif()
+    if(NOT EXISTS "${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
+        message(FATAL_ERROR "GSE_ENGINE_DIR does not point at an engine tree:\n  ${{GSE_ENGINE_DIR}}\nThe engine it names has moved or been deleted. Fix the [engine] section of this project's .gseproj.")
+    endif()
+    include("${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
 endif()
-if(NOT GSE_ENGINE_DIR)
-    message(FATAL_ERROR "GSE_ENGINE_DIR is not set. Pass -DGSE_ENGINE_DIR=<path to the engine tree>.")
-endif()
-if(NOT EXISTS "${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
-    message(FATAL_ERROR "GSE_ENGINE_DIR does not point at an engine tree:\n  ${{GSE_ENGINE_DIR}}\nThe engine it names has moved or been deleted. Fix the [engine] section of this project's .gseproj.")
-endif()
-
-include("${{GSE_ENGINE_DIR}}/Engine/cmake/GSEEngine.cmake")
 
 project({0})
 
 gse_configure_compiler()
 
-add_subdirectory("${{GSE_ENGINE_ROOT}}/Engine" "${{CMAKE_BINARY_DIR}}/Engine")
-
-gse_write_manifest()
+if(GSE_SDK_DIR)
+    gse_sdk_link_modules()
+    gse_sdk_write_manifest()
+else()
+    add_subdirectory("${{GSE_ENGINE_ROOT}}/Engine" "${{CMAKE_BINARY_DIR}}/Engine")
+    gse_write_manifest()
+endif()
 
 file(GLOB_RECURSE {0}_MODULES CONFIGURE_DEPENDS "${{CMAKE_CURRENT_SOURCE_DIR}}/Source/*.cppm")
 file(GLOB_RECURSE {0}_IMPLS CONFIGURE_DEPENDS "${{CMAKE_CURRENT_SOURCE_DIR}}/Source/*.cpp")
@@ -269,6 +281,10 @@ endforeach()
 
 add_executable({0} ${{{0}_PLAIN_IMPLS}})
 
+if(GSE_SDK_DIR AND ({0}_MODULES OR {0}_MODULE_IMPLS))
+    message(FATAL_ERROR "An SDK-bound project cannot declare its own modules yet: CMake's module scanner cannot see the image's BMIs, so this target compiles with scanning off. Keep game code in .cpp files or bind a source engine tree.")
+endif()
+
 if({0}_MODULES OR {0}_MODULE_IMPLS)
     target_sources({0}
         PRIVATE
@@ -278,7 +294,11 @@ if({0}_MODULES OR {0}_MODULE_IMPLS)
     )
 endif()
 
-target_link_libraries({0} PRIVATE Engine)
+if(GSE_SDK_DIR)
+    gse_sdk_link_engine({0})
+else()
+    target_link_libraries({0} PRIVATE Engine)
+endif()
 
 # GCC-trunk's C++ modules codegen on MinGW emits vague-linkage function-local statics as
 # strong symbols in every importing TU, so the final link sees duplicate definitions.
@@ -314,6 +334,7 @@ game = {0}
 		? std::format(R"(import std;
 
 import gse;
+import gse.gpu;
 import gse.system_manifest;
 
 import {1}.app;
@@ -325,9 +346,11 @@ auto main() -> int {{
 		}},
 		{{
 			.title = "{0}",
-			.dark_background = true,
-			.video_encode = false,
 			.simulate_world = false,
+			.pins = {{
+				gse::settings::assign<^^gse::gpu::context::data::dark_background>(true),
+				gse::settings::assign<^^gse::gpu::context::data::device_settings, ^^gse::gpu::device_settings::video_encode>(false),
+			}},
 		}}
 	);
 	return 0;
@@ -488,6 +511,45 @@ auto gse::ide::project::bind_engine(const std::filesystem::path& manifest_file, 
 	layout_store::flush();
 }
 
+auto gse::ide::project::is_sdk_image(const std::filesystem::path& path) -> bool {
+	return sdk::is_image(path);
+}
+
+auto gse::ide::project::sdk_for_version(const std::string_view version) -> std::filesystem::path {
+	return sdk::image_for_version(version);
+}
+
+auto gse::ide::project::bind_sdk(const std::filesystem::path& manifest_file, const std::string_view version) -> void {
+	layout_store::submit(
+		manifest_file,
+		{ .names = { "engine" } },
+		std::format("[engine]\nversion = {}\n", version)
+	);
+	layout_store::flush();
+}
+
+auto gse::ide::project::sdks() -> std::vector<sdk_entry> {
+	std::vector<sdk_entry> entries;
+	for (const auto& [version, parent] : sdk::registered_images()) {
+		std::filesystem::path image = config::generic(parent) / config::build_root().filename();
+		if (is_sdk_image(image)) {
+			entries.push_back({ .version = version, .image = std::move(image) });
+		}
+	}
+	std::ranges::sort(entries, {}, &sdk_entry::version);
+	return entries;
+}
+
+auto gse::ide::project::pin_engine_commit(const std::string_view commit) -> void {
+	const manifest& active = current();
+	std::string block = "[engine]\n";
+	if (!active.engine_name.empty()) {
+		block += std::format("name = {}\n", active.engine_name);
+	}
+	block += std::format("source = {}\ncommit = {}\n", active.engine.generic_native_encoded_string(), commit);
+	layout_store::submit(active.file, { .names = { "engine" } }, std::move(block));
+}
+
 auto gse::ide::project::recent() -> std::vector<std::filesystem::path> {
 	std::vector<std::filesystem::path> entries;
 	for (const layout_store::section& section : layout_store::parse_sections(read_file(recent_path()))) {
@@ -623,6 +685,12 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 				const std::filesystem::path declared(entry->second);
 				out.engine = declared.is_absolute() ? declared : out.root / declared;
 			}
+			if (const auto entry = section.values.find("commit"); entry != section.values.end()) {
+				out.engine_commit = entry->second;
+			}
+			if (const auto entry = section.values.find("version"); entry != section.values.end()) {
+				out.sdk_version = entry->second;
+			}
 		}
 		else if (section.name == "targets") {
 			out.targets = section.values;
@@ -648,7 +716,21 @@ auto gse::ide::project::load(const std::filesystem::path& file) -> manifest {
 		}
 	}
 
-	if (out.engine.empty()) {
+	if (!out.sdk_version.empty()) {
+		const std::filesystem::path registered = sdk_for_version(out.sdk_version);
+		const std::filesystem::path image = registered.empty() ? registered : registered / config::build_root().filename();
+		if (registered.empty()) {
+			out.engine_problem = std::format("engine SDK '{}' is not registered on this machine; package it from an engine tree first", out.sdk_version);
+		}
+		else if (!is_sdk_image(image)) {
+			out.engine_problem = std::format("engine SDK '{}' has no {} image at {} ({} missing); package that configuration first", out.sdk_version, config::build_root().filename().generic_display_string(), image.generic_display_string(), sdk::image_marker);
+		}
+		else {
+			out.sdk = image;
+			out.engine.clear();
+		}
+	}
+	else if (out.engine.empty()) {
 		if (!candidates.empty()) {
 			out.engine_problem = std::format("no engine tree at {} ({} missing)", candidates.front().generic_display_string(), engine_marker);
 		}
@@ -728,18 +810,6 @@ auto gse::ide::project::held_elsewhere(const std::filesystem::path& manifest_fil
 	win32::ReleaseMutex(handle);
 	win32::CloseHandle(handle);
 	return false;
-}
-
-auto gse::ide::project::theme_name(const std::filesystem::path& root) -> std::string {
-	for (const layout_store::section& section : layout_store::parse_sections(read_file(config::project_settings_path_for(root)))) {
-		if (section.name != "UI") {
-			continue;
-		}
-		if (const auto entry = section.values.find("current_theme"); entry != section.values.end()) {
-			return entry->second;
-		}
-	}
-	return {};
 }
 
 auto gse::ide::project::current() -> const manifest& {

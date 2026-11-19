@@ -1,5 +1,6 @@
 module gse.gpu:context_impl;
 
+import gse.assert;
 import gse.concurrency;
 import gse.core;
 import gse.diag;
@@ -8,23 +9,29 @@ import gse.os;
 import gse.save;
 import std;
 
+import :backend_state;
 import :context;
 import :device;
 import :frame;
 import :render_graph;
 import :swap_chain;
 
-auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const save::registry* save_reg, data& d) -> async::task<> {
+auto gse::gpu::context::create_device(data& d, const std::optional<shared_view<window::data>> window_s, save::registry* const save_reg) -> void {
 	const auto requested_backend = d.backend;
+	gpu::shader_cache_enabled = d.shader_cache_enabled;
 	d.device = device::create(window_s, d.validation_layers_enabled, d.backend, d.device_settings);
 	if (save_reg && d.backend != requested_backend) {
 		save_reg->save_now();
 	}
+}
+
+auto gse::gpu::context::init(const std::optional<shared_view<window::data>> window_s, const std::optional<shared_view<offscreen::data>> offscreen_s, data& d) -> async::task<> {
+	assert(d.device != nullptr, "gpu::context::init runs after the engine created the device; registration reads its capabilities first");
 
 	if (window_s) {
 		d.swapchain = swap_chain::create(
 			d.device->boot_surface(),
-			window::viewport(*window_s),
+			window::viewport(window_s->primary.handle),
 			(*window_s).current_present_mode,
 			*d.device
 		);
@@ -32,10 +39,13 @@ auto gse::gpu::context::init(const std::optional<shared_view<window::data>> wind
 
 	d.frame = frame::create(*d.device, d.swapchain.get());
 	d.render_graph = std::make_unique<render_graph>(*d.device, *d.frame);
-	if (d.swapchain) {
-		d.render_graph->set_swapchain_clear(
-			d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
-		);
+	d.render_graph->set_output_clear(
+		d.dark_background ? color_clear{ .r = 0.05f, .g = 0.05f, .b = 0.06f, .a = 1.0f } : color_clear{}
+	);
+	if (offscreen_s) {
+		if (auto created = d.render_graph->set_offscreen_output({ .extent = { offscreen_s->offscreen_width, offscreen_s->offscreen_height } }); !created) {
+			log::println(log::level::error, log::category::render, "offscreen output creation failed: {}", created.error());
+		}
 	}
 
 	return {};
@@ -103,20 +113,13 @@ auto gse::gpu::context::find_presentation(data& d, const id window) -> window_pr
 	return it == d.secondaries.end() ? nullptr : it->get();
 }
 
-auto gse::gpu::context::on_swap_chain_recreate(const shared_view<data> d, swap_chain_recreate_callback callback) -> void {
-	d.swapchain->on_recreate(std::move(callback));
-}
-
 auto gse::gpu::context::wait_idle(const data& d) -> void {
 	d.device->wait_idle();
 }
 
 auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_resume_request, window_opened, window_closed> resume_in) -> async::task<> {
 	for (const auto& req : resume_in.of<gpu_resume_request>()) {
-		if (req.handle && req.out_state) {
-			*req.out_state = &d;
-			req.handle.resume();
-		}
+		req.resume.resume_with(d);
 	}
 
 	for (const auto& req : resume_in.of<window_opened>()) {
@@ -128,18 +131,18 @@ auto gse::gpu::context::run(gse::context& ctx, data& d, const channel_read<gpu_r
 	}
 
 	if (d.render_graph) {
-		d.render_graph->set_gpu_timestamps_enabled(d.gpu_timestamps_enabled);
-		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_pipeline_stats_enabled);
-		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_intra_pass_marks_enabled);
+		d.render_graph->set_gpu_timestamps_enabled(d.gpu_profiling.timestamps);
+		d.render_graph->set_gpu_pipeline_stats_enabled(d.gpu_profiling.pipeline_stats);
+		d.render_graph->set_gpu_intra_pass_marks_enabled(d.gpu_profiling.intra_pass_marks);
 		d.render_graph->set_log_render_graph(d.log_render_graph);
 	}
 
 	d.device->set_perf_metrics({
-		.enabled = d.gpu_perf_metrics_enabled && d.gpu_timestamps_enabled,
-		.metrics = d.gpu_perf_metrics,
-		.device_index = d.gpu_perf_metrics_device,
-		.sampling_interval = d.gpu_perf_metrics_interval,
-		.lock_clocks = d.gpu_perf_metrics_lock_clocks,
+		.enabled = d.gpu_perf_metrics.enabled && d.gpu_profiling.timestamps,
+		.metrics = d.gpu_perf_metrics.names,
+		.device_index = d.gpu_perf_metrics.device,
+		.sampling_interval = d.gpu_perf_metrics.interval,
+		.lock_clocks = d.gpu_perf_metrics.lock_clocks,
 	});
 
 	return {};
@@ -165,7 +168,12 @@ auto gse::gpu::context::shutdown(data& d) -> void {
 	d.device.reset();
 }
 
+auto gse::gpu::context::apply_pending_resizes(data& d) -> void {
+	d.frame->apply_pending_resizes();
+}
+
 auto gse::gpu::context::begin_frame(data& d, window::window_surface* window_s) -> std::expected<frame_token, frame_status> {
+	advance_shared_output(d);
 	d.device->collect_garbage();
 	d.frame->set_present_target(window_s);
 
@@ -179,15 +187,19 @@ auto gse::gpu::context::end_frame(data& d) -> void {
 	auto graphics_waits = d.render_graph->take_graphics_extra_waits();
 	auto graphics_buffers = d.render_graph->take_graphics_buffers();
 	auto graphics_signals = d.render_graph->take_graphics_extra_signals();
+	auto graphics_leading_buffers = d.render_graph->take_graphics_leading_buffers();
+	std::vector<semaphore_submit_info> graphics_leading_waits;
 
 	auto& transient_graphics = d.device->transient().queue(queue_id::graphics);
 	if (const auto transient_value = transient_graphics.pending_value(); transient_value > 0) {
-		graphics_waits.push_back({
+		const semaphore_submit_info transient_wait{
 			.semaphore = transient_graphics.timeline_handle(),
 			.value = transient_value,
 			.stages = pipeline_stage_flag::all_commands,
-		});
+		};
+		graphics_waits.push_back(transient_wait);
+		graphics_leading_waits.push_back(transient_wait);
 	}
 
-	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals);
+	d.frame->end(aux_subs, graphics_waits, graphics_buffers, graphics_signals, graphics_leading_buffers, graphics_leading_waits);
 }

@@ -11,20 +11,58 @@ GCC trunk toolchain, and provisions Ninja into `~/.gcc-trunk/ninja` (the CMake p
 add that to `PATH`, so no global install is needed). To run only the toolchain step:
 
 ```
-python scripts/install_gcc_trunk.py --persist
+python Tools/install_gcc_trunk.py --persist
 cmake --preset x64-mingw-gcc-Release
 cmake --build --preset x64-mingw-gcc-Release
 ```
 
+### What `bootstrap.py` does
+
+In order:
+
+- initializes submodules recursively (`--update-vcpkg` also pulls vcpkg master)
+- runs `Tools/install_gcc_trunk.py`, passing `--tag`, `--latest`, `--sha256`, `--url`,
+  `--persist` and `--force` through to it
+- installs Ninja into `~/.gcc-trunk/ninja/`, falling back to
+  `winget install Ninja-build.Ninja` when the direct download is unreachable
+- builds the cppreference hover index used by the editor; if that fails the editor
+  falls back to header doc-comments
+- configures the preset and builds the `Editor` target into
+  `.generated/out/build/<preset>/Editor/Editor.exe`
+
+`--preset <name>` targets a configuration other than `x64-mingw-gcc-Release`, and
+`--skip-submodules`, `--skip-gcc`, `--skip-ninja`, `--skip-cppref` and `--skip-build`
+narrow the run.
+
+The build step refuses to start when CMake, the gcc-trunk toolchain, or `VULKAN_SDK` is
+missing, and names which one. A build directory whose cached compiler or Ninja path no
+longer exists (a tree copied from another machine, or a renamed user profile) is removed
+and reconfigured instead of failing.
+
+A toolchain bump invalidates every previously built module BMI, so reconfigure from a
+clean build directory after one. vcpkg's manifest mode (`vcpkg.json`) installs
+dependencies when CMake configures; the first configure rebuilds the dependency tree
+under the MinGW triplet and takes 30-60 minutes.
+
 `install_gcc_trunk.py`:
 
-1. Resolves the latest `gcc-trunk-v*` GitHub release.
+1. Installs the tag pinned in `toolchain.txt` at the repo root.
 2. Downloads `gcc-trunk-windows-x64.zip` and extracts it to `~/.gcc-trunk/<tag>`.
-3. With `--persist`, sets the `MINGW_ROOT` user env var (which the CMake presets read
-   as `$env{MINGW_ROOT}/bin/g++.exe`).
+3. With `--persist`, sets the user env vars; the CMake presets resolve the compiler as
+   `$env{USERPROFILE}/.gcc-trunk/current/bin/g++.exe` and prepend that `bin` to PATH.
 
-Pin a specific build with `--tag gcc-trunk-v3`, verify integrity with
-`--sha256 <hash>` (printed in each release body), reinstall with `--force`.
+Verify integrity with `--sha256 <hash>` (printed in each release body), reinstall
+with `--force`.
+
+### The toolchain pin
+
+`toolchain.txt` names the toolchain the tree is known to build with, and CI
+(`.github/actions/gse-build-setup`) builds with exactly that tag. A newly
+published release therefore reaches no build until the pin moves. Don't edit the
+file by hand: `--tag gcc-trunk-vN` or `--latest` (newest published release)
+installs that toolchain and rewrites the pin. Commit the new pin together with any
+source fixes the new compiler needed, and that commit's CI run is the check that
+the tree builds with it.
 
 No Visual Studio, no MSYS2, no libc++/compiler-rt side-build — the zip is a
 self-contained toolchain (gcc + binutils + mingw-w64 runtime + libstdc++ `std`
@@ -39,11 +77,19 @@ dispatch:
   `gcc.gnu.org/pub/gcc/snapshots/`, computes the next `gcc-trunk-vN` tag, and skips
   if that snapshot was already published.
 - **build** (Windows): MSYS2 builds GCC from the snapshot through the vendored recipe
-  (`scripts/gcc-toolchain/recipe/`), then `scripts/package_gcc_toolchain.py` stages
+  (`Tools/gcc-toolchain/recipe/`), then `Tools/package_gcc_toolchain.py` stages
   the relocatable toolchain and zips it, and the zip is published as the release.
 
 > The scheduled trigger only fires for the workflow on the repository's **default
 > branch**, so this file must be present on `main` for weekly builds to run.
+
+## Installing MSYS2 locally
+
+Only needed if you are building a toolchain rather than downloading one.
+`python Tools/install_msys2.py` extracts MSYS2's self-extracting base archive into
+`<repo>/.generated/msys64` (gitignored) and installs the same package closure CI uses — it reads
+the `install:` list straight out of `.github/workflows/build-gcc-trunk.yml`, so the two
+cannot drift. Re-running it just updates packages; `--force` re-extracts.
 
 ## Building the toolchain yourself
 
@@ -51,10 +97,37 @@ Same entry point CI uses (needs an MSYS2 install with `base-devel` + the GCC bui
 deps — see the `install:` list in the workflow):
 
 ```
-python scripts/build_gcc_trunk.py --snapshot 20260601 --msys-root C:/msys64
+python Tools/build_gcc_trunk.py --snapshot 20260601
 ```
 
-Produces `dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
+Produces `.generated/dist/gcc-trunk-windows-x64.zip`. The vendored recipe carries MSYS2's
 Windows patch stack; a plain `configure && make` of GCC trunk does **not** build on
 native Windows. When trunk drifts enough that a vendored patch stops applying, the
-weekly build fails loudly — update `scripts/gcc-toolchain/recipe/` and re-dispatch.
+weekly build fails loudly — update `Tools/gcc-toolchain/recipe/` and re-dispatch.
+
+## The experimental wasm32 cross compiler
+
+Separate from everything above, and not part of the distributed zip.
+`python Tools/build_gcc_wasm.py` builds a `wasm32-unknown-unknown` GCC into
+`<repo>/.generated/.gcc-wasm` from a pinned trunk snapshot plus the out-of-tree WebAssembly
+backend patches in `Tools/gcc-toolchain/wasm/` (provenance in the README there): the
+driver, `cc1`, `cc1plus`, libgcc and a hosted libstdc++ against a pinned wasi-libc
+sysroot, assembled by `llvm-mc` and linked by `wasm-ld` from MSYS2. It then runs its probe
+table, and `--probe NAME...` re-runs named probes against the toolchain already built.
+
+It does not go through the vendored `makepkg` recipe and does not touch `/mingw64`, so
+it cannot affect the toolchain the engine builds with. See `docs/wasm_pipeline_plan.md`
+for what it is for and what it has measured.
+
+The engine itself is built for wasm32 through the `wasm32-wasi-gcc-Release` CMake preset,
+whose toolchain file `Engine/cmake/toolchains/wasm32-wasi-gcc.cmake` uses that compiler
+straight from `.generated/.gcc-wasm-build`. Build it like any configuration (`gse_build`
+with that preset); the result is `.generated/out/build/wasm32-wasi-gcc-Release/Sandbox/Sandbox.wasm`,
+which boots like a native exe launched with no arguments; a scenario runs only when
+`--engine-bench-scenario NAME` is passed (after `--` for `serve.mjs`). The build writes its runners beside it, so no Python is needed:
+`node Sandbox.mjs [ARGS]` runs it under node, and `node serve.mjs --open` serves the
+browser page (fetching each file the run opens from the repo tree) and opens it in Chrome
+or Edge. Both resolve paths and baked resources from the native build named by the
+`GSE_WASM_NATIVE_BUILD` cache variable (default `x64-mingw-gcc-Release`), so build that
+too. In the editor, a build profile set to the wasm configuration runs it from the Play
+button, under node, or in Chrome with the profile's "Run in browser" option.

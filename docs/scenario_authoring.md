@@ -2,13 +2,13 @@
 
 A scenario is a named C++ coroutine that drives the engine through a fixed sequence of world events on a fixed-step clock, then exits with a `.gsprof`, a percentile summary, and a world-state hash. Frame *N* holds the same simulated world every run, so anything measured at frame *N* is comparable across runs, builds, and configurations.
 
-This document is the operating manual. The design rationale is in [script_runner_plan.md](script_runner_plan.md); the traps section there is worth reading once before authoring.
+This document is the operating manual. Read the traps at the end once before authoring.
 
 ## Adding one
 
 Two files, both in the Sandbox. Nothing central needs editing — the registry is a reflection sweep over `sandbox::scenarios`, so an annotated function in that namespace is discovered automatically.
 
-Declaration, in `Sandbox/Sandbox/Source/Sandbox/Scenarios.cppm`:
+Declaration, in `Sandbox/Sandbox/Source/Scenarios/Scenarios.cppm`:
 
 ```cpp
 export namespace sandbox::scenarios {
@@ -19,7 +19,7 @@ export namespace sandbox::scenarios {
 }
 ```
 
-Body, in `Sandbox/Sandbox/Source/Sandbox/Scenarios.cpp`:
+Body, in `Sandbox/Sandbox/Source/Scenarios/Scenarios.cpp`:
 
 ```cpp
 auto sandbox::scenarios::my_scenario(gse::scenario::context& ctx) -> gse::async::task<> {
@@ -38,20 +38,41 @@ The body **must** live in the `.cpp`. A coroutine body in the partition interfac
 | `scene` | Activated before the settle gate. Empty means no scene, which measures an empty world. |
 | `headless` | `true` runs with no window or renderer. Only ever *forces* headless — a `false` here leaves the command line's choice alone. |
 | `gpu_solver` | Pins `Physics.use_gpu_solver` to this value in **both** directions, unlike `headless`. A `false` here is a positive assertion that the scenario runs on the CPU solver, not a shrug. |
+| `pacing` | How the clock steps. `lockstep` (default): one fixed step per frame, and an attached run holds each frame until the editor takes it. `unpaced`: one fixed step per frame, frames never held, so a bench measures real frame time on a deterministic world. `wall_clock`: steps follow the wall clock, for networked or timed-wakeup scenarios that need real time; such a run is not deterministic. |
 | `warmup_frames` | Discarded frames before measurement. Default 120. |
 | `frames` | Measured frames. Default 600. Also sizes the profiler's recording ring. |
+
+### Pinning settings
+
+A scenario that needs a non-default setting pins it with a `gse::scenario::pin` annotation beside its `info`, naming the settings member itself rather than spelling its key:
+
+```cpp
+[[= gse::scenario::info{
+	.name = "render_stress",
+	.scene = "Sandbox",
+},
+	= gse::scenario::pin<^^gse::window::data::present_mode>{ gse::gpu::present_mode::immediate },
+	= gse::scenario::pin<^^sandbox::dev_spawn::data::stress, ^^sandbox::stress_scene_params::tumbler_radial_cubes>{ 6 }
+]]
+```
+
+The template arguments are the member path, from a member of a `settings::category` struct down to the scalar setting, one reflection per nested level. The value has the member's own type, so a length is `gse::meters(4.f)` and an enum is its enumerator. Renaming, retyping or un-describing a pinned member is a compile error in the scenario file, not a scenario that silently runs on the code default. Each pin is lowered to the same `Section.key=value` text an `--engine-setting` carries, written by the ini's own field writer. The engine's own pins and app defaults take the same member path, as `registry::pin<^^window::data::title>(...)` and `registry::default_for<...>(...)`, so `settings::member_path` is the one validator for both.
+
+A vector setting pins as its own `vec` value, one element per component: `pin<^^gse::renderer::cloud::data::wind_offset>{ { gse::kilometers(0.f), gse::kilometers(0.f), gse::kilometers(0.f) } }`. Its text form is the parenthesised list the formatter writes, `(0 km, 0 km, 0 km)`, and a vector of quantities needs a unit suffix on every element.
+
+`--engine-setting` stays text, because it is runtime input. It is checked when settings register: an assignment that is not `Section.key=value`, a key its section does not declare, or a dimensioned value without a valid unit suffix stops the run with exit code 2. A section no system registered in this run mode, such as `Window` in a headless run, is only a warning.
 
 Every field is overridable on the command line. `apply_scenario` writes the annotation's value only where the parsed config still holds `bench_config`'s default, so an explicit `--engine-bench-frames 900` survives.
 
 ## Scenario runs are hermetic
 
-A scenario run sets `load_settings = false`, so **neither ini is read** — not `%APPDATA%/GSE/<Exe>.ini`, not `<Project>/Config/settings.ini`. The run is code defaults plus the annotation's `settings` list plus any `--engine-setting` you pass. It also never writes an ini (`persist_settings = false`).
+A scenario run sets `load_settings = false`, so **neither ini is read** — not `%APPDATA%/GSE/<Exe>.ini`, not `<Project>/Config/settings.ini`. The run is code defaults plus the annotation's pins plus any `--engine-setting` you pass. It also never writes an ini (`persist_settings = false`). The GUI layout file follows the same two switches: the engine pins `UI.restore_layout` and `UI.persist_layout` to them, so a scenario run neither inherits the panels docked in `gui_layout.ini` nor writes its own layout back over them.
 
-This is not tidiness. A scenario is a measurement instrument, and a bench whose result depends on whatever the developer last tuned locally is not a baseline. The rule that follows: **whatever a scenario depends on, it must declare.** If a scenario needs a non-default value, it goes in `settings`, where it is visible in the file and in `--engine-dump-settings`.
+This is not tidiness. A scenario is a measurement instrument, and a bench whose result depends on whatever the developer last tuned locally is not a baseline. The rule that follows: **whatever a scenario depends on, it must declare.** If a scenario needs a non-default value, it goes in a `pin`, where it is visible in the file and in `--engine-dump-settings`.
 
 The failure this prevents, which cost a real debugging session: `parity_*_cpu` carried no `use_gpu_solver` setting and relied on the code default `false`. When scenarios briefly did read the ini, `Sandbox.ini`'s `use_gpu_solver = true` won, every CPU scenario silently ran on the GPU, and the CPU and GPU halves of the parity ladder returned the same hash — which the gate reads as agreement. A pairing that collapses looks exactly like a pairing that passes.
 
-To run a scenario against your local tuning, pass `--engine-load-settings`. The annotation's `settings` still outrank the ini, so the CPU/GPU pairing survives even then; you get your tuning for everything the scenario has not pinned.
+To run a scenario against your local tuning, pass `--engine-load-settings`. The annotation's pins still outrank the ini, so the CPU/GPU pairing survives even then; you get your tuning for everything the scenario has not pinned.
 
 ## What a body may do
 
@@ -105,7 +126,7 @@ Useful overrides:
 --engine-bench-warmup-frames 30    # warmup frames
 --engine-bench-profile-out a.gsprof
 --engine-bench-summary-out a.txt
---engine-use-gpu-solver            # if the scenario does not declare it
+--engine-setting Physics.use_gpu_solver=true   # if the scenario does not declare it
 ```
 
 Artifacts land under `%LOCALAPPDATA%/GSE/profile/bench/<scenario>/`, one timestamped `.gsprof` and `.txt` per run.
@@ -116,15 +137,15 @@ The run prints one summary line carrying both the timings and the digest:
 bench: 120 frames measured, p50 9.4 ms p95 12.7 ms p99 16.9 ms, world-state hash 0x6d3576e5fbf1029c
 ```
 
-The hash covers every transform and motion component, ordered by owner id, digested through `binary_writer`'s reflection walk — so it follows fields added later without anyone maintaining a list.
+The hash covers every transform and motion component, ordered by owner id, digested through `binary_writer`'s reflection walk — so it follows fields added later without anyone maintaining a list. State that lives in GPU buffers rather than components, such as the Sandbox grass field's blades, joins the hash through a `gse::state_digest` component: the bench pushes a `gse::state_digest_request` 8 frames before the end, the owning system answers by filling the component, and the bench folds every `state_digest` (value and step, ordered by owner id) into the hash after the bodies. An owner whose digest is never taken fails the run, and each digest is also logged on its own `bench: owner` line.
 
 ## Rules that will otherwise cost you a cycle
 
 **Windowed scenarios were unusable until 2026-08-14, for a reason worth knowing.** `step_bench` activated `info.scene` on its first step behind a one-shot latch. In render mode `app_setup` — and therefore every `add_scene` call — is deferred behind the loading screen, so the activation named a scene that did not exist yet, was dropped, and was never reissued. The world stayed empty and the run aborted at the settle cap after ~40 s. Headless was unaffected because it runs `app_setup` inline before the bench loop starts.
 
-Fixed by not latching until `find_scene` confirms the scene is registered. If you are writing a windowed scenario and it aborts, read the settle-cap message: it now reports `registered=`, `activated=`, `populated=`, and `settled=` separately, which is what tells you which of those four stages failed.
+Fixed by not latching until `find_scene` confirms the scene is registered. If you are writing a windowed scenario and it aborts, read the settle-cap message: it now reports the bench phase by name and `registered=`, `populated=`, and `settled=` separately, which is what tells you which of those four stages failed. A phase of `awaiting_scene` means the scene was never activated; `settling` means it was.
 
-Two earlier explanations in this file were wrong and are recorded here so they are not re-derived: the boot gate was never at fault — it fires within a frame of the loading screen drawing — and the claim that successful runs succeeded because a human clicked the window does not survive reading `engine::render`, where `window::show` is not called until `rendered_once()` plus two frames.
+Two earlier explanations in this file were wrong and are recorded here so they are not re-derived: the boot gate was never at fault — it fires within a frame of the loading screen drawing — and the claim that successful runs succeeded because a human clicked the window does not survive reading `engine::reveal_window`, which `engine::render` calls after each presented frame and where `window::show` is not called until the boot stage has left `presenting` and two further frames have been presented.
 
 **A bench run never shows its window.** `engine::render` skips the show step entirely when `bench.enabled`, so a windowed scenario renders and presents to a hidden window and never steals focus. That is what makes an unattended windowed scenario tolerable to run ten times in a row, and it is why a scenario can record itself with no keypress. One consequence: present-timing feedback does not exist against a hidden window, so do not take present-pacing measurements from a bench run.
 
@@ -136,11 +157,15 @@ Do not trust a windowed hash as a baseline. A run that completes because someone
 ctx.channels().push<gse::renderer::capture::toggle_recording_request>({});
 ```
 
-`record_clip` is the worked example — settle, spawn, toggle on, wait a declared span, toggle off. Recording needs the renderer, so such a scenario must not declare `headless = true`. Clips land in `%LOCALAPPDATA%/GSE/captures/recordings/`.
+A screenshot request names its file: `screenshot_request{ .path = "my_run/view_a.png" }` writes under `captures/screenshots/` (an absolute path is used as given), and an empty path keeps the timestamped name. The timestamp has one-second granularity, so a scenario that takes several stills must name them or two taken in the same second overwrite each other. Each request is captured on the frame it is consumed, one per frame, and is not held back by an earlier still that is still being encoded. `cloud_quality_probe` is the worked example, and logs one `capture <file> frame <n>` line per still.
+
+A capture is the presented frame, HUD and panels included. A scenario whose stills or clips are compared or shown pins `gse::gui::data::visible` to `false`, which drops all UI and its input for the run.
+
+`record_clip` is the worked example for recording — settle, spawn, toggle on, wait a declared span, toggle off. Recording needs the renderer, so such a scenario must not declare `headless = true`. Clips land in `%LOCALAPPDATA%/GSE/captures/recordings/`.
 
 Under a scenario the encoder stamps presentation timestamps from *content* time, not wall time, so every frame is exactly 1/60 s apart and the clip is constant-rate 60 fps no matter how slowly it rendered. Verify a clip with `ffmpeg -v error -i <file> -f null -` and require zero output — a file playing in a desktop player proves nothing, as VLC and Windows Media Player both happily played a file that decoded zero frames in dav1d.
 
-**A tripped assert does not terminate the process.** It logs `[fatal]` and hangs forever. Always run under an external timeout, and read `%LOCALAPPDATA%/GSE/logs/Sandbox.log` when a run produces no summary line.
+**A tripped assert does not terminate the process.** It logs `[fatal]` and hangs forever. Always run under an external timeout, and read the newest `%LOCALAPPDATA%/GSE/logs/Sandbox.<pid>.<stamp>.log` when a run produces no summary line.
 
 **Headless has a narrower asset loader set than render** — `model` only. Anything needing `skinned_model` or `clip_asset`, such as character spawning, asserts headless. This is a known open gap; see the trap entry in the plan for two corrections that were tried and were both worse than the gap.
 
@@ -187,3 +212,22 @@ The intended shape for a CPU-versus-GPU comparison is a declared pair, so each g
 Both should `co_await` one shared workload coroutine declared in the implementation partition, so the only difference between them is the declared configuration. A copied body drifts the first time either changes, and then the comparison is measuring the wrong thing. The helper is invisible to the sweep because it carries no annotation.
 
 Note before relying on a GPU hash: the GPU VBD solver is known non-deterministic, so a `gpu_solver` scenario reproduces its timings but not its world state.
+
+## Traps already paid for
+
+Each of these cost a build-and-run cycle. Do not rediscover them.
+
+- **Negative boolean flags read backwards.** `build_arg_flag` prefixes the *fully qualified* name, so headless is `--no-engine-create-window`, never `--engine-no-create-window`. The natural spelling silently does nothing.
+- **`all_settled()` is not "the world exists."** It reports scheduler quiescence and goes true long before scene content spawns. The gate requires `all_settled() && world_populated()`. Both the settling phase and `wait_settled` route through `bench_world_ready`, so there is one copy of that predicate — do not re-spell it at a third call site.
+- **`world_loader_setup` registers a scene; it does not activate one.** Nothing in a headless or bench run activates it, so without `--engine-bench-scene` the registry stays empty and every measurement is of nothing.
+- **Headless disables `gui::data` and `window::data`.** Any app-side system reading them must be registered behind the render flag or the closed-graph assert fires at boot.
+- **`report_frame::span` is not the frame duration.** It spans from the earliest node start, including long-lived open spans. Frame percentiles derive from the frame's root node instead (`profile::frame_duration`).
+- **Entity identity is the hash of the name, so a spawn helper with fixed names can only ever build one instance.** `registry::create(name)` is FNV over the string. Spawning a helper that uses `"Character"` eight times puts every character on the same ids, each stomping the last; `count=1` and `count=2` then produce identical world hashes. Any spawn helper called more than once needs an index in its names, as `spawn_tumbler` does.
+- **`wait_settled` does not cover asset residency.** It waits for scheduler quiescence and a populated world, neither of which implies a queued asset has resolved. A scenario that pushes a spawn the instant the world settles can get a silent no-op and then measure an empty scene with a perfectly valid deterministic hash. Compare against a no-scenario run of the same scene: an identical hash means nothing spawned.
+- **Headless and render register the same asset pack.** Render adds `install_recompile_fns`, headless adds `install_stale_checks`, which fails the load rather than baking. Do not narrow the headless loader set: `gse::material` holds a `handle<texture>` and both model types gate readiness on `textures_ready()`, so a pack with models but no textures cannot load.
+- **A renderer setting can overwrite a programmatic one.** Any per-frame `set_*` pushed from system state clobbers a scenario's `begin_bench`. Push only on change.
+- **A windowed scenario cannot run unattended.** Render-mode world systems are deferred until the loading screen's first draw, which moves the boot stage from `presenting` to `app_setup`, so the window must present a frame before the scene populates, and roughly half of back-to-back unattended runs never do. The click that makes it boot is also real input into a scripted run, so the hash is not a baseline. Headless has no such gate.
+- **A windowed scenario accepts real input.** Do not touch the window during a measurement.
+- **A valid hash does not mean valid timings.** World state keys off frame index, not wall time, so a run contaminated by a background compile hashes identically to a quiet one. Confirm no build is running before recording a baseline; `tasklist | grep -E "cc1plus|ninja"` settles it.
+- **A scenario body cannot live in the partition interface.** The annotated declaration stays in `Scenarios.cppm`; the coroutine body goes in `Scenarios.cpp`.
+- **A tripped assert does not terminate the process.** It logs `[fatal]` and hangs. Any unattended run needs an external timeout.

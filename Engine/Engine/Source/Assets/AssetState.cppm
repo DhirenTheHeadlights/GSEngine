@@ -50,6 +50,10 @@ export namespace gse::asset {
 	auto shutdown(
 		data& d
 	) -> void;
+
+	auto finalize_reloads(
+		data& d
+	) -> void;
 }
 
 auto gse::asset::init(context& ctx, const std::optional<shared_view<gpu::context::data>> gpu_s, data& d, const channel_write<gpu::gpu_resume_request> gpu_out) -> async::task<> {
@@ -89,6 +93,12 @@ auto gse::asset::run(context& ctx, data& d, const channel_read<hot_reload_reques
 		d.watcher.poll();
 	}
 	return {};
+}
+
+auto gse::asset::finalize_reloads(data& d) -> void {
+	for (const auto& loader : std::views::values(d.resource_loaders)) {
+		loader->finalize_reloads();
+	}
 }
 
 auto gse::asset::shutdown(data& d) -> void {

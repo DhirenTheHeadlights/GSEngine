@@ -27,6 +27,8 @@ export namespace gse::gpu {
 		acceleration_structure dst,
 		const acceleration_structure_geometry& geometry,
 		std::uint32_t prim_count,
+		build_acceleration_structure_flags flags,
+		build_acceleration_structure_mode mode,
 		const buffer& scratch,
 		recording_context& rec
 	) -> void;

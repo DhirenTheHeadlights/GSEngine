@@ -1,6 +1,25 @@
+void store_prediction(uint bi, body_state body) {
+    body_data[bi].sleep_counter = body.sleep_counter;
+    body_data[bi].old_position = body.old_position;
+    body_data[bi].old_orientation = body.old_orientation;
+    body_data[bi].accel_weight = body.accel_weight;
+    body_data[bi].predicted_position = body.predicted_position;
+    body_data[bi].inertia_target = body.inertia_target;
+    body_data[bi].predicted_orientation = body.predicted_orientation;
+    body_data[bi].angular_inertia_target = body.angular_inertia_target;
+    body_data[bi].motor_target = body.motor_target;
+    if (body.reset_pending != 0) {
+        body_data[bi].reset_pending = 0;
+    }
+}
+
 void vbd_predict(uint3 dispatch_id) {
-uint bi = dispatch_id.x;
-if (bi >= pc.body_count) return;
+if (dispatch_id.x >= active_data[active_count_word]) return;
+uint bi = active_list[active_data[active_half_word] * max_bodies() + dispatch_id.x];
+
+if (solver_config_data[0].muscle_count != 0) {
+    solve_deltas[2 * max_bodies() + bi] = float4(muscle_body_floor(bi), 0, 0, 0);
+}
 
 body_state body = body_data[bi];
 bool locked = body.locked != 0;
@@ -25,8 +44,8 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
         uint co = contact_offsets[bi];
         uint cc = contact_counts[bi];
         for (uint k = 0; k < cc; k++) {
-            uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency);
-            if (ci >= max_contacts) continue;
+            uint ci = safe_load_uint(contact_adjacency, co + k, max_contact_adjacency());
+            if (ci >= max_contacts()) continue;
             contact_constraint c = contact_data[ci];
             uint other = (c.body_a == bi) ? c.body_b : c.body_a;
             if (other >= pc.body_count) continue;
@@ -46,8 +65,22 @@ bool has_motor = motor_idx != 0xFFFFFFFF && motor_idx < pc.motor_count;
             uint j_off = joint_offsets[bi];
             uint jc = joint_counts[bi];
             for (uint k = 0; k < jc; k++) {
-                uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency);
-                if (ji >= max_joints) continue;
+                uint ji = safe_load_uint(joint_adjacency, j_off + k, max_joint_adjacency());
+                if ((ji & muscle_adjacency_tag) != 0) {
+                    muscle_constraint m = muscle_data[ji & ~muscle_adjacency_tag];
+                    for (uint p = 0; p < m.path_count + m.wrap_count && sleeping; p++) {
+                        uint other = muscle_path_data[m.path_first + p].body;
+                        if (other == bi || other >= pc.body_count) continue;
+                        body_state other_body = body_data[other];
+                        if (other_body.locked == 0 && other_body.sleep_counter < sleep_threshold && length(other_body.velocity.xyz) > wake_thresh) {
+                            body.sleep_counter = 0;
+                            sleeping = false;
+                        }
+                    }
+                    if (!sleeping) break;
+                    continue;
+                }
+                if (ji >= max_joints()) continue;
                 joint_constraint jnt = joint_data[ji];
                 uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
                 if (other >= pc.body_count) continue;
@@ -90,7 +123,7 @@ if (locked) {
 
     body.angular_inertia_target = body.predicted_orientation;
     body.motor_target = body.predicted_position;
-    body_data[bi] = body;
+    store_prediction(bi, body);
     return;
 }
 
@@ -101,7 +134,7 @@ if (sleeping) {
     body.predicted_orientation = body.orientation;
     body.angular_inertia_target = body.orientation;
     body.motor_target = body.position;
-    body_data[bi] = body;
+    store_prediction(bi, body);
     return;
 }
 
@@ -130,8 +163,15 @@ if (unconstrained) {
 }
 
 float3 gravity_step = gravity ? float3(0, -9.8 * pc.dt * pc.dt, 0) : float3(0, 0, 0);
-body.inertia_target = body.position + body.velocity * pc.dt + gravity_step;
-body.predicted_position = body.position + body.velocity * pc.dt + gravity_step * body.accel_weight;
+uint force_base = bi * external_force_words;
+float3 external_force = float3(
+    fixed_pair_decode(external_force_data[force_base + 0], external_force_data[force_base + 1], external_force_resolution),
+    fixed_pair_decode(external_force_data[force_base + 2], external_force_data[force_base + 3], external_force_resolution),
+    fixed_pair_decode(external_force_data[force_base + 4], external_force_data[force_base + 5], external_force_resolution)
+);
+float3 accel_step = gravity_step + external_force * (pc.dt * pc.dt / max(body.mass, 1e-6));
+body.inertia_target = body.position + body.velocity * pc.dt + accel_step;
+body.predicted_position = body.position + body.velocity * pc.dt + accel_step * body.accel_weight;
 body.motor_target = body.inertia_target;
 
 if (update_orient) {
@@ -165,5 +205,7 @@ if (has_motor) {
     }
 }
 
-body_data[bi] = body;
+store_prediction(bi, body);
+body_data[bi].velocity = body.velocity;
+body_data[bi].angular_velocity = body.angular_velocity;
 }

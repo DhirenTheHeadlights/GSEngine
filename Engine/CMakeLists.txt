@@ -13,23 +13,21 @@ file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm")
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 list(REMOVE_ITEM ENGINE_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm")
+gse_select_platform_impls(ENGINE_MODULES)
+
+find_package(unofficial-nsight-perf CONFIG QUIET)
+if(TARGET unofficial::nsight-perf::nsight-perf)
+    set(GSE_GPU_PROFILE_BACKEND "Nvidia")
+else()
+    set(GSE_GPU_PROFILE_BACKEND "Null")
+endif()
 
 file(GLOB_RECURSE ENGINE_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cpp")
-list(REMOVE_ITEM ENGINE_IMPLS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+gse_drop_excluded_impls(ENGINE_IMPLS)
+gse_select_platform_impls(ENGINE_IMPLS)
+gse_select_backend_impls(ENGINE_IMPLS "${GSE_GPU_PROFILE_BACKEND}")
 
-# A .cpp that declares an implementation partition (module gse.x:y;) provides a
-# module and must live in a CXX_MODULES file set; a plain implementation unit
-# (module gse.x;) or global-module .cpp stays an ordinary source.
-set(ENGINE_MODULE_IMPLS "")
-set(ENGINE_PLAIN_IMPLS "")
-foreach(_impl IN LISTS ENGINE_IMPLS)
-    file(STRINGS "${_impl}" _part_decl REGEX "^module gse\\.[A-Za-z_0-9]+:[A-Za-z_0-9]+ *;" LIMIT_COUNT 1)
-    if(_part_decl)
-        list(APPEND ENGINE_MODULE_IMPLS "${_impl}")
-    else()
-        list(APPEND ENGINE_PLAIN_IMPLS "${_impl}")
-    endif()
-endforeach()
+gse_split_module_impls(ENGINE_IMPLS ENGINE_MODULE_IMPLS ENGINE_PLAIN_IMPLS)
 
 add_library(Engine)
 
@@ -58,79 +56,111 @@ target_sources(Engine
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm"
 )
 
-find_package(glfw3 CONFIG REQUIRED)
-find_package(PNG REQUIRED)
-find_package(JPEG REQUIRED)
-find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
-find_package(Freetype CONFIG REQUIRED)
-find_package(msdfgen CONFIG REQUIRED)
-find_package(Vulkan)
-find_package(unofficial-nsight-aftermath CONFIG QUIET)
-find_package(unofficial-nsight-perf CONFIG QUIET)
+# The host libraries, which only a native build has: a wasm32 configuration has no vcpkg
+# and no SDK to find them in, and gse_select_platform_impls above has already dropped
+# every unit under External/Native/ that wraps one. Its engine is the vendored headers
+# under External/ and the toolchain's own runtime, which the wasm32 link rule names itself.
+if(WIN32)
+    find_package(PNG REQUIRED)
+    find_package(JPEG REQUIRED)
+    find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
+    find_package(Freetype CONFIG REQUIRED)
+    find_package(msdfgen CONFIG REQUIRED)
+    find_package(Vulkan)
+    find_package(unofficial-nsight-aftermath CONFIG QUIET)
 
-add_library(VulkanModule STATIC)
-target_sources(VulkanModule PUBLIC
-    FILE_SET CXX_MODULES
-    BASE_DIRS ${Vulkan_INCLUDE_DIR}
-    FILES
-        ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
-        ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
-target_compile_features(VulkanModule PUBLIC cxx_std_26)
-target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
-target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_EXCEPTIONS)
+    add_library(VulkanModule STATIC)
+    target_sources(VulkanModule PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS ${Vulkan_INCLUDE_DIR}
+        FILES
+            ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+            ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
+    target_compile_features(VulkanModule PUBLIC cxx_std_26)
+    target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
+    target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS VULKAN_HPP_NO_EXCEPTIONS)
 
-add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
-target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
-
-set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
-
-set(HAVE_SLANG_PACKAGE OFF)
-find_package(slang CONFIG QUIET)
-if(slang_FOUND)
-    set(HAVE_SLANG_PACKAGE ON)
-else()
-    find_path(SLANG_INCLUDE_DIR
-        NAMES slang.h
-        HINTS "${VULKAN_SDK_PATH}/Include" "${VULKAN_SDK_PATH}/include"
-    )
-    find_library(SLANG_LIBRARY
-        NAMES slang slang.dll libslang.so libslang.dylib
-        HINTS "${VULKAN_SDK_PATH}/Lib" "${VULKAN_SDK_PATH}/lib"
-    )
-    if(NOT SLANG_INCLUDE_DIR OR NOT SLANG_LIBRARY)
-        message(FATAL_ERROR "Slang not found (neither package nor SDK). Install via vcpkg (slang) or use Vulkan SDK >= 1.3.296.")
+    # The headers and VERSION are tracked under External/wgpu-native; the binaries come from the
+    # pinned release zip, verified against the sha256 in VERSION. Bump the tag and hash together.
+    set(GSE_WGPU_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/wgpu-native" CACHE INTERNAL "Pinned wgpu-native prebuilt, see its VERSION file")
+    set(GSE_WGPU_NATIVE_TAG "v29.0.1.1")
+    set(GSE_WGPU_NATIVE_SHA256 "d471e3614733c1d4ddd61bfd19868356477d0d37bf531bf8c6cb64a7f579bd2a")
+    set(_wgpu_root "${CMAKE_BINARY_DIR}/_wgpu-native/${GSE_WGPU_NATIVE_TAG}")
+    if(NOT EXISTS "${_wgpu_root}/lib/wgpu_native.dll")
+        set(_wgpu_zip "${CMAKE_BINARY_DIR}/_wgpu-native/wgpu-${GSE_WGPU_NATIVE_TAG}.zip")
+        message(STATUS "Fetching wgpu-native ${GSE_WGPU_NATIVE_TAG} ...")
+        file(DOWNLOAD
+            "https://github.com/gfx-rs/wgpu-native/releases/download/${GSE_WGPU_NATIVE_TAG}/wgpu-windows-x86_64-gnu-release.zip"
+            "${_wgpu_zip}"
+            EXPECTED_HASH SHA256=${GSE_WGPU_NATIVE_SHA256}
+            TLS_VERIFY ON
+        )
+        file(ARCHIVE_EXTRACT INPUT "${_wgpu_zip}" DESTINATION "${_wgpu_root}" PATTERNS "lib/wgpu_native.dll" "lib/libwgpu_native.dll.a")
     endif()
-endif()
+    set(GSE_WGPU_NATIVE_LIB_DIR "${_wgpu_root}/lib" CACHE INTERNAL "Fetched wgpu-native binaries")
+    add_library(wgpu_native SHARED IMPORTED GLOBAL)
+    set_target_properties(wgpu_native PROPERTIES
+        IMPORTED_LOCATION "${GSE_WGPU_NATIVE_LIB_DIR}/wgpu_native.dll"
+        IMPORTED_IMPLIB "${GSE_WGPU_NATIVE_LIB_DIR}/libwgpu_native.dll.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${GSE_WGPU_NATIVE_DIR}/include"
+        INTERFACE_COMPILE_DEFINITIONS "WGPU_SHARED_LIBRARY"
+    )
 
-target_include_directories(Engine
-    PUBLIC
-        ${miniaudio_INCLUDE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/External
-)
+    add_library(MiniaudioImpl STATIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/External/MiniaudioImpl.cpp")
+    target_include_directories(MiniaudioImpl PRIVATE ${miniaudio_INCLUDE_DIR})
 
-if(HAVE_SLANG_PACKAGE)
-    target_link_libraries(Engine PUBLIC slang::slang)
-else()
-    target_include_directories(Engine PRIVATE "${SLANG_INCLUDE_DIR}")
-    target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")
-endif()
+    set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 
-target_link_libraries(Engine PUBLIC
-    glfw
-    Freetype::Freetype
-    msdfgen::msdfgen
-    VulkanModule
-    PNG::PNG
-    JPEG::JPEG
-    MiniaudioImpl
-)
+    set(HAVE_SLANG_PACKAGE OFF)
+    find_package(slang CONFIG QUIET)
+    if(slang_FOUND)
+        set(HAVE_SLANG_PACKAGE ON)
+    else()
+        find_path(SLANG_INCLUDE_DIR
+            NAMES slang.h
+            HINTS "${VULKAN_SDK_PATH}/Include" "${VULKAN_SDK_PATH}/include"
+        )
+        find_library(SLANG_LIBRARY
+            NAMES slang slang.dll libslang.so libslang.dylib
+            HINTS "${VULKAN_SDK_PATH}/Lib" "${VULKAN_SDK_PATH}/lib"
+        )
+        if(NOT SLANG_INCLUDE_DIR OR NOT SLANG_LIBRARY)
+            message(FATAL_ERROR "Slang not found (neither package nor SDK). Install via vcpkg (slang) or use Vulkan SDK >= 1.3.296.")
+        endif()
+    endif()
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_link_libraries(Engine PUBLIC stdc++exp)
-    if(WIN32)
+    target_include_directories(Engine
+        PUBLIC
+            ${miniaudio_INCLUDE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/External
+    )
+
+    if(HAVE_SLANG_PACKAGE)
+        target_link_libraries(Engine PUBLIC slang::slang)
+    else()
+        target_include_directories(Engine PRIVATE "${SLANG_INCLUDE_DIR}")
+        target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")
+    endif()
+
+    target_link_libraries(Engine PUBLIC
+        Freetype::Freetype
+        msdfgen::msdfgen
+        VulkanModule
+        PNG::PNG
+        JPEG::JPEG
+        MiniaudioImpl
+        wgpu_native
+    )
+
+    target_compile_definitions(Engine PUBLIC _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(Engine PUBLIC stdc++exp)
         find_package(directx-headers CONFIG REQUIRED)
-        target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 dwmapi d3d12 dxgi dxguid Microsoft::DirectX-Headers)
+        target_link_libraries(Engine PUBLIC ws2_32 winhttp dbghelp shell32 advapi32 ole32 uuid dwmapi cabinet bcrypt gdi32 d3d12 dxgi dxguid Microsoft::DirectX-Headers)
     endif()
+else()
+    target_include_directories(Engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/External ${CMAKE_CURRENT_SOURCE_DIR}/External/wgpu-native/include)
 endif()
 
 if(TARGET unofficial::nsight-aftermath::nsight-aftermath)
@@ -144,19 +174,20 @@ endif()
 if(TARGET unofficial::nsight-perf::nsight-perf)
     target_link_libraries(Engine PRIVATE unofficial::nsight-perf::nsight-perf)
     target_compile_definitions(Engine PRIVATE GSE_HAVE_NSIGHT_PERF=1)
-    message(STATUS "Nsight Perf SDK found; GPU hardware counters available (Graphics.gpu_perf_metrics_enabled)")
+    message(STATUS "Nsight Perf SDK found; GPU hardware counters available (Graphics.gpu_perf_metrics.enabled)")
 else()
     message(STATUS "Nsight Perf SDK not found; GPU hardware counters disabled (supply it with the NSIGHT_PERF_SDK env var)")
 endif()
 
 # DirectX 12 Agility SDK: fetch a pinned D3D12 runtime so mesh shaders / SM6.6 bindless behave
 # the same on every machine instead of depending on the OS-shipped runtime. The DX12 backend owns
-# the loader exports (Engine/Source/Dx12/AgilitySdk.cpp); they're force-linked into any exe that
+# the loader exports (Engine/Source/Dx12/Win32/AgilitySdk.cpp); they're force-linked into any exe that
 # links Engine, so application code never touches D3D12. gse_copy_runtime_deps() copies the DLLs
 # into the exe's D3D12/ subfolder. Bump GSE_AGILITY_VERSION (+ GSE_AGILITY_SDK_NUMBER) together.
 if(WIN32)
     set(GSE_AGILITY_VERSION "1.616.0")
     set(GSE_AGILITY_SDK_NUMBER 616)
+    target_compile_definitions(Engine PRIVATE GSE_D3D12_AGILITY_VERSION=${GSE_AGILITY_SDK_NUMBER})
     set(_agility_root "${CMAKE_BINARY_DIR}/_agility/${GSE_AGILITY_VERSION}")
     set(_agility_bin "${_agility_root}/build/native/bin/x64")
     if(NOT EXISTS "${_agility_bin}/D3D12Core.dll")
@@ -178,7 +209,6 @@ if(WIN32)
     endif()
     if(EXISTS "${_agility_bin}/D3D12Core.dll")
         set(GSE_AGILITY_BIN_DIR "${_agility_bin}" CACHE INTERNAL "DirectX 12 Agility SDK x64 runtime dir")
-        target_compile_definitions(Engine PRIVATE GSE_D3D12_AGILITY_VERSION=${GSE_AGILITY_SDK_NUMBER})
         if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             target_link_options(Engine INTERFACE "-Wl,--undefined=D3D12SDKVersion" "-Wl,--undefined=D3D12SDKPath")
         else()
@@ -201,4 +231,59 @@ target_sources(EngineServer
             "${CMAKE_CURRENT_SOURCE_DIR}/Server/Application.cppm"
             "${CMAKE_CURRENT_SOURCE_DIR}/Server/Server.cppm"
 )
+# Its console handling is platform-armed like the engine's own, so the same two rules run
+# over this target: one arm of each platform choice is kept, and a .cpp declaring an
+# implementation partition goes in a CXX_MODULES file set rather than among the plain
+# sources. Both arms of Server/Console.cpp declare gse.server:console_impl, so the second
+# rule is not optional here -- a provider among the plain sources configures and scans
+# cleanly and then fails dyndep collation, with no compiler diagnostic to show for it.
+file(GLOB_RECURSE ENGINE_SERVER_IMPLS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Server/*.cpp")
+gse_select_platform_impls(ENGINE_SERVER_IMPLS)
+gse_split_module_impls(ENGINE_SERVER_IMPLS ENGINE_SERVER_MODULE_IMPLS ENGINE_SERVER_PLAIN_IMPLS)
+
+if(ENGINE_SERVER_MODULE_IMPLS)
+    target_sources(EngineServer
+        PRIVATE
+            FILE_SET gse_server_module_impls TYPE CXX_MODULES
+            BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server"
+            FILES ${ENGINE_SERVER_MODULE_IMPLS}
+    )
+endif()
+
+if(ENGINE_SERVER_PLAIN_IMPLS)
+    target_sources(EngineServer PRIVATE ${ENGINE_SERVER_PLAIN_IMPLS})
+endif()
+
 target_link_libraries(EngineServer PUBLIC Engine)
+
+# Code tooling: lexing, highlighting, compiler diagnostics, formatting, completion and its
+# widgets. Game-agnostic but optional, like EngineServer: the editor and any project that
+# edits C++ in-game link it, and nothing inside the Engine target imports it.
+file(GLOB_RECURSE ENGINE_CODE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Code/*.cppm")
+
+add_library(EngineCode STATIC)
+target_sources(EngineCode
+    PUBLIC
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Code"
+        FILES ${ENGINE_CODE_MODULES}
+)
+target_link_libraries(EngineCode PUBLIC Engine)
+
+add_executable(GSETests "${CMAKE_CURRENT_SOURCE_DIR}/Tests/Main.cpp")
+target_link_libraries(GSETests PRIVATE Engine EngineCode)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
+    target_link_options(GSETests PRIVATE "-Wl,--allow-multiple-definition")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(_gcc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_gcc_root "${_gcc_bin_dir}" DIRECTORY)
+    set_target_properties(GSETests PROPERTIES
+        BUILD_RPATH "${_gcc_root}/lib64"
+        INSTALL_RPATH "${_gcc_root}/lib64"
+    )
+endif()
+
+gse_copy_runtime_deps(GSETests)

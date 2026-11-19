@@ -12,19 +12,6 @@ import gse.assets;
 import gse.core;
 import gse.math;
 
-namespace gse::primitives {
-	auto build_box_meshes() -> std::vector<mesh_data>;
-
-	auto build_sphere_meshes(
-		std::uint32_t sectors,
-		std::uint32_t stacks
-	) -> std::vector<mesh_data>;
-
-	auto build_cylinder_meshes(
-		std::uint32_t segments
-	) -> std::vector<mesh_data>;
-}
-
 auto gse::primitives::build_box_meshes() -> std::vector<mesh_data> {
 	const auto h = meters(0.5f);
 	const auto neg_h = -h;
@@ -281,8 +268,8 @@ auto gse::primitives::build_cylinder_meshes(const std::uint32_t segments) -> std
 
 auto gse::primitives::initialize(data& d, asset::data& assets) -> void {
 	d.unit_box = asset::queue<model>(assets, "Primitives/unit_box", build_box_meshes());
-	d.sphere_lo = asset::queue<model>(assets, "Primitives/sphere_lo", build_sphere_meshes(8, 6));
-	d.sphere_mid = asset::queue<model>(assets, "Primitives/sphere_mid", build_sphere_meshes(24, 16));
-	d.sphere_hi = asset::queue<model>(assets, "Primitives/sphere_hi", build_sphere_meshes(48, 32));
-	d.unit_cylinder = asset::queue<model>(assets, "Primitives/unit_cylinder", build_cylinder_meshes(128));
+	d.sphere_lo = asset::queue<model>(assets, "Primitives/sphere_lo", build_sphere_meshes(sphere_lo_resolution.sectors, sphere_lo_resolution.stacks));
+	d.sphere_mid = asset::queue<model>(assets, "Primitives/sphere_mid", build_sphere_meshes(sphere_mid_resolution.sectors, sphere_mid_resolution.stacks));
+	d.sphere_hi = asset::queue<model>(assets, "Primitives/sphere_hi", build_sphere_meshes(sphere_hi_resolution.sectors, sphere_hi_resolution.stacks));
+	d.unit_cylinder = asset::queue<model>(assets, "Primitives/unit_cylinder", build_cylinder_meshes(unit_cylinder_segments));
 }

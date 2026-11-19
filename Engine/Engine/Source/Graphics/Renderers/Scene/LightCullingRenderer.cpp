@@ -1,0 +1,214 @@
+module gse.graphics:light_culling_renderer_impl;
+
+import std;
+
+import :light_culling_renderer;
+import :geometry_collector;
+import :light_packing;
+import :point_light;
+import :spot_light;
+import :directional_light;
+import :camera_latch_renderer;
+import :camera_system;
+import :depth_prepass_renderer;
+
+import gse.os;
+import gse.assets;
+import gse.gpu;
+import gse.gpu_record;
+import gse.core;
+import gse.containers;
+import gse.time;
+import gse.concurrency;
+import gse.diag;
+import gse.ecs;
+import gse.meta;
+
+namespace gse::renderer::light_culling {
+	struct [[= shaders::shader_struct]] culling_params_data {
+		projection_matrix projection;
+		inverse_projection_matrix inv_proj;
+		vec2f depth_uv_scale;
+		vec2f depth_uv_max;
+		vec2u screen_size;
+		std::uint32_t num_lights;
+	};
+
+	struct culling_bindings {
+		shaders::texture2d<vec4f> depth_texture;
+		shaders::uniform_block<culling_params_data> culling_params;
+		shaders::ssbo_readwrite<std::uint32_t> light_index_list;
+		shaders::ssbo_readwrite<vec2u> tile_light_table;
+		shaders::sampler_state depth_sampler;
+	};
+
+	template <fixed_string BodyPath>
+	using culling_entry = gpu::compute_entry<
+		gpu::body_path<BodyPath>,
+		gpu::types<light_culling_limits>,
+		gpu::bindings<shaders::standard_3d::scene_lights, culling_bindings>,
+		gpu::helpers<"Screen/screen_target", "Standard3D/light_culling_common">,
+		gpu::threads<16, 16, 1>
+	>;
+
+	using entry = culling_entry<"Compute/light_culling">;
+
+	using atomic_entry = culling_entry<"Compute/light_culling_atomic">;
+}
+
+namespace gse::renderer::light_culling {
+	auto update_depth_descriptor(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+		if (!d.depth_view.valid()) { d.depth_view = gpu_s.device->allocate_image_slot(); }
+		gpu_s.device->write_sampled_image(d.depth_view.slot(), gpu_s.render_graph->depth_image());
+	}
+
+	auto rebuild_tile_buffers(const shared_view<gpu::context::data> gpu_s, data& d) -> void {
+		const auto ext = gpu_s.render_graph->extent();
+		d.current_width = ext.x();
+		d.current_height = ext.y();
+
+		const auto tiles = tile_count(d.current_width, d.current_height);
+		const std::uint32_t total_tiles = tiles.x() * tiles.y();
+		const std::uint32_t index_list_size = total_tiles * max_lights_per_tile * sizeof(std::uint32_t);
+		const std::uint32_t tile_table_size = total_tiles * 2 * sizeof(std::uint32_t);
+
+		for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+			d.light_index_list_buffers[i] = gpu_s.device->create_buffer(
+				{
+					.size = index_list_size,
+					.stride = sizeof(std::uint32_t),
+					.usage = gpu::buffer_flag::storage,
+					.writable = true
+			}
+			).handle();
+
+			d.tile_light_table_buffers[i] = gpu_s.device->create_buffer(
+				{
+					.size = tile_table_size,
+					.stride = sizeof(std::uint32_t),
+					.usage = gpu::buffer_flag::storage,
+					.writable = true
+			}
+			).handle();
+		}
+
+		update_depth_descriptor(gpu_s, d);
+	}
+}
+
+auto gse::renderer::light_culling::tile_count(const std::uint32_t width, const std::uint32_t height) -> vec2u {
+	return { (width + tile_size - 1) / tile_size, (height + tile_size - 1) / tile_size };
+}
+
+auto gse::renderer::light_culling::init(context& ctx, const shared_view<gpu::context::data> gpu_s, const shared_view<asset::data> assets_s, data& d) -> async::task<> {
+	d.pipeline = gpu_s.device->capabilities().untyped_atomics
+		? gpu::build_compute_program(*gpu_s.device, entry::pod)
+		: gpu::build_compute_program(*gpu_s.device, atomic_entry::pod);
+	d.view_pipeline = gpu::build_compute_program(*gpu_s.device, light_packing::view_entry::pod);
+
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
+		d.culling_params_buffers[i] = gpu_s.device->create_buffer<culling_params_data>(
+			1,
+			{
+				.usage = gpu::buffer_flag::storage,
+			}
+		);
+
+		d.light_buffers[i] = gpu_s.device->create_buffer<shaders::forward::light>(
+			max_lights,
+			{
+				.usage = gpu::buffer_flag::storage,
+				.writable = true,
+			}
+		);
+	}
+
+	d.depth_sampler = gpu_s.device->register_sampler(
+		{
+			.min = gpu::sampler_filter::nearest,
+			.mag = gpu::sampler_filter::nearest,
+			.address_u = gpu::sampler_address_mode::clamp_to_edge,
+			.address_v = gpu::sampler_address_mode::clamp_to_edge,
+			.address_w = gpu::sampler_address_mode::clamp_to_edge,
+			.max_lod = 1.0f
+		}
+	);
+
+	rebuild_tile_buffers(gpu_s, d);
+
+	gpu_s.render_graph->on_resize(
+		[gpu_s, &d]() {
+			rebuild_tile_buffers(gpu_s, d);
+		}
+	);
+
+	return {};
+}
+
+auto gse::renderer::light_culling::frame(context& ctx, shared_view<gpu::context::data> gpu_s, const data& d, const channel_write<gpu::render_pass_request> pass_out, const channel_read<geometry_collector::render_data> geometry_in, shared_view<camera::data> cam_state, shared_view<camera_latch::data> latch_s, shared_view<atmosphere::data> atm_state, read<directional_light_component> dir_lights, read<spot_light_component> spot_lights, read<point_light_component> point_lights, read<physics::transform_component> transforms) -> async::task<> {
+	auto& graph = *gpu_s.render_graph;
+
+	if (!graph.frame_in_progress()) {
+		co_return;
+	}
+
+	const auto& render_items = geometry_in.of<geometry_collector::render_data>();
+	if (render_items.empty()) {
+		co_return;
+	}
+
+	const auto frame_index = graph.current_frame();
+
+	const auto proj = cam_state.projection_matrix;
+	const auto inv_proj = proj.inverse();
+	const auto extent = graph.extent();
+
+	const auto& light_alloc = d.light_buffers[frame_index];
+
+	std::array<shaders::forward::light, max_lights> lights{};
+	const auto light_count = light_packing::pack(lights, atm_state, dir_lights, spot_lights, point_lights, transforms);
+
+	if (light_count > 0) {
+		light_alloc.host_write(lights.data(), light_count * sizeof(shaders::forward::light));
+	}
+
+	const culling_params_data params{
+		.projection = proj,
+		.inv_proj = inv_proj,
+		.depth_uv_scale = graph.screen_uv_scale(),
+		.depth_uv_max = graph.screen_uv_max(),
+		.screen_size = vec2u{ extent.x(), extent.y() },
+		.num_lights = static_cast<std::uint32_t>(light_count),
+	};
+	d.culling_params_buffers[frame_index].host_write(params);
+
+	const auto tiles = tile_count(d.current_width, d.current_height);
+
+	{
+		auto view_rec = co_await gpu::pass<^^light_view_pass>(pass_out).pipeline(d.view_pipeline).after<^^camera_latch::frame>();
+		view_rec.dispatch<light_packing::view_entry>(
+			{
+				.light_count = static_cast<std::uint32_t>(light_count),
+			},
+			{
+				.camera_ubo = latch_s.camera_buffers[frame_index],
+				.lights = light_alloc,
+			},
+			gpu::group_count<light_packing::view_entry>(static_cast<std::uint32_t>(light_count))
+		);
+	}
+
+	auto rec = co_await gpu::pass<^^frame>(pass_out).pipeline(d.pipeline).after<^^depth_prepass::frame, ^^light_view_pass>();
+
+	rec.dispatch<entry>(
+		{
+			.lights = d.light_buffers[frame_index],
+			.depth_texture = d.depth_view,
+			.culling_params = d.culling_params_buffers[frame_index],
+			.light_index_list = gpu_s.device->buffer_slot(d.light_index_list_buffers[frame_index]),
+			.tile_light_table = gpu_s.device->buffer_slot(d.tile_light_table_buffers[frame_index]),
+			.depth_sampler = d.depth_sampler,
+		},
+		vec3u{ tiles.x(), tiles.y(), 1u }
+	);
+}

@@ -487,6 +487,22 @@ auto gse::ide::markdown::scan(const std::string_view line, const std::size_t fro
 				continue;
 			}
 		}
+		if (line[i] == '_' && i + 1 < to && line[i + 1] != '_' && line[i + 1] != ' ' && (i == 0 || !syntax::is_ident_char(line[i - 1]))) {
+			const std::size_t close = line.find('_', i + 1);
+			const bool detached = close != std::string_view::npos
+				&& close < to
+				&& line[close - 1] != ' '
+				&& (close + 1 >= line.size() || !syntax::is_ident_char(line[close + 1]));
+			if (detached) {
+				flush(i);
+				out.push_back({ .start = i, .end = i + 1, .tone = kind::emphasis, .part = role::marker });
+				scan(line, i + 1, close, kind::emphasis, context, out);
+				out.push_back({ .start = close, .end = close + 1, .tone = kind::emphasis, .part = role::marker });
+				i = close + 1;
+				plain = i;
+				continue;
+			}
+		}
 		if (line[i] == '[') {
 			const std::size_t close = line.find(']', i + 1);
 			if (close != std::string_view::npos && line.compare(close + 1, 1, "(") == 0) {

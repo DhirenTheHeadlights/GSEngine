@@ -75,25 +75,25 @@ export namespace gse::gpu {
 		template <typename Entry>
 		auto dispatch(
 			const entry_push_constants_t<Entry>& pc,
-			const binding_args<entry_bindings_pack_t<Entry>>& args,
+			const entry_binding_args<Entry>& args,
 			vec3u groups
 		) -> void;
 
 		template <typename Entry>
 		auto dispatch(
-			const binding_args<entry_bindings_pack_t<Entry>>& args,
+			const entry_binding_args<Entry>& args,
 			vec3u groups
 		) -> void;
 
 		template <typename Entry>
 		auto push_bindings(
 			const entry_push_constants_t<Entry>& pc,
-			const binding_args<entry_bindings_pack_t<Entry>>& args
+			const entry_binding_args<Entry>& args
 		) -> void;
 
 		template <typename Entry>
 		auto push_bindings(
-			const binding_args<entry_bindings_pack_t<Entry>>& args
+			const entry_binding_args<Entry>& args
 		) -> void;
 
 		auto dispatch_indirect(
@@ -232,7 +232,7 @@ export namespace gse::gpu {
 		const transient_pool* m_transient_pool = nullptr;
 		device* m_device = nullptr;
 		std::vector<touched_resource> m_touched;
-		std::unordered_map<const void*, access_track> m_last_access;
+		std::unordered_map<std::uint64_t, access_track> m_last_access;
 		std::vector<memory_barrier> m_pending_memory_barriers;
 		std::uint64_t m_access_generation = 0;
 		bool m_repeat_barrier_pending = false;
@@ -308,18 +308,9 @@ export namespace gse::gpu {
 
 		template <typename Entry>
 		auto register_bindless_usage(
-			const binding_args<entry_bindings_pack_t<Entry>>& args,
+			const entry_binding_args<Entry>& args,
 			pipeline_stage_flags stages
 		) -> void;
-
-		template <typename T, typename Args>
-		auto register_one_bindless(
-			const Args& args,
-			pipeline_stage_flags stages
-		) -> void;
-
-		template <typename Args, typename T>
-		static consteval auto bindless_member_for() -> std::meta::info;
 
 		auto apply_dynamic_state(
 			const dynamic_pipeline_state& s
@@ -329,80 +320,38 @@ export namespace gse::gpu {
 	};
 }
 
-template <typename Args, typename T>
-consteval auto gse::gpu::recording_context::bindless_member_for() -> std::meta::info {
-	for (const auto m : std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked())) {
-		if (std::meta::identifier_of(m) == std::meta::identifier_of(^^T)) {
-			return m;
-		}
-	}
-	return std::meta::info{};
-}
-
 namespace gse::gpu {
-	template <typename Pack>
-	constexpr char binding_pack_tag_v = 0;
+	template <typename Args>
+	constexpr char binding_args_tag_v = 0;
 
-	template <typename T>
-	consteval auto binding_access_contribution() -> access_flags;
+	template <shaders::is_shader_binding T>
+	consteval auto binding_access_of() -> access_flags;
 
-	template <typename... Ts>
-	consteval auto binding_union_access(
-		type_pack<Ts...>
-	) -> access_flags;
+	template <typename Args>
+	consteval auto binding_union_access() -> access_flags;
 }
 
-template <typename T>
-consteval auto gse::gpu::binding_access_contribution() -> access_flags {
-	constexpr auto dtype = descriptor_type_v<T>;
-	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image;
-	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
-		if constexpr (descriptor_access_v<T> == descriptor_access::read_write) {
-			return access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write };
-		}
-		else if constexpr (is_image) {
-			return access_flags{ access_flag::shader_sampled_read };
-		}
-		else {
-			return access_flags{ access_flag::shader_storage_read };
-		}
-	}
-	else {
-		return access_flags{};
-	}
+template <gse::shaders::is_shader_binding T>
+consteval auto gse::gpu::binding_access_of() -> access_flags {
+	constexpr auto info = shaders::binding_info_v<T>;
+	return access_flags{ info.read, info.write };
 }
 
-template <typename... Ts>
-consteval auto gse::gpu::binding_union_access(type_pack<Ts...>) -> access_flags {
+template <typename Args>
+consteval auto gse::gpu::binding_union_access() -> access_flags {
 	access_flags acc{};
-	((acc |= binding_access_contribution<Ts>()), ...);
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^Args, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		acc |= binding_access_of<member_t>();
+	}
 	return acc;
 }
 
-template <typename T, typename Args>
-auto gse::gpu::recording_context::register_one_bindless(const Args& args, const pipeline_stage_flags stages) -> void {
-	constexpr auto dtype = descriptor_type_v<T>;
-	constexpr bool is_image = dtype == descriptor_type::sampled_image
-		|| dtype == descriptor_type::storage_image;
-	constexpr bool is_buffer = dtype == descriptor_type::storage_buffer;
-	if constexpr ((is_image || is_buffer) && !is_bindless_table_v<T>) {
-		constexpr std::meta::info member = bindless_member_for<Args, T>();
-		const resource_ref ref = m_device->resource_for_slot(args.[:member:].index);
-		if (ref.ptr) {
-			const auto access = (descriptor_access_v<T> == descriptor_access::read_write)
-				? access_flags{ access_flag::shader_storage_read, access_flag::shader_storage_write }
-				: access_flags{ is_image ? access_flag::shader_sampled_read : access_flag::shader_storage_read };
-			note_touched(ref, stages, access);
-		}
-	}
-}
-
 template <typename Entry>
-auto gse::gpu::recording_context::register_bindless_usage(const binding_args<entry_bindings_pack_t<Entry>>& args, const pipeline_stage_flags stages) -> void {
-	constexpr auto union_access = binding_union_access(entry_bindings_pack_t<Entry>{});
-	const void* pack_tag = &binding_pack_tag_v<entry_bindings_pack_t<Entry>>;
+auto gse::gpu::recording_context::register_bindless_usage(const entry_binding_args<Entry>& args, const pipeline_stage_flags stages) -> void {
+	using args_t = entry_binding_args<Entry>;
+	constexpr auto union_access = binding_union_access<args_t>();
+	const void* pack_tag = &binding_args_tag_v<args_t>;
 
 	if constexpr (sizeof(args) <= binding_cache_capacity) {
 		if (m_binding_repeat_valid
@@ -414,9 +363,13 @@ auto gse::gpu::recording_context::register_bindless_usage(const binding_args<ent
 		}
 	}
 
-	[&]<typename... Ts>(type_pack<Ts...>) {
-		(register_one_bindless<Ts>(args, stages), ...);
-	}(entry_bindings_pack_t<Entry>{});
+	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^args_t, std::meta::access_context::unchecked()))) {
+		using member_t = [:std::meta::type_of(m):];
+		constexpr auto access = binding_access_of<member_t>();
+		if constexpr (access) {
+			note_touched(m_device->resource_for_slot(args.[:m:].index), stages, access);
+		}
+	}
 
 	if constexpr (sizeof(args) <= binding_cache_capacity) {
 		std::memcpy(m_last_binding_bytes.data(), &args, sizeof(args));
@@ -430,7 +383,7 @@ auto gse::gpu::recording_context::register_bindless_usage(const binding_args<ent
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) -> void {
+auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& pc, const entry_binding_args<Entry>& args, const vec3u groups) -> void {
 	push_data(pc, 0);
 	push_data(args, sizeof(entry_push_constants_t<Entry>));
 	register_bindless_usage<Entry>(args, pipeline_stage_flag::compute_shader);
@@ -438,21 +391,21 @@ auto gse::gpu::recording_context::dispatch(const entry_push_constants_t<Entry>& 
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::dispatch(const binding_args<entry_bindings_pack_t<Entry>>& args, const vec3u groups) -> void {
+auto gse::gpu::recording_context::dispatch(const entry_binding_args<Entry>& args, const vec3u groups) -> void {
 	push_data(args, 0);
 	register_bindless_usage<Entry>(args, pipeline_stage_flag::compute_shader);
 	dispatch(groups.x(), groups.y(), groups.z());
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::push_bindings(const entry_push_constants_t<Entry>& pc, const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
+auto gse::gpu::recording_context::push_bindings(const entry_push_constants_t<Entry>& pc, const entry_binding_args<Entry>& args) -> void {
 	push_data(pc, 0);
 	push_data(args, sizeof(entry_push_constants_t<Entry>));
 	register_bindless_usage<Entry>(args, bound_shader_stages());
 }
 
 template <typename Entry>
-auto gse::gpu::recording_context::push_bindings(const binding_args<entry_bindings_pack_t<Entry>>& args) -> void {
+auto gse::gpu::recording_context::push_bindings(const entry_binding_args<Entry>& args) -> void {
 	push_data(args, 0);
 	register_bindless_usage<Entry>(args, bound_shader_stages());
 }

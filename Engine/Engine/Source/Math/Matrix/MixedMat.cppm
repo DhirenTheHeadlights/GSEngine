@@ -107,7 +107,7 @@ constexpr gse::mixed_mat<ColSpec, RowSpec, T>::mixed_mat(const mat<T, N, N>& raw
 template <typename ColSpec, typename RowSpec, typename T>
 template <std::size_t Col, std::size_t Row>
 constexpr auto gse::mixed_mat<ColSpec, RowSpec, T>::at() const -> element_t<Col, Row> {
-	return element_t<Col, Row>(static_cast<const base&>(*this)[Col][Row]);
+	return internal::from_storage<element_t<Col, Row>>(static_cast<const base&>(*this)[Col][Row]);
 }
 
 template <typename ColSpec, typename RowSpec, typename T>
@@ -137,7 +137,7 @@ requires(N == 4 && std::same_as<col_t<0>, col_t<1>> && std::same_as<col_t<1>, co
 {
 	const auto v4 = static_cast<const base&>(*this) *
 		vec4f{ internal::to_storage(p.x()), internal::to_storage(p.y()), internal::to_storage(p.z()), T(1) };
-	return { row_t<0>(v4[0]), row_t<0>(v4[1]), row_t<0>(v4[2]) };
+	return { internal::from_storage<row_t<0>>(v4[0]), internal::from_storage<row_t<0>>(v4[1]), internal::from_storage<row_t<0>>(v4[2]) };
 }
 
 template <typename ColSpec, typename RowSpec, typename T>

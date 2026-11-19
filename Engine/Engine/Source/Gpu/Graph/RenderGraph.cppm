@@ -9,13 +9,14 @@ import gse.gpu_backend;
 import gse.log;
 import gse.math;
 import gse.meta;
-import gse.nsight_perf;
+import gse.gpu_profile;
 import gse.time;
 import std;
 
 import :command_contract;
 import :device;
 import :frame;
+import :frame_output;
 import :graph_channel;
 import :swap_chain;
 import :transient_pool;
@@ -62,6 +63,7 @@ export namespace gse::gpu {
 		std::vector<resource_usage> reads;
 		std::vector<resource_usage> writes;
 		std::vector<id> after_passes;
+		std::vector<id> extends;
 		id chain_id;
 		std::uint32_t chain_index = 0;
 		bool early_signal = false;
@@ -141,13 +143,33 @@ export namespace gse::gpu {
 			bool enabled
 		) -> void;
 
-		auto set_swapchain_clear(
+		auto set_output_clear(
 			color_clear value,
 			load_op op = load_op::clear
 		) -> void;
 
-		auto set_offscreen_target(
-			const image* target
+		auto set_offscreen_output(
+			const offscreen_output_desc& desc
+		) -> std::expected<void, std::string>;
+
+		auto clear_offscreen_output() -> void;
+
+		[[nodiscard]] auto has_output() const -> bool;
+
+		[[nodiscard]] auto output_ready() const -> bool;
+
+		[[nodiscard]] auto wait_output_ready(
+			time timeout
+		) const -> bool;
+
+		auto claim_output() -> bool;
+
+		[[nodiscard]] auto exported_output() const -> std::optional<gpu::exported_output>;
+
+		using resize_callback = std::function<void()>;
+
+		auto on_resize(
+			resize_callback callback
 		) -> void;
 
 		[[nodiscard]] auto current_frame() const -> std::uint32_t;
@@ -163,6 +185,12 @@ export namespace gse::gpu {
 		[[nodiscard]] auto extent(
 			id window
 		) const -> vec2u;
+
+		[[nodiscard]] auto allocated_extent() const -> vec2u;
+
+		[[nodiscard]] auto screen_uv_scale() const -> vec2f;
+
+		[[nodiscard]] auto screen_uv_max() const -> vec2f;
 
 		[[nodiscard]] auto depth_image(
 			this auto& self
@@ -208,6 +236,8 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto take_graphics_buffers() -> std::vector<command_buffer_handle>;
 
+		[[nodiscard]] auto take_graphics_leading_buffers() -> std::vector<command_buffer_handle>;
+
 	private:
 		static constexpr std::uint32_t max_profiled_passes = 128;
 		static constexpr std::uint32_t stats_per_pass = 4;
@@ -233,7 +263,7 @@ export namespace gse::gpu {
 		};
 
 		struct perf_frame {
-			nsight_perf::sample_window samples;
+			gpu_profile::sample_window samples;
 			std::span<const std::string> metrics;
 			time_t<double> sampler_to_cpu;
 			time_t<double> interval;
@@ -247,6 +277,8 @@ export namespace gse::gpu {
 		) -> std::uint64_t;
 
 		auto open_perf_frame() -> perf_frame;
+
+		auto prune_perf_samples() -> void;
 
 		auto ingest_perf_metrics(
 			const perf_frame& perf,
@@ -270,12 +302,20 @@ export namespace gse::gpu {
 			std::span<const render_pass_data> passes
 		) -> void;
 
-		auto recreate_framebuffer_images() -> void;
+		auto resize_surface() -> void;
+
+		[[nodiscard]] auto default_output() const -> frame_output;
+
+		auto release_output() -> void;
 
 		auto create_framebuffer_image(
 			const framebuffer_image_desc& desc,
 			std::string_view tag
 		) -> image;
+
+		[[nodiscard]] auto screen_allocated(
+			const image* img
+		) const -> bool;
 
 		struct registered_image {
 			framebuffer_image_desc desc;
@@ -290,8 +330,10 @@ export namespace gse::gpu {
 		static int s_live_count;
 
 		device* m_device;
-		swap_chain* m_swapchain;
 		frame* m_frame;
+		frame_output m_output;
+		image m_depth;
+		std::vector<resize_callback> m_resize_callbacks;
 		gpu::transient_pool m_transient_pool;
 		std::unordered_map<id, std::unique_ptr<registered_image>> m_framebuffer_images;
 		interval_timer<> m_graph_report{ seconds(5.f) };
@@ -313,6 +355,7 @@ export namespace gse::gpu {
 		std::vector<semaphore_submit_info> m_pending_graphics_extra_waits;
 		std::vector<semaphore_submit_info> m_pending_graphics_extra_signals;
 		std::vector<command_buffer_handle> m_pending_graphics_buffers;
+		std::vector<command_buffer_handle> m_pending_graphics_leading_buffers;
 		std::set<std::pair<id, id>> m_warned_ambiguous_pairs;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_queue_cycles;
 		std::set<std::pair<std::size_t, std::size_t>> m_warned_dropped_waits;
@@ -320,10 +363,12 @@ export namespace gse::gpu {
 		std::unordered_map<id, std::vector<id>> m_perf_metric_ids;
 		std::vector<double> m_perf_metric_means;
 		std::vector<std::size_t> m_perf_metric_counts;
+		std::vector<time_t<std::uint64_t>> m_perf_sample_times;
+		std::vector<double> m_perf_sample_values;
+		std::optional<time_t<double>> m_perf_read_floor;
 		std::uint64_t m_perf_session_generation = 0;
-		color_clear m_swapchain_clear{};
-		load_op m_swapchain_load = load_op::clear;
-		const image* m_offscreen_target = nullptr;
+		color_clear m_output_clear{};
+		load_op m_output_load = load_op::clear;
 	};
 }
 
@@ -334,7 +379,7 @@ auto gse::gpu::render_graph::framebuffer_image(this auto& self) -> auto& {
 }
 
 auto gse::gpu::render_graph::depth_image(this auto& self) -> auto& {
-	return self.m_swapchain->depth_image();
+	return (self.m_depth);
 }
 
 auto gse::gpu::render_graph::transient_pool(this auto& self) -> auto& {

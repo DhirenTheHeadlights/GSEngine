@@ -593,7 +593,7 @@ auto gse::ide::draw_pill(const gui::draw_context& ctx, const rectf& row, const f
 	const bool hovered = ctx.hovers(cell);
 	ctx.queue_sprite({
 		.rect = cell,
-		.color = active ? ctx.style.color_tab_active : (hovered ? ctx.style.color_tab_hovered : ctx.style.color_tab_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = active }.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = row,
 		.corner_radius = ctx.style.corner_radius,
@@ -701,7 +701,7 @@ auto gse::ide::draw_header(gui::builder& ui, const rectf& outer, profile_view_st
 auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rect, const std::deque<captured_frame>& frames, profile_view_state& state) -> void {
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.style.color_input_background,
+		.color = ctx.style.input.area.fill,
 		.texture = ctx.blank_texture,
 	});
 	if (frames.empty() || rect.width() <= 0.f) {
@@ -710,13 +710,12 @@ auto gse::ide::draw_history_strip(const gui::draw_context& ctx, const rectf& rec
 
 	const time_t<double> budget = milliseconds(1000.0 / 60.0);
 
-	if (ctx.hovers(rect) && !ctx.is_scroll_consumed()) {
-		const vec2f wheel = ctx.scroll_delta();
+	if (ctx.hovers(rect)) {
+		const vec2f wheel = ctx.scroll_delta_for(rect, gui::scroll_axis_kind::vertical);
 		if (std::abs(wheel.y()) > 0.001f) {
 			const std::size_t shown = state.strip_visible == 0 ? frames.size() : state.strip_visible;
 			const double scaled = static_cast<double>(shown) * (wheel.y() > 0.f ? 0.8 : 1.25);
 			state.strip_visible = std::clamp(static_cast<std::size_t>(scaled + 0.5), min_strip_frames, frames.size());
-			ctx.consume_scroll();
 		}
 	}
 
@@ -824,7 +823,7 @@ auto gse::ide::draw_flame(gui::draw_context& ctx, const rectf& rect, const captu
 			const bool hovered = ctx.hovers(bar);
 			if (hovered) {
 				state.hovered = n.id;
-				color = ctx.style.color_widget_hovered;
+				color = ctx.style.list_item.surfaces.hot.fill;
 			}
 			if (n.id == state.selected) {
 				color = ctx.style.color_accent;
@@ -970,7 +969,7 @@ auto gse::ide::draw_row_section(const gui::draw_context& ctx, const rectf& rect,
 		if (row.id == state.selected) {
 			ctx.queue_sprite({
 				.rect = line,
-				.color = ctx.style.color_widget_selected,
+				.color = ctx.style.list_item.surfaces.selected.fill,
 				.texture = ctx.blank_texture,
 				.clip_rect = rect,
 			});
@@ -1210,7 +1209,7 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 
 	ctx.queue_sprite({
 		.rect = rect,
-		.color = ctx.style.color_panel_alt,
+		.color = ctx.style.panel_alt.fill,
 		.texture = ctx.blank_texture,
 	});
 
@@ -1260,7 +1259,7 @@ auto gse::ide::draw_detail(const gui::draw_context& ctx, const rectf& rect, cons
 	const bool hovered = ctx.hovers(button);
 	ctx.queue_sprite({
 		.rect = button,
-		.color = active ? ctx.style.color_tab_active : (hovered ? ctx.style.color_button_hovered : ctx.style.color_button_background),
+		.color = gui::interaction::press{ .hovered = hovered, .selected = active }.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = rect,
 		.corner_radius = ctx.style.corner_radius,

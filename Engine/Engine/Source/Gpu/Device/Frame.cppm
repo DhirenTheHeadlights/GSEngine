@@ -9,8 +9,21 @@ import :present_pacer;
 import gse.gpu_backend;
 import gse.os;
 import gse.core;
+import gse.diag;
+import gse.log;
 
 export namespace gse::gpu {
+	enum class present_target_stage : std::uint8_t {
+		presenting,
+		minimized [[
+			= entered_from({ presenting })
+		]],
+		awaiting_restore [[
+			= entered_from({ minimized }),
+			= returns_to({ presenting, minimized })
+		]],
+	};
+
 	struct present_target {
 		id window_id;
 		swap_chain* swapchain = nullptr;
@@ -19,9 +32,7 @@ export namespace gse::gpu {
 		std::uint32_t image_index = 0;
 		std::uint64_t next_present_id = 1;
 		std::array<std::uint64_t, max_frames_in_flight> present_ids_in_flight{};
-		bool minimized_last = false;
-		std::uint64_t minimized_frames = 0;
-		bool restore_pending = false;
+		lifecycle<present_target_stage> stage{ "present_target", log::category::render };
 		bool acquired = false;
 	};
 
@@ -86,16 +97,25 @@ export namespace gse::gpu {
 
 		[[nodiscard]] auto frame_in_progress() const -> bool;
 
+		auto apply_pending_resizes() -> void;
+
 		auto begin() -> std::expected<frame_token, frame_status>;
 
 		auto end(
 			std::span<const queue_submission> aux_submissions = {},
 			std::span<const semaphore_submit_info> extra_graphics_waits = {},
 			std::span<const command_buffer_handle> graphics_buffers = {},
-			std::span<const semaphore_submit_info> extra_graphics_signals = {}
+			std::span<const semaphore_submit_info> extra_graphics_signals = {},
+			std::span<const command_buffer_handle> graphics_leading_buffers = {},
+			std::span<const semaphore_submit_info> graphics_leading_waits = {}
 		) -> void;
 
 	private:
+		enum class recreate_cause : std::uint8_t {
+			window_resize,
+			swapchain_invalid,
+		};
+
 		frame(
 			swapchain_sync<device>&& s,
 			frame_fences<device>&& fences,
@@ -104,7 +124,8 @@ export namespace gse::gpu {
 		);
 
 		auto recreate_resources(
-			present_target& t
+			present_target& t,
+			recreate_cause cause
 		) -> expected<void>;
 
 		auto recreate_surface(

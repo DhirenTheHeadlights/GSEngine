@@ -61,10 +61,16 @@ export namespace gse::asset {
 		data& d
 	) -> asset_result;
 
+	template <typename T>
+	auto bake_catalog() -> asset_result;
+
 	struct missing_built_in {
 		std::string tag;
 		std::filesystem::path resolved;
 	};
+
+	template <typename T>
+	auto bake_missing_built_ins() -> void;
 
 	template <typename T>
 	auto collect_missing_built_ins(
@@ -100,6 +106,8 @@ export namespace gse::asset {
 
 		auto verify_built_ins() -> void;
 
+		static auto bake_all() -> asset_result;
+
 	private:
 		data* m_data;
 	};
@@ -111,27 +119,11 @@ export namespace gse::asset {
 template <gse::asset::has_compile_path T>
 auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::filesystem::path& dst) -> asset_result {
 	typename T::baked b{};
-	try {
-		if (!bake(src, b)) {
-			return std::unexpected(asset_error{
-				.code = asset_error_code::load_failure,
-				.path = src,
-				.detail = "Asset compiler rejected the source file"
-			});
-		}
-	}
-	catch (const std::exception& error) {
+	if (!bake(src, b)) {
 		return std::unexpected(asset_error{
 			.code = asset_error_code::load_failure,
 			.path = src,
-			.detail = error.what()
-		});
-	}
-	catch (...) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::load_failure,
-			.path = src,
-			.detail = "Asset compiler failed"
+			.detail = "Asset compiler rejected the source file"
 		});
 	}
 	auto written = write_baked(dst, b);
@@ -144,38 +136,75 @@ auto gse::asset::bake_to_disk(const std::filesystem::path& src, const std::files
 
 template <gse::asset::has_compile_path T>
 auto gse::asset::needs_recompile(const std::filesystem::path& src, const std::filesystem::path& dst) -> std::expected<bool, asset_error> {
-	try {
-		if (!std::filesystem::exists(dst)) {
-			return true;
+	const auto io_failure = [](const std::filesystem::path& path, const std::error_code& ec) {
+		return std::unexpected(asset_error{
+			.code = asset_error_code::io_failure,
+			.path = path,
+			.detail = ec.message()
+		});
+	};
+
+	std::error_code ec;
+	if (!std::filesystem::exists(dst, ec)) {
+		if (ec) {
+			return io_failure(dst, ec);
 		}
-		constexpr auto fmt = format_of<typename T::baked>();
-		const auto dst_time = std::filesystem::last_write_time(dst);
-		if (std::filesystem::last_write_time(src) > dst_time) {
-			return true;
-		}
-		if constexpr (fmt.meta_sidecar) {
-			const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
-			if (std::filesystem::exists(meta) && std::filesystem::last_write_time(meta) > dst_time) {
+		return true;
+	}
+	constexpr auto fmt = format_of<typename T::baked>();
+	const auto dst_time = std::filesystem::last_write_time(dst, ec);
+	if (ec) {
+		return io_failure(dst, ec);
+	}
+	const auto src_time = std::filesystem::last_write_time(src, ec);
+	if (ec) {
+		return io_failure(src, ec);
+	}
+	if (src_time > dst_time) {
+		return true;
+	}
+	if constexpr (fmt.meta_sidecar) {
+		const auto meta = src.parent_path() / (src.stem().native_encoded_string() + ".meta");
+		if (std::filesystem::exists(meta, ec)) {
+			const auto meta_time = std::filesystem::last_write_time(meta, ec);
+			if (ec) {
+				return io_failure(meta, ec);
+			}
+			if (meta_time > dst_time) {
 				return true;
 			}
 		}
-		std::ifstream in(dst, std::ios::binary);
-		if (!in.is_open()) {
-			return true;
+		else if (ec) {
+			return io_failure(meta, ec);
 		}
-		std::uint32_t header[3]{};
-		in.read(reinterpret_cast<char*>(header), sizeof(header));
-		if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
-			return true;
-		}
-		return false;
 	}
-	catch (const std::filesystem::filesystem_error& error) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = error.path1(),
-			.detail = error.what()
-		});
+	std::ifstream in(dst, std::ios::binary);
+	if (!in.is_open()) {
+		return true;
+	}
+	std::uint32_t header[3]{};
+	in.read(reinterpret_cast<char*>(header), sizeof(header));
+	if (!in.good() || header[0] != fmt.magic || header[1] != fmt.version || header[2] != archive_format_epoch) {
+		return true;
+	}
+	return false;
+}
+
+template <typename T>
+auto gse::asset::bake_missing_built_ins() -> void {
+	if constexpr (has_compile_path<T>) {
+		constexpr auto fmt = format_of<typename T::baked>();
+		for (const std::string_view file : fmt.built_ins) {
+			const std::filesystem::path source_file(file);
+			const auto baked = config::baked_resource_path() / fmt.baked_dir / (source_file.stem().native_encoded_string() + std::string(fmt.baked_ext));
+			const auto source = config::resource_path() / fmt.source_dir / source_file;
+			if (std::filesystem::exists(baked) || !std::filesystem::exists(source)) {
+				continue;
+			}
+			if (const auto baked_now = bake_to_disk<T>(source, baked); !baked_now) {
+				log::println(log::level::error, log::category::assets, "Built-in {} failed to bake: {}", source_file.generic_display_string(), baked_now.error().detail);
+			}
+		}
 	}
 }
 
@@ -210,6 +239,7 @@ auto gse::asset::collect_missing_built_ins(std::vector<missing_built_in>& out) -
 
 template <typename... Ts>
 auto gse::asset::system<Ts...>::verify_built_ins() -> void {
+	(bake_missing_built_ins<Ts>(), ...);
 	std::vector<missing_built_in> missing;
 	(collect_missing_built_ins<Ts>(missing), ...);
 
@@ -308,6 +338,28 @@ auto gse::asset::fail_if_stale(const std::filesystem::path& baked_path) -> asset
 }
 
 template <typename T>
+auto gse::asset::bake_catalog() -> asset_result {
+	if constexpr (!has_compile_path<T>) {
+		return {};
+	}
+	else {
+		auto catalog = catalog_for<T>();
+		if (!catalog) {
+			return std::unexpected(std::move(catalog.error()));
+		}
+		for (const catalog_record& record : *catalog) {
+			if (!record.source_path) {
+				continue;
+			}
+			if (auto baked = recompile_if_stale<T>(record.baked_path); !baked) {
+				return baked;
+			}
+		}
+		return {};
+	}
+}
+
+template <typename T>
 auto gse::asset::discover_baked(data& d) -> asset_result {
 	if constexpr (!loadable<T> || !has_baked_asset<T>) {
 		return {};
@@ -328,7 +380,7 @@ auto gse::asset::discover_baked(data& d) -> asset_result {
 
 template <typename T>
 auto gse::asset::setup_hot_reload_for(data& d) -> void {
-	if constexpr (!has_compile_path<T>) {
+	if constexpr (!has_compile_path<T> || !loadable<T>) {
 		return;
 	}
 	else {
@@ -356,28 +408,12 @@ auto gse::asset::setup_hot_reload_for(data& d) -> void {
 						);
 						return;
 					}
-					auto baked = bake_to_disk<T>(changed_file, dst);
-					if (baked) {
-						log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().generic_display_string());
-						if constexpr (loadable<T>) {
-							if (auto it = d.resource_loaders.find(id_of<T>()); it != d.resource_loaders.end()) {
-								if (auto registered = register_by_path<T>(d, dst); !registered) {
-									log::println(
-										log::level::warning,
-										log::category::assets,
-										"Hot reload failed to queue resource: {}",
-										registered.error().detail
-									);
-								}
-							}
-						}
-					}
-					else {
+					if (auto registered = register_by_path<T>(d, dst); !registered) {
 						log::println(
 							log::level::warning,
 							log::category::assets,
-							"Hot reload failed to recompile: {}",
-							baked.error().detail
+							"Hot reload failed to queue resource: {}",
+							registered.error().detail
 						);
 					}
 				},
@@ -435,6 +471,20 @@ auto gse::asset::system<Ts...>::discover_baked() -> asset_result {
 		result = asset::discover_baked<T>(*m_data);
 	};
 	(discover_one.template operator()<Ts>(), ...);
+	return result;
+}
+
+template <typename... Ts>
+auto gse::asset::system<Ts...>::bake_all() -> asset_result {
+	asset_result result{};
+	auto bake_one = [&result]<typename T>() {
+		if (!result) {
+			return;
+		}
+		result = bake_catalog<T>();
+	};
+	(bake_one.template operator()<Ts>(), ...);
+	(bake_missing_built_ins<Ts>(), ...);
 	return result;
 }
 

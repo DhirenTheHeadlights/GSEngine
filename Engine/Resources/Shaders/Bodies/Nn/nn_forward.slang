@@ -14,7 +14,12 @@ void nn_forward(uint3 group_id, uint3 group_thread_id) {
     uint w3t = nn_w3t_off(pc.param_count, in_dim);
 
     if (active && j < in_dim) {
-        gs_x[j] = nn_inputs[pc.input_offset + sample * in_dim + j];
+        float x = nn_inputs[pc.input_offset + sample * in_dim + j];
+        if (nn_norm_on != 0) {
+            float centered = x - nn_inputs[nn_norm_offset + j];
+            x = clamp(centered * nn_inputs[nn_norm_offset + in_dim + j], -nn_norm_clip, nn_norm_clip);
+        }
+        gs_x[j] = x;
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -45,6 +50,6 @@ void nn_forward(uint3 group_id, uint3 group_thread_id) {
         for (uint k = 0; k < nn_hidden; ++k) {
             acc += nn_state[w3t + k * out_dim + j] * gs_a2[k];
         }
-        nn_scratch[nn_out_off + sample * out_dim + j] = acc;
+        nn_scratch[nn_out_off + sample * out_dim + j] = pc.mode == 0 ? nn_bounded_mean(j, acc) : acc;
     }
 }

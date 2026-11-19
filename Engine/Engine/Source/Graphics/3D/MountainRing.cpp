@@ -131,17 +131,17 @@ auto gse::mountain_ring_submesh(const std::vector<vertex>& vertices, const std::
 	};
 }
 
-auto gse::build_mountain_ring_meshes(const primitive_mountain_ring_spec& spec) -> std::vector<mesh_data> {
-	const auto angular = std::max(spec.angular_segments, 3u);
-	const auto radial = std::max(spec.radial_segments, 2u);
-	const auto cells = std::max(spec.ridge_cells, 1u);
-	const auto radial_cells = std::max(spec.radial_cells, 1u);
-	const auto massif_cells = std::max(spec.massif_cells, 1u);
-	const float massif_depth = std::clamp(spec.massif_depth, 0.0f, 1.0f);
-	const auto octaves = std::max(spec.octaves, 1u);
+auto gse::build_mountain_ring_meshes(const mountain_ring_shape& shape) -> std::vector<mesh_data> {
+	const auto angular = std::max(shape.angular_segments, 3u);
+	const auto radial = std::max(shape.radial_segments, 2u);
+	const auto cells = std::max(shape.ridge_cells, 1u);
+	const auto radial_cells = std::max(shape.radial_cells, 1u);
+	const auto massif_cells = std::max(shape.massif_cells, 1u);
+	const float massif_depth = std::clamp(shape.massif_depth, 0.0f, 1.0f);
+	const auto octaves = std::max(shape.octaves, 1u);
 	const auto stride = radial + 1;
-	const auto span = spec.outer_radius - spec.inner_radius;
-	const float ridge_base = std::clamp(spec.ridge_base, 0.0f, 1.0f);
+	const auto span = shape.outer_radius - shape.inner_radius;
+	const float ridge_base = std::clamp(shape.ridge_base, 0.0f, 1.0f);
 
 	std::vector<vertex> vertices;
 	vertices.reserve(static_cast<std::size_t>(angular) * stride);
@@ -154,18 +154,18 @@ auto gse::build_mountain_ring_meshes(const primitive_mountain_ring_spec& spec) -
 		const angle theta = degrees(360.0f) * around;
 		const float cos_theta = cos(theta);
 		const float sin_theta = sin(theta);
-		const float massif = mountain_ring_noise(around * static_cast<float>(massif_cells), 0.5f, massif_cells, spec.seed + 613u);
+		const float massif = mountain_ring_noise(around * static_cast<float>(massif_cells), 0.5f, massif_cells, shape.seed + 613u);
 		const float massif_scale = (1.0f - massif_depth) + massif_depth * massif;
 
 		for (const auto j : std::views::iota(0u, stride)) {
 			const float across = static_cast<float>(j) / static_cast<float>(radial);
-			const length radius = spec.inner_radius + span * across;
+			const length radius = shape.inner_radius + span * across;
 			const angle sweep = degrees(180.0f) * across;
 			const float falloff = std::pow(sin(sweep), 0.8f);
-			const float ridge = mountain_ring_ridge(around * static_cast<float>(cells), across * static_cast<float>(radial_cells), cells, spec.seed, octaves);
+			const float ridge = mountain_ring_ridge(around * static_cast<float>(cells), across * static_cast<float>(radial_cells), cells, shape.seed, octaves);
 			const float relief = ridge_base + (1.0f - ridge_base) * ridge;
 			const float rise = falloff * relief * massif_scale;
-			const length height = spec.peak_height * rise;
+			const length height = shape.peak_height * rise;
 
 			vertices.push_back({
 				.position = vec3<length>(radius * cos_theta, height, radius * sin_theta),
@@ -215,8 +215,8 @@ auto gse::build_mountain_ring_meshes(const primitive_mountain_ring_spec& spec) -
 		vertices[v].normal = length_of > 0.0f ? accumulated[v] / length_of : vec3f(0.0f, 1.0f, 0.0f);
 	}
 
-	const float snow_line = std::clamp(spec.snow_line, 0.0f, 1.0f);
-	const float snow_slope = std::clamp(spec.snow_slope, 0.0f, 1.0f);
+	const float snow_line = std::clamp(shape.snow_line, 0.0f, 1.0f);
+	const float snow_slope = std::clamp(shape.snow_slope, 0.0f, 1.0f);
 
 	std::vector<std::uint32_t> rock_indices;
 	std::vector<std::uint32_t> snow_indices;
@@ -236,14 +236,14 @@ auto gse::build_mountain_ring_meshes(const primitive_mountain_ring_spec& spec) -
 	}
 
 	const material rock_surface{
-		.base_color = spec.material.base_color,
-		.roughness = spec.material.roughness,
-		.metallic = spec.material.metallic,
+		.base_color = shape.surface.base_color,
+		.roughness = shape.surface.roughness,
+		.metallic = shape.surface.metallic,
 	};
 
 	const material snow_surface{
-		.base_color = spec.snow_color,
-		.roughness = spec.snow_roughness,
+		.base_color = shape.snow_color,
+		.roughness = shape.snow_roughness,
 		.metallic = 0.0f,
 	};
 

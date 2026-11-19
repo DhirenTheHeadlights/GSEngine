@@ -8,6 +8,11 @@ import gse.ide.build;
 import :model;
 
 namespace gse::ide::agent {
+	struct pending_crash {
+		std::filesystem::path path;
+		std::string record;
+	};
+
 	auto note_source_change(
 		session& s,
 		const std::filesystem::path& file,
@@ -28,7 +33,19 @@ namespace gse::ide::agent {
 		const session& s
 	) -> bool;
 
-	auto mid_write(
+	auto parked(
+		const session& s
+	) -> bool;
+
+	auto edit_settle() -> time;
+
+	auto editing_tree(
+		const session& s
+	) -> bool;
+
+	auto blocks_builds(
+		const data& d,
+		const queued_build& queued,
 		const session& s
 	) -> bool;
 
@@ -51,6 +68,14 @@ namespace gse::ide::agent {
 		agent_state state
 	) -> state_style;
 
+	auto style_of(
+		chat_kind kind
+	) -> kind_style;
+
+	auto look_of(
+		const session& s
+	) -> chat_look;
+
 	auto status_label(
 		const data& d,
 		const session& s
@@ -64,6 +89,20 @@ namespace gse::ide::agent {
 		data& d,
 		const build_runner::source_changed& change
 	) -> void;
+
+	auto refresh_build_times(
+		data& d
+	) -> void;
+
+	auto built_through(
+		const data& d,
+		id key
+	) -> std::int64_t;
+
+	auto edits_built(
+		const data& d,
+		const session& s
+	) -> bool;
 
 	auto refresh_stale(
 		data& d
@@ -87,7 +126,25 @@ namespace gse::ide::agent {
 	struct blame_match {
 		session* owner = nullptr;
 		bool at_line = false;
+		std::filesystem::path via;
 	};
+
+	auto trim_blank(
+		std::string_view text
+	) -> std::string_view;
+
+	auto declared_module(
+		std::span<const std::string> lines
+	) -> std::string;
+
+	auto imported_modules(
+		std::span<const std::string> lines
+	) -> std::vector<std::string>;
+
+	auto dependency_owner(
+		data& d,
+		const std::filesystem::path& file
+	) -> blame_match;
 
 	auto blame_owner(
 		data& d,
@@ -97,6 +154,31 @@ namespace gse::ide::agent {
 	auto attribute_build_errors(
 		data& d,
 		const build_runner::build_finished& finished,
+		channel_write<blame_offer> offers
+	) -> void;
+
+	auto inquiry_patience() -> time;
+
+	auto inquiry_candidates(
+		data& d
+	) -> std::vector<session*>;
+
+	auto inquiry_prompt(
+		std::span<const blamed_error> errors
+	) -> std::string;
+
+	auto start_inquiry(
+		data& d,
+		build_runner::stream_kind kind,
+		std::uint32_t run
+	) -> std::uint32_t;
+
+	auto cancel_inquiry(
+		data& d
+	) -> void;
+
+	auto service_inquiry(
+		data& d,
 		channel_write<blame_offer> offers
 	) -> void;
 
@@ -123,7 +205,8 @@ namespace gse::ide::agent {
 	auto hold_for(
 		const data& d,
 		const queued_build& queued,
-		bool building
+		bool building,
+		bool game_attached
 	) -> build_hold_state;
 
 	auto blocker_name(
@@ -174,6 +257,10 @@ namespace gse::ide::agent {
 		std::string_view id
 	) -> void;
 
+	auto retire_dispatch(
+		data& d
+	) -> void;
+
 	auto hand_off_builds(
 		data& d,
 		bool relaunching
@@ -181,6 +268,23 @@ namespace gse::ide::agent {
 
 	auto accept_hibernations(
 		data& d
+	) -> bool;
+
+	auto claimed_session(
+		data& d,
+		std::string_view agent,
+		const std::filesystem::path& cwd
+	) -> session*;
+
+	auto resume_with(
+		session& s,
+		std::string message,
+		std::optional<transcript_row> shown = std::nullopt
+	) -> void;
+
+	auto wake_session(
+		session& s,
+		std::string_view lead
 	) -> void;
 
 	auto wake_observers(
@@ -188,15 +292,28 @@ namespace gse::ide::agent {
 		const build_runner::build_finished& finished
 	) -> void;
 
+	auto wake_covered(
+		data& d
+	) -> void;
+
+	auto resume_interrupted(
+		data& d
+	) -> void;
+
 	auto hibernating_count(
 		const data& d
 	) -> std::size_t;
 
+	auto nudge_unclosed_phases(
+		data& d
+	) -> void;
+
 	auto poll_build_inbox(
 		data& d,
 		channel_write<build_runner::build_request> builds,
-		bool building
-	) -> void;
+		bool building,
+		bool game_attached
+	) -> bool;
 
 	auto publish_inbox_result(
 		data& d,
@@ -209,8 +326,27 @@ namespace gse::ide::agent {
 	) -> void;
 
 	auto fix_unclaimed(
+		data& d,
+		std::span<const std::string> denied = {}
+	) -> void;
+
+	auto triage_crashes(
 		data& d
 	) -> void;
+
+	auto record_field(
+		std::string_view record,
+		std::string_view key
+	) -> std::string_view;
+
+	auto crash_prompt(
+		std::span<const pending_crash> reports
+	) -> std::string;
+
+	auto set_aside(
+		const std::filesystem::path& report,
+		std::string_view suffix
+	) -> std::filesystem::path;
 
 	auto blame_label(
 		const session& s
@@ -221,9 +357,9 @@ namespace gse::ide::agent {
 		std::span<const blamed_error> errors
 	) -> std::string;
 
-	auto arm_retry(
-		session& s
-	) -> void;
+	auto describe_errors(
+		std::span<const blamed_error> errors
+	) -> std::string;
 
 	auto link_delay(
 		const data& d

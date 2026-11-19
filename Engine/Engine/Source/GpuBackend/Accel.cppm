@@ -76,6 +76,7 @@ export namespace gse::gpu {
 		acceleration_structure_type type = acceleration_structure_type::bottom_level;
 		build_acceleration_structure_flags flags;
 		build_acceleration_structure_mode mode = build_acceleration_structure_mode::build;
+		acceleration_structure src;
 		acceleration_structure dst;
 		std::span<const acceleration_structure_geometry> geometries;
 		device_address scratch_address = 0;

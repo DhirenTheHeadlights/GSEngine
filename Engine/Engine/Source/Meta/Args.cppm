@@ -3,25 +3,34 @@ export module gse.meta:args;
 import std;
 
 import :annotations;
+import :enums;
 import :parse;
 import :settings_anno;
 
 export namespace gse {
 	template <typename Config>
-	auto parse_args(
-		int argc,
-		char** argv,
-		std::vector<std::string>& passed
-	) -> Config;
+	struct parsed_args {
+		Config config;
+		std::vector<std::string> passed;
+	};
 
 	template <typename Config>
 	auto parse_args(
 		int argc,
 		char** argv
-	) -> Config;
+	) -> parsed_args<Config>;
+
+	template <typename Config>
+	auto parse_args(
+		std::span<const std::string> words
+	) -> parsed_args<Config>;
 }
 
 namespace gse {
+	auto expand_arg_files(
+		std::span<const std::string> words
+	) -> std::vector<std::string>;
+
 	template <typename T>
 	concept arg_value_parseable = requires(std::string_view raw, T v) {
 		{ parser<T>::parse(raw, v) } -> std::same_as<bool>; };
@@ -160,19 +169,19 @@ auto gse::arg_edit_distance(const std::string_view a, const std::string_view b) 
 }
 
 auto gse::print_arg_usage(const std::span<const arg_flag_info> flags) -> void {
-	std::cout << "options:\n";
+	std::println("options:");
 	for (const auto& info : flags) {
 		if (info.value_hint.empty()) {
-			std::cout << std::format("  {}\n", info.flag);
+			std::println("  {}", info.flag);
 		}
 		else {
-			std::cout << std::format("  {} {}\n", info.flag, info.value_hint);
+			std::println("  {} {}", info.flag, info.value_hint);
 		}
 	}
 }
 
 auto gse::fail_unrecognized_arg(const std::string_view arg, const std::span<const arg_flag_info> flags) -> void {
-	std::cerr << std::format("error: unrecognized command-line argument '{}'\n", arg);
+	std::println(std::cerr, "error: unrecognized command-line argument '{}'", arg);
 
 	constexpr std::size_t max_distance = 3;
 	constexpr std::size_t max_suggestions = 5;
@@ -193,9 +202,9 @@ auto gse::fail_unrecognized_arg(const std::string_view arg, const std::span<cons
 		near.push_back(candidate);
 	}
 	if (!near.empty()) {
-		std::cerr << "did you mean:\n";
+		std::println(std::cerr, "did you mean:");
 		for (const auto candidate : near) {
-			std::cerr << std::format("  {}\n", candidate);
+			std::println(std::cerr, "  {}", candidate);
 		}
 	}
 	else {
@@ -272,7 +281,7 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 			if constexpr (arg_is_valued<F>) {
 				if (arg == positive) {
 					if (i + 1 >= argc) {
-						std::cerr << std::format("error: {} expects a value {}\n", positive, arg_value_hint<F>());
+						std::println(std::cerr, "error: {} expects a value {}", positive, arg_value_hint<F>());
 						outcome = arg_match::bad_value;
 					}
 					else if (F tmp = cfg.[:m:]; parse(argv[i + 1], tmp)) {
@@ -282,12 +291,19 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 						outcome = arg_match::consumed;
 					}
 					else {
-						std::cerr << std::format(
-							"error: {} could not parse '{}'; expected {}\n",
+						std::println(
+							std::cerr,
+							"error: {} could not parse '{}'; expected {}",
 							positive,
 							argv[i + 1],
 							arg_value_hint<F>()
 						);
+						if constexpr (std::is_enum_v<F>) {
+							std::println(std::cerr, "valid names:");
+							for (const auto value : enum_values<F>()) {
+								std::println(std::cerr, "  {}", enum_to_string(value));
+							}
+						}
 						outcome = arg_match::bad_value;
 					}
 				}
@@ -300,12 +316,54 @@ auto gse::try_match_arg(Config& cfg, const std::string_view prefix, const int ar
 	return outcome;
 }
 
+auto gse::expand_arg_files(const std::span<const std::string> words) -> std::vector<std::string> {
+	std::vector<std::string> out;
+	for (const std::string& word : words) {
+		if (!word.starts_with('@')) {
+			out.push_back(word);
+			continue;
+		}
+		const std::filesystem::path path(word.substr(1));
+		std::ifstream file(path);
+		if (!file) {
+			std::println(std::cerr, "error: cannot read argument file '{}'", path.generic_display_string());
+			std::exit(2);
+		}
+		std::vector<std::string> nested;
+		for (std::string line; std::getline(file, line);) {
+			std::istringstream tokens(line);
+			for (std::string token; tokens >> token;) {
+				if (token.starts_with('#')) {
+					break;
+				}
+				nested.push_back(std::move(token));
+			}
+		}
+		std::ranges::move(expand_arg_files(nested), std::back_inserter(out));
+	}
+	return out;
+}
+
 template <typename Config>
-auto gse::parse_args(const int argc, char** argv, std::vector<std::string>& passed) -> Config {
+auto gse::parse_args(const int argc, char** argv) -> parsed_args<Config> {
+	const std::vector<std::string> words(argv + std::min(argc, 1), argv + argc);
+	return parse_args<Config>(words);
+}
+
+template <typename Config>
+auto gse::parse_args(const std::span<const std::string> words) -> parsed_args<Config> {
+	std::vector<std::string> expanded = expand_arg_files(words);
+	std::vector<char*> pointers{ nullptr };
+	for (std::string& word : expanded) {
+		pointers.push_back(word.data());
+	}
+	const int argc = static_cast<int>(pointers.size());
+	char** argv = pointers.data();
+
 	std::vector<arg_flag_info> flags;
 	collect_arg_flags<Config>({}, flags);
 
-	Config result{};
+	parsed_args<Config> result{};
 	int i = 1;
 	while (i < argc) {
 		const std::string_view arg(argv[i]);
@@ -313,9 +371,9 @@ auto gse::parse_args(const int argc, char** argv, std::vector<std::string>& pass
 			print_arg_usage(flags);
 			std::exit(0);
 		}
-		switch (try_match_arg(result, {}, argc, argv, i)) {
+		switch (try_match_arg(result.config, {}, argc, argv, i)) {
 			case arg_match::consumed:
-				passed.emplace_back(arg);
+				result.passed.emplace_back(arg);
 				break;
 			case arg_match::bad_value:
 				std::exit(2);
@@ -324,10 +382,4 @@ auto gse::parse_args(const int argc, char** argv, std::vector<std::string>& pass
 		}
 	}
 	return result;
-}
-
-template <typename Config>
-auto gse::parse_args(const int argc, char** argv) -> Config {
-	std::vector<std::string> passed;
-	return parse_args<Config>(argc, argv, passed);
 }

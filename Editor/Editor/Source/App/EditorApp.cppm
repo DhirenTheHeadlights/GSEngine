@@ -15,11 +15,13 @@ import gse.ide.profile;
 import gse.ide.project;
 import gse.ide.search;
 import gse.ide.search_panel;
+import gse.ide.source_control;
 import gse.ide.terminal;
 import gse.ide.viewport;
 import gse.ide.workspace;
 import std;
 
+import :brand;
 import :chrome;
 import :code_panel;
 import :dock;
@@ -40,6 +42,10 @@ export namespace gse::ide {
 		build_runner::play_session shape;
 		std::optional<game_capture_request> capture;
 		std::optional<std::uint32_t> captured;
+		std::array<vec2u, build_runner::max_attached_instances> desired_extents{};
+		std::array<vec2u, build_runner::max_attached_instances> settling_extents{};
+		std::array<vec2u, build_runner::max_attached_instances> sent_extents{};
+		deadline_timer resize_settle;
 	};
 
 	struct pending_popout {
@@ -51,7 +57,7 @@ export namespace gse::ide {
 		struct [[= system_state<"Editor">{}]] data {
 			bool initialized = false;
 			bool screen_pushed = false;
-			std::vector<dock_view> views;
+			[[= shared]] std::vector<dock_view> views;
 			std::optional<dock_drag> drag;
 			id drag_window;
 			std::optional<id> cursor_window;
@@ -60,25 +66,26 @@ export namespace gse::ide {
 			std::vector<dock_migration> pending_migrations;
 			std::optional<vec2f> pending_panels_menu;
 			id panels_menu_window;
+			id panels_menu_panel;
+			[[= shared]] shelf_view shelf;
+			std::optional<id> pending_shelf_toggle;
 			cursor_shape frame_cursor = cursor_shape::arrow;
-			bool layout_dirty = false;
 			bool game_panel_open = false;
-			std::optional<dock_anchor> game_anchor;
+			std::unordered_map<id, dock_anchor> anchors;
 			std::string session_error;
 			bool session_dismissed = false;
 			std::vector<dock_popout> popout_queue;
 			std::vector<dock_window_layout> pending_restores;
 			std::vector<pending_popout> pending_popouts;
 			std::vector<id> pending_window_closes;
-			clock save_clock;
 		};
 
 		[[= system_run<>{}]]
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in,
-			channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out,
+			channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in,
+			channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, window_popout_request, window_close_request, window_focus_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out,
 			shared_view<search_system::data> search_d,
 			shared_view<input::data> input_d,
 			shared_view<window::data> window_d,
@@ -86,42 +93,45 @@ export namespace gse::ide {
 			const save::registry& save_reg
 		) -> async::task<>;
 
-		[[= system_shutdown{}]]
-		auto shutdown(
-			data& d
+		[[= system_persist{}]]
+		auto persist(
+			const data& d
 		) -> void;
 	}
 
 	namespace workspace_system {
 		struct [[= system_state<"Workspace">{}]] data {
-			workspace::data ws;
-			graph_data graph;
+			[[= shared]] workspace::data ws;
+			[[= shared]] graph_data graph;
 			std::uint32_t graph_game_gen = 0;
 			std::uint32_t graph_pending_gen = 0;
 			std::uint32_t graph_load_attempts = 0;
-			clock graph_load_clock;
-			quick_search_state search;
-			problems_view_state problems;
-			search_panel_state search_panel;
-			lint_panel_state lint_panel;
-			git::status_snapshot git_status;
+			interval_timer<> graph_load_timer{ milliseconds(100.f) };
+			[[= shared]] quick_search_state search;
+			[[= shared]] problems_view_state problems;
+			[[= shared]] search_panel_state search_panel;
+			[[= shared]] lint_panel_state lint_panel;
+			[[= shared]] source_control_state source_control;
+			[[= shared]] git::status_snapshot git_status;
 			std::vector<std::filesystem::path> git_rootless;
+			[[= shared]] bool git_busy = false;
+			[[= shared]] std::string git_action_error;
+			[[= shared]] std::string engine_pin;
 			bool initialized = false;
 			bool cursor_capture_sent = false;
 			bool profile_capture_sent = false;
 			bool game_was_running = false;
 			profile_source profile_source_sent = profile_source::editor;
 			bool game_input_forwarding = false;
-			session_view_state session_view;
-			clock save_clock;
+			[[= shared]] session_view_state session_view;
 		};
 
 		[[= system_run<>{}]]
 		auto run(
 			context& ctx,
 			data& d,
-			channel_read<git::status_updated, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
-			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
+			channel_read<git::status_updated, agent::sync_finished, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in,
+			channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::sync_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out,
 			const scheduler& sched,
 			shared_view<config_system::data> config_d,
 			shared_view<search_system::data> search_d,
@@ -132,11 +142,18 @@ export namespace gse::ide {
 			shared_view<profile_system::data> profile_d
 		) -> async::task<>;
 
+		[[= system_persist{}]]
+		auto persist(
+			const data& d
+		) -> void;
+
 		[[= system_shutdown{}]]
 		auto shutdown(
 			data& d
 		) -> void;
 	}
+
+	[[nodiscard]] auto editor_panels() -> std::span<const panel_desc>;
 }
 
 namespace gse::ide {
@@ -149,15 +166,14 @@ namespace gse::ide {
 	constexpr std::string_view search_panel_name = "Search";
 	constexpr std::string_view lint_panel_name = "Lints";
 	constexpr std::string_view game_panel_name = "Game";
-	constexpr std::string_view game_anchor_section = "game panel";
 	constexpr std::string_view server_quadrant_name = "Server";
 	constexpr std::array<std::string_view, 3> client_quadrant_names{ "Client 1", "Client 2", "Client 3" };
 	constexpr float server_strip_ratio = 0.25f;
-	constexpr time editor_layout_save_interval = seconds(30.f);
-	constexpr time system_graph_retry_interval = milliseconds(100.f);
 	constexpr std::uint32_t system_graph_max_attempts = 100;
 
 	constexpr std::uint32_t reset_layout_action = 0xFFFFFFFF;
+	constexpr std::uint32_t pin_action_base = 0xFFFFFFF0;
+	constexpr std::uint32_t unpin_action = 0xFFFFFFF8;
 
 	struct dock_input {
 		vec2f mouse;
@@ -172,10 +188,59 @@ namespace gse::ide {
 	[[nodiscard]] auto panels_context_tag() -> id;
 
 	[[nodiscard]] auto panels_menu_items(
-		const dock_tree& tree,
+		const editor_app::data& d,
+		const dock_view& v,
 		std::span<const panel_desc> panels,
-		bool resettable
+		id target
 	) -> std::vector<gui::menu_item>;
+
+	[[nodiscard]] auto hosts_panel(
+		const editor_app::data& d,
+		const dock_view& v,
+		id panel
+	) -> bool;
+
+	[[nodiscard]] auto can_pin_panel(
+		const editor_app::data& d,
+		const dock_view& v,
+		id panel
+	) -> bool;
+
+	auto pin_panel(
+		editor_app::data& d,
+		dock_view& v,
+		id panel,
+		gui::panel_edge edge
+	) -> void;
+
+	auto unpin_panel(
+		editor_app::data& d,
+		dock_view& v,
+		id panel
+	) -> void;
+
+	auto remove_from_shelf(
+		editor_app::data& d,
+		id panel
+	) -> void;
+
+	[[nodiscard]] auto shelf_flyout_ratio(
+		const editor_app::data& d,
+		id panel
+	) -> float;
+
+	auto close_panel(
+		editor_app::data& d,
+		dock_view& v,
+		id panel
+	) -> void;
+
+	auto reopen_panel(
+		editor_app::data& d,
+		dock_view& fallback,
+		const dock_insert& otherwise,
+		bool activate
+	) -> void;
 
 	auto toggle_panel(
 		editor_app::data& d,
@@ -183,13 +248,17 @@ namespace gse::ide {
 		id panel
 	) -> void;
 
+	auto reveal_panel(
+		editor_app::data& d,
+		const channel_write<window_focus_request>& ui_out,
+		std::string_view panel
+	) -> void;
+
 	auto apply_pending_panel_close(
 		gui::viewport_state& vp,
 		editor_app::data& d,
 		dock_view& v
 	) -> void;
-
-	[[nodiscard]] auto editor_panels() -> std::span<const panel_desc>;
 
 	[[nodiscard]] auto editor_dock_metrics(
 		const gui::style& sty
@@ -210,7 +279,8 @@ namespace gse::ide {
 	) -> dock_tree;
 
 	auto open_session_layout(
-		editor_app::data& d
+		editor_app::data& d,
+		bool activate
 	) -> void;
 
 	auto close_session_layout(
@@ -311,7 +381,7 @@ namespace gse::ide {
 		vec2u extent,
 		bool live,
 		const build_runner::server_status& server,
-		std::optional<std::uint32_t> captured
+		session_view_state& state
 	) -> std::optional<game_capture_request>;
 
 	auto draw_session_failure(
@@ -339,13 +409,16 @@ auto gse::ide::editor_panels() -> std::span<const panel_desc> {
 		panel_desc{
 			.id = find_or_generate_id(explorer_panel_name),
 			.name = explorer_panel_name,
+			.glyph = gui::symbol::folder,
 			.min_size = { 180.f, 160.f },
 			.accent_edge = gui::panel_edge::right,
 		},
 		panel_desc{
 			.id = find_or_generate_id(code_panel_name),
 			.name = code_panel_name,
+			.glyph = gui::symbol::file,
 			.min_size = { 320.f, 200.f },
+			.pinnable = false,
 		},
 		panel_desc{
 			.id = find_or_generate_id(agent::panel_name),
@@ -356,11 +429,13 @@ auto gse::ide::editor_panels() -> std::span<const panel_desc> {
 		panel_desc{
 			.id = find_or_generate_id(terminal::panel_name),
 			.name = terminal::panel_name,
+			.glyph = gui::symbol::terminal,
 			.min_size = { 260.f, 120.f },
 		},
 		panel_desc{
 			.id = find_or_generate_id(graph_panel_name),
 			.name = graph_panel_name,
+			.glyph = gui::symbol::project,
 			.min_size = { 320.f, 200.f },
 			.start_hidden = true,
 		},
@@ -379,6 +454,7 @@ auto gse::ide::editor_panels() -> std::span<const panel_desc> {
 		panel_desc{
 			.id = find_or_generate_id(problems_panel_name),
 			.name = problems_panel_name,
+			.glyph = gui::symbol::info,
 			.min_size = { 320.f, 120.f },
 			.start_hidden = true,
 		},
@@ -395,17 +471,24 @@ auto gse::ide::editor_panels() -> std::span<const panel_desc> {
 			.start_hidden = true,
 		},
 		panel_desc{
+			.id = find_or_generate_id(source_control_panel_name),
+			.name = source_control_panel_name,
+			.min_size = { 340.f, 160.f },
+			.start_hidden = true,
+		},
+		panel_desc{
 			.id = find_or_generate_id(game_panel_name),
 			.name = game_panel_name,
 			.min_size = { 360.f, 240.f },
 			.start_hidden = true,
 			.menu_hidden = true,
+			.pinnable = false,
 		},
 	};
 	return table;
 }
 
-auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::string_view title, const std::uint32_t instance, const bool building, const gpu::bindless_slot slot, const vec2u extent, const bool live, const build_runner::server_status& server, const std::optional<std::uint32_t> captured) -> std::optional<game_capture_request> {
+auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::string_view title, const std::uint32_t instance, const bool building, const gpu::bindless_slot slot, const vec2u extent, const bool live, const build_runner::server_status& server, session_view_state& state) -> std::optional<game_capture_request> {
 	const auto& ctx = ui.ctx;
 	const auto text_view = ctx.fonts.text.resolve();
 	const float font_sz = ctx.style.font_size;
@@ -415,7 +498,7 @@ auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::str
 	const rectf header = rectf::from_position_size(area.top_left(), { area.width(), std::min(header_h, area.height()) });
 	ctx.queue_sprite({
 		.rect = header,
-		.color = ctx.style.color_tab_background,
+		.color = ctx.style.tab.cell.idle.fill,
 		.texture = ctx.blank_texture,
 		.clip_rect = area,
 	});
@@ -428,8 +511,8 @@ auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::str
 		.clip_rect = header,
 	});
 
-	if (captured == instance) {
-		constexpr std::string_view release_hint = "Alt+Tab to release";
+	if (state.captured == instance) {
+		constexpr std::string_view release_hint = "Shift+F1 to release";
 		ctx.queue_text({
 			.font = ctx.fonts.text,
 			.text = release_hint,
@@ -446,6 +529,13 @@ auto gse::ide::draw_quadrant(gui::builder& ui, const rectf& area, const std::str
 	);
 	if (body.width() <= 0.f || body.height() <= 0.f) {
 		return std::nullopt;
+	}
+
+	if (instance < build_runner::max_attached_instances) {
+		state.desired_extents[instance] = {
+			static_cast<std::uint32_t>(std::max(1.f, body.width())),
+			static_cast<std::uint32_t>(std::max(1.f, body.height())),
+		};
 	}
 
 	if (building) {
@@ -546,7 +636,7 @@ auto gse::ide::draw_game_panel(gui::builder& ui, const rectf& area, session_view
 		draw_session_failure(ctx, area, error);
 		return;
 	}
-	if (!state.built || state.shape.clients != session.clients || state.shape.dedicated_server != session.dedicated_server) {
+	if (!state.built || build_runner::effective_clients(state.shape) != build_runner::effective_clients(session) || state.shape.dedicated_server != session.dedicated_server) {
 		state.tree = build_session_tree(session);
 		state.shape = session;
 		state.built = true;
@@ -587,7 +677,7 @@ auto gse::ide::draw_game_panel(gui::builder& ui, const rectf& area, session_view
 			instance < build_runner::max_attached_instances ? extents[instance] : vec2u{},
 			instance < build_runner::max_attached_instances ? live[instance] : false,
 			server,
-			state.captured
+			state
 		)) {
 			state.capture = *pressed;
 		}
@@ -611,7 +701,7 @@ auto gse::ide::editor_dock_metrics(const gui::style& sty) -> dock_metrics {
 }
 
 auto gse::ide::client_tile_count(const build_runner::play_session& session) -> std::size_t {
-	return std::clamp<std::size_t>(session.clients, 1, client_quadrant_names.size());
+	return std::clamp<std::size_t>(build_runner::effective_clients(session), 1, client_quadrant_names.size());
 }
 
 auto gse::ide::session_quadrants(const build_runner::play_session& session) -> std::vector<panel_desc> {
@@ -666,42 +756,20 @@ auto gse::ide::build_session_tree(const build_runner::play_session& session) -> 
 	return tree;
 }
 
-auto gse::ide::open_session_layout(editor_app::data& d) -> void {
-	dock_tree& tree = primary_view(d).tree;
-	const id game = find_or_generate_id(game_panel_name);
-	if (contains_panel(tree, game)) {
-		return;
-	}
-
-	const id anchored = d.game_anchor ? lowest_common_node(tree, d.game_anchor->panels) : id{};
-	if (anchored.exists()) {
-		insert_panel(tree, {
-			.panel = game,
-			.target = anchored,
-			.location = d.game_anchor->location,
-			.ratio = d.game_anchor->ratio,
-		});
-	}
-	else {
-		insert_panel(tree, {
-			.panel = game,
-			.target = any_leaf(tree),
-			.location = gui::dock::location::right,
-			.ratio = 0.5f,
-		});
-	}
-	activate_panel(tree, game);
-	d.layout_dirty = true;
+auto gse::ide::open_session_layout(editor_app::data& d, const bool activate) -> void {
+	reopen_panel(d, primary_view(d), {
+		.panel = find_or_generate_id(game_panel_name),
+		.target = any_leaf(primary_view(d).tree),
+		.location = gui::dock::location::right,
+		.ratio = 0.5f,
+	}, activate);
 }
 
 auto gse::ide::close_session_layout(editor_app::data& d) -> void {
-	dock_tree& tree = primary_view(d).tree;
-	const id game = find_or_generate_id(game_panel_name);
-	if (!contains_panel(tree, game)) {
-		return;
+	dock_view& primary = primary_view(d);
+	if (const id game = find_or_generate_id(game_panel_name); contains_panel(primary.tree, game)) {
+		close_panel(d, primary, game);
 	}
-	remove_panel(tree, game);
-	d.layout_dirty = true;
 }
 
 
@@ -741,39 +809,16 @@ auto gse::ide::load_editor_layout(editor_app::data& d) -> void {
 	});
 
 	d.pending_restores.clear();
-	d.game_anchor.reset();
-	for (const layout_store::section& section : sections) {
-		if (section.name != game_anchor_section) {
-			continue;
-		}
-		const auto panels_it = section.values.find("panels");
-		if (panels_it == section.values.end()) {
-			break;
-		}
-		const auto panels = editor_panels();
-		dock_anchor anchor;
-		for (const auto& part : std::views::split(std::string_view(panels_it->second), ',')) {
-			const auto desc = std::ranges::find(panels, std::string_view(part), &panel_desc::name);
-			if (desc != panels.end()) {
-				anchor.panels.push_back(desc->id);
-			}
-		}
-		if (anchor.panels.empty()) {
-			break;
-		}
-		if (const auto it = section.values.find("location"); it != section.values.end()) {
-			enum_from_string(it->second, anchor.location);
-		}
-		if (const auto it = section.values.find("ratio"); it != section.values.end()) {
-			anchor.ratio = std::clamp(parse_layout_float(it->second, 0.5f), 0.05f, 0.95f);
-		}
-		d.game_anchor = anchor;
-		break;
-	}
+	d.anchors = deserialize_anchors(sections, editor_panels());
 
 	if (!restored) {
 		return;
 	}
+
+	d.shelf.entries = deserialize_shelf(sections, editor_panels());
+	std::erase_if(d.shelf.entries, [&d](const dock_shelf_entry& entry) {
+		return contains_panel(d.views.front().tree, entry.panel);
+	});
 
 	std::vector<id> claimed = panels_of(d.views.front().tree);
 	for (dock_window_layout& window : deserialize_windows(sections, editor_panels())) {
@@ -809,24 +854,9 @@ auto gse::ide::save_editor_layout(const editor_app::data& d) -> void {
 		windows.push_back(pending);
 	}
 
-	std::string anchor;
-	if (d.game_anchor) {
-		std::string names;
-		for (const id panel : d.game_anchor->panels) {
-			if (!names.empty()) {
-				names.push_back(',');
-			}
-			names.append(panel.tag());
-		}
-		anchor.append(std::format("\n[{}]\n", game_anchor_section));
-		anchor.append(std::format("panels = {}\n", names));
-		anchor.append(std::format("location = {}\n", enum_to_string(d.game_anchor->location)));
-		anchor.append(std::format("ratio = {}\n", d.game_anchor->ratio));
-	}
-
 	replace_layout_sections(
 		editor_layout_owner(),
-		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels()) + anchor
+		serialize_tree(primary_view(d).tree, editor_panels(), primary_tree_sections()) + serialize_windows(windows, editor_panels()) + serialize_anchors(d.anchors, editor_panels()) + serialize_shelf(d.shelf.entries, editor_panels())
 	);
 }
 
@@ -859,22 +889,92 @@ auto gse::ide::panels_context_tag() -> id {
 	return find_or_generate_id("panels_context");
 }
 
-auto gse::ide::panels_menu_items(const dock_tree& tree, const std::span<const panel_desc> panels, const bool resettable) -> std::vector<gui::menu_item> {
+auto gse::ide::hosts_panel(const editor_app::data& d, const dock_view& v, const id panel) -> bool {
+	return contains_panel(v.tree, panel) || (!is_popout(v) && shelf_edge_of(d.shelf.entries, panel).has_value());
+}
+
+auto gse::ide::can_pin_panel(const editor_app::data& d, const dock_view& v, const id panel) -> bool {
+	const panel_desc* desc = panel_desc_for(editor_panels(), panel);
+	return desc
+		&& desc->pinnable
+		&& !is_popout(v)
+		&& contains_panel(v.tree, panel)
+		&& panel_count(v.tree) > 1;
+}
+
+auto gse::ide::shelf_flyout_ratio(const editor_app::data& d, const id panel) -> float {
+	const auto remembered = d.anchors.find(panel);
+	if (remembered == d.anchors.end() || remembered->second.location == gui::dock::location::center) {
+		return shelf_fallback_ratio;
+	}
+	return remembered->second.ratio;
+}
+
+auto gse::ide::pin_panel(editor_app::data& d, dock_view& v, const id panel, const gui::panel_edge edge) -> void {
+	if (!can_pin_panel(d, v, panel)) {
+		return;
+	}
+
+	close_panel(d, v, panel);
+	d.shelf.entries.push_back({ .panel = panel, .edge = edge });
+}
+
+auto gse::ide::remove_from_shelf(editor_app::data& d, const id panel) -> void {
+	std::erase_if(d.shelf.entries, [panel](const dock_shelf_entry& entry) {
+		return entry.panel == panel;
+	});
+	if (d.shelf.open && *d.shelf.open == panel) {
+		d.shelf.open.reset();
+	}
+}
+
+auto gse::ide::unpin_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
+	if (!shelf_edge_of(d.shelf.entries, panel)) {
+		return;
+	}
+
+	remove_from_shelf(d, panel);
+	reopen_panel(d, v, {
+		.panel = panel,
+		.target = any_leaf(v.tree),
+		.location = gui::dock::location::center,
+	}, true);
+}
+
+auto gse::ide::panels_menu_items(const editor_app::data& d, const dock_view& v, const std::span<const panel_desc> panels, const id target) -> std::vector<gui::menu_item> {
+	const bool resettable = !is_popout(v);
 	std::vector<gui::menu_item> items;
-	items.reserve(panels.size() + 1);
+	items.reserve(panels.size() + 6);
 
 	for (std::size_t i = 0; i < panels.size(); ++i) {
 		if (panels[i].menu_hidden) {
 			continue;
 		}
-		const bool visible = contains_panel(tree, panels[i].id);
+		const bool visible = hosts_panel(d, v, panels[i].id);
 		items.push_back({
 			.label = std::string(panels[i].name),
 			.action_id = static_cast<std::uint32_t>(i),
-			.enabled = !visible || panel_count(tree) > 1 || !resettable,
+			.enabled = !visible || panel_count(v.tree) > 1 || !resettable,
 			.checkable = true,
 			.checked = visible,
 		});
+	}
+
+	if (shelf_edge_of(d.shelf.entries, target)) {
+		items.push_back({
+			.label = std::format("Unpin {}", target.tag()),
+			.action_id = unpin_action,
+			.separator_before = true,
+		});
+	}
+	else if (can_pin_panel(d, v, target)) {
+		for (const gui::panel_edge edge : { gui::panel_edge::left, gui::panel_edge::right, gui::panel_edge::top, gui::panel_edge::bottom }) {
+			items.push_back({
+				.label = std::format("Pin {} to {}", target.tag(), enum_to_string(edge)),
+				.action_id = pin_action_base + static_cast<std::uint32_t>(edge),
+				.separator_before = edge == gui::panel_edge::left,
+			});
+		}
 	}
 
 	if (resettable) {
@@ -887,25 +987,100 @@ auto gse::ide::panels_menu_items(const dock_tree& tree, const std::span<const pa
 	return items;
 }
 
-auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
-	if (contains_panel(v.tree, panel)) {
-		if (panel_count(v.tree) <= 1 && !is_popout(v)) {
-			return;
-		}
-		remove_panel(v.tree, panel);
-		if (is_popout(v) && panel_count(v.tree) == 0) {
-			d.pending_window_closes.push_back(v.window);
+auto gse::ide::close_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
+	if (const std::optional<dock_anchor> anchor = anchor_of(v.tree, panel)) {
+		d.anchors.insert_or_assign(panel, *anchor);
+	}
+	remove_panel(v.tree, panel);
+	if (is_popout(v) && panel_count(v.tree) == 0) {
+		d.pending_window_closes.push_back(v.window);
+	}
+}
+
+auto gse::ide::reopen_panel(editor_app::data& d, dock_view& fallback, const dock_insert& otherwise, const bool activate) -> void {
+	const id panel = otherwise.panel;
+	if (std::ranges::any_of(d.views, [&d, panel](const dock_view& v) {
+		return hosts_panel(d, v, panel);
+	})) {
+		return;
+	}
+
+	const auto remembered = d.anchors.find(panel);
+	if (const std::optional<dock_anchor> anchor = remembered != d.anchors.end() ? std::optional(remembered->second) : anchor_of(default_editor_tree(), panel)) {
+		for (dock_view& v : d.views) {
+			if (const id target = lowest_common_node(v.tree, anchor->panels); target.exists()) {
+				insert_panel(v.tree, {
+					.panel = panel,
+					.target = target,
+					.location = anchor->location,
+					.ratio = anchor->ratio,
+				});
+				if (activate) {
+					activate_panel(v.tree, panel);
+				}
+				return;
+			}
 		}
 	}
-	else {
-		insert_panel(v.tree, {
+
+	insert_panel(fallback.tree, otherwise);
+	if (activate) {
+		activate_panel(fallback.tree, panel);
+	}
+}
+
+auto gse::ide::toggle_panel(editor_app::data& d, dock_view& v, const id panel) -> void {
+	if (shelf_edge_of(d.shelf.entries, panel)) {
+		remove_from_shelf(d, panel);
+		return;
+	}
+
+	if (!contains_panel(v.tree, panel)) {
+		reopen_panel(d, v, {
 			.panel = panel,
 			.target = any_leaf(v.tree),
 			.location = gui::dock::location::center,
-		});
-		activate_panel(v.tree, panel);
+		}, true);
 	}
-	d.layout_dirty = true;
+	else if (panel_count(v.tree) > 1 || is_popout(v)) {
+		close_panel(d, v, panel);
+	}
+}
+
+auto gse::ide::reveal_panel(editor_app::data& d, const channel_write<window_focus_request>& ui_out, const std::string_view panel) -> void {
+	const std::span<const panel_desc> registry = editor_panels();
+	assert(
+		std::ranges::contains(registry, panel, &panel_desc::name),
+		"a [[= gse::reveals]] annotation names '{}', which is not a panel in editor_panels(); fix the annotation's spelling",
+		panel
+	);
+
+	const id target = find_or_generate_id(panel);
+	if (shelf_edge_of(d.shelf.entries, target)) {
+		d.shelf.open = target;
+		ui_out.push<window_focus_request>({
+			.window = primary_view(d).window,
+		});
+		return;
+	}
+
+	const auto hosting = std::ranges::find_if(d.views, [target](const dock_view& v) {
+		return contains_panel(v.tree, target);
+	});
+	dock_view& host = hosting == d.views.end() ? primary_view(d) : *hosting;
+	if (hosting == d.views.end()) {
+		reopen_panel(d, host, {
+			.panel = target,
+			.target = any_leaf(host.tree),
+			.location = gui::dock::location::center,
+		}, true);
+	}
+	else {
+		activate_panel(host.tree, target);
+	}
+	ui_out.push<window_focus_request>({
+		.window = host.window,
+	});
 }
 
 auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::data& d, dock_view& v) -> void {
@@ -926,15 +1101,12 @@ auto gse::ide::apply_pending_panel_close(gui::viewport_state& vp, editor_app::da
 	}
 
 	vp.pending_tab_close.reset();
-	if (panel_count(v.tree) <= 1 && !is_popout(v)) {
-		return;
+	if (shelf_edge_of(d.shelf.entries, *panel)) {
+		remove_from_shelf(d, *panel);
 	}
-
-	remove_panel(v.tree, *panel);
-	if (is_popout(v) && panel_count(v.tree) == 0) {
-		d.pending_window_closes.push_back(v.window);
+	else if (panel_count(v.tree) > 1 || is_popout(v)) {
+		close_panel(d, v, *panel);
 	}
-	d.layout_dirty = true;
 }
 
 auto gse::ide::detach_panel_to_window(gui::viewport_state& vp, editor_app::data& d, dock_popout where) -> void {
@@ -1020,8 +1192,6 @@ auto gse::ide::apply_dock_landing(editor_app::data& d, dock_view& from, const do
 			d.pending_window_closes.push_back(from.window);
 		}
 	}
-
-	d.layout_dirty = true;
 }
 
 auto gse::ide::sync_dock_menus(gui::viewport_state& vp, editor_app::data& d, dock_view& v) -> void {
@@ -1075,6 +1245,25 @@ auto gse::ide::sync_dock_menus(gui::viewport_state& vp, editor_app::data& d, doc
 		live.push_back(host.id());
 	}
 
+	if (const std::optional<gui::panel_edge> edge = d.shelf.open && !is_popout(v) ? shelf_edge_of(d.shelf.entries, *d.shelf.open) : std::nullopt) {
+		const id panel = *d.shelf.open;
+		gui::menu& flyout = editor_menu(vp, panel.tag());
+		flyout.rect = shelf_body(v.shelf.inner, *edge, shelf_flyout_ratio(d, panel));
+		flyout.swap_parent(id());
+		flyout.docked_to = gui::dock::location::none;
+		flyout.fixed = true;
+		flyout.bare = false;
+		flyout.tab_contents.assign(1, std::string(panel.tag()));
+		flyout.active_tab_index = 0;
+		flyout.tabs_closeable = true;
+		flyout.accent_edge.reset();
+		if (const panel_desc* desc = panel_desc_for(panels, panel)) {
+			flyout.accent_edge = desc->accent_edge;
+		}
+		shown.push_back(panel);
+		live.push_back(flyout.id());
+	}
+
 	vp.suppressed_menus.clear();
 	for (const panel_desc& desc : panels) {
 		if (std::ranges::find(shown, desc.id) == shown.end()) {
@@ -1116,7 +1305,9 @@ auto gse::ide::resolve_view_layout(gui::data& s, gui::viewport_state& vp, editor
 
 	const dock_metrics metrics = editor_dock_metrics(sty);
 	v.metrics = metrics;
-	v.frame = rectf::from_position_size({ 0.f, top }, { viewport_size.x(), top });
+	const std::span<const dock_shelf_entry> shelved = is_popout(v) ? std::span<const dock_shelf_entry>{} : std::span(d.shelf.entries);
+	v.shelf = shelf_bands(rectf::from_position_size({ 0.f, top }, { viewport_size.x(), top }), shelved, shelf_band_thickness(sty));
+	v.frame = v.shelf.inner;
 
 	apply_pending_panel_close(vp, d, v);
 	v.layout = resolve(v.tree, v.frame, metrics, editor_panels());
@@ -1152,7 +1343,6 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 			v.tree.maximized = node->panels[node->active_panel];
 		}
 		v.layout = resolve(v.tree, v.frame, metrics, panels);
-		d.layout_dirty = true;
 	}
 
 	if (d.pending_panels_menu && d.panels_menu_window == v.window) {
@@ -1160,10 +1350,29 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 			.open = true,
 			.just_opened = true,
 			.position = *d.pending_panels_menu,
-			.items = panels_menu_items(v.tree, panels, !is_popout(v)),
+			.items = panels_menu_items(d, v, panels, d.panels_menu_panel),
 			.tag = panels_context_tag(),
 		};
 		d.pending_panels_menu.reset();
+	}
+
+	const std::optional<gui::panel_edge> open_edge = d.shelf.open && !is_popout(v)
+		? shelf_edge_of(d.shelf.entries, *d.shelf.open)
+		: std::nullopt;
+	const rectf flyout = open_edge
+		? shelf_body(v.shelf.inner, *open_edge, shelf_flyout_ratio(d, *d.shelf.open))
+		: rectf{};
+
+	if (d.pending_shelf_toggle && !is_popout(v)) {
+		const id toggled = *d.pending_shelf_toggle;
+		d.pending_shelf_toggle.reset();
+		if (d.shelf.open && *d.shelf.open == toggled) {
+			d.shelf.open.reset();
+		}
+		else if (shelf_edge_of(d.shelf.entries, toggled)) {
+			d.shelf.open = toggled;
+			editor_menu(vp, toggled.tag()).z_order = ++vp.next_z_order;
+		}
 	}
 
 	vp.active_dock_space.reset();
@@ -1211,7 +1420,7 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 		else if (d.drag->torn && !d.cursor_window && panel_count(v.tree) > carried.size()) {
 			dock_tree detached;
 			for (const id panel : carried) {
-				remove_panel(v.tree, panel);
+				close_panel(d, v, panel);
 				insert_panel(detached, { .panel = panel });
 			}
 			activate_panel(detached, d.drag->panel);
@@ -1224,7 +1433,6 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 					static_cast<int>(std::max(v.frame.height() * 0.5f, 320.f)),
 				},
 			});
-			d.layout_dirty = true;
 		}
 
 		v.layout = resolve(v.tree, v.frame, metrics, panels);
@@ -1234,21 +1442,39 @@ auto gse::ide::update_dock_interaction(gui::data& s, gui::viewport_state& vp, ed
 	}
 
 	const std::optional<gui::layout::split_axis> held_axis = dragging_axis(v.tree);
+	const bool over_floating = !vp.input_layers_data.input_available_at(render_layer::overlay, std::numeric_limits<std::uint32_t>::max(), in.mouse);
+	const bool over_shelf = v.shelf.contains(in.mouse) || (open_edge && flyout.contains(in.mouse)) || over_floating;
 
-	if (in.context_pressed && !blocked) {
+	if (in.pressed && !blocked && d.shelf.open && !over_shelf) {
+		d.shelf.open.reset();
+	}
+
+	if (in.context_pressed && !blocked && open_edge && flyout.contains(in.mouse)) {
+		const gui::menu& host = editor_menu(vp, d.shelf.open->tag());
+		const rectf header = rectf::from_position_size(flyout.top_left(), { flyout.width(), gui::menu_chrome_height(s.fonts, host, sty, flyout.width()) });
+		if (header.contains(in.mouse)) {
+			d.pending_panels_menu = in.mouse;
+			d.panels_menu_window = v.window;
+			d.panels_menu_panel = *d.shelf.open;
+		}
+	}
+
+	if (in.context_pressed && !blocked && !over_shelf) {
 		for (const dock_placement& leaf : v.layout.leaves) {
 			const dock_node* node = v.tree.nodes.try_get(leaf.node);
 			const gui::menu& host = editor_menu(vp, node->panels.front().tag());
 			const rectf header = rectf::from_position_size(leaf.rect.top_left(), { leaf.rect.width(), gui::menu_chrome_height(s.fonts, host, sty, leaf.rect.width()) });
 			if (header.contains(in.mouse)) {
+				const std::optional<std::uint32_t> tab = gui::tab_index_at(s.fonts, host, sty, header, in.mouse);
 				d.pending_panels_menu = in.mouse;
 				d.panels_menu_window = v.window;
+				d.panels_menu_panel = node->panels[tab.value_or(node->active_panel)];
 				break;
 			}
 		}
 	}
 
-	if (in.pressed && !blocked && !held_axis) {
+	if (in.pressed && !blocked && !held_axis && !over_shelf) {
 		for (const dock_placement& leaf : v.layout.leaves) {
 			const dock_node* node = v.tree.nodes.try_get(leaf.node);
 			const gui::menu& host = editor_menu(vp, node->panels.front().tag());
@@ -1338,11 +1564,17 @@ auto gse::ide::forward_game_input(const input::state& input, const channel_write
 	}
 }
 
-auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in, const channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, window_popout_request, window_close_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
+auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_open_file_result, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, gui::context_menu_result, window_opened, window_popout_failed, window_closed, window_resized, window_moved, window_cursor_located> requests_in, const channel_write<gui::push_screen_request, settings::change_request, settings::override_request, gui::popout_toggle, set_cursor_shape_request, jump_to_request, window_launcher_mode_request, window_open_file_request, build_runner::build_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request, window_popout_request, window_close_request, window_focus_request, window_locate_cursor_request, gui::menu_migrate_request, build_runner::stop_session_request> ui_out, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<window::data> window_d, const shared_view<build_runner::data> build_d, const save::registry& save_reg) -> async::task<> {
 	if (!d.screen_pushed && search_d.index) {
+		ui_out.push<settings::change_request>({
+			.state_type = id_of<gui::data>(),
+			.apply = [](void* p) {
+				static_cast<gui::data*>(p)->icon_source = brand::window_icon;
+			},
+		});
 		ui_out.push<gui::push_screen_request>({
-			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request>(ui_out), index = search_d.index] {
-				return std::make_unique<editor_screen>(channels, index, id());
+			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request>(ui_out), index = search_d.index, shelf = &d.shelf] {
+				return std::make_unique<editor_screen>(channels, index, shelf, editor_panels(), id());
 			},
 		});
 		if (!project::opened()) {
@@ -1390,7 +1622,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			return {};
 		}
 		load_editor_layout(d);
-		d.save_clock.reset();
 		d.initialized = true;
 	}
 
@@ -1415,14 +1646,9 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 	}
 
 	if (!d.session_dismissed && (session_live || build_d.building_session || !d.session_error.empty())) {
-		open_session_layout(d);
+		open_session_layout(d, !build_d.agent_session);
 	}
 	d.game_panel_open = contains_panel(primary_view(d).tree, find_or_generate_id(game_panel_name));
-	if (d.game_panel_open) {
-		if (const auto anchor = anchor_of(primary_view(d).tree, find_or_generate_id(game_panel_name))) {
-			d.game_anchor = anchor;
-		}
-	}
 
 	if (!session_live && !build_d.building_session && d.session_error.empty()) {
 		close_session_layout(d);
@@ -1455,8 +1681,8 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			.window_size = req.size,
 		});
 		ui_out.push<gui::push_screen_request>({
-			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request>(ui_out), index = search_d.index, window = req.id] {
-				return std::make_unique<editor_screen>(channels, index, window);
+			.factory = [channels = channel_write<build_runner::build_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request, open_panels_menu_request, shelf_toggle_request>(ui_out), index = search_d.index, shelf = &d.shelf, window = req.id] {
+				return std::make_unique<editor_screen>(channels, index, shelf, editor_panels(), window);
 			},
 			.window = req.id,
 		});
@@ -1466,7 +1692,6 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 				return std::ranges::find(opened, panel) != opened.end();
 			});
 		});
-		d.layout_dirty = true;
 	}
 
 	for (const auto& req : requests_in.of<window_popout_failed>()) {
@@ -1485,26 +1710,29 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			std::erase_if(d.pending_restores, [panel](const dock_window_layout& pending) {
 				return contains_panel(pending.tree, panel);
 			});
-			if (contains_panel(primary_view(d).tree, panel)) {
-				continue;
-			}
-			insert_panel(primary_view(d).tree, {
+			reopen_panel(d, primary_view(d), {
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
-			});
-			activate_panel(primary_view(d).tree, panel);
+			}, true);
 		}
-		d.layout_dirty = true;
 	}
 
+	std::vector<id> minimized;
 	for (const auto& req : requests_in.of<window_resized>()) {
+		if (req.size.x() <= 0 || req.size.y() <= 0) {
+			minimized.push_back(req.id);
+			continue;
+		}
 		if (dock_view* view = find_view(d, req.id)) {
 			view->window_size = req.size;
 		}
 	}
 
 	for (const auto& req : requests_in.of<window_moved>()) {
+		if (std::ranges::contains(minimized, req.id)) {
+			continue;
+		}
 		if (dock_view* view = find_view(d, req.id)) {
 			view->window_position = req.position;
 		}
@@ -1541,19 +1769,22 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		const std::vector<id> orphans = panels_of(view->tree);
 		d.views.erase(view);
 		for (const id panel : orphans) {
-			insert_panel(primary_view(d).tree, {
+			reopen_panel(d, primary_view(d), {
 				.panel = panel,
 				.target = {},
 				.location = gui::dock::location::center,
-			});
-			activate_panel(primary_view(d).tree, panel);
+			}, true);
 		}
-		d.layout_dirty = true;
 	}
 
 	for (const auto& req : requests_in.of<open_panels_menu_request>()) {
 		d.pending_panels_menu = req.position;
 		d.panels_menu_window = req.window;
+		d.panels_menu_panel.reset();
+	}
+
+	for (const auto& req : requests_in.of<shelf_toggle_request>()) {
+		d.pending_shelf_toggle = req.panel;
 	}
 
 	const std::span<const panel_desc> registry = editor_panels();
@@ -1566,12 +1797,23 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 			continue;
 		}
 		if (res.action_id == reset_layout_action) {
+			d.shelf.entries.clear();
+			d.shelf.open.reset();
 			scope->tree = default_editor_tree();
-			d.layout_dirty = true;
+		}
+		else if (res.action_id == unpin_action) {
+			unpin_panel(d, *scope, d.panels_menu_panel);
+		}
+		else if (res.action_id >= pin_action_base && res.action_id <= pin_action_base + static_cast<std::uint32_t>(gui::panel_edge::bottom)) {
+			pin_panel(d, *scope, d.panels_menu_panel, static_cast<gui::panel_edge>(res.action_id - pin_action_base));
 		}
 		else if (res.action_id < registry.size()) {
 			toggle_panel(d, *scope, registry[res.action_id].id);
 		}
+	}
+
+	for (const std::string_view panel : ctx.pending_reveals()) {
+		reveal_panel(d, ui_out, panel);
 	}
 
 	const input::state& input = input::current_state(input_d);
@@ -1651,16 +1893,10 @@ auto gse::ide::editor_app::run(context& ctx, data& d, const channel_read<window_
 		ui_out.push<set_cursor_shape_request>({ .shape = d.frame_cursor });
 	}
 
-	if (d.layout_dirty || d.save_clock.elapsed() > editor_layout_save_interval) {
-		save_editor_layout(d);
-		d.layout_dirty = false;
-		d.save_clock.reset();
-	}
-
 	return {};
 }
 
-auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::build_request, git_system::init_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
+auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<git::status_updated, agent::sync_finished, jump_to_request, apply_lint_request, gui::context_menu_result, analysis::diagnostics_completed, build_runner::build_finished> requests_in, const channel_write<gui::menu_content, cursor_capture_request, profile_capture_request, profile_report_request, profile_export_request, build_runner::attached_input, build_runner::attached_resize, build_runner::build_request, git_system::action_request, agent::sync_request, jump_to_request, apply_lint_request, toggle_project_switcher_request, toggle_settings_request, analysis::diagnostics_request, git_system::refresh_request, set_cursor_shape_request, search::index_merge_request> ui_out, const scheduler& sched, const shared_view<config_system::data> config_d, const shared_view<search_system::data> search_d, const shared_view<input::data> input_d, const shared_view<viewport::data> viewport_d, const shared_view<build_runner::data> build_d, const shared_view<window::data> window_d, const shared_view<profile_system::data> profile_d) -> async::task<> {
 	if (!d.initialized) {
 		if (!project::opened()) {
 			return {};
@@ -1673,11 +1909,11 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		}
 		d.ws.fs_root.loaded = true;
 		project::record_recent();
+		d.engine_pin = project::current().engine_commit;
 		load_workspace_layout(d.ws);
 		if (!d.ws.cppref.loaded) {
 			d.ws.cppref.load(config::cppref_index());
 		}
-		d.save_clock.reset();
 		d.initialized = true;
 	}
 
@@ -1688,12 +1924,12 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 			if (d.graph_pending_gen != game_gen) {
 				d.graph_pending_gen = game_gen;
 				d.graph_load_attempts = 0;
-				d.graph_load_clock.reset();
+				d.graph_load_timer.reset();
 			}
-			const bool load_due = d.graph_load_attempts == 0 || d.graph_load_clock.elapsed() >= system_graph_retry_interval;
+			const bool load_due = d.graph_load_attempts == 0 || d.graph_load_timer.tick();
 			if (load_due) {
 				++d.graph_load_attempts;
-				d.graph_load_clock.reset();
+				d.graph_load_timer.reset();
 				std::expected<graph_data, graph_load_error> loaded = build_graph_from_file(game_graph_file);
 				if (loaded) {
 					d.graph = std::move(*loaded);
@@ -1712,8 +1948,6 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		d.graph = build_graph(sched);
 	}
 
-	workspace::data* ws = &d.ws;
-	const auto config = config_d;
 	const input::state& input = input::current_state(input_d);
 	const auto session_active = [&build_d](const std::uint32_t instance) {
 		return instance < build_runner::max_attached_instances
@@ -1746,8 +1980,8 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 			const vec2f delta = input.mouse_delta();
 			d.ws.game_cursor += vec2f{ delta.x() * d.ws.game_input_scale.x(), delta.y() * d.ws.game_input_scale.y() };
 		}
-		const bool release_chord = input.key_held(key::left_alt) || input.key_held(key::right_alt);
-		const bool releasing = release_chord && input.key_pressed(key::tab);
+		const bool release_chord = input.key_held(key::left_shift) || input.key_held(key::right_shift);
+		const bool releasing = release_chord && input.key_pressed(key::f1);
 		forward_game_input(input, ui_out, d.ws.game_instance, d.ws.game_cursor, releasing);
 		if (releasing) {
 			d.ws.game_captured = false;
@@ -1758,10 +1992,68 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	}
 	d.game_input_forwarding = d.ws.game_captured;
 	d.session_view.captured = d.ws.game_captured ? std::optional<std::uint32_t>{ d.ws.game_instance } : std::nullopt;
+
+	const time game_resize_settle = milliseconds(150.f);
+	bool resize_outstanding = false;
+	for (std::uint32_t instance = 0; instance < build_runner::max_attached_instances; ++instance) {
+		if (!viewport_d.instance_live[instance]) {
+			d.session_view.settling_extents[instance] = {};
+			d.session_view.sent_extents[instance] = {};
+			continue;
+		}
+		const vec2u desired = d.session_view.desired_extents[instance];
+		if (desired.x() == 0 || desired.y() == 0) {
+			continue;
+		}
+		if (desired != d.session_view.settling_extents[instance]) {
+			d.session_view.settling_extents[instance] = desired;
+			d.session_view.resize_settle.arm(game_resize_settle);
+		}
+		if (desired != d.session_view.sent_extents[instance]) {
+			resize_outstanding = true;
+		}
+	}
+
+	if (!resize_outstanding) {
+		d.session_view.resize_settle.disarm();
+	}
+	else if (!d.session_view.resize_settle.armed()) {
+		d.session_view.resize_settle.arm(game_resize_settle);
+	}
+	else if (d.session_view.resize_settle.due()) {
+		d.session_view.resize_settle.disarm();
+		for (std::uint32_t instance = 0; instance < build_runner::max_attached_instances; ++instance) {
+			const vec2u desired = d.session_view.desired_extents[instance];
+			if (!viewport_d.instance_live[instance] || desired.x() == 0 || desired.y() == 0 || desired == d.session_view.sent_extents[instance]) {
+				continue;
+			}
+			d.session_view.sent_extents[instance] = desired;
+			ui_out.push<build_runner::attached_resize>({
+				.instance = instance,
+				.extent = desired,
+			});
+		}
+	}
+
 	workspace::update_explorer(d.ws);
 	for (const git::status_updated& update : requests_in.of<git::status_updated>()) {
 		d.git_status = update.status;
 		d.git_rootless = update.rootless;
+		d.git_busy = update.busy;
+		d.git_action_error = update.action_error;
+	}
+	for (const agent::sync_finished& finished : requests_in.of<agent::sync_finished>()) {
+		apply_sync_finished(d.source_control, finished);
+	}
+	for (const build_runner::build_finished& finished : requests_in.of<build_runner::build_finished>()) {
+		if (finished.kind != build_runner::stream_kind::build_game || !finished.succeeded || !project::current().valid || !project::current().sdk_version.empty() || !d.git_status) {
+			continue;
+		}
+		const git::repository_snapshot engine = d.git_status->find(config::engine_root());
+		if (engine && !engine->head.empty() && engine->head != d.engine_pin) {
+			d.engine_pin = engine->head;
+			project::pin_engine_commit(d.engine_pin);
+		}
 	}
 	update_diagnostics(ctx, requests_in, ui_out, d.ws, config_d, build_d.building);
 	d.ws.watcher.poll();
@@ -1775,15 +2067,10 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(explorer_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, search = &d.search, index = search_d.index, channels = ui_out, git_status = d.git_status, git_rootless = &d.git_rootless](gui::builder& b) {
-			draw_explorer_panel(b, *ws, *search, index, channels, git_status.get(), *git_rootless);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<build_runner::build_request, git_system::action_request, jump_to_request, toggle_project_switcher_request, toggle_settings_request> channels) {
+			draw_explorer_panel(b, panel_d.ws, panel_d.search, search_s.index, channels, panel_d.git_status.get(), panel_d.git_rootless);
 		},
 	});
-
-
-	const bool building = build_d.building;
-
-
 	if (d.cursor_capture_sent != d.ws.game_captured) {
 		d.cursor_capture_sent = d.ws.game_captured;
 		ui_out.push<cursor_capture_request>({ .capture = d.ws.game_captured });
@@ -1819,11 +2106,11 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(code_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, index = search_d.index, config, channels = ui_out, building](gui::builder& b) {
-			draw_code_panel(b, *ws, channels, {
-				.config = config,
-				.index = index,
-				.building = building,
+		.build = [](gui::builder& b, data& panel_d, const shared_view<config_system::data> config_s, const shared_view<search_system::data> search_s, const shared_view<build_runner::data> build_s, const channel_write<analysis::diagnostics_request, build_runner::build_request, git_system::refresh_request, jump_to_request, set_cursor_shape_request, search::index_merge_request> channels) {
+			draw_code_panel(b, panel_d.ws, channels, {
+				.config = config_s,
+				.index = search_s.index,
+				.building = build_s.building,
 			});
 		},
 	});
@@ -1831,56 +2118,78 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(graph_panel_name),
 		.layer = render_layer::content,
-		.build = [graph = &d.graph, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_graph(b, b.ctx.clip_stack.back(), *graph, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request, set_cursor_shape_request> channels) {
+			draw_graph(b, b.ctx.clip_stack.back(), panel_d.graph, search_s.index, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(profile_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.ws.profile, channels = ui_out, profile_d](gui::builder& b) {
-			draw_profile_panel(b, b.ctx.clip_stack.back(), *state, profile_d.frames, profile_d.report, profile_d.report_loaded, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<profile_system::data> profile_s, const channel_write<set_cursor_shape_request> channels) {
+			draw_profile_panel(b, b.ctx.clip_stack.back(), panel_d.ws.profile, profile_s.frames, profile_s.report, profile_s.report_loaded, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(alloc_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.ws.alloc](gui::builder& b) {
-			draw_alloc_panel(b, b.ctx.clip_stack.back(), *state);
+		.build = [](gui::builder& b, data& panel_d) {
+			draw_alloc_panel(b, b.ctx.clip_stack.back(), panel_d.ws.alloc);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(problems_panel_name),
 		.layer = render_layer::content,
-		.build = [ws, state = &d.problems, channels = ui_out](gui::builder& b) {
-			draw_problems_panel(b, b.ctx.clip_stack.back(), *state, *ws, channels);
+		.build = [](gui::builder& b, data& panel_d, const channel_write<jump_to_request> channels) {
+			draw_problems_panel(b, b.ctx.clip_stack.back(), panel_d.problems, panel_d.ws, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(search_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.search_panel, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_search_panel(b, b.ctx.clip_stack.back(), *state, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request> channels) {
+			draw_search_panel(b, b.ctx.clip_stack.back(), panel_d.search_panel, search_s.index, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(lint_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.lint_panel, index = search_d.index, channels = ui_out](gui::builder& b) {
-			draw_lint_panel(b, b.ctx.clip_stack.back(), *state, index, channels);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<search_system::data> search_s, const channel_write<jump_to_request, apply_lint_request> channels) {
+			draw_lint_panel(b, b.ctx.clip_stack.back(), panel_d.lint_panel, search_s.index, channels);
+		},
+	});
+
+	ui_out.push<gui::menu_content>({
+		.menu = std::string(source_control_panel_name),
+		.layer = render_layer::content,
+		.build = [](gui::builder& b, data& panel_d, const shared_view<agent::data> agent_s, const channel_write<git_system::action_request, agent::sync_request, jump_to_request> channels) {
+			const std::uint32_t open = agent_s.sync_open;
+			draw_source_control_panel(b, b.ctx.clip_stack.back(), panel_d.source_control, {
+				.status = panel_d.git_status,
+				.busy = panel_d.git_busy,
+				.action_error = panel_d.git_action_error,
+				.project_root = config::project_root(),
+				.engine_root = config::engine_root(),
+				.engine_pin = panel_d.engine_pin,
+				.sync_open = std::ranges::any_of(agent_s.sessions, [&](const agent::session& s) {
+					return s.sync && s.id == open;
+				}),
+				.sync_history = std::ranges::any_of(agent_s.sessions, [](const agent::session& s) {
+					return s.sync.has_value();
+				}),
+			}, channels);
 		},
 	});
 
 	ui_out.push<gui::menu_content>({
 		.menu = std::string(game_panel_name),
 		.layer = render_layer::content,
-		.build = [state = &d.session_view, building = build_d.building_session, slots = viewport_d.instance_slots, extents = viewport_d.instance_extents, live = viewport_d.instance_live, session = build_d.session, server = build_d.server, error = build_d.session_error](gui::builder& b) {
-			draw_game_panel(b, b.ctx.clip_stack.back(), *state, building, slots, extents, live, session, server, error);
+		.build = [](gui::builder& b, data& panel_d, const shared_view<viewport::data> viewport_s, const shared_view<build_runner::data> build_s) {
+			draw_game_panel(b, b.ctx.clip_stack.back(), panel_d.session_view, build_s.building_session, viewport_s.instance_slots, viewport_s.instance_extents, viewport_s.instance_live, build_s.session, build_s.server, build_s.session_error);
 		},
 	});
 
@@ -1917,25 +2226,23 @@ auto gse::ide::workspace_system::run(context& ctx, data& d, const channel_read<g
 		}
 	}
 
-	if (d.save_clock.elapsed() > editor_layout_save_interval) {
-		save_workspace_layout(d.ws);
-		d.save_clock.reset();
-	}
-
 	return {};
 }
 
-auto gse::ide::editor_app::shutdown(data& d) -> void {
+auto gse::ide::editor_app::persist(const data& d) -> void {
 	if (!d.initialized) {
 		return;
 	}
 	save_editor_layout(d);
 }
 
-auto gse::ide::workspace_system::shutdown(data& d) -> void {
-	workspace::save_dirty_documents(d.ws);
+auto gse::ide::workspace_system::persist(const data& d) -> void {
 	if (!d.initialized) {
 		return;
 	}
 	save_workspace_layout(d.ws);
+}
+
+auto gse::ide::workspace_system::shutdown(data& d) -> void {
+	workspace::save_dirty_documents(d.ws);
 }

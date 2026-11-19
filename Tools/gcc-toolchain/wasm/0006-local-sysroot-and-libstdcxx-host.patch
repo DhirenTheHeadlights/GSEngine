@@ -1,0 +1,93 @@
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -3680,6 +3680,12 @@
+ 	;;
+ wasm*-*-*)
+ 	use_gcc_stdint=wrap
++	# wasi-libc puts the target's headers directly under the sysroot, not under
++	# a usr/.  Stated here as well as in wasm.h's NATIVE_SYSTEM_HEADER_DIR
++	# because the two have different consumers: this one reaches the Makefile,
++	# and so fixincludes, while the macro is what the preprocessor's own default
++	# include list is built from.  config/mingw pairs them the same way.
++	native_system_header_dir=/include
+ 	;;
+ xstormy16-*-elf)
+ 	# For historical reasons, the target files omit the 'x'.
+--- a/gcc/config/wasm/wasm.h
++++ b/gcc/config/wasm/wasm.h
+@@ -30,7 +30,13 @@
+ #define PREFERRED_DEBUGGING_TYPE NO_DEBUG
+ /* End debug.  */
+ 
+-#define CC1PLUS_SPEC "-stdlib=libc++"
++/* No CC1PLUS_SPEC.  Upstream's forced `-stdlib=libc++' assumed the only C++
++   runtime this target would ever have was the one it does not build: it makes the
++   driver look for libc++'s headers and refuse libstdc++'s, and the option only
++   exists at all if configure was given --with-gxx-libcxx-include-dir, so without
++   that every C++ compile through the driver died on an unrecognized option.  Now
++   that libstdc++ builds for wasm32, the default -- the C++ library this compiler
++   was configured with -- is the right answer, and saying nothing is how to get it.  */
+ /* llvm-mc.  The flags the spec used to carry were wat2wasm's, which never had
+    them, while the annotations it emitted were rwat's, which could not place a
+    static or form a function pointer.  The triple is spelled in full rather than
+@@ -38,6 +44,20 @@
+    `unknown', GCC's config.sub canonicalises the same target to `none'.  */
+ #define ASM_SPEC "-triple=wasm32-unknown-unknown -filetype=obj %{v:--show-encoding} %{Wa,*:%*}"
+ 
++/* Where the target's headers live inside the sysroot.  wasi-libc puts them
++   directly under it, not under a usr/, which is the only reason this differs from
++   the default.
++
++   It is set here rather than with --with-native-system-header-dir because a
++   configure argument does not survive the journey on an MSYS2 host: a bare
++   `/include' looks like a POSIX absolute path to the argument converter, so it
++   reaches the compile as C:/...msys64/include and the sysroot is then prepended to
++   *that*, producing a directory that cannot exist.  Taking the same route as
++   mingw32.h, which does this against the same bug (PR 52947), keeps the value a
++   string literal that no shell ever sees.  */
++#undef NATIVE_SYSTEM_HEADER_DIR
++#define NATIVE_SYSTEM_HEADER_DIR "/include"
++
+ #define STANDARD_STARTFILE_PREFIX_1 "/lib/wasm32-wasi/"
+ #define STARTFILE_SPEC "%R" STANDARD_STARTFILE_PREFIX_1 "crt1%O%s"
+ #define LIB_SPEC "%{!shared:%{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"
+--- a/libstdc++-v3/crossconfig.m4
++++ b/libstdc++-v3/crossconfig.m4
+@@ -190,7 +190,16 @@
+     AC_CHECK_FUNCS(secure_getenv)
+     AM_ICONV
+     ;;
+-  *-mingw32*)
++  # wasm32 against wasi-libc.  Sharing the mingw32 arm rather than adding one is
++  # deliberate: every line of it is a *check* rather than an assertion, and the
++  # set of checks is the right one here -- a real libc with full math and
++  # stdlib, no /dev/random, no iconv and no uselocale.  The alternative was a
++  # separate arm that would have had to repeat all of it to say the same thing.
++  # Without any arm at all the final *) rejects the target outright with "No
++  # support for this host/target combination", which is the real reason there was
++  # no wasm32 libstdc++ -- `configure.host' needs nothing, it falls through to
++  # os/generic and cpu/generic on its own.
++  *-mingw32* | wasm*-*-*)
+     GLIBCXX_CHECK_LINKER_FEATURES
+     GLIBCXX_CHECK_MATH_SUPPORT
+     GLIBCXX_CHECK_STDLIB_SUPPORT
+--- a/libstdc++-v3/configure
++++ b/libstdc++-v3/configure
+@@ -42706,7 +42706,16 @@
+ 
+ 
+     ;;
+-  *-mingw32*)
++  # wasm32 against wasi-libc.  Sharing the mingw32 arm rather than adding one is
++  # deliberate: every line of it is a *check* rather than an assertion, and the
++  # set of checks is the right one here -- a real libc with full math and
++  # stdlib, no /dev/random, no iconv and no uselocale.  The alternative was a
++  # separate arm that would have had to repeat all of it to say the same thing.
++  # Without any arm at all the final *) rejects the target outright with "No
++  # support for this host/target combination", which is the real reason there was
++  # no wasm32 libstdc++ -- `configure.host' needs nothing, it falls through to
++  # os/generic and cpu/generic on its own.
++  *-mingw32* | wasm*-*-*)
+ 
+   # If we're not using GNU ld, then there's no point in even trying these
+   # tests.  Check for that first.  We should have already tested for gld

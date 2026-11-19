@@ -24,6 +24,7 @@ auto gse::gui::menu_to_data(const menu& item, const vec2f viewport_size, const f
 		},
 		.docked_to = item.docked_to,
 		.dock_split_ratio = item.dock_split_ratio,
+		.zoom = item.zoom,
 		.active_tab_index = item.active_tab_index,
 		.tab_visible_rows = std::max(1u, item.tab_bar.visible_rows),
 		.tab_tags = item.tab_contents,
@@ -57,7 +58,7 @@ auto gse::gui::resolve_rect(const loaded_menu_data& data, const vec2f viewport_s
 	return rectf::from_position_size(position, size);
 }
 
-auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path, const vec2f viewport_size, const float scale_factor) -> void {
+auto gse::gui::save(const id_mapped_collection<menu>& menus, const std::filesystem::path& file_path, const vec2f viewport_size, const float scale_factor) -> void {
 	if (viewport_size.x() <= 0.f || viewport_size.y() <= 0.f || scale_factor <= 0.f) {
 		return;
 	}
@@ -90,8 +91,7 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus, const vec2f viewport_size, const float scale_factor) -> id_mapped_collection<menu> {
 	const std::string content = layout_store::read(file_path);
 	if (content.empty()) {
-		id_mapped_collection<menu> menus_to_save = default_menus;
-		save(menus_to_save, file_path, viewport_size, scale_factor);
+		save(default_menus, file_path, viewport_size, scale_factor);
 		return default_menus;
 	}
 
@@ -118,6 +118,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 
 		new_menu.docked_to = data.docked_to;
 		new_menu.dock_split_ratio = data.dock_split_ratio;
+		new_menu.zoom = std::clamp(data.zoom, min_menu_zoom, max_menu_zoom);
 		new_menu.tab_contents = data.tab_tags;
 		new_menu.tab_bar.visible_rows = std::max(1u, data.tab_visible_rows);
 

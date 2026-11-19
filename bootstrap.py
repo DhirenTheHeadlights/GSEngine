@@ -9,7 +9,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(Path(__file__).resolve().parent / "Tools"))
+
+from repo_paths import BUILD_ROOT, REPO_ROOT
 
 NINJA_VERSION = "v1.13.2"
 NINJA_URL = f"https://github.com/ninja-build/ninja/releases/download/{NINJA_VERSION}/ninja-win.zip"
@@ -159,7 +161,7 @@ def build_editor(preset: str) -> None:
         raise SystemExit("VULKAN_SDK is not set to an existing directory. Install the Vulkan SDK 1.4 or newer from https://vulkan.lunarg.com/sdk/home, then re-open the shell and re-run this script.")
     print(f"Vulkan SDK: {vulkan_sdk}")
 
-    build_dir = REPO_ROOT / "out" / "build" / preset
+    build_dir = BUILD_ROOT / preset
     reason = stale_cache_reason(build_dir)
     if reason is not None:
         print(f"Removing unusable build directory {build_dir}")
@@ -187,8 +189,10 @@ def main():
     parser.add_argument("--skip-build", action="store_true", help="Skip the CMake configure and editor build")
     parser.add_argument("--preset", default=DEFAULT_PRESET, help=f"CMake preset to configure and build (default: {DEFAULT_PRESET})")
     parser.add_argument("--update-vcpkg", action="store_true", help="Pull latest vcpkg master after submodule init")
-    parser.add_argument("--tag", default=None, help="gcc-trunk release tag (default: latest gcc-trunk-v* release)")
+    parser.add_argument("--tag", default=None, help="gcc-trunk release tag to install and pin (default: the tag in toolchain.txt)")
+    parser.add_argument("--latest", action="store_true", help="Install the newest gcc-trunk-v* release and pin it in toolchain.txt")
     parser.add_argument("--sha256", default=None, help="Expected SHA256 of the toolchain zip")
+    parser.add_argument("--url", default=None, help="Install the toolchain from this URL instead of the release")
     parser.add_argument("--persist", action="store_true", help="Persist MINGW_ROOT via setx")
     parser.add_argument("--force", action="store_true", help="Reinstall the toolchain even if already present")
     args = parser.parse_args()
@@ -202,13 +206,17 @@ def main():
         gcc_args = []
         if args.tag:
             gcc_args += ["--tag", args.tag]
+        if args.latest:
+            gcc_args.append("--latest")
         if args.sha256:
             gcc_args += ["--sha256", args.sha256]
+        if args.url:
+            gcc_args += ["--url", args.url]
         if args.persist:
             gcc_args.append("--persist")
         if args.force:
             gcc_args.append("--force")
-        run([sys.executable, str(REPO_ROOT / "scripts" / "install_gcc_trunk.py"), *gcc_args])
+        run([sys.executable, str(REPO_ROOT / "Tools" / "install_gcc_trunk.py"), *gcc_args])
 
     if not args.skip_ninja:
         ensure_ninja(force=args.force)

@@ -6,10 +6,6 @@ import gse.log;
 import gse.meta;
 import std;
 
-#ifdef _WIN32
-import gse.win32;
-#endif
-
 export namespace gse {
 	namespace asset_format {
 		template <fixed_string V>
@@ -156,41 +152,25 @@ auto gse::load_baked(const std::filesystem::path& path) -> std::expected<T, asse
 		});
 	}
 
-	try {
-		T out{};
-		*opened & out;
-		if (!opened->valid()) {
-			return std::unexpected(asset_error{
-				.code = asset_error_code::invalid_format,
-				.path = path,
-				.detail = "Baked asset payload is truncated or malformed"
-			});
-		}
-		for (const std::string& skipped : opened->skipped_fields()) {
-			log::println(
-				log::level::warning,
-				log::category::assets,
-				"{}: schema drift, stored field skipped and left defaulted: {}",
-				path.generic_display_string(),
-				skipped
-			);
-		}
-		return std::move(out);
-	}
-	catch (const std::exception& error) {
+	T out{};
+	*opened & out;
+	if (!opened->valid()) {
 		return std::unexpected(asset_error{
 			.code = asset_error_code::invalid_format,
 			.path = path,
-			.detail = error.what()
+			.detail = "Baked asset payload is truncated or malformed"
 		});
 	}
-	catch (...) {
-		return std::unexpected(asset_error{
-			.code = asset_error_code::invalid_format,
-			.path = path,
-			.detail = "Baked asset deserialization failed"
-		});
+	for (const std::string& skipped : opened->skipped_fields()) {
+		log::println(
+			log::level::warning,
+			log::category::assets,
+			"{}: schema drift, stored field skipped and left defaulted: {}",
+			path.generic_display_string(),
+			skipped
+		);
 	}
+	return std::move(out);
 }
 
 template <gse::has_asset_format T>
@@ -220,33 +200,12 @@ auto gse::write_baked(const std::filesystem::path& path, const T& value) -> asse
 	}
 
 	constexpr auto fmt = format_of<T>();
-	bool written = false;
-	try {
-		binary_writer writer(out, fmt.magic, fmt.version);
-		constexpr std::uint64_t fingerprint = schema_fingerprint<T>();
-		writer & fingerprint;
-		writer & value;
-		out.flush();
-		written = writer.valid() && out.good();
-	}
-	catch (const std::exception& error) {
-		out.close();
-		std::filesystem::remove(temporary, ec);
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = temporary,
-			.detail = error.what()
-		});
-	}
-	catch (...) {
-		out.close();
-		std::filesystem::remove(temporary, ec);
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = temporary,
-			.detail = "Baked asset serialization failed"
-		});
-	}
+	binary_writer writer(out, fmt.magic, fmt.version);
+	constexpr std::uint64_t fingerprint = schema_fingerprint<T>();
+	writer & fingerprint;
+	writer & value;
+	out.flush();
+	bool written = writer.valid() && out.good();
 	out.close();
 	written = written && !out.fail();
 	if (!written) {
@@ -277,36 +236,4 @@ auto gse::baked_schema_current(const std::filesystem::path& path) -> bool {
 	std::uint64_t stored_fingerprint = 0;
 	*opened & stored_fingerprint;
 	return opened->valid() && stored_fingerprint == schema_fingerprint<T>();
-}
-
-auto gse::replace_baked_file(const std::filesystem::path& temporary, const std::filesystem::path& destination) -> asset_result {
-#ifdef _WIN32
-	if (win32::MoveFileExW(
-		temporary.c_str(),
-		destination.c_str(),
-		win32::movefile_replace_existing | win32::movefile_write_through
-		) == 0) {
-		const auto code = static_cast<int>(win32::GetLastError());
-		std::error_code cleanup;
-		std::filesystem::remove(temporary, cleanup);
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = destination,
-			.detail = std::system_category().message(code)
-		});
-	}
-#else
-	std::error_code ec;
-	std::filesystem::rename(temporary, destination, ec);
-	if (ec) {
-		std::error_code cleanup;
-		std::filesystem::remove(temporary, cleanup);
-		return std::unexpected(asset_error{
-			.code = asset_error_code::io_failure,
-			.path = destination,
-			.detail = ec.message()
-		});
-	}
-#endif
-	return {};
 }

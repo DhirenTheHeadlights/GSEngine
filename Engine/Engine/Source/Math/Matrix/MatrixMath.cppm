@@ -22,7 +22,7 @@ export namespace gse {
 		const vec3<QPos>& position,
 		const vec3<QTgt>& target,
 		const vec3<T>& up
-	) -> view_matrix;
+	) -> view_matrix pre(!is_zero(cross(up, position - target)));
 
 	template <typename T>
 	constexpr auto perspective(
@@ -30,7 +30,10 @@ export namespace gse {
 		T aspect,
 		length_t<T> near,
 		length_t<T> far
-	) -> projection_matrix;
+	) -> projection_matrix
+		pre(fov > angle_t<T>{} && fov < radians(std::numbers::pi_v<T>))
+		pre(aspect > T(0))
+		pre(near > length_t<T>{} && far > near);
 
 	template <typename T>
 	constexpr auto orthographic(
@@ -40,7 +43,7 @@ export namespace gse {
 		length_t<T> top,
 		length_t<T> near,
 		length_t<T> far
-	) -> projection_matrix;
+	) -> projection_matrix pre(right != left && top != bottom && near != far);
 
 	template <typename T, internal::is_quantity Q>
 	requires std::same_as<typename Q::value_type, T> &&
@@ -119,9 +122,9 @@ constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T
 
 	result[0][0] = T(1) / (aspect * tan_half_fov_y);
 	result[1][1] = T(-1) / tan_half_fov_y;
-	result[2][2] = far / (near - far);
+	result[2][2] = near / range;
 	result[2][3] = T(-1);
-	result[3][2] = -(far / range) * internal::to_storage(near);
+	result[3][2] = (far / range) * internal::to_storage(near);
 
 	return projection_matrix(result);
 }

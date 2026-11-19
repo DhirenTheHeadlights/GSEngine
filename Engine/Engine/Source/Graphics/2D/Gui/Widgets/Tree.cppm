@@ -19,7 +19,9 @@ import :ids;
 import :styles;
 import :builder;
 import :interaction;
+import :surface_paint;
 import :symbols;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct tree_options {
@@ -123,7 +125,7 @@ namespace gse::gui::draw {
 template <typename T>
 auto gse::gui::draw::tree(builder& ui, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, const resource::handle<font> font) -> bool {
 	const draw_context& ctx = ui.ctx;
-	const auto fnt = font.valid() ? font : ctx.fonts.text;
+	const auto fnt = ctx.fonts.face_or(font);
 	if (!ctx.current_menu || !fnt.valid()) {
 		return false;
 	}
@@ -160,7 +162,7 @@ auto gse::gui::draw::tree_node_key(const T& t, const tree_ops<T>& ops, const std
 	}
 
 	const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
-	return hash_combine(tree_scope, stable_id(lbl));
+	return hash_of(tree_scope, lbl);
 }
 
 template <typename T>
@@ -207,7 +209,7 @@ auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, 
 
 	const vec2f mouse_pos = ctx.mouse_position();
 	const bool hovered = row_visible && ctx.hovers(visible);
-	const id row_widget_id = ids::make_from_key(hash_combine(stable_id("tree_row"), key));
+	const id row_widget_id = ids::make_from_key(hash_of("tree_row", key));
 
 	bool self_is_active = hovered;
 
@@ -224,31 +226,24 @@ auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, 
 
 	const bool owns_active = active_widget_id == row_widget_id;
 	const bool released_by_me = (row_visible || owns_active)
-		&& interaction::activate_on_click(active_widget_id, row_widget_id, hovered, hovered && ctx.mouse_pressed_for(visible), released);
+		&& interaction::activate_on_click(active_widget_id, row_widget_id, hovered, hovered && ctx.mouse_pressed_for(visible), released)
+		&& ctx.within_click_slop();
 
 	if (active_widget_id == row_widget_id) {
 		self_is_active = true;
 	}
 
 	if (row_visible) {
-		vec4f background = ctx.style.color_widget_background;
+		const item_skin& skin = ctx.style.list_item;
 
-		if (selected) {
-			background = ctx.style.color_widget_selected;
-		}
-		else if (active_widget_id == row_widget_id) {
-			background = ctx.style.color_widget_active;
-		}
-		else if (hovered) {
-			background = ctx.style.color_widget_hovered;
-		}
+		const interaction::press row{
+			.widget = row_widget_id,
+			.hovered = hovered,
+			.held = active_widget_id == row_widget_id,
+			.selected = selected,
+		};
 
-		ctx.queue_sprite({
-			.rect = row_rect,
-			.color = background,
-			.texture = ctx.blank_texture,
-			.corner_radius = ctx.style.corner_radius
-		});
+		draw::fill_surface(ctx, row_rect, row.select(skin.surfaces), {});
 
 		const float arrow_w = ctx.style.font_size;
 		const rectf arrow_rect = rectf::from_position_size(
@@ -288,13 +283,10 @@ auto gse::gui::draw::tree_node(builder& ui, const T& t, const tree_ops<T>& ops, 
 			{ label_available_width, row_height }
 		);
 
-		ctx.queue_text({
+		draw::label(ctx, label_rect, lbl, skin.label, {
+			.color = ops.label_color ? ops.label_color(t) : row.select(skin.label_colors),
 			.font = fnt,
-			.text = lbl,
-			.position = { label_rect.left(), label_rect.center().y() + fnt_view->vertical_center_offset(ctx.style.font_size) },
-			.scale = ctx.style.font_size,
-			.color = ops.label_color ? ops.label_color(t) : ctx.style.color_text,
-			.clip_rect = label_rect
+			.clip_rect = label_rect,
 		});
 
 		if (ops.custom_draw) {

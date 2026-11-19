@@ -10,6 +10,12 @@ import gse.log;
 import :frame_arena;
 import :task;
 
+namespace gse::async {
+	struct suspend_and_capture;
+
+	struct suspend_and_start_inline;
+}
+
 export namespace gse::async {
 	template <typename T = void>
 	class task;
@@ -42,13 +48,24 @@ export namespace gse::async {
 		const checked_handle& tracked
 	) -> bool;
 
+	auto resume_checked_with(
+		const checked_handle& tracked,
+		void (*before_resume)(void*),
+		void* context
+	) -> bool;
+
+	auto post_resumes(
+		std::span<const checked_handle> handles,
+		id trace
+	) -> void;
+
 	auto completed_marker() noexcept -> void*;
 
 	struct promise_base {
 		std::atomic<void*> m_continuation{ nullptr };
-		std::exception_ptr m_exception;
 		std::atomic<bool> m_started{ false };
 		std::atomic<bool> m_detached{ false };
+		std::atomic<bool> m_finished{ false };
 
 		static auto initial_suspend() noexcept -> std::suspend_always;
 
@@ -137,8 +154,6 @@ export namespace gse::async {
 
 		auto start() -> void;
 
-		auto consume_start_handle() -> std::coroutine_handle<>;
-
 		auto done() const -> bool;
 
 		struct awaiter {
@@ -156,6 +171,11 @@ export namespace gse::async {
 		auto operator co_await() noexcept -> awaiter;
 
 	private:
+		friend struct suspend_and_capture;
+		friend struct suspend_and_start_inline;
+
+		auto consume_start_handle() -> std::coroutine_handle<>;
+
 		handle_type m_handle{};
 	};
 
@@ -219,9 +239,13 @@ namespace gse::async {
 
 template <typename P>
 auto gse::async::final_awaiter::await_suspend(std::coroutine_handle<P> h) noexcept -> std::coroutine_handle<> {
+	const bool detached = h.promise().m_detached.load(std::memory_order_acquire);
 	void* const previous = h.promise().m_continuation.exchange(completed_marker(), std::memory_order_acq_rel);
-	if (h.promise().m_detached.load(std::memory_order_acquire)) {
+	if (detached) {
 		h.destroy();
+	}
+	else {
+		h.promise().m_finished.store(true, std::memory_order_release);
 	}
 	if (previous == nullptr || previous == completed_marker()) {
 		return std::noop_coroutine();
@@ -246,9 +270,6 @@ auto gse::async::value_promise<T>::return_value(T value) -> void {
 
 template <typename T>
 auto gse::async::value_promise<T>::result() -> T {
-	if (m_exception) {
-		std::rethrow_exception(m_exception);
-	}
 	return std::move(*m_result);
 }
 
@@ -264,9 +285,6 @@ auto gse::async::value_promise<T&>::return_value(T& value) -> void {
 
 template <typename T>
 auto gse::async::value_promise<T&>::result() -> T& {
-	if (m_exception) {
-		std::rethrow_exception(m_exception);
-	}
 	return *m_result;
 }
 
@@ -322,12 +340,12 @@ auto gse::async::task<T>::consume_start_handle() -> std::coroutine_handle<> {
 
 template <typename T>
 auto gse::async::task<T>::done() const -> bool {
-	return !m_handle || m_handle.done();
+	return !m_handle || m_handle.promise().m_finished.load(std::memory_order_acquire);
 }
 
 template <typename T>
 auto gse::async::task<T>::awaiter::await_ready() const noexcept -> bool {
-	return !m_handle || m_handle.done();
+	return !m_handle || m_handle.promise().m_finished.load(std::memory_order_acquire);
 }
 
 template <typename T>
@@ -340,6 +358,9 @@ auto gse::async::task<T>::awaiter::await_suspend(std::coroutine_handle<> caller)
 	void* expected = nullptr;
 	if (promise.m_continuation.compare_exchange_strong(expected, caller.address(), std::memory_order_acq_rel, std::memory_order_acquire)) {
 		return std::noop_coroutine();
+	}
+	while (!promise.m_finished.load(std::memory_order_acquire)) {
+		std::this_thread::yield();
 	}
 	return caller;
 }
@@ -365,15 +386,9 @@ template <typename T>
 auto gse::async::sync_wait(task<T>&& t) -> T {
 	std::atomic<bool> done_flag{ false };
 	std::optional<T> result;
-	std::exception_ptr ep;
 
 	auto wrapper = [&]() -> task<> {
-		try {
-			result.emplace(co_await std::move(t));
-		}
-		catch (...) {
-			ep = std::current_exception();
-		}
+		result.emplace(co_await std::move(t));
 		done_flag.store(true, std::memory_order_release);
 	};
 
@@ -390,8 +405,5 @@ auto gse::async::sync_wait(task<T>&& t) -> T {
 		std::this_thread::yield();
 	}
 
-	if (ep) {
-		std::rethrow_exception(ep);
-	}
 	return std::move(*result);
 }

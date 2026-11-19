@@ -15,17 +15,23 @@ export namespace gse::gpu {
 	enum class backend_kind : std::uint8_t {
 		vulkan,
 		dx12,
+		webgpu,
+	};
+
+	struct backend_capabilities {
+		bool ray_queries = false;
+		bool shader_target = false;
+		bool mesh_shaders = false;
+		bool bindless_texture_table = false;
+		bool shader_int64 = false;
+		bool untyped_atomics = false;
+		bool shared_surface_export = false;
 	};
 
 	enum class resource_type : std::uint8_t {
 		buffer,
 		image,
 		acceleration_structure,
-	};
-
-	enum class descriptor_access : std::uint8_t {
-		read,
-		read_write,
 	};
 
 	enum class descriptor_type : std::uint8_t {
@@ -141,8 +147,6 @@ export namespace gse::gpu {
 	constexpr std::uint32_t max_frames_in_flight = 2;
 
 	enum class frame_status : std::uint8_t {
-		minimized,
-		swapchain_out_of_date,
 		device_lost
 	};
 

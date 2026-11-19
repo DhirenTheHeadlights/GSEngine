@@ -51,6 +51,17 @@ export namespace gse::json {
 	constexpr bool is_string_map<std::map<std::string, V, C, A>> = true;
 
 	template <typename T>
+	constexpr bool is_variant = false;
+
+	template <typename... Ts>
+	constexpr bool is_variant<std::variant<Ts...>> = true;
+
+	template <typename T>
+	concept text_round_trip = std::formattable<T, char> && requires(std::string_view raw, T& out) {
+		{ gse::parser<T>::parse(raw, out) } -> std::same_as<bool>;
+	};
+
+	template <typename T>
 	auto read(
 		const value& node,
 		T& out
@@ -94,6 +105,15 @@ namespace gse::json {
 	auto write_members(
 		const T& in
 	) -> value;
+
+	template <typename T>
+	consteval auto variant_key_of() -> std::string_view;
+
+	template <typename... Ts>
+	auto read_variant(
+		const value& node,
+		std::variant<Ts...>& out
+	) -> bool;
 }
 
 constexpr gse::json::name::operator std::string_view() const {
@@ -221,6 +241,12 @@ auto gse::json::read(const value& node, T& out) -> bool {
 		}
 		return true;
 	}
+	else if constexpr (is_variant<T>) {
+		return read_variant(node, out);
+	}
+	else if constexpr (text_round_trip<T>) {
+		return node.is_string() && gse::parser<T>::parse(node.text(), out);
+	}
 	else if constexpr (std::is_class_v<T>) {
 		return read_members(node, out);
 	}
@@ -297,6 +323,19 @@ auto gse::json::from(const T& in) -> value {
 		}
 		return out;
 	}
+	else if constexpr (is_variant<T>) {
+		return std::visit(
+			[]<typename A>(const A& alternative) -> value {
+				value out = value::make_object();
+				out.insert(std::string(variant_key_of<A>()), from(alternative));
+				return out;
+			},
+			in
+		);
+	}
+	else if constexpr (text_round_trip<T>) {
+		return value(std::format("{}", in));
+	}
 	else if constexpr (std::is_class_v<T>) {
 		return write_members(in);
 	}
@@ -318,6 +357,31 @@ auto gse::json::write_members(const T& in) -> value {
 	}
 
 	return out;
+}
+
+template <typename T>
+consteval auto gse::json::variant_key_of() -> std::string_view {
+	return std::meta::identifier_of(^^T);
+}
+
+template <typename... Ts>
+auto gse::json::read_variant(const value& node, std::variant<Ts...>& out) -> bool {
+	bool matched = false;
+	bool complete = false;
+	(
+		[&] {
+			const value* member = matched ? nullptr : node.find(variant_key_of<Ts>());
+			if (member == nullptr) {
+				return;
+			}
+			matched = true;
+			Ts inner{};
+			complete = read(*member, inner);
+			out = std::move(inner);
+		}(),
+		...
+	);
+	return complete;
 }
 
 template <typename T>

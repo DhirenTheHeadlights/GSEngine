@@ -1,5 +1,7 @@
 export module gse.ide.workspace:documents;
 
+import gse.complete;
+import gse.complete.view;
 import gse.core;
 import gse.graphics;
 import gse.ide.analysis;
@@ -54,6 +56,9 @@ export namespace gse::ide {
 		bool diag_dirty = true;
 		std::optional<clock> edit_clock;
 		std::optional<std::uint32_t> pending_center_line;
+		std::shared_ptr<const complete::model> completion_model;
+		std::uint64_t completion_generation = 0;
+		complete::view_state completion;
 	};
 
 	class open_documents {
@@ -157,7 +162,7 @@ auto gse::ide::open_documents::active_tab_id() const -> id {
 auto gse::ide::open_documents::add(document doc) -> id {
 	id document_id;
 	do {
-		document_id = generate_temp_id(hash_combine(stable_id("ide.workspace.document"), m_next_document_sequence++));
+		document_id = generate_temp_id(hash_of("ide.workspace.document", m_next_document_sequence++));
 	} while (m_documents.contains(document_id));
 	m_documents.emplace(document_id, std::move(doc));
 	m_order.push_back(document_id);

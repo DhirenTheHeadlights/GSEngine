@@ -4,7 +4,7 @@ void update_contact_lambda(uint ci) {
     body_state body_a = body_data[c.body_a];
     body_state body_b = body_data[c.body_b];
 
-    if (pc.fold_lambda != 0) {
+    if ((pc.lambda_bits & 1u) != 0) {
         uint island_a = body_env_data[c.body_a];
         uint island_b = body_env_data[c.body_b];
         bool a_owner = island_a != 0xFFFFFFFFu && body_a.locked == 0 && (island_a == island_b || body_b.locked != 0);
@@ -29,7 +29,7 @@ void update_contact_lambda(uint ci) {
     float3 lambda = c.lambda;
     float3 penalty = c.penalty;
 
-    lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
+    lambda.x = min(contact_normal_penalty(c) * C.x + lambda.x, 0.0);
 
     float friction_bound = abs(lambda.x) * c.friction_coeff;
     lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);
@@ -112,13 +112,13 @@ void vbd_update_lambda(uint3 dispatch_id) {
     bool converged = collision_state[state_converged_flag_index] != 0;
 
     if (!converged) {
-        uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts);
+        uint actual_contact_count = min(collision_state[state_contact_count_index], max_contacts());
         if (ci < actual_contact_count) {
             update_contact_lambda(ci);
         }
     }
 
-    if (pc.fold_lambda == 0 || converged) return;
+    if ((pc.lambda_bits & 1u) == 0 || converged) return;
 
     AllMemoryBarrierWithGroupSync();
     if (ci % workgroup_size != 0) return;

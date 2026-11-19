@@ -12,8 +12,8 @@ void apply_one_restitution(uint ci) {
     body_state ba = body_data[c.body_a];
     body_state bb = body_data[c.body_b];
 
-    float3 rAW = rotate_vector(ba.orientation, c.local_anchor_a);
-    float3 rBW = rotate_vector(bb.orientation, c.local_anchor_b);
+    float3 rAW = rotate_vector(ba.predicted_orientation, c.local_anchor_a);
+    float3 rBW = rotate_vector(bb.predicted_orientation, c.local_anchor_b);
     float3 va = ba.velocity + cross(ba.angular_velocity, rAW);
     float3 vb = bb.velocity + cross(bb.angular_velocity, rBW);
     float v_rel_after = dot(c.normal, va - vb);
@@ -27,18 +27,22 @@ void apply_one_restitution(uint ci) {
     float dv = v_target - v_rel_after;
     if (dv <= 0.0) return;
 
-    float w_a = (ba.locked != 0 || ba.mass <= 1e-10) ? 0.0 : 1.0 / ba.mass;
-    float w_b = (bb.locked != 0 || bb.mass <= 1e-10) ? 0.0 : 1.0 / bb.mass;
-    float w_total = w_a + w_b;
-    if (w_total <= 0.0) return;
+    float effective = contact_effective_mass(ba, bb, rAW, rBW, c.normal);
+    if (effective <= 0.0) return;
 
-    float3 impulse = c.normal * (dv / w_total);
+    float3 impulse = c.normal * (dv * effective);
 
-    if (ba.locked == 0) {
-        body_data[c.body_a].velocity = ba.velocity + impulse * w_a;
+    if (ba.locked == 0 && ba.mass > 1e-10) {
+        body_data[c.body_a].velocity = ba.velocity + impulse / ba.mass;
+        if (ba.update_orientation != 0) {
+            body_data[c.body_a].angular_velocity = ba.angular_velocity + mat3_mul_vec(ba.inv_inertia, cross(rAW, impulse));
+        }
     }
-    if (bb.locked == 0) {
-        body_data[c.body_b].velocity = bb.velocity - impulse * w_b;
+    if (bb.locked == 0 && bb.mass > 1e-10) {
+        body_data[c.body_b].velocity = bb.velocity - impulse / bb.mass;
+        if (bb.update_orientation != 0) {
+            body_data[c.body_b].angular_velocity = bb.angular_velocity - mat3_mul_vec(bb.inv_inertia, cross(rBW, impulse));
+        }
     }
 }
 
@@ -50,12 +54,29 @@ bool restitution_gate(uint ci) {
     return true;
 }
 
-static const uint restitution_ci_bits = firstbithigh(max_contacts - 1) + 1;
-static const uint restitution_ci_mask = (1u << restitution_ci_bits) - 1;
-static const uint restitution_local_island_bits = 28 - restitution_ci_bits;
-static const uint restitution_local_island_mask = (1u << restitution_local_island_bits) - 1;
+uint restitution_owner(uint ci) {
+    uint body_a = contact_data[ci].body_a;
+    return body_data[body_a].locked == 0 ? body_a : contact_data[ci].body_b;
+}
+
+void apply_owned_restitution(uint bi) {
+    if (body_data[bi].locked != 0) return;
+    uint offset = contact_offsets[bi];
+    uint count = min(contact_counts[bi], max_contact_adjacency() - offset);
+    for (uint k = 0; k < count; k++) {
+        uint ci = contact_adjacency[offset + k];
+        if (restitution_gate(ci) && restitution_owner(ci) == bi) {
+            apply_one_restitution(ci);
+        }
+    }
+}
+
+uint restitution_ci_bits() { return firstbithigh(max_contacts() - 1) + 1; }
+uint restitution_ci_mask() { return (1u << restitution_ci_bits()) - 1; }
+uint restitution_local_island_bits() { return 30 - restitution_ci_bits(); }
+uint restitution_local_island_mask() { return (1u << restitution_local_island_bits()) - 1; }
 static const uint restitution_island_limit = 1u << 20;
-static const uint restitution_body_bits = 18;
+static const uint restitution_body_bits = 20;
 
 uint restitution_island(uint ci) {
     uint body_a = contact_data[ci].body_a;
@@ -84,11 +105,11 @@ void restitution_gather(uint ci, uint local_island) {
         restitution_keys_hi[slot] =
             ((uint64_t)contact_data[ci].body_a << (64 - restitution_body_bits)) |
             ((uint64_t)contact_data[ci].body_b << (64 - 2 * restitution_body_bits)) |
-            ((uint64_t)(contact_data[ci].replayed & 0xFFu) << 20) |
-            (uint64_t)(feature_rank >> 4);
+            ((uint64_t)(contact_data[ci].replayed & 0x3u) << 22) |
+            (uint64_t)(feature_rank >> 2);
         restitution_keys_lo[slot] =
-            ((feature_rank & 0xFu) << 28) |
-            (local_island << restitution_ci_bits) |
+            ((feature_rank & 0x3u) << 30) |
+            (local_island << restitution_ci_bits()) |
             ci;
     }
 }
@@ -96,7 +117,16 @@ void restitution_gather(uint ci, uint local_island) {
 bool restitution_greater(uint i, uint j) {
     uint64_t hi_i = restitution_keys_hi[i];
     uint64_t hi_j = restitution_keys_hi[j];
-    return hi_i > hi_j || (hi_i == hi_j && restitution_keys_lo[i] > restitution_keys_lo[j]);
+    if (hi_i != hi_j) return hi_i > hi_j;
+    uint lo_i = restitution_keys_lo[i];
+    uint lo_j = restitution_keys_lo[j];
+    uint rank_i = lo_i >> restitution_ci_bits();
+    uint rank_j = lo_j >> restitution_ci_bits();
+    if (rank_i != rank_j || lo_i == 0xFFFFFFFFu || lo_j == 0xFFFFFFFFu) return lo_i > lo_j;
+    uint64_t fk_i = contact_data[lo_i & restitution_ci_mask()].feature_key;
+    uint64_t fk_j = contact_data[lo_j & restitution_ci_mask()].feature_key;
+    if (fk_i != fk_j) return fk_i > fk_j;
+    return lo_i > lo_j;
 }
 
 void restitution_sort(uint tid, uint q) {
@@ -141,7 +171,7 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
     uint group = dispatch_id.x / adjacency_workgroup_size;
     uint island_begin = group * adjacency_workgroup_size;
     uint island_end = island_begin + adjacency_workgroup_size;
-    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts);
+    uint num_contacts = min(collision_state[state_contact_count_index], max_contacts());
 
     if (tid == 0) {
         restitution_count = 0;
@@ -184,10 +214,8 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
         }
         if (q > restitution_capacity) {
             if (tid == 0) {
-                for (uint ci = 0; ci < num_contacts; ci++) {
-                    if (restitution_gate(ci)) {
-                        apply_one_restitution(ci);
-                    }
+                for (uint bi = 0; bi < pc.body_count; bi++) {
+                    apply_owned_restitution(bi);
                 }
             }
             return;
@@ -195,7 +223,7 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
         restitution_sort(tid, q);
         if (tid == 0) {
             for (uint e = 0; e < q; e++) {
-                apply_one_restitution(restitution_keys_lo[e] & restitution_ci_mask);
+                apply_one_restitution(restitution_keys_lo[e] & restitution_ci_mask());
             }
         }
         return;
@@ -210,15 +238,10 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
     }
 
     if (q > restitution_capacity) {
-        if (tid == 0) {
-            for (uint ci = 0; ci < num_contacts; ci++) {
-                if (!restitution_gate(ci)) {
-                    continue;
-                }
-                uint island = restitution_island(ci);
-                if (island >= island_begin && island < island_end) {
-                    apply_one_restitution(ci);
-                }
+        uint own_island = island_begin + tid;
+        for (uint bi = 0; bi < pc.body_count; bi++) {
+            if (body_env_data[bi] == own_island) {
+                apply_owned_restitution(bi);
             }
         }
         return;
@@ -228,8 +251,8 @@ void vbd_apply_restitution(uint3 dispatch_id, uint3 group_thread_id) {
 
     for (uint e = 0; e < q; e++) {
         uint lo = restitution_keys_lo[e];
-        if (((lo >> restitution_ci_bits) & restitution_local_island_mask) == tid) {
-            apply_one_restitution(lo & restitution_ci_mask);
+        if (((lo >> restitution_ci_bits()) & restitution_local_island_mask()) == tid) {
+            apply_one_restitution(lo & restitution_ci_mask());
         }
     }
 }

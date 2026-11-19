@@ -105,6 +105,11 @@ auto gse::gui::assign_faces(font_set& fonts, const shared_view<asset::data> asse
 		return loaded;
 	};
 
+	auto face_or = [&available, &load](const std::string_view base, const std::span<const std::string_view> suffixes, const resource::handle<font> fallback) -> resource::handle<font> {
+		const resource::handle<font> found = load(variant_of(available, base, suffixes));
+		return found.valid() ? found : fallback;
+	};
+
 	constexpr std::array strong_suffixes{
 		std::string_view("-SemiBold"),
 		std::string_view("-Bold"),
@@ -116,12 +121,13 @@ auto gse::gui::assign_faces(font_set& fonts, const shared_view<asset::data> asse
 
 	if (font_available(available, ui_name)) {
 		fonts.text = load(ui_name);
-		fonts.text_strong = load(variant_of(available, ui_name, strong_suffixes));
-		fonts.text_emphasis = load(variant_of(available, ui_name, emphasis_suffixes));
+		fonts.text_strong = face_or(ui_name, strong_suffixes, fonts.text);
+		fonts.text_emphasis = face_or(ui_name, emphasis_suffixes, fonts.text);
 	}
 	if (font_available(available, code_name)) {
 		fonts.code = load(code_name);
-		fonts.code_strong = load(variant_of(available, code_name, strong_suffixes));
+		fonts.code_strong = face_or(code_name, strong_suffixes, fonts.code);
+		fonts.code_emphasis = face_or(code_name, emphasis_suffixes, fonts.code);
 	}
 }
 
@@ -129,16 +135,12 @@ auto gse::gui::reload_font(data& d, const shared_view<asset::data> assets) -> vo
 	assign_faces(d.fonts, assets, d.ui_font.value, d.code_font.value);
 }
 
-auto gse::gui::apply_scale(const data& d, const viewport_state& vp, style sty, const float viewport_height) -> style {
-	const float final_scale = scale_factor_for(d, vp, viewport_height);
-
-	sty.scale_factor = final_scale;
-
-	template for (constexpr auto m : std::define_static_array(std::meta::nonstatic_data_members_of(^^style, std::meta::access_context::unchecked()))) {
-		if constexpr (has_annotation<scaled_tag>(m)) {
-			sty.[:m:] *= final_scale;
-		}
-	}
-
+auto gse::gui::scale_style(style sty, const float factor) -> style {
+	sty.scale_factor *= factor;
+	scale_style_members(sty, factor);
 	return sty;
+}
+
+auto gse::gui::apply_scale(const data& d, const viewport_state& vp, style sty, const float viewport_height) -> style {
+	return scale_style(sty, scale_factor_for(d, vp, viewport_height));
 }

@@ -1,63 +1,61 @@
-struct VS_OUT {
-    float4 clip_pos : SV_Position;
-    float2 uv       : TEXCOORD0;
-};
-
 [shader("vertex")]
-VS_OUT vs_main(uint vid : SV_VertexID) {
-    float2 p = float2((vid << 1) & 2, vid & 2);
-    VS_OUT o;
-    o.uv = p;
-    o.clip_pos = float4(p * 2.0 - 1.0, 1.0, 1.0);
-    return o;
+screen_vs_out vs_main(uint vid : SV_VertexID) {
+    return screen_pass_vertex(vid, screen_depth_near);
 }
 
-static const float history_transmittance_tolerance = 0.15;
+static const float traced_blend = 0.3;
+static const float shared_blend = 0.2;
 
-float3 world_ray_from_ndc(float2 ndc) {
-    float4 near_point = mul(pc.inv_view_proj, float4(ndc, 0.0, 1.0));
-    float4 far_point = mul(pc.inv_view_proj, float4(ndc, 1.0, 1.0));
-    return normalize(far_point.xyz / far_point.w - near_point.xyz / near_point.w);
+float4 moved_with_neighbours(float4 history, uint2 pixel) {
+    float2 position = (float2(pixel) - float2(pc.sample_offset)) / float(pc.block_size);
+    float2 uv = (position + 0.5) / float2(pc.trace_extent);
+    float4 delta = resolve_delta_in.SampleLevel(resolve_sampler_binding, screen_target_uv(uv, pc.delta_uv_scale, pc.delta_uv_max), 0);
+    float4 moved = history + delta * shared_blend;
+    return float4(max(moved.rgb, 0.0), saturate(moved.a));
+}
+
+float4 upsampled_trace(uint2 pixel) {
+    float2 position = (float2(pixel) - float2(pc.sample_offset)) / float(pc.block_size);
+    float2 base = floor(position);
+    float2 weight = position - base;
+
+    float4 sum = float4(0.0, 0.0, 0.0, 0.0);
+    float total = 0.0;
+    for (int y = 0; y <= 1; ++y) {
+        for (int x = 0; x <= 1; ++x) {
+            int2 cell = clamp(int2(base) + int2(x, y), int2(0, 0), int2(pc.trace_extent) - 1);
+            float4 tap = resolve_trace_in.Load(int3(cell, 0));
+            float tap_weight = (x == 0 ? 1.0 - weight.x : weight.x) * (y == 0 ? 1.0 - weight.y : weight.y);
+            if (cloud_sample_usable(tap)) {
+                sum += tap * tap_weight;
+                total += tap_weight;
+            }
+        }
+    }
+
+    if (total > 0.0) {
+        return sum / total;
+    }
+    return float4(0.0, 0.0, 0.0, cloud_skipped_transmittance);
 }
 
 [shader("fragment")]
-float4 fs_main(VS_OUT input) : SV_Target {
-    int2 pixel = int2(input.uv * float2(pc.full_extent));
-    int2 offset = int2(pc.block_offset);
+float4 fs_main(screen_vs_out input) : SV_Target {
+    uint2 pixel = uint2(input.uv * float2(pc.resolve_extent));
+    uint2 cell = pixel / pc.block_size;
 
-    if (pixel.x % pc.divisor == offset.x && pixel.y % pc.divisor == offset.y) {
-        int2 low_extent = max(int2(pc.full_extent) / pc.divisor, int2(1, 1));
-        return resolve_low_in.Load(int3(min(pixel / pc.divisor, low_extent - 1), 0));
+    float4 fresh = float4(0.0, 0.0, 0.0, cloud_skipped_transmittance);
+    if (all(pixel == cloud_trace_pixel(cell, pc.block_size, pc.sample_offset, pc.resolve_extent))) {
+        fresh = resolve_trace_in.Load(int3(cell, 0));
     }
 
-    float4 upscaled = resolve_low_in.SampleLevel(resolve_sampler_binding, input.uv, 0);
+    float4 history = sharp_reprojected_history(input.uv);
 
-    if (pc.history_valid == 0) {
-        return upscaled;
+    if (!cloud_sample_usable(history)) {
+        return cloud_sample_usable(fresh) ? fresh : upsampled_trace(pixel);
     }
-
-    float3 view_dir = world_ray_from_ndc(input.uv * 2.0 - 1.0);
-    float4 previous_clip = mul(pc.prev_view_proj, float4(view_dir, 0.0));
-
-    if (previous_clip.w <= 1e-6) {
-        return upscaled;
+    if (cloud_sample_usable(fresh)) {
+        return lerp(history, fresh, traced_blend);
     }
-
-    float2 previous_uv = (previous_clip.xy / previous_clip.w) * 0.5 + 0.5;
-
-    if (any(previous_uv != saturate(previous_uv))) {
-        return upscaled;
-    }
-
-    float4 history = resolve_history_in.SampleLevel(resolve_sampler_binding, previous_uv, 0);
-
-    if (upscaled.a >= 1.0 || history.a >= 1.0) {
-        return upscaled;
-    }
-
-    if (abs(history.a - upscaled.a) > history_transmittance_tolerance) {
-        return upscaled;
-    }
-
-    return history;
+    return moved_with_neighbours(history, pixel);
 }

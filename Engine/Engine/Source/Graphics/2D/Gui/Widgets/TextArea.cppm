@@ -17,14 +17,17 @@ import gse.assert;
 
 import :types;
 import :ids;
+import :image_attachments;
 import :styles;
 import :builder;
 import :text_buffer;
 import :font;
 import :input_layers;
 import :interaction;
+import :surface_paint;
 import :symbols;
 import :text_select;
+import :widget_skin;
 
 export namespace gse::gui {
 	struct text_edit_snapshot {
@@ -89,15 +92,16 @@ export namespace gse::gui {
 			std::span<const text_fade> fades{};
 			std::span<const text_block> blocks{};
 			std::span<const text_stop> stops{};
+			std::span<const text_rule> rules{};
 			std::optional<rectf> rect{};
 			bool read_only = false;
-			bool consumes_image_paste = false;
+			std::optional<image_strip_params> images{};
 			bool follow_tail = false;
 			bool show_line_numbers = false;
 			std::size_t indent_width = 4;
 			bool indent_with_spaces = false;
 			bool auto_indent = false;
-			time blink_interval = milliseconds(500);
+			time blink_interval = milliseconds(500.f);
 			resource::handle<font> font{};
 		};
 
@@ -131,6 +135,7 @@ namespace gse::gui::draw {
 		id widget_id,
 		const text_area::params& params,
 		id& hot_widget_id,
+		id& active_widget_id,
 		id& focus_widget_id
 	) -> bool;
 
@@ -148,6 +153,20 @@ export namespace gse::gui {
 		const text_area_geometry& geometry,
 		vec2f mouse
 	) -> buffer_position;
+
+	auto text_area_point_of(
+		const draw_context& ctx,
+		const text_area_geometry& geometry,
+		buffer_position position
+	) -> vec2f;
+
+	auto text_area_replace(
+		text_buffer& buffer,
+		text_area_state& state,
+		buffer_position from,
+		buffer_position to,
+		std::string_view text
+	) -> void;
 
 	auto text_area_line_height(
 		const draw_context& ctx,
@@ -331,9 +350,8 @@ auto gse::gui::build_runs(const std::string_view line, const std::span<const tex
 		if (b <= a) {
 			return;
 		}
-		const bool inherited = which == text_face::inherit;
-		resource::handle<font> handle = inherited ? style.inherited : style.fonts.face(which, style.inherited);
-		std::shared_ptr<const font> view = inherited ? style.base_view : handle.resolve();
+		resource::handle<font> handle = style.fonts.face(which, style.inherited);
+		std::shared_ptr<const font> view = which == text_face::inherit ? style.base_view : handle.resolve();
 		out.push_back({
 			.start = a,
 			.end = b,
@@ -429,15 +447,10 @@ auto gse::gui::styled_spans(const std::span<const text_span> spans) -> bool {
 }
 
 auto gse::gui::metrics_signature(const text_buffer& buffer, const std::span<const text_span> spans, const std::span<const text_stop> stops, const std::size_t tab_width, const float scale) -> std::uint64_t {
-	std::uint64_t seed = hash_combine(0, buffer.line_count());
-	seed = hash_combine(seed, tab_width);
-	seed = hash_combine(seed, spans.size());
-	seed = hash_combine(seed, stops.size());
-	seed = hash_combine(seed, std::bit_cast<std::uint32_t>(scale));
-	for (std::size_t i = 0; i < buffer.line_count(); ++i) {
-		seed = hash_combine(seed, buffer.line(i).size());
-	}
-	return seed;
+	const auto line_sizes = std::views::iota(std::size_t{ 0 }, buffer.line_count()) | std::views::transform([&buffer](const std::size_t i) {
+		return buffer.line(i).size();
+	});
+	return hash_of(tab_width, spans.size(), stops | std::views::transform(&text_stop::x), scale, line_sizes);
 }
 
 auto gse::gui::refresh_metrics(const text_buffer& buffer, text_area_state& state, const std::span<const text_span> spans, const std::span<const text_stop> stops, const run_context& style, const float base_height) -> void {
@@ -544,20 +557,21 @@ auto gse::gui::text_area_layout::line_at(const float offset) const -> std::uint3
 }
 
 auto gse::gui::text_area::draw(const draw_context& ctx, const params& p, id& hot, id& active, id& focus) -> bool {
-	(void)active;
 	params resolved = p;
-	resolved.rect = p.rect.value_or(ctx.next_row(p.font.valid() ? p.font : ctx.fonts.code, 8.f));
-	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, focus);
+	if (!resolved.rect) {
+		resolved.rect = ctx.next_row(ctx.fonts.face_or(p.font, text_face::code), 8.f);
+	}
+	return draw::text_area_in_rect(ctx, p.widget_id.exists() ? p.widget_id : ids::make(p.name), resolved, hot, active, focus);
 }
 
 auto gse::gui::text_area_line_height(const draw_context& ctx, const resource::handle<font> font) -> float {
-	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(font, text_face::code);
 	return fnt.resolve()->line_height(ctx.style.font_size) * 1.25f;
 }
 
 auto gse::gui::text_area_layout_of(const draw_context& ctx, const text_area_geometry& geometry) -> text_area_layout {
 	const text_buffer& buffer = geometry.buffer;
-	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
 	const auto fnt_view = fnt.resolve();
 	const float scale = ctx.style.font_size;
 	const float pad = ctx.style.padding;
@@ -586,7 +600,7 @@ auto gse::gui::text_area_layout_of(const draw_context& ctx, const text_area_geom
 
 auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_geometry& geometry, const vec2f mouse) -> buffer_position {
 	const text_buffer& buffer = geometry.buffer;
-	const auto fnt = geometry.font.valid() ? geometry.font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
 	const run_context style{
 		.fonts = ctx.fonts,
 		.inherited = fnt,
@@ -625,8 +639,52 @@ auto gse::gui::text_area_position_at(const draw_context& ctx, const text_area_ge
 	});
 }
 
-auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& focus_widget_id) -> bool {
+auto gse::gui::text_area_point_of(const draw_context& ctx, const text_area_geometry& geometry, const buffer_position position) -> vec2f {
+	const text_buffer& buffer = geometry.buffer;
+	const auto fnt = ctx.fonts.face_or(geometry.font, text_face::code);
+	const run_context style{
+		.fonts = ctx.fonts,
+		.inherited = fnt,
+		.base_view = fnt.resolve(),
+		.base_color = ctx.style.color_text,
+		.base_scale = ctx.style.font_size,
+		.tab_width = std::clamp<std::size_t>(geometry.indent_width, 1, 16),
+	};
+
+	const buffer_position at = buffer.clamp(position);
+	const text_area_layout placement = text_area_layout_of(ctx, geometry);
+	const std::string_view line = buffer.line(at.line);
+
+	const std::size_t block = block_at_line(geometry.blocks, at.line);
+	const float block_x = block < geometry.blocks.size()
+		? measure_block(buffer, geometry.blocks[block], geometry.spans, geometry.stops, style, placement.view_width).offset
+		: 0.f;
+
+	std::vector<styled_run> runs;
+	line_layout columns;
+	build_runs(line, spans_for_line(geometry.spans, at.line), style, runs);
+	layout_line(line, runs, stops_for_line(geometry.stops, at.line), style.tab_width, columns);
+
+	return {
+		placement.text_left + block_x + columns.offsets[at.column],
+		placement.top - placement.line_top(at.line),
+	};
+}
+
+auto gse::gui::text_area_replace(text_buffer& buffer, text_area_state& state, const buffer_position from, const buffer_position to, const std::string_view text) -> void {
+	state.undo_stack.push_back({ buffer.lines, state.caret, state.anchor });
+	state.redo_stack.clear();
+	state.last_edit_kind = 0;
+	const buffer_position start = buffer.clamp(std::min(from, to));
+	buffer.erase(start, buffer.clamp(std::max(from, to)));
+	state.caret = buffer.insert(start, text);
+	state.anchor = state.caret;
+	state.blink_on = true;
+}
+
+auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_id, const text_area::params& params, id& hot_widget_id, id& active_widget_id, id& focus_widget_id) -> bool {
 	assert(params.rect.has_value(), "text_area_in_rect requires a rect");
+
 	text_buffer& buffer = params.buffer;
 	text_area_state& state = params.state;
 	const std::span<const text_span> spans = params.spans;
@@ -634,9 +692,10 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	const std::span<const text_fade> fades = params.fades;
 	const std::span<const text_block> blocks = params.blocks;
 	const std::span<const text_stop> stops = params.stops;
-	const rectf& rect = *params.rect;
+	const std::span<const text_rule> rules = params.rules;
+	const rectf rect = *params.rect;
 	const bool read_only = params.read_only;
-	const bool image_paste = params.consumes_image_paste && window::clipboard_image_available();
+	const bool image_paste = params.images && clipboard::image_available();
 	const bool follow_tail = params.follow_tail;
 	const bool show_line_numbers = params.show_line_numbers;
 	const std::size_t indent_width = params.indent_width;
@@ -646,7 +705,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	constexpr time repeat_delay = milliseconds(400.f);
 	constexpr time repeat_interval = milliseconds(33.f);
 	const resource::handle<font> font = params.font;
-	const auto fnt = font.valid() ? font : ctx.fonts.code;
+	const auto fnt = ctx.fonts.face_or(font, text_face::code);
 	const auto fnt_view = fnt.resolve();
 
 	bool modified = false;
@@ -910,7 +969,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			{
 				.label = "Paste",
 				.action_id = static_cast<std::uint32_t>(text_edit_action::paste),
-				.enabled = !read_only && !ctx.clipboard().empty(),
+				.enabled = !read_only && (!ctx.clipboard().empty() || image_paste),
 			},
 		};
 		ctx.open_context_menu({
@@ -921,7 +980,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		});
 	}
 
-	const bool focused = (focus_widget_id == widget_id);
+	const bool focused = (focus_widget_id == widget_id) && !(params.images && params.images->attachments.viewing);
 
 	auto begin_edit = [&](const int kind) {
 		if (state.last_edit_kind != kind || state.undo_stack.empty()) {
@@ -946,6 +1005,23 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		buffer.erase(lo, hi);
 		state.caret = lo;
 		state.anchor = lo;
+	};
+	auto paste_now = [&]() -> bool {
+		std::string paste = ctx.clipboard();
+		if (params.images && (image_paste || paste.empty())) {
+			ctx.request_image_paste(widget_id);
+			return false;
+		}
+		if (paste.empty()) {
+			return false;
+		}
+		begin_edit(1);
+		if (has_selection()) {
+			delete_selection();
+		}
+		state.caret = buffer.insert(state.caret, paste);
+		state.anchor = state.caret;
+		return true;
 	};
 	auto selection_string = [&]() -> std::string {
 		const auto [a, b] = normalized_sel();
@@ -1123,17 +1199,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			}
 		}
 		else if (pending_action == text_edit_action::paste) {
-			if (!read_only) {
-				if (std::string paste = ctx.clipboard(); !paste.empty()) {
-					begin_edit(1);
-					if (has_selection()) {
-						delete_selection();
-					}
-					state.caret = buffer.insert(state.caret, paste);
-					state.anchor = state.caret;
-					modified = true;
-					caret_moved = true;
-				}
+			if (!read_only && paste_now()) {
+				modified = true;
+				caret_moved = true;
 			}
 		}
 		if (modified) {
@@ -1290,18 +1358,9 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				changed = true;
 				modified = true;
 			}
-			if (ctrl && !image_paste && ctx.key_pressed_for(key::v)) {
-				std::string paste = ctx.clipboard();
-				if (!paste.empty()) {
-					begin_edit(1);
-					if (has_selection()) {
-						delete_selection();
-					}
-					state.caret = buffer.insert(state.caret, paste);
-					state.anchor = state.caret;
-					changed = true;
-					modified = true;
-				}
+			if (ctrl && ctx.key_pressed_for(key::v) && paste_now()) {
+				changed = true;
+				modified = true;
 			}
 
 			const bool shift = ctx.key_held(key::left_shift) || ctx.key_held(key::right_shift);
@@ -1446,19 +1505,17 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 	view_width = placement.view_width;
 	block_layouts.assign(blocks.size(), std::nullopt);
 
-	ctx.queue_sprite({
-		.rect = rect,
-		.color = ctx.style.color_input_background,
-		.texture = ctx.blank_texture,
-	});
+	const input_skin& skin = ctx.style.input;
+
+	draw::fill_surface(ctx, rect, skin.area, {});
 
 	if (gutter_width > 0.f) {
-		ctx.queue_sprite({
-			.rect = rectf::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
-			.color = ctx.style.color_panel_alt,
-			.texture = ctx.blank_texture,
-			.clip_rect = rect,
-		});
+		draw::fill_surface(
+			ctx,
+			rectf::from_position_size({ rect.left(), rect.top() }, { gutter_width, rect.height() }),
+			skin.gutter,
+			{ .clip_rect = rect }
+		);
 	}
 
 	const rectf content_clip = gutter_width > 0.f
@@ -1525,7 +1582,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 			const float row_top = top_y - placement.line_top(static_cast<std::uint32_t>(i));
 			ctx.queue_sprite({
 				.rect = rectf::from_position_size({ x_a, row_top }, { x_b - x_a + extra, row_height }),
-				.color = ctx.style.color_selection,
+				.color = ctx.style.input.selection.fill,
 				.texture = ctx.blank_texture,
 				.clip_rect = content_clip,
 			});
@@ -1618,6 +1675,24 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 				.clip_rect = content_clip,
 			});
 		}
+
+		for (const text_rule& r : rules) {
+			if (r.line != line_no) {
+				continue;
+			}
+			const float x0 = origin + r.x0;
+			const float x1 = origin + r.x1;
+			const float weight = std::max(1.f, std::round(r.thickness * ctx.style.scale_factor));
+			ctx.queue_sprite({
+				.rect = rectf::from_position_size(
+					{ x0, line_center + row_height * (0.5f - r.y) + weight * 0.5f },
+					{ std::max(x1 - x0, weight), weight }
+				),
+				.color = r.color,
+				.texture = ctx.blank_texture,
+				.clip_rect = content_clip,
+			});
+		}
 	}
 
 	if (focused && !read_only && state.blink_on) {
@@ -1630,7 +1705,7 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		const float ink_bottom = fnt_view->min_glyph_bottom(scale);
 		ctx.queue_sprite({
 			.rect = rectf::from_position_size({ caret_x, baseline + ink_top }, { 2.f, ink_top - ink_bottom }),
-			.color = ctx.style.color_caret,
+			.color = ctx.style.input.caret.fill,
 			.texture = ctx.blank_texture,
 			.clip_rect = content_clip,
 		});
@@ -1677,6 +1752,13 @@ auto gse::gui::draw::text_area_in_rect(const draw_context& ctx, const id widget_
 		state.tail_pinned = state.scroll.y.target >= tail_scroll - 1.f;
 	}
 
+	if (params.images) {
+		draw_image_attachments(ctx, hot_widget_id, active_widget_id, *params.images, widget_id);
+		if (std::optional<image_attachment> pasted = ctx.take_image_paste(widget_id)) {
+			params.images->attachments.items.push_back(std::move(*pasted));
+		}
+	}
+
 	return modified;
 }
 
@@ -1693,7 +1775,7 @@ auto gse::gui::draw::follow_tail_button(builder& b, const rectf& area, text_area
 		{ extent, extent }
 	);
 
-	const interaction::press btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, rect);
+	const interaction::press btn = interaction::press_in_rect(ctx, b.hot_widget_id, b.active_widget_id, widget_id, { .rect = rect });
 	const std::uint32_t z = ctx.current_z_order + 1;
 
 	ctx.queue_sprite({
@@ -1705,12 +1787,7 @@ auto gse::gui::draw::follow_tail_button(builder& b, const rectf& area, text_area
 	});
 	ctx.queue_sprite({
 		.rect = rect.inset({ inset, inset }),
-		.color = btn.color({
-			.idle = ctx.style.color_title_bar,
-			.hot = ctx.style.color_tab_hovered,
-			.active = ctx.style.color_tab_active,
-			.disabled = ctx.style.color_title_bar,
-		}),
+		.color = btn.select(ctx.style.tab.cell).fill,
 		.texture = ctx.blank_texture,
 		.z_order = z,
 		.corner_radius = extent * 0.5f - inset,

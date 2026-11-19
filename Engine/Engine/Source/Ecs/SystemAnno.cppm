@@ -2,6 +2,7 @@ export module gse.ecs:system_anno;
 
 import std;
 
+import gse.core;
 import gse.meta;
 
 export namespace gse {
@@ -9,6 +10,7 @@ export namespace gse {
 		init,
 		run,
 		frame,
+		persist,
 		shutdown,
 	};
 
@@ -36,9 +38,16 @@ export namespace gse {
 
 	struct system_frame {};
 
+	struct system_persist {};
+
 	struct system_shutdown {};
 
 	struct deferred_system {};
+
+	template <std::meta::info Namespace>
+	struct written_by {
+		static constexpr std::meta::info owner = Namespace;
+	};
 }
 
 export namespace gse::settings {
@@ -94,6 +103,23 @@ export namespace gse::meta {
 		std::meta::info entity
 	) -> std::string_view;
 
+	template <std::meta::info First, std::meta::info... Rest>
+	consteval auto member_path_name() -> std::string_view;
+
+	template <std::meta::info First, std::meta::info... Rest>
+	auto member_at(
+		const auto& object
+	) -> const auto&;
+
+	consteval auto may_write(
+		std::meta::info component,
+		std::meta::info writer_state
+	) -> bool;
+
+	consteval auto has_written_by(
+		std::meta::info component
+	) -> bool;
+
 	template <typename State>
 	consteval auto has_system_state() -> bool;
 
@@ -102,12 +128,111 @@ export namespace gse::meta {
 
 	template <typename State>
 	consteval auto system_qualified_name() -> std::string_view;
+
+	consteval auto activation_gates_of(
+		std::meta::info type
+	) -> std::vector<std::meta::info>;
+}
+
+export namespace gse {
+	struct activation_gate_tag {};
+
+	struct namespace_gates {};
+
+	struct activation_gate {
+		id state;
+		auto (*holds)(const void*) -> bool = nullptr;
+		std::string_view requirement;
+	};
+
+	template <typename Gate>
+	auto activation_gate_for() -> activation_gate;
+
+	template <std::meta::info Member, auto... Values>
+	struct requires_setting : activation_gate_tag {
+		static constexpr std::meta::info gate_state = std::meta::parent_of(Member);
+		static constexpr std::string_view requirement = meta::qualified_name_of(Member);
+
+		static auto holds(
+			const void* state
+		) -> bool;
+	};
+
+	template <auto Value, std::meta::info First, std::meta::info... Rest>
+	struct requires_setting_path : activation_gate_tag {
+		static constexpr std::meta::info gate_state = std::meta::parent_of(First);
+		static constexpr std::string_view requirement = meta::member_path_name<First, Rest...>();
+
+		static auto holds(
+			const void* state
+		) -> bool;
+	};
+}
+
+export namespace gse::settings {
+	template <auto Value, typename Gate>
+	struct fallback_unless {
+		static_assert(std::is_base_of_v<activation_gate_tag, Gate>, "settings::fallback_unless takes an activation gate, such as requires_setting or gpu::requires_capability");
+
+		static constexpr auto value = Value;
+		using gate = Gate;
+	};
+}
+
+template <typename Gate>
+auto gse::activation_gate_for() -> activation_gate {
+	return {
+		.state = id_of<typename [:Gate::gate_state:]>(),
+		.holds = &Gate::holds,
+		.requirement = Gate::requirement,
+	};
+}
+
+template <std::meta::info Member, auto... Values>
+auto gse::requires_setting<Member, Values...>::holds(const void* state) -> bool {
+	using owner_t = [:gate_state:];
+	const auto& field = static_cast<const owner_t*>(state)->[:Member:];
+	return ((field == Values) || ...);
+}
+
+template <auto Value, std::meta::info First, std::meta::info... Rest>
+auto gse::requires_setting_path<Value, First, Rest...>::holds(const void* state) -> bool {
+	using owner_t = [:gate_state:];
+	return meta::member_at<First, Rest...>(*static_cast<const owner_t*>(state)) == Value;
+}
+
+template <std::meta::info First, std::meta::info... Rest>
+consteval auto gse::meta::member_path_name() -> std::string_view {
+	std::string out(qualified_name_of(First));
+	((out += ".", out += std::meta::identifier_of(Rest)), ...);
+	return std::define_static_string(out);
+}
+
+template <std::meta::info First, std::meta::info... Rest>
+auto gse::meta::member_at(const auto& object) -> const auto& {
+	if constexpr (sizeof...(Rest) == 0) {
+		return object.[:First:];
+	}
+	else {
+		return member_at<Rest...>(object.[:First:]);
+	}
+}
+
+consteval auto gse::meta::activation_gates_of(const std::meta::info type) -> std::vector<std::meta::info> {
+	std::vector<std::meta::info> out;
+	for (const auto ann : std::meta::annotations_of(type)) {
+		const auto t = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
+		if (std::meta::is_class_type(t) && std::meta::is_base_of_type(^^activation_gate_tag, t)) {
+			out.push_back(t);
+		}
+	}
+	return out;
 }
 
 consteval auto gse::meta::find_system_hook_anno(const std::meta::info fn) -> std::meta::info {
 	for (const auto ann : std::meta::annotations_of(fn)) {
 		const auto t = std::meta::remove_cvref(std::meta::dealias(std::meta::type_of(ann)));
-		if (t == ^^system_init || t == ^^system_frame || t == ^^system_shutdown) {
+		if (t == ^^system_init || t == ^^system_frame || t == ^^system_persist || t == ^^system_shutdown) {
 			return t;
 		}
 		if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^system_run) {
@@ -135,6 +260,9 @@ consteval auto gse::meta::hook_kind_of(const std::meta::info hook_anno_type) -> 
 	}
 	if (hook_anno_type == ^^system_frame) {
 		return system_hook::frame;
+	}
+	if (hook_anno_type == ^^system_persist) {
+		return system_hook::persist;
 	}
 	if (hook_anno_type == ^^system_shutdown) {
 		return system_hook::shutdown;
@@ -171,6 +299,19 @@ consteval auto gse::meta::required_order_deps_of(const std::meta::info fn) -> st
 
 consteval auto gse::meta::optional_order_deps_of(const std::meta::info fn) -> std::vector<std::meta::info> {
 	return order_deps_of(fn, ^^runs_after_optional);
+}
+
+consteval auto gse::meta::has_written_by(const std::meta::info component) -> bool {
+	return find_class_template_annotation(std::meta::dealias(component), ^^written_by) != std::meta::info{};
+}
+
+consteval auto gse::meta::may_write(const std::meta::info component, const std::meta::info writer_state) -> bool {
+	if (!has_written_by(component)) {
+		return true;
+	}
+	const auto anno = find_class_template_annotation(std::meta::dealias(component), ^^written_by);
+	const auto owner = std::meta::extract<std::meta::info>(std::meta::template_arguments_of(anno)[0]);
+	return std::meta::parent_of(std::meta::dealias(writer_state)) == owner;
 }
 
 template <typename State>

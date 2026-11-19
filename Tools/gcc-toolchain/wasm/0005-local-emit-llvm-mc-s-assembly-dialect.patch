@@ -1,0 +1,1622 @@
+--- a/gcc/config/wasm/wasm.h
++++ b/gcc/config/wasm/wasm.h
+@@ -31,7 +31,13 @@
+ /* End debug.  */
+ 
+ #define CC1PLUS_SPEC "-stdlib=libc++"
+-#define ASM_SPEC "-r --enable-annotations %{v:-v} %{Wa,*:%*}"
++/* llvm-mc.  The flags the spec used to carry were wat2wasm's, which never had
++   them, while the annotations it emitted were rwat's, which could not place a
++   static or form a function pointer.  The triple is spelled in full rather than
++   taken from the configured one: LLVM names the OS-less wasm target
++   `unknown', GCC's config.sub canonicalises the same target to `none'.  */
++#define ASM_SPEC "-triple=wasm32-unknown-unknown -filetype=obj %{v:--show-encoding} %{Wa,*:%*}"
++
+ #define STANDARD_STARTFILE_PREFIX_1 "/lib/wasm32-wasi/"
+ #define STARTFILE_SPEC "%R" STANDARD_STARTFILE_PREFIX_1 "crt1%O%s"
+ #define LIB_SPEC "%{!shared:%{!p:%{!pg:-lc}}%{p:-lc_p}%{pg:-lc_p}}"
+@@ -226,7 +232,7 @@
+ /* End data layout.  */
+ 
+ /* Asm.  */
+-#define ASM_COMMENT_START ";;"
++#define ASM_COMMENT_START "#"
+ #define ASM_APP_ON ""
+ #define ASM_APP_OFF ""
+ 
+--- a/gcc/config/wasm/wasm.md
++++ b/gcc/config/wasm/wasm.md
+@@ -24,7 +24,7 @@
+ (define_insn "nop"
+   [(const_int 0)]
+   ""
+-  "(nop)"
++  "nop"
+   [])
+ 
+  (define_expand "mov<mode>"
+@@ -86,7 +86,7 @@
+     [(call (mem:SI (match_operand:P 0 "wasm_call_register_operand"))
+ 	       (match_operand 1))])]
+   ""
+-  "(call_indirect (param%T2) (result)%A2 (%M0.get %0))")
++  "%A2%i0\n\tcall_indirect\t%~, (%T2) -> ()")
+ 
+ (define_insn "*call_value_internal_indirect"
+   [(match_parallel 3 "call_operation"
+@@ -94,14 +94,14 @@
+ 	      (call (mem:SI (match_operand:P 1 "wasm_call_register_operand"))
+ 			(match_operand 2)))])]
+   ""
+-  "(%M0.set %0 (call_indirect (param%T3) (result%T0)%A3 (%M1.get %1)))")
++  "%A3%i1\n\tcall_indirect\t%~, (%T3) -> (%T0)\n\t%M0.set %0")
+ 
+ (define_insn "*call_internal"
+   [(match_parallel 2 "call_operation"
+     [(call (mem:SI (match_operand:P 0 "funcref_operand"))
+ 	       (match_operand 1))])]
+   ""
+-  "(call %0%A2)")
++  "%A2call\t%0")
+ 
+ (define_insn "*call_value_internal"
+   [(match_parallel 3 "call_operation"
+@@ -109,27 +109,27 @@
+ 	      (call (mem:SI (match_operand:P 1 "funcref_operand"))
+ 			(match_operand 2)))])]
+   ""
+-  "(%M0.set %0 (call %1%A3))")
++  "%A3call\t%1\n\t%M0.set %0")
+ 
+ ;; Literals
+ (define_insn "*local_const<mode>"
+   [(set (match_operand:QHSDI 0 "register_operand")
+ 	    (match_operand:QHSDI 1 "const_int_operand" ""))]
+   ""
+-  "(%M0.set %0 (<QHSDI:promote_type>.const %1))")
++  "<QHSDI:promote_type>.const\t%1\n\t%M0.set %0")
+ 
+ (define_insn "*local_const<mode>"
+   [(set (match_operand:F 0 "register_operand")
+ 	    (match_operand:F 1 "immediate_operand" ""))]
+   ""
+-  "(%M0.set %0 (<types>.const %1))")
++  "<types>.const\t%1\n\t%M0.set %0")
+ 
+ ;; Address taking
+ (define_insn "*local_const_addr"
+   [(set (match_operand:SI 0 "register_operand")
+ 	    (match_operand:SI 1 "immediate_operand"))]
+   ""
+-  "(%M0.set %0 %i1)")
++  "%i1\n\t%M0.set %0")
+ 
+ ;; Moves
+ (define_insn "*local_move<mode>"
+@@ -137,19 +137,19 @@
+ 	(match_operand:QHSDISDF 1 "wasm_subregister_operand" ""))]
+   "wasm_real_register_mode (operands[0])
+    == wasm_real_register_mode (operands[1])"
+-  "(%M0.set %0 (%M1.get %1))")
++  "%i1\n\t%M0.set %0")
+ 
+ (define_insn "*local_move<mode>"
+   [(set (match_operand:QHSDI 0 "subregister_for_di_operand" "")
+ 	(match_operand:QHSDI 1 "subregister_for_si_operand" ""))]
+   ""
+-  "(%M0.set %0 (i64.extend_i32_s (%M1.get %1)))")
++  "%i1\n\ti64.extend_i32_s\n\t%M0.set %0")
+ 
+ (define_insn "*local_move<mode>"
+   [(set (match_operand:QHSDI 0 "subregister_for_si_operand" "")
+ 	(match_operand:QHSDI 1 "subregister_for_di_operand" ""))]
+   ""
+-  "(%M0.set %0 (i32.wrap_i64 (%M1.get %1)))")
++  "%i1\n\ti32.wrap_i64\n\t%M0.set %0")
+ 
+ ;; Comparisons
+ (define_expand "cstore<mode>4"
+@@ -168,18 +168,18 @@
+ 	(frelop:SI (match_operand:F 1 "wasm_register_operand")
+ 		   (match_operand:F 2 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<opnamef> (%M1.get %1) (%M2.get %2)))")
++  "%i1\n\t%i2\n\t<types>.<opnamef>\n\t%M0.set %0")
+ 
+ (define_insn "*test<code>_<mode>"
+   [(set (match_operand:SI 0 "wasm_register_operand")
+ 	(irelop:SI (match_operand:REG 1 "wasm_register_operand")
+ 		   (match_operand:REG 2 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<opname> (%M1.get %1) (%M2.get %2)))")
++  "%i1\n\t%i2\n\t<types>.<opname>\n\t%M0.set %0")
+ 
+ ;; Control flow
+-(define_insn "return" [(return)] "" "(return%#)")
+-(define_insn "trap" [(trap_if (const_int 1) (const_int 0))] "" "(unreachable)")
++(define_insn "return" [(return)] "" "%#return")
++(define_insn "trap" [(trap_if (const_int 1) (const_int 0))] "" "unreachable")
+ 
+ (define_expand "cbranch<mode>4"
+   [(set (pc)
+@@ -204,51 +204,51 @@
+ 		      (label_ref (match_operand 0 "" ""))
+ 		      (pc)))]
+   ""
+-  "(br_if $control (local.set $control (i32.const %l0)) (%M1.get %1))")
++  "i32.const\t%l0\n\tlocal.set\t%!\n\t%i1\n\tbr_if\t%&")
+ 
+ (define_insn "*jump"
+   [(set (pc) (label_ref (match_operand 0 "" "")))]
+   ""
+-  "(br $control (local.set $control (i32.const %l0)))")
++  "i32.const\t%l0\n\tlocal.set\t%!\n\tbr\t%&")
+ 
+ ;; Int memops
+ (define_insn "*store<mode>"
+   [(set (match_operand:REGF 0 "memory_operand")
+ 	(match_operand:REGF 1 "wasm_register_operand"))]
+   ""
+-  "(<types>.store %m0 %i1)")
++  "%i0\n\t%i1\n\t<types>.store\t%f0")
+ 
+ (define_insn "*load<mode>"
+   [(set (match_operand:REGF 0 "wasm_register_operand")
+ 	(match_operand:REGF 1 "memory_operand"))]
+   ""
+-  "(%o0 (<types>.load %m1))")
++  "%i1\n\t<types>.load\t%f1\n\t%o0")
+ 
+ ;; I64 subreg memops
+ (define_insn "*store<SUBREGDI:mode>"
+   [(set (match_operand:SUBREGDI 0 "memory_operand")
+ 	(match_operand:SUBREGDI 1 "subregister_for_di_operand"))]
+   ""
+-  "(i64.store<SUBREGDI:size> %m0 %i1)")
++  "%i0\n\t%i1\n\ti64.store<SUBREGDI:size>\t%f0")
+ 
+ (define_insn "*load<SUBREGDI:mode>"
+   [(set (match_operand:SUBREGDI 0 "subregister_for_di_operand")
+ 	(match_operand:SUBREGDI 1 "memory_operand"))]
+   ""
+-  "(%o0 (i64.load<SUBREGSI:size>_s %m1))")
++  "%i1\n\ti64.load<SUBREGSI:size>_s\t%f1\n\t%o0")
+ 
+ ;; I32 subreg memops
+ (define_insn "*store<SUBREGSI:mode>"
+   [(set (match_operand:SUBREGSI 0 "memory_operand" "")
+ 	(match_operand:SUBREGSI 1 "subregister_for_si_operand" ""))]
+   ""
+-  "(i32.store<SUBREGSI:size> %m0 %i1)")
++  "%i0\n\t%i1\n\ti32.store<SUBREGSI:size>\t%f0")
+ 
+ (define_insn "*load<SUBREGSI:mode>"
+   [(set (match_operand:SUBREGSI 0 "subregister_for_si_operand")
+ 	(match_operand:SUBREGSI 1 "memory_operand"))]
+   ""
+-  "(%o0 (i32.load<SUBREGSI:size>_s %i1))")
++  "%i1\n\ti32.load<SUBREGSI:size>_s\t%f1\n\t%o0")
+ 
+ ;; Binary integer
+ (define_expand "<opname_rt><mode>3"
+@@ -268,7 +268,7 @@
+ 	    (ibinop:REG (match_operand:REG 1 "wasm_register_operand")
+ 		    (match_operand:REG 2 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<ibinop:opname> (%M1.get %1) (%M2.get %2)))")
++  "%i1\n\t%i2\n\t<types>.<ibinop:opname>\n\t%M0.set %0")
+ 
+ ;; Unary integer
+ (define_expand "<opname_rt><mode>2"
+@@ -284,7 +284,7 @@
+   [(set (match_operand:REG 0 "wasm_register_operand")
+ 	    (iunop:REG (match_operand:REG 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<iunop:opname> (%M1.get %1)))")
++  "%i1\n\t<types>.<iunop:opname>\n\t%M0.set %0")
+ 
+ ;; Binary float
+ (define_expand "<opname_rt><mode>3"
+@@ -302,7 +302,7 @@
+ 	    (fbinop:F (match_operand:F 1 "wasm_register_operand")
+ 		  (match_operand:F 2 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<opnamef> (%M1.get %1) (%M2.get %2)))")
++  "%i1\n\t%i2\n\t<types>.<opnamef>\n\t%M0.set %0")
+ 
+ ;; Unary float
+ (define_expand "<opname_rt><mode>2"
+@@ -317,7 +317,7 @@
+   [(set (match_operand:F 0 "wasm_register_operand")
+ 	    (funop:F (match_operand:F 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<types>.<funop:opnamef> (%M1.get %1)))")
++  "%i1\n\t<types>.<funop:opnamef>\n\t%M0.set %0")
+ 
+ ;; Integer conv
+ (define_expand "<iconvop:opname_rt><QHSDI2:mode><QHSDI:mode>2"
+@@ -334,85 +334,85 @@
+ 	(sign_extend:QHSDI (match_operand:SUBREGSI 1 "register_operand")))]
+   "wasm_real_register_mode (operands[0]) == SImode
+    && wasm_real_register_mode (operands[1]) == SImode"
+-  "(%M0.set %0 (i32.extend<SUBREGSI:size>_s (%M1.get %1)))")
++  "%i1\n\ti32.extend<SUBREGSI:size>_s\n\t%M0.set %0")
+ 
+ (define_insn "*extend_di_<SUBREGDI:mode><QHSDI:mode>"
+   [(set (match_operand:QHSDI 0 "register_operand")
+ 	(sign_extend:QHSDI (match_operand:SUBREGDI 1 "register_operand")))]
+   "wasm_real_register_mode (operands[0]) == DImode
+    && wasm_real_register_mode (operands[1]) == DImode"
+-  "(%M0.set %0 (i64.extend<SUBREGDI:size>_s (%M1.get %1)))")
++  "%i1\n\ti64.extend<SUBREGDI:size>_s\n\t%M0.set %0")
+ (define_insn "*extend_sidi"
+   [(set (match_operand:DI 0 "register_operand")
+ 	(sign_extend:DI (match_operand:SI 1 "register_operand")))]
+   "REG_P (operands[0]) && REG_P (operands[1])"
+-  "(%M0.set %0 (i64.extend_i32_s (%M1.get %1)))")
++  "%i1\n\ti64.extend_i32_s\n\t%M0.set %0")
+ (define_insn "*uextend_sidi"
+   [(set (match_operand:DI 0 "register_operand")
+ 	(zero_extend:DI (match_operand:SI 1 "register_operand")))]
+   "REG_P (operands[0]) && REG_P (operands[1])"
+-  "(%M0.set %0 (i64.extend_i32_u (%M1.get %1)))")
++  "%i1\n\ti64.extend_i32_u\n\t%M0.set %0")
+ (define_insn "*truncate_disi"
+   [(set (match_operand:SI 0 "register_operand")
+ 	(truncate:SI (match_operand:DI 1 "register_operand")))]
+   "REG_P (operands[0]) && REG_P (operands[1])"
+-  "(%M0.set %0 (i32.wrap_i64 (%M1.get %1)))")
++  "%i1\n\ti32.wrap_i64\n\t%M0.set %0")
+ 
+ ;; Float conv
+ (define_insn "extendsfdf2"
+   [(set (match_operand:DF 0 "wasm_register_operand")
+ 	(float_extend:DF (match_operand:SF 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (f64.promote_f32 (%M1.get %1)))")
++  "%i1\n\tf64.promote_f32\n\t%M0.set %0")
+ 
+ (define_insn "truncdfsf2"
+   [(set (match_operand:SF 0 "wasm_register_operand")
+ 	(float_truncate:SF (match_operand:DF 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (f32.demote_f64 (%M1.get %1)))")
++  "%i1\n\tf32.demote_f64\n\t%M0.set %0")
+ 
+ ;; Float -> int conv
+ (define_insn "fix_trunc<F:mode><REG:mode>2"
+   [(set (match_operand:REG 0 "wasm_register_operand")
+ 	(fix:REG (match_operand:F 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<REG:types>.trunc_sat_<F:types>_s (%M1.get %1)))")
++  "%i1\n\t<REG:types>.trunc_sat_<F:types>_s\n\t%M0.set %0")
+ 
+ (define_insn "fixuns_trunc<F:mode><REG:mode>2"
+   [(set (match_operand:REG 0 "wasm_register_operand")
+ 	(unsigned_fix:REG (match_operand:F 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<REG:types>.trunc_sat_<F:types>_u (%M1.get %1)))")
++  "%i1\n\t<REG:types>.trunc_sat_<F:types>_u\n\t%M0.set %0")
+ 
+ ;;  Int -> float conv
+ (define_insn "float<REG:mode><F:mode>2"
+   [(set (match_operand:F 0 "wasm_register_operand")
+ 	(float:F (match_operand:REG 1 "wasm_register_operand")))]
+   ""
+-  "(%M0.set %0 (<F:types>.convert_<REG:types>_s (%M1.get %1)))")
++  "%i1\n\t<F:types>.convert_<REG:types>_s\n\t%M0.set %0")
+ 
+ ;; Float -> int cast
+ (define_insn "*cast<REG:reg2f><REG:mode>"
+   [(set (match_operand:REG 0 "wasm_register_operand")
+ 	(subreg:REG (match_operand:<REG:REG2F> 1 "wasm_register_operand") 0))]
+   ""
+-  "(%M0.set %0 (<REG:types>.reinterpret_<reg2f_types> (%M1.get %1)))")
++  "%i1\n\t<REG:types>.reinterpret_<reg2f_types>\n\t%M0.set %0")
+ 
+ (define_insn "*cast<REG:reg2f><REG:mode>"
+   [(set (subreg:<REG:REG2F> (match_operand:REG 0 "wasm_register_operand") 0)
+ 	(match_operand:<REG:REG2F> 1 "wasm_register_operand"))]
+   ""
+-  "(%M0.set %0 (<REG:types>.reinterpret_<reg2f_types> (%M1.get %1)))")
++  "%i1\n\t<REG:types>.reinterpret_<reg2f_types>\n\t%M0.set %0")
+ 
+ ;; Int -> float cast
+ (define_insn "*cast<mode><reg2f>"
+   [(set (match_operand:<REG2F> 0 "wasm_register_operand")
+ 	(subreg:<REG2F> (match_operand:REG 1 "wasm_register_operand") 0))]
+   ""
+-  "(%M0.set %0 (<reg2f_types>.reinterpret_<REG:types> (%M1.get %1)))")
++  "%i1\n\t<reg2f_types>.reinterpret_<REG:types>\n\t%M0.set %0")
+ 
+ (define_insn "*cast<mode><reg2f>"
+   [(set (subreg:REG (match_operand:<REG2F> 0 "wasm_register_operand") 0)
+ 	(match_operand:REG 1 "wasm_register_operand"))]
+   ""
+-  "(%M0.set %0 (<reg2f_types>.reinterpret_<REG:types> (%M1.get %1)))")
+\ No newline at end of file
++  "%i1\n\t<reg2f_types>.reinterpret_<REG:types>\n\t%M0.set %0")
+\ No newline at end of file
+--- a/gcc/config/wasm/wasm-asm.cc
++++ b/gcc/config/wasm/wasm-asm.cc
+@@ -65,23 +65,87 @@
+ namespace
+ {
+ 
+-/* Current indentation level within an output WebAssembly file.  */
+-int indent;
+-
+ /* The alignment with which the next decl should be output.  */
+ int align;
+ 
+-void
+-output_indent (FILE *stream)
+-{
+-  fprintf (stream, "%*s", indent * 2, "");
+-}
+-
++/* The real output file, and the two buffers the body is split across.  Code and
++   data cannot be interleaved: the assembler emits a module's sections in the
++   order it meets them and rejects code reached after a data section ("only data
++   supported in data sections"), while GCC emits functions and objects in
++   declaration order.  So objects are collected separately and appended after
++   every function.  */
+ FILE *saved_asm_out_file;
++FILE *code_out_file;
++FILE *data_out_file;
++
++/* Where output went before the current object redirected it into the data
++   buffer.  Null when no object is open, which is also what says whether there
++   is anything to put back.  */
++FILE *outside_data_file;
+ 
+ hash_map<tree, std::pair<tree, const_tree>> import_map;
+ hash_set<const_rtx> external_libcall_set;
+ 
++/* Where each register lives in the current function's local index space.
++   Assembly names a local by index, not by the name REGISTER_NAMES gives it, and
++   the index is positional: parameters first in signature order, then one entry
++   per `.local' in declaration order.  The map is built by the same walk that
++   emits those declarations, in wasm_asm_start_function, so the two cannot
++   disagree.  */
++hash_map<cfl_hash, int> local_index;
++
++/* How many `block's are open between here and the enclosing `loop'.  A branch
++   names its target by relative depth, so this is what a branch to the dispatch
++   loop prints.  The staircase is emitted in one go by wasm_asm_start_function
++   and unwound one block at a time by wasm_output_internal_label, which are the
++   only two places this moves.  */
++int block_depth;
++
++/* Whether the function table has been referenced, and so whether the module
++   header must declare it.  A module that declares a table it never uses imports
++   one anyway, which is why this is tracked rather than always emitted: the
++   header is written after the body, so by then the answer is known.  */
++bool table_used;
++
++/* The data symbol currently being emitted, and its size.  An object is closed
++   with a `.size' naming it, but TARGET_ASM_END_DECL is handed nothing, so what
++   ASM_DECLARE_OBJECT_NAME was given has to be carried across the contents.  */
++const char *pending_data_sym;
++HOST_WIDE_INT pending_data_size;
++
++/* Every function signature this translation unit needs in scope ahead of the
++   body, as finished `.functype' text keyed by symbol name.  A `call' is rejected
++   outright unless the callee's signature is already in scope, and GCC emits
++   functions in an order that puts calls before definitions, so the declarations
++   cannot be left where the definitions are.  They are flushed into the header
++   instead, which is what makes buffering the body load-bearing rather than
++   merely convenient.  A definition still repeats its own `.functype' after its
++   label: the declaration alone does not give the body's parameters their types.  */
++hash_map<nofree_string_hash, char *> func_decls;
++
++/* Where REGNO lives in the current function's local index space.  A register
++   reaching assembly without a declaration would otherwise be printed as an
++   index that means some other local, so this is the one place that asks.  */
++int
++local_of (int regno)
++{
++  int *index = local_index.get (regno);
++  gcc_assert (index);
++  return *index;
++}
++
++/* Record NAME's signature for the header.  Called from both the function being
++   defined and every function referenced, because a `call' cannot tell the two
++   apart and needs the signature either way.  */
++void
++declare_func (const char *name, const char *signature)
++{
++  /* Both halves are copied: the map outlives every caller's strings, because it
++     is not read until the header is written at the end of the unit.  */
++  if (!func_decls.get (name))
++    func_decls.put (xstrdup (name), xstrdup (signature));
++}
++
+ bool
+ global_p (rtx reg)
+ {
+@@ -91,46 +155,54 @@
+   return REGNO (reg) == STACK_POINTER_REGNUM;
+ }
+ 
+-bool
+-is_escape (char x)
+-{
+-  const char *escapes = "\"\'\\\t\n\r";
+-  while (*escapes && x != *escapes)
+-    ++escapes;
+-  return *escapes;
+-}
++/* Each of these emits one complete directive, because varasm calls them once per
++   piece of an object's contents rather than once per object.  */
+ 
+ void
+ assemble_string (FILE *stream, const char *string, int size, bool hex_only)
+ {
+-  fprintf (stream, " \"");
++  fprintf (stream, "\t.ascii\t\"");
+   for (int i = 0; i != size; ++i)
+     {
+-      char c[] = {'\\', string[i], '\0'};
+-      if (c[1] < 32 || c[1] > 127 || hex_only)
+-	fprintf (stream, "\\%.2hhx", c[1]);
++      unsigned char c = string[i];
++      /* Octal for anything that is not plainly printable.  The assembler's only
++	 other escapes are \\, \" and the C ones, and an unrecognised escape is
++	 taken literally rather than diagnosed, so spelling the rest in octal is
++	 both shorter to get right and impossible to get silently wrong.  */
++      if (hex_only || c < 32 || c > 126 || c == '"' || c == '\\')
++	fprintf (stream, "\\%.3o", c);
+       else
+-	fprintf (stream, "%s", c + !is_escape (c[1]));
++	fputc (c, stream);
+     }
+-  fprintf (stream, "\"");
++  fprintf (stream, "\"\n");
+ }
+ 
+ void
+ assemble_zeroes (FILE *stream, unsigned HOST_WIDE_INT size)
+ {
+-  fputs (" \"", stream);
+-  for (unsigned HOST_WIDE_INT i = 0; i != size; ++i)
+-    fputs ("\\00", stream);
+-  fputs ("\"", stream);
++  fprintf (stream, "\t.skip\t" HOST_WIDE_INT_PRINT_UNSIGNED "\n", size);
+ }
+ 
+ void
+ assemble_const_int (FILE *stream, HOST_WIDE_INT value, unsigned size)
+ {
+-  char val[sizeof (HOST_WIDE_INT)];
+-  for (int i = 0; i != sizeof (HOST_WIDE_INT); ++i)
+-    val[i] = value >> (i * 8);
+-  assemble_string (stream, val, size, true);
++  /* `.intN' exists for the four natural widths only.  Anything else -- a
++     three-byte bitfield, say -- goes out as bytes, which is what the annotated
++     dialect did for every width.  */
++  if (size != 1 && size != 2 && size != 4 && size != 8)
++    {
++      char val[sizeof (HOST_WIDE_INT)];
++      for (unsigned i = 0; i != sizeof val; ++i)
++	val[i] = value >> (i * 8);
++      assemble_string (stream, val, size, true);
++      return;
++    }
++  /* Truncate to the width being emitted: `.int8' rejects a value that does not
++     fit, and GCC hands us sign- and zero-extended constants alike.  */
++  unsigned HOST_WIDE_INT bits = (unsigned HOST_WIDE_INT) value;
++  if (size < sizeof (HOST_WIDE_INT))
++    bits &= ((unsigned HOST_WIDE_INT) 1 << (size * 8)) - 1;
++  fprintf (stream, "\t.int%u\t" HOST_WIDE_INT_PRINT_UNSIGNED "\n", size * 8, bits);
+ }
+ 
+ /* Can handle following shapes:
+@@ -174,25 +246,40 @@
+       assemble_const_int (stream, INTVAL (x) + addend, size);
+       return true;
+     case SYMBOL_REF:
+-      tree decl = SYMBOL_REF_DECL (x);
+-      bool func_p = TREE_CODE (decl) == FUNCTION_DECL;
+-
+-      assemble_zeroes (stream, size);
+-      fprintf (stream, " (@reloc i%d %s ", size * 8,
+-	       func_p ? "functable" : "data");
+-      wasm_print_operand (stream, x, 'l');
++      /* A function's address is its table index, so a function pointer in data
++	 is what makes the module need a table.  */
++      if (SYMBOL_REF_DECL (x) && TREE_CODE (SYMBOL_REF_DECL (x)) == FUNCTION_DECL)
++	table_used = true;
++
++      /* A relocation is just a symbol in the operand.  The assembler picks
++	 MEMORY_ADDR or TABLE_INDEX from the symbol's own kind, so a function
++	 pointer in data needs nothing said about it here -- which is the whole
++	 of what the annotated dialect could not express.  */
++      fprintf (stream, "\t.int%d\t", size * 8);
++      assemble_name (stream, XSTR (x, 0));
+       if (addend)
+-	fprintf (stream, " %+ld", addend);
+-      fprintf (stream, ")");
++	fprintf (stream, "%+" HOST_WIDE_INT_PRINT "d", addend);
++      fprintf (stream, "\n");
+       return true;
+     }
+ }
+ 
+-/* Given a type, print what wasm thinks it should look like.  */
+-void
+-print_type (FILE *stream, const_tree type, bool first = false)
+-{
+-  const char *delim = first ? "" : " ";
++/* A type list, comma separated.  Appended to a string rather than printed to a
++   stream because a signature has to be able to exist without being emitted: the
++   header declares signatures for functions whose bodies were written long
++   before it.  Building each list in its own string is also what replaces the
++   `first' flag the stream version threaded through its recursion -- the
++   separator follows from whether the list is empty.  */
++void
++append_type (std::string &out, const_tree type)
++{
++  auto item = [&out] (const char *name)
++    {
++      if (!out.empty ())
++	out += ", ";
++      out += name;
++    };
++
+   switch (TREE_CODE (type))
+     {
+     default:
+@@ -204,9 +291,9 @@
+       if (TYPE_EMPTY_P (type))
+ 	break;
+       if (TYPE_TRANSPARENT_AGGR (type))
+-	print_type (stream, TREE_TYPE (first_field (type)), first);
++	append_type (out, TREE_TYPE (first_field (type)));
+       else
+-	print_type (stream, ptr_type_node, first);
++	append_type (out, ptr_type_node);
+       break;
+     case NULLPTR_TYPE:
+     case POINTER_TYPE:
+@@ -215,104 +302,24 @@
+     case INTEGER_TYPE:
+     case BOOLEAN_TYPE:
+     case ENUMERAL_TYPE:
+-      fprintf (stream, "%s%s", delim,
+-	       TYPE_PRECISION (type) > 32 ? "i64" : "i32");
++      item (TYPE_PRECISION (type) > 32 ? "i64" : "i32");
+       break;
+     case REAL_TYPE:
+-      fprintf (stream, "%s%s", delim,
+-	       TYPE_PRECISION (type) > 32 ? "f64" : "f32");
++      item (TYPE_PRECISION (type) > 32 ? "f64" : "f32");
+       break;
+-    case FUNCTION_TYPE:
+-    case METHOD_TYPE:
+-      function_args_iterator it;
+-      tree *arg;
+-      fprintf (stream, "%s(param", delim);
+-      CUMULATIVE_ARGS args;
+-      INIT_CUMULATIVE_ARGS (args, type, nullptr, false, 0);
+-      FOREACH_FUNCTION_ARGS_PTR (type, arg, it)
+-      {
+-	function_arg_info info (*arg, stdarg_p (type));
+-	if (pass_by_reference (&args, info))
+-	  print_type (stream, intSI_type_node);
+-	else
+-	  print_type (stream, *arg);
+-      }
+-      fprintf (stream, ")");
+-      tree return_type = TREE_TYPE (type);
+-      fprintf (stream, " (result");
+-      if (return_type != void_type_node)
+-	{
+-	  print_type (stream, return_type);
+-	}
+-      fprintf (stream, ")");
+-      break;
+-    }
+-}
+-void
+-print_local_decl (FILE *stream, rtx reg, bool param = false)
+-{
+-  output_indent (stream);
+-  fprintf (stream, "(%s ", param ? "param" : "local");
+-  wasm_print_operand (stream, reg, 0);
+-  tree param_type = lang_hooks.types.type_for_mode (GET_MODE (reg), 0);
+-  print_type (stream, param_type);
+-  fprintf (stream, ")\n");
+-}
+-
+-void assemble_visibility (FILE *stream, const_tree decl)
+-{
+-  if (decl && DECL_VISIBILITY (decl) == VISIBILITY_HIDDEN)
+-    fprintf (stream, " hidden");
+-}
+-
+-void assemble_binding (FILE *stream, const_tree decl)
+-{
+-  if (!decl)
+-    return;
+-  if (DECL_WEAK (decl))
+-    fprintf (stream, " weak");
+-  if (!TREE_PUBLIC (decl))
+-    fprintf (stream, " local");
+-}
+-
+-void assemble_init_prio (FILE *stream, const_tree decl)
+-{
+-  if (DECL_STATIC_CONSTRUCTOR (decl))
+-    {
+-      int prio = decl_init_priority_lookup (const_cast<tree> (decl));
+-      fprintf (stream, " (init_prio %d)", prio);
+     }
+ }
+ 
+-void assemble_sym_name (FILE *stream, const char *name)
+-{
+-  fprintf (stream, " (name \"");
+-  assemble_name (stream, name);
+-  fprintf (stream, "\")");
+-}
+-
+-void
+-assemble_data_import (FILE *stream, const_tree decl, const char *name)
+-{
+-  output_indent (stream);
+-  fprintf (stream, "(@sym.import.data $");
+-  assemble_name (stream, name);
+-  assemble_binding (stream, decl);
+-  assemble_visibility (stream, decl);
+-  assemble_sym_name (stream, name);
+-  fprintf (stream, ")\n");
+-}
+-
+ /* Given the type, guess where assign_params must've put it.  */
+-void print_func_frame_related (FILE *stream, tree type)
++void append_func_frame_related (std::string &out, tree type)
+ {
+   if (VOID_TYPE_P (type))
+     return;
+   if (TREE_CODE (type) == COMPLEX_TYPE
+ 	    && targetm.calls.split_complex_arg (type))
+     {
+-      print_func_frame_related (stream, TREE_TYPE (type));
+-      print_func_frame_related (stream, TREE_TYPE (type));
++      append_func_frame_related (out, TREE_TYPE (type));
++      append_func_frame_related (out, TREE_TYPE (type));
+       return;
+     }
+   if (RECORD_OR_UNION_TYPE_P (type)
+@@ -321,134 +328,126 @@
+ 
+   function_arg_info arg (type, true);
+   if (pass_by_reference (NULL, arg))
+-    print_type (stream, build_pointer_type (type));
++    append_type (out, build_pointer_type (type));
+   else
+-    print_type (stream, type);
++    append_type (out, type);
+ }
+ 
+-void
+-print_func_type (FILE *stream, const_tree type, bool for_block = false)
++/* A function's result list, as its callers see it.  */
++std::string
++results_of (const_tree type)
+ {
+   tree result = TREE_TYPE (type);
+-
++  std::string out;
+   /* Taken from assign_parms_augmented_arg_list, please keep in sync.  */
+-  bool return_by_ref = aggregate_value_p (result, type);
+-  if (!for_block)
+-    {
+-      fprintf (stream, " (param");
+-      if (return_by_ref)
+-	print_func_frame_related (stream, build_pointer_type (result));
+-      tree arg;
+-      function_args_iterator it;
+-      FOREACH_FUNCTION_ARGS (type, arg, it)
+-      {
+-	print_func_frame_related (stream, arg);
+-      }
+-      if (stdarg_p (type) || !TYPE_ARG_TYPES (type))
+-	print_func_frame_related (stream, ptr_type_node);
+-      fprintf (stream, ")");
+-    }
+-
+-  fprintf (stream, "%s(result", for_block ? "": " ");
+-  if (!return_by_ref)
+-    print_func_frame_related (stream, result);
+-  fprintf (stream, ")");
++  if (!aggregate_value_p (result, type))
++    append_func_frame_related (out, result);
++  return out;
+ }
+ 
+-void print_global_type (FILE *stream, const_tree type)
++/* A function's parameter list, as its callers see it.  Three of these
++   parameters are not in the argument list and are added here, which is the
++   whole reason this must not be derived a second time anywhere: a value
++   returned in memory is passed back through a hidden leading pointer, and a
++   varargs or unprototyped function takes a hidden trailing one to the
++   outgoing-args block.  A declaration that leaves them out disagrees with what
++   the call site pushes, and nothing diagnoses that until the module fails to
++   validate or the linker compares two objects.  */
++std::string
++params_of (const_tree type)
+ {
+-  if (!TYPE_READONLY (type))
+-    fprintf (stream, " (mut");
+-  print_type (stream, type);
+-  if (!TYPE_READONLY (type))
+-    fprintf (stream, ")");
+-}
++  tree result = TREE_TYPE (type);
++  std::string out;
++
++  /* Taken from assign_parms_augmented_arg_list, please keep in sync.  */
++  if (aggregate_value_p (result, type))
++    append_func_frame_related (out, build_pointer_type (result));
++  tree arg;
++  function_args_iterator it;
++  FOREACH_FUNCTION_ARGS (type, arg, it)
++  {
++    /* append_func_frame_related ignores the void the argument list ends with,
++       so the end marker does not become a parameter here.  */
++    append_func_frame_related (out, arg);
++  }
++  if (stdarg_p (type) || !TYPE_ARG_TYPES (type))
++    append_func_frame_related (out, ptr_type_node);
++  return out;
++}
++
++/* The one way to spell a function's signature from its type.  */
++std::string
++signature_of (const_tree type)
++{
++  return "(" + params_of (type) + ") -> (" + results_of (type) + ")";
++}
++
++/* Whether `return' has to leave a value on the stack, which is to say whether
++   the signature gives the function a result.  Set from that signature's own
++   result list in wasm_asm_start_function, so the two cannot answer it
++   differently.
++
++   Deliberately NOT the same question as whether the return *local* exists --
++   that is `cfun->machine->return_mode != VOIDmode', asked once, where the local
++   is declared.  The two come apart for a result returned in memory: the caller
++   passes a hidden pointer, the signature has no result, and the return register
++   is nevertheless live because that is where the pointer is handed back.  So
++   the local exists while the result list is empty, and a `return' that read the
++   local would push a value the signature says is not there.  */
++bool result_on_stack;
+ 
+ void
+-assemble_entity_import (FILE *stream, const char *name, const char *abi_name,
+-			const_tree decl)
++emit_named_directive (FILE *stream, const char *directive, const char *name)
+ {
+-  const_tree type = DECL_P (decl) ? TREE_TYPE (decl) : decl;
+-
+-  output_indent (stream);
+-  fprintf (stream, "(import \"env\" \"");
+-  assemble_name (stream, abi_name);
+-  fprintf (stream, "\" ");
+-  switch (TREE_CODE (type))
+-    {
+-    case INTEGER_TYPE:
+-    case BOOLEAN_TYPE:
+-    case ENUMERAL_TYPE:
+-    case POINTER_TYPE:
+-    case OFFSET_TYPE:
+-    case RECORD_TYPE:
+-    case UNION_TYPE: {
+-      fprintf (stream, "(global $");
+-      assemble_name (stream, name);
+-      print_global_type (stream, type);
+-      break;
+-    }
+-    case FUNCTION_TYPE:
+-    case METHOD_TYPE: {
+-      fprintf (stream, "(func $");
+-      assemble_name (stream, name);
+-      fprintf (stream, " (@sym");
+-      if (type != decl)
+-	{
+-	  assemble_init_prio (stream, decl);
+-	  assemble_binding (stream, decl);
+-	  assemble_visibility (stream, decl);
+-	}
+-      fprintf (stream, ")");
++  fprintf (stream, "\t%s\t", directive);
++  assemble_name (stream, name);
++  fprintf (stream, "\n");
++}
+ 
+-      print_func_type (stream, type);
+-      break;
+-    }
+-    default:
+-      gcc_unreachable ();
+-    }
+-  fprintf (stream, "))\n");
++/* The binding and visibility of NAME.  Local is the assembler's default for a
++   defined symbol, so it is spelled by saying nothing -- and saying it at all is
++   what closes the hazard the annotated dialect carried, where every symbol
++   landed global and strong whatever its linkage.  */
++void
++assemble_linkage (FILE *stream, const_tree decl, const char *name, bool pub)
++{
++  if (decl ? TREE_PUBLIC (decl) : pub)
++    emit_named_directive (stream, ".globl", name);
++  if (decl && DECL_WEAK (decl))
++    emit_named_directive (stream, ".weak", name);
++  if (decl && DECL_VISIBILITY (decl) == VISIBILITY_HIDDEN)
++    emit_named_directive (stream, ".hidden", name);
+ }
+ 
++/* Close the object ASM_DECLARE_OBJECT_NAME opened.  */
+ void
+ decl_end (FILE *stream)
+ {
+-  fprintf (stream, ")\n");
+-}
+-
++  if (!pending_data_sym)
++    return;
++  fprintf (stream, "\t.size\t");
++  assemble_name (stream, pending_data_sym);
++  fprintf (stream, ", " HOST_WIDE_INT_PRINT_DEC "\n", pending_data_size);
++  pending_data_sym = nullptr;
++
++  /* The object is closed, so output goes back where it was coming from.  */
++  asm_out_file = outside_data_file;
++  outside_data_file = nullptr;
++}
++
++/* Note a symbol this unit refers to but does not define.  Only a function needs
++   anything said about it: a data symbol is a plain undefined reference that the
++   linker resolves, while a call cannot even be assembled without its callee's
++   signature in scope.  */
+ void
+-assemble_import (FILE *stream, const char *name, const_tree decl)
++assemble_import (const char *name, const_tree decl)
+ {
+-  if (!FUNC_OR_METHOD_TYPE_P (TREE_TYPE (decl)))
+-    return assemble_data_import (stream, decl, name);
+-  assemble_entity_import (stream, name, name, decl);
++  const_tree type = DECL_P (decl) ? TREE_TYPE (decl) : decl;
++  if (!FUNC_OR_METHOD_TYPE_P (type))
++    return;
++  declare_func (name, signature_of (type).c_str ());
+ }
+ 
+-void
+-print_nan_payload (FILE *stream, rtx value)
+-{
+-  machine_mode flt_mode = GET_MODE (value);
+-  const REAL_VALUE_TYPE *n = CONST_DOUBLE_REAL_VALUE (value);
+-  int ndata = GET_MODE_PRECISION (flt_mode) / 32;
+-  long data[8];
+-  real_to_target (data, n, flt_mode);
+-  format_helper fmt (REAL_MODE_FORMAT (flt_mode));
+-  int mantissa = significand_size (fmt) - 1;
+-  int mantissa_words = ((mantissa - 1) / 32) + 1;
+-  for (int i = mantissa_words; i != ndata; ++i)
+-    data[i] = 0;
+-  unsigned mask = (1 << (mantissa % 32)) - 1;
+-  data[mantissa / 32] &= mask;
+-
+-  bool start = true;
+-  for (int i = ndata; i--;)
+-    if (start && !data[i])
+-      ;
+-    else if (start)
+-      fprintf (stream, "%lx", data[i]), start = false;
+-    else
+-      fprintf (stream, "%08lx", data[i]);
+-}
+ 
+ }
+ 
+@@ -464,16 +463,29 @@
+ void
+ wasm_asm_file_start ()
+ {
+-  output_indent (asm_out_file);
+-  ++indent;
+-  fprintf (asm_out_file, "(module\n");
+   saved_asm_out_file = asm_out_file;
+-  /* The module body is buffered so that imports and globals, which are only known
+-     once codegen has run, can be emitted ahead of it.  tmpfile rather than
+-     open_memstream: the latter is a glibc extension and does not exist on every
+-     host GCC builds on.  */
+-  asm_out_file = tmpfile ();
+-  gcc_assert (asm_out_file);
++  /* The body is buffered so that the declarations it turns out to need can be
++     emitted ahead of it.  This is not a convenience: a `call' is rejected unless
++     the callee's signature is already in scope, GCC emits functions in an order
++     that puts calls before definitions, and which functions are called is only
++     known once codegen has run.  tmpfile rather than open_memstream: the latter
++     is a glibc extension and does not exist on every host GCC builds on.  */
++  code_out_file = tmpfile ();
++  data_out_file = tmpfile ();
++  gcc_assert (code_out_file && data_out_file);
++  asm_out_file = code_out_file;
++}
++
++/* Copy one of the body buffers into the output file, and close it.  */
++void
++flush_buffer (FILE *buf)
++{
++  rewind (buf);
++  char text[4096];
++  size_t n;
++  while ((n = fread (text, 1, sizeof (text), buf)) > 0)
++    fwrite (text, 1, n, saved_asm_out_file);
++  fclose (buf);
+ }
+ 
+ /* Implemetation of TARGET_ASM_FILE_END.  */
+@@ -481,47 +493,41 @@
+ wasm_asm_file_end ()
+ {
+   /* ??? All wasm globals should become builtin decls.  */
+-  output_indent (saved_asm_out_file);
+-  fprintf (saved_asm_out_file, "(import \"env\" \"__stack_pointer\""
+-	   " (global $stack (mut i32)))\n");
+-
+-  output_indent (saved_asm_out_file);
+-  fprintf (saved_asm_out_file, "(import \"env\" \"memory\" (memory 0))\n");
+-  output_indent (saved_asm_out_file);
+-  fprintf (saved_asm_out_file, "(import \"env\" \"__indirect_function_table\""
+-			       "(table 0 funcref))\n");
++  fprintf (saved_asm_out_file, "\t.globaltype\t__stack_pointer, i32\n");
++
++  /* The memory is the linker's to define.  The table is too, but declaring one
++     that is never used still produces an import, so it is named only if
++     something reached for it.  */
++  if (table_used)
++    fprintf (saved_asm_out_file,
++	     "\t.tabletype\t__indirect_function_table, funcref\n");
+ 
+   for (const auto &map_entry: import_map)
+     {
+       tree name = map_entry.second.first;
+       const_tree decl = map_entry.second.second;
+-      assemble_import (saved_asm_out_file, IDENTIFIER_POINTER (name), decl);
++      assemble_import (IDENTIFIER_POINTER (name), decl);
+     }
+   for (auto sym: external_libcall_set)
+-    assemble_entity_import (saved_asm_out_file, XSTR (sym, 0), XSTR (sym, 0),
+-			    *external_libcalls.get (sym));
++    assemble_import (XSTR (sym, 0), *external_libcalls.get (sym));
+ 
+-  rewind (asm_out_file);
+-  char buf[4096];
+-  size_t n;
+-  while ((n = fread (buf, 1, sizeof (buf), asm_out_file)) > 0)
+-    fwrite (buf, 1, n, saved_asm_out_file);
+-  fclose (asm_out_file);
++  for (const auto &decl_entry: func_decls)
++    {
++      fprintf (saved_asm_out_file, "\t.functype\t");
++      assemble_name (saved_asm_out_file, decl_entry.first);
++      fprintf (saved_asm_out_file, " %s\n", decl_entry.second);
++    }
++
++  flush_buffer (code_out_file);
++  flush_buffer (data_out_file);
+   /* Hand the real output file back, so that toplev closes that and not the buffer.  */
+   asm_out_file = saved_asm_out_file;
+-
+-  fprintf (saved_asm_out_file, ")\n");
+ }
+ 
+ /* Implemetation of ASM_OUTPUT_FUNCTION_LABEL.  */
+ void
+ wasm_asm_start_function (FILE *stream, tree decl, const char *name)
+ {
+-  output_indent (stream);
+-  ++indent;
+-  fprintf (stream, "(func $");
+-  assemble_name (stream, name);
+-
+   bool override_args = false;
+   if (MAIN_NAME_P (DECL_NAME (decl)))
+     {
+@@ -531,54 +537,43 @@
+ 	name = "__main_argc_argv", override_args = true;
+     }
+ 
+-  fprintf (stream, " (@sym");
+-  if (TREE_CODE (decl) == FUNCTION_DECL)
+-    {
+-      assemble_init_prio (stream, decl);
+-      assemble_binding (stream, decl);
+-      assemble_visibility (stream, decl);
+-      assemble_sym_name (stream, name);
+-    }
+-  fprintf (stream, ") ");
+-
+   tree type = TREE_TYPE (decl);
+-  fprintf (stream, "\n");
+   int i;
+   rtx reg;
+ 
++  /* Which registers are parameters and which are locals, gathered before
++     anything is printed.  A local is named by its index and the index is
++     positional -- parameters in signature order, then one per `.local' in
++     declaration order -- so the declarations and the index space have to come
++     out of a single walk, in that order, or every `local.get' in the body is off
++     by however many entries disagree.  */
++  auto_vec<rtx> param_regs;
++  auto_vec<rtx> local_regs;
++  int pad_params = 0;
++
+   if (override_args)
+     {
+       FOR_EACH_VEC_SAFE_ELT (cfun->machine->func_args, i, reg)
+-	  print_local_decl (stream, reg, i < 2);
+-      if (i < 1)
+-	{
+-	  output_indent (stream);
+-	  fprintf (stream, "(param i32)\n");
+-	}
+-      if (i < 2)
+-	{
+-	  output_indent (stream);
+-	  fprintf (stream, "(param i32)\n");
+-	}
++	(i < 2 ? param_regs : local_regs).safe_push (reg);
++      pad_params = 2 - (int) param_regs.length ();
+     }
+   else
+     {
+       FOR_EACH_VEC_SAFE_ELT (cfun->machine->func_args, i, reg)
+-	print_local_decl (stream, reg, true);
++	param_regs.safe_push (reg);
+       if (stdarg_p (type))
+-	print_local_decl (stream, regno_reg_rtx[ARG_POINTER_REGNUM], true);
++	param_regs.safe_push (regno_reg_rtx[ARG_POINTER_REGNUM]);
+       if (DECL_STATIC_CHAIN (decl))
+-	print_local_decl (stream, regno_reg_rtx[STATIC_CHAIN_REGNUM], true);
++	param_regs.safe_push (regno_reg_rtx[STATIC_CHAIN_REGNUM]);
+     }
+-  output_indent (stream);
+-  print_func_type (stream, type, true);
+-  fprintf (stream, "\n");
+ 
+-  output_indent (stream);
+-  fprintf (stream, ";; hard\n");
++  /* The return local, which exists whenever the return register is live -- for a
++     result in a register, and also for the pointer to a result in memory.  See
++     result_on_stack for why that is a different question from whether the
++     signature has a result.  */
+   if (cfun->machine->return_mode != VOIDmode)
+-    print_local_decl (stream, gen_rtx_REG (cfun->machine->return_mode,
+-					   WASM_RETURN_REGNUM));
++    local_regs.safe_push (gen_rtx_REG (cfun->machine->return_mode,
++				       WASM_RETURN_REGNUM));
+ 
+   df_set_regs_ever_live (WASM_CONTROL_POINTER_REGNUM, true);
+   for (int r = 0; r < FIRST_PSEUDO_REGISTER; r++)
+@@ -590,15 +585,10 @@
+       if (r == STATIC_CHAIN_REGNUM && DECL_STATIC_CHAIN (decl))
+ 	continue;
+       reg = regno_reg_rtx[r];
+-      if (df_regs_ever_live_p (r))
+-	{
+-	  if (!global_p (reg))
+-	    print_local_decl (stream, reg);
+-	}
++      if (df_regs_ever_live_p (r) && !global_p (reg))
++	local_regs.safe_push (reg);
+     }
+ 
+-  output_indent (stream);
+-  fprintf (stream, ";; locals\n");
+   int max = max_reg_num ();
+   for (int r = FIRST_PSEUDO_REGISTER; r < max; r++)
+     {
+@@ -611,41 +601,85 @@
+ 	continue;
+       if (!bitmap_bit_p (cfun->machine->regs_ever_live, r))
+ 	continue;
+-      print_local_decl (stream, reg);
++      local_regs.safe_push (reg);
+     }
+-  output_indent (stream);
+-  fprintf (stream, "(local.set $control (i32.const 0))\n");
+-  output_indent (stream);
+-  fprintf (stream, "(loop $control ");
+-  print_func_type (stream, type, true);
+-  fprintf (stream, "\n");
+-  ++indent;
+-  int len = labelno_to_labels.elements ();
+-  for (i = len - 1; i >= 0; --i)
++
++  local_index.empty ();
++  int next_index = 0;
++  std::string params, locals;
++  for (rtx param: param_regs)
+     {
+-      output_indent (stream);
+-      ++indent;
+-      fprintf (stream, "(block $%d\n", i);
++      local_index.put (REGNO (param), next_index++);
++      append_type (params, lang_hooks.types.type_for_mode (GET_MODE (param), 0));
++    }
++  for (int pad = 0; pad != pad_params; ++pad)
++    {
++      ++next_index;
++      append_type (params, intSI_type_node);
++    }
++  for (rtx local: local_regs)
++    {
++      local_index.put (REGNO (local), next_index++);
++      append_type (locals, lang_hooks.types.type_for_mode (GET_MODE (local), 0));
+     }
+ 
+-  output_indent (stream);
++  /* The parameters come from the registers assign_parms actually used, which is
++     what gives the body's locals their types; the results come from the type,
++     which is what callers see.  params_of is the same derivation for the first
++     half, and a definition whose two halves disagreed would be rejected as a
++     conflicting `.functype' against the header's.  */
++  std::string results = results_of (type);
++  result_on_stack = !results.empty ();
++  if (results.find (',') != std::string::npos)
++    sorry ("returning more than one value is not yet implemented for this "
++	   "architecture");
+ 
+-  fprintf (stream, "(br_table");
+-  for (i = 0; i < len; ++i)
+-    fprintf (stream, " $%d", i);
+-  fprintf (stream, " (local.get $control))\n");
++  fprintf (stream, "\t.text\n");
++  fprintf (stream, "\t.type\t");
++  assemble_name (stream, name);
++  fprintf (stream, ",@function\n");
++  if (TREE_CODE (decl) == FUNCTION_DECL)
++    assemble_linkage (stream, decl, name, true);
++
++  /* The signature goes out twice: here, where it gives the body's parameters
++     their types, and in the header, where it puts the symbol in scope for calls
++     the assembler has already seen.  Neither covers for the other.  */
++  std::string signature = "(" + params + ") -> (" + results + ")";
++  declare_func (name, signature.c_str ());
++  assemble_name (stream, name);
++  fprintf (stream, ":\n\t.functype\t");
++  assemble_name (stream, name);
++  fprintf (stream, " %s\n", signature.c_str ());
++  if (!locals.empty ())
++    fprintf (stream, "\t.local\t%s\n", locals.c_str ());
++
++  fprintf (stream, "\ti32.const\t0\n\tlocal.set\t%d\n",
++	   local_of (WASM_CONTROL_POINTER_REGNUM));
++
++  /* One `block' per basic block inside one `loop', dispatched on the control
++     local.  The innermost block is $0 and a branch names its target by relative
++     depth, so the table reads 0 to len-1 outwards and block_depth starts at the
++     full height.  */
++  fprintf (stream, "\tloop%s%s\n", results.empty () ? "" : "\t",
++	   results.c_str ());
++  int len = labelno_to_labels.elements ();
++  for (i = 0; i != len; ++i)
++    fprintf (stream, "\tblock\n");
++  block_depth = len;
++
++  fprintf (stream, "\tlocal.get\t%d\n",
++	   local_of (WASM_CONTROL_POINTER_REGNUM));
++  fprintf (stream, "\tbr_table\t{");
++  for (i = 0; i != len; ++i)
++    fprintf (stream, "%s%d", i ? ", " : "", i);
++  fprintf (stream, "}\n");
+ }
+ 
+ /* Implemetation of ASM_DECLARE_FUNCTION_SIZE.  */
+ void
+ wasm_asm_end_function (FILE *stream, tree, const char *name)
+ {
+-  --indent;
+-  output_indent (stream);
+-  fprintf (stream, ") ;; loop $control\n");
+-  --indent;
+-  output_indent (stream);
+-  fprintf (stream, ") ;;%s\n",
++  fprintf (stream, "\tend_loop\n\tend_function\t%s %s\n", ASM_COMMENT_START,
+ 	   IDENTIFIER_POINTER (targetm.asm_out.mangle_assembler_name (name)));
+ }
+ 
+@@ -702,39 +736,96 @@
+   return assemble_zeroes (stream, len);
+ }
+ 
++/* Implemetation of TARGET_ASM_CONSTRUCTOR.  A static constructor becomes an
++   entry in an `.init_array.<priority>' section holding its address.  The
++   assembler recognises that section by name, turns each entry into an object
++   init-function record rather than into data, and the linker collects those
++   across objects into a synthesised `__wasm_call_ctors' -- which is the function
++   whatever embeds the module has to call before anything else in it.
++
++   The section kind is a bare `@'.  `@init_array', which is how the directive
++   would read on an ELF target, is rejected outright by the wasm assembler's
++   parser ("Expected eol, instead got: init_array"); it takes the section's
++   meaning from the name alone.
++
++   Upstream's no-op hook plus an `(init_prio N)' decoration on the symbol was the
++   same information in a spelling no assembler ever read, so constructors simply
++   did not run.  There is deliberately no matching destructor hook: wasm has no
++   `.fini_array' and the linker synthesises nothing for one, so a destructor runs
++   only by having been registered with __cxa_atexit from a constructor, which
++   needs a libc.  */
++void
++wasm_asm_constructor (rtx symbol, int priority)
++{
++  fprintf (data_out_file, "\t.section\t.init_array.%d,\"\",@\n", priority);
++  fprintf (data_out_file, "\t.p2align\t2\n");
++  fprintf (data_out_file, "\t.int32\t");
++  assemble_name (data_out_file, XSTR (symbol, 0));
++  fprintf (data_out_file, "\n");
++}
++
++/* Redirect output into the data buffer for the duration of one object, which is
++   the window between ASM_DECLARE_OBJECT_NAME and TARGET_ASM_END_DECL.  The
++   contents are written by generic varasm through asm_out_file, so moving an
++   object means moving that for as long as it is open.  */
++void
++begin_data_object ()
++{
++  /* An object left open would send the next function's code into the data
++     buffer, so this asserts rather than coping.  It holds for every varasm path
++     that reaches here today, with one known exception that nothing currently
++     takes: assemble_variable_contents with dont_output_data runs
++     ASM_DECLARE_OBJECT_NAME and never ends the decl, and it is reachable only
++     through dw2_force_const_mem -- so it arrives with DWARF or EH, neither of
++     which this target has yet.  Whoever turns one of those on gets this assert,
++     and the fix is for that path to close the object, not for this one to
++     tolerate it.  */
++  gcc_assert (!outside_data_file);
++  outside_data_file = asm_out_file;
++  asm_out_file = data_out_file;
++}
++
+ /* Implemetation of ASM_DECLARE_OBJECT_NAME
+    and TARGET_ASM_DECLARE_CONSTANT_NAME.  */
+ void
+-wasm_assemble_data_begin (FILE *stream, tree decl, const char *name,
++wasm_assemble_data_begin (FILE *, tree decl, const char *name,
+ 			  HOST_WIDE_INT size, bool pub)
+ {
+   if (!name)
+     name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
+   if (!size)
+     size = tree_to_uhwi (DECL_SIZE_UNIT (decl));
+-  output_indent (stream);
++
++  /* Objects go in their own buffer, so the stream the macro captured before the
++     redirect is not the one to write to.  */
++  begin_data_object ();
++  FILE *stream = asm_out_file;
+ 
+   HOST_WIDE_INT align_real = align ? align : 1;
+ 
+   /* We gathered the alignment.  Time to reset it so that a new one can be
+    * specified.  */
+   align = 0;
+-  fprintf (stream, "(data (@sym (align " HOST_WIDE_INT_PRINT_DEC "))"
+-		   " (i32.const 0) (@sym $", align_real);
++
++  /* Its own section per object, named after it.  That is what gives the linker
++     something to place and to collect, and it also makes GCC's choice of
++     section irrelevant -- which matters because this target never set
++     readonly_data_section, so a `const' object arrives here nominally in
++     .text.  */
++  fprintf (stream, "\t.type\t");
+   assemble_name (stream, name);
+-  if (decl)
+-    {
+-      assemble_binding (stream, decl);
+-    }
+-  else
+-    {
+-      if (!pub)
+-	fprintf (stream, " local");
+-    }
+-  assemble_visibility (stream, decl);
+-  assemble_sym_name (stream, name);
+-  fprintf (stream, " (size %ld)", size);
+-  fprintf (stream, ")");
++  fprintf (stream, ",@object\n\t.section\t.data.");
++  assemble_name (stream, name);
++  fprintf (stream, ",\"\",@\n");
++  assemble_linkage (stream, decl, name, pub);
++  fprintf (stream, "\t.p2align\t%d\n", floor_log2 (align_real));
++  assemble_name (stream, name);
++  fprintf (stream, ":\n");
++
++  /* TARGET_ASM_END_DECL closes this with a `.size', and is handed nothing to
++     close it with.  */
++  pending_data_sym = name;
++  pending_data_size = size;
+ }
+ 
+ /* Implemetation of ASM_OUTPUT_ALIGN.  */
+@@ -754,15 +845,17 @@
+ {
+   wasm_specify_align (decl_align);
+   wasm_assemble_data_begin (stream, decl, name, size, pub);
+-  wasm_assemble_skip (stream, size);
+-  decl_end (stream);
++  /* Inside the object now, so this is the data buffer and not what the caller
++     passed.  */
++  wasm_assemble_skip (asm_out_file, size);
++  decl_end (asm_out_file);
+ }
+ 
+ /* Implemetation of TARGET_PRINT_OPERAND_PUNCT_VALID_P.  */
+ bool
+ wasm_valid_punct_p (unsigned char code)
+ {
+-  return code == '#';
++  return code == '#' || code == '&' || code == '!' || code == '~';
+ }
+ 
+ /* Implemetation of TARGET_PRINT_OPERAND.  */
+@@ -772,17 +865,30 @@
+   if (value && GET_CODE (value) == UNSPEC_VOLATILE)
+     return wasm_print_operand (stream, XVECEXP (value, 0, 0), mode);
+ 
+-  if (mode == '#') /* Print the return insn.  */
++  /* The codes that push or pop ('i' and 'o') emit a whole instruction, so an
++     insn template reads as the stack sequence it is: operands on their own
++     lines, in evaluation order, before the opcode that consumes them.  */
++  if (mode == '#') /* Push the return value, if there is one.  */
++    {
++      if (result_on_stack)
++	fprintf (stream, "local.get\t%d\n\t",
++		 local_of (WASM_RETURN_REGNUM));
++    }
++  else if (mode == '&') /* The depth of the enclosing dispatch loop.  */
++    fprintf (stream, "%d", block_depth);
++  else if (mode == '!') /* The control local's index.  */
++    fprintf (stream, "%d", local_of (WASM_CONTROL_POINTER_REGNUM));
++  else if (mode == '~') /* The function table, which naming here declares.  */
+     {
+-      if (TREE_TYPE (TREE_TYPE (cfun->decl)) != void_type_node)
+-	fprintf (stream, " (local.get $return)");
++      table_used = true;
++      fprintf (stream, "__indirect_function_table");
+     }
+   else if (mode == 'M') /* Print local/global for a register.  */
+     if (global_p (value))
+       fprintf (stream, "global");
+     else
+       fprintf (stream, "local");
+-  else if (mode == 'A') /* Print a call insn arglist.  */
++  else if (mode == 'A') /* Push a call insn's arguments.  */
+     {
+       gcc_assert (GET_CODE (value) == PARALLEL);
+       int len = XVECLEN (value, 0);
+@@ -792,12 +898,13 @@
+ 	  gcc_assert (GET_CODE (arg) == USE);
+ 	  rtx reg = XEXP (arg, 0);
+ 	  gcc_assert (GET_CODE (reg) == REG);
+-	  fprintf (stream, " ");
+ 	  wasm_print_operand (stream, reg, 'i');
++	  fprintf (stream, "\n\t");
+ 	}
+     }
+   else if (mode == 'T') /* Print an arglist type.  */
+     {
++      std::string types;
+       if (GET_CODE (value) == PARALLEL)
+ 	{
+ 	  int len = XVECLEN (value, 0);
+@@ -807,26 +914,34 @@
+ 	      gcc_assert (GET_CODE (arg) == USE);
+ 	      rtx reg = XEXP (arg, 0);
+ 	      gcc_assert (GET_CODE (reg) == REG);
+-	      wasm_print_operand (stream, reg, mode);
++	      append_type (types,
++			   lang_hooks.types.type_for_mode (GET_MODE (reg), 0));
+ 	    }
+ 	}
+       else if (REG_P (value))
+-	print_type (stream,
+-		    lang_hooks.types.type_for_mode (GET_MODE (value), 0));
++	append_type (types,
++		     lang_hooks.types.type_for_mode (GET_MODE (value), 0));
+       else
+ 	gcc_unreachable ();
++      fprintf (stream, "%s", types.c_str ());
++    }
++  else if (mode == 'f') /* A memory operand's offset immediate.  */
++    {
++      gcc_assert (MEM_P (value));
++      rtx addr = XEXP (value, 0);
++      fprintf (stream, HOST_WIDE_INT_PRINT_UNSIGNED,
++	       GET_CODE (addr) == PLUS ? UINTVAL (XEXP (addr, 1)) : 0);
+     }
+   else switch (GET_CODE (value))
+     {
+     case MEM:
+       {
++	/* The address alone: the offset is a separate operand, printed after
++	   the opcode rather than before it.  */
++	gcc_assert (mode == 'i');
+ 	rtx addr = XEXP (value, 0);
+ 	if (GET_CODE (addr) == PLUS)
+-	  {
+-	    fprintf (stream, "offset=%lu ", UINTVAL (XEXP (addr, 1)));
+-	    addr = XEXP (addr, 0);
+-	  }
+-
++	  addr = XEXP (addr, 0);
+ 	wasm_print_operand (stream, addr, 'i');
+ 	break;
+       }
+@@ -837,21 +952,15 @@
+ 	rtx offset = NULL_RTX;
+ 	if (GET_CODE (op) == PLUS)
+ 	  offset = XEXP (op, 1), op = XEXP (op, 0);
+-	tree decl = SYMBOL_REF_P (op) ? SYMBOL_REF_DECL (op) : NULL_TREE;
+-	bool fndecl_p = decl && TREE_CODE (decl) == FUNCTION_DECL;
+ 	if (mode == 'i')
+-	  fprintf (stream, "(i32.const 0 (@reloc %s ",
+-		   fndecl_p ? "functable" : "data");
++	  fprintf (stream, "i32.const\t");
+ 
+-	fprintf (stream, "$");
+ 	output_addr_const (stream, op);
+ 	if (offset)
+ 	  {
+-	    fprintf (stream, " %+" HOST_WIDE_INT_PRINT "d",
++	    fprintf (stream, "%+" HOST_WIDE_INT_PRINT "d",
+ 		     INTVAL (offset));
+ 	  }
+-	if (mode == 'i')
+-	  fprintf (stream, "))");
+ 	break;
+       }
+     case SUBREG:
+@@ -862,51 +971,44 @@
+       {
+ 	int reg = REGNO (value);
+ 	if (mode == 'i' || mode == 'o')
+-	  fprintf (stream, "%s%s.%s ", mode == 'o' ? "" : "(",
+-		   global_p (value) ? "global" : "local",
++	  fprintf (stream, "%s.%s\t", global_p (value) ? "global" : "local",
+ 		   mode == 'i' ? "get" : "set");
+-	if (reg < FIRST_PSEUDO_REGISTER)
+-	  fprintf (stream, "%s", reg_names[reg]);
++	/* A global is named; a local is only ever an index.  */
++	if (global_p (value))
++	  fprintf (stream, "__stack_pointer");
+ 	else
+-	  {
+-	    reg -= FIRST_PSEUDO_REGISTER;
+-	    fprintf (stream, "$local_%d", reg);
+-	  }
+-	if (mode == 'i')
+-	  fprintf (stream, ")");
++	  fprintf (stream, "%d", local_of (reg));
+ 	break;
+       }
+     case CONST_INT:
++      /* i32 whatever the mode: this is reached for an address or an argument,
++	 never for the typed constant a `.const' template spells itself.  */
+       if (mode == 'i')
+-	fprintf (stream, "(i32.const ");
++	fprintf (stream, "i32.const\t");
+       fprintf (stream, "%ld", INTVAL (value));
+-      if (mode == 'i')
+-	fprintf (stream, ")");
+       break;
+     case CONST_DOUBLE:
+       {
+ 	int prec = GET_MODE_PRECISION (GET_MODE (value));
+ 	if (mode == 'i')
+-	  fprintf (stream, "(f%d.const ", prec);
++	  fprintf (stream, "f%d.const\t", prec);
+ 	const REAL_VALUE_TYPE *n = CONST_DOUBLE_REAL_VALUE (value);
++	/* `infinity', not wat's `inf', and no `+' on the positive one: the
++	   assembler rejects both of those spellings outright.  Nothing reaches
++	   this before libgcc's complex multiply and divide do, which is why no
++	   probe caught it.  */
+ 	if (REAL_VALUE_ISINF (*n))
+-	  fprintf (stream, "%cinf", REAL_VALUE_NEGATIVE (*n) ? '-' : '+');
++	  fprintf (stream, "%sinfinity", REAL_VALUE_NEGATIVE (*n) ? "-" : "");
+ 	else if (REAL_VALUE_ISNAN (*n))
+ 	  {
+-	    fprintf (stream, "%cnan", REAL_VALUE_NEGATIVE (*n) ? '-' : '+');
+-	    if (!n->canonical)
+-	      {
+-		fprintf (stream, ":0x");
+-		switch (GET_MODE (value))
+-		  {
+-		  case DFmode:
+-		  case SFmode:
+-		    print_nan_payload (stream, value);
+-		    break;
+-		  default:
+-		    gcc_unreachable ();
+-		  }
+-	      }
++	    /* A bare `nan' is the only NaN this dialect can spell: it takes
++	       neither a sign nor wat's `:0x<payload>' suffix.  A NaN that is not
++	       the canonical positive quiet one therefore cannot be emitted at
++	       all, and refusing is the point -- printing `nan' for it would
++	       silently change a constant rather than fail to compile one.  */
++	    if (REAL_VALUE_NEGATIVE (*n) || !n->canonical)
++	      sorry ("NaN constant that this target cannot spell in assembly");
++	    fprintf (stream, "nan");
+ 	  }
+ 	else
+ 	  {
+@@ -919,8 +1021,10 @@
+ 	    std::memcpy (&r, tmp2, sizeof r);
+ 	    fprintf (stream, "%a", r);
+ 	  }
+-	if (mode == 'i')
+-	  fprintf (stream, ")");
++	/* No closing paren: `%i' of a float constant emits the whole
++	   `f<n>.const <v>' instruction and has nothing to close.  The one that
++	   used to be here is a leftover of the folded form this dialect
++	   replaced, on the one path through here no probe takes.  */
+ 	break;
+       }
+     default:
+@@ -957,9 +1061,11 @@
+       int l = get_cf_label (no);
+       if (l >= 0)
+ 	{
+-	  --indent;
+-	  output_indent (stream);
+-	  fprintf (stream, ") ;; $%d\n", l);
++	  /* The end of one dispatch block, which is also where the code for the
++	     next one starts.  One fewer block open means every branch from here
++	     on names the loop one level shallower.  */
++	  --block_depth;
++	  fprintf (stream, "\tend_block\t%s $%d\n", ASM_COMMENT_START, l);
+ 	}
+     }
+   else if (!strcmp (pfx, "LFB"))
+--- a/gcc/config/wasm/wasm.cc
++++ b/gcc/config/wasm/wasm.cc
+@@ -78,7 +78,8 @@
+ 
+ #define TARGET_ASM_GLOBALIZE_LABEL [](FILE *, const char *) {}
+ #define TARGET_ASM_ASSEMBLE_VISIBILITY [](tree, int) {}
+-#define TARGET_ASM_CONSTRUCTOR [] (rtx, int) {}
++void wasm_asm_constructor (rtx symbol, int priority);
++#define TARGET_ASM_CONSTRUCTOR wasm_asm_constructor
+ #define TARGET_ASM_DESTRUCTOR [] (rtx, int) {}
+ #define TARGET_USE_LATE_PROLOGUE_EPILOGUE [] { return true; }
+ 
+--- a/gcc/config/wasm/wasm-cg.cc
++++ b/gcc/config/wasm/wasm-cg.cc
+@@ -104,8 +104,17 @@
+   vec<rtx, va_gc> *args_rtx = cfun->machine->call->args;
+   int cnt = vec_safe_length (args_rtx);
+   args.safe_grow (cnt);
++  /* `call->args' is in reverse argument order -- wasm_expand_call says so, and
++     relies on it for the vararg buffer -- so the signature has to be built
++     backwards through it.  Taking it forwards declares the parameters reversed,
++     which only shows up once a callee has two parameters of *different* types,
++     and then only against an assembler that type-checks the stack: the
++     declaration says (i32, f64) while the call site pushes (f64, i32).  The
++     emitted call is unaffected, because the PARALLEL wasm_expand_call builds
++     already reverses this vector.  __powidf2 is the first thing to reach it.  */
+   for (int i = 0; i != cnt; ++i)
+-    args[i] = lang_hooks.types.type_for_mode (GET_MODE ((*args_rtx)[i]), false);
++    args[i] = lang_hooks.types.type_for_mode (GET_MODE ((*args_rtx)[cnt - 1 - i]),
++					      false);
+   tree ty = build_function_type_array (ret, cnt, args.address ());
+   bool existed;
+   tree &slot = external_libcalls.get_or_insert (sym, &existed);

@@ -182,6 +182,7 @@ auto gse::trace::finalize_frame() -> void {
 
 	build_frame(frames.write());
 	frames.write().elapsed = boundary - frame_boundary;
+	frames.write().boundary = boundary;
 	frame_boundary = boundary;
 	frames.flip();
 }
@@ -194,6 +195,7 @@ auto gse::trace::view() -> frame_view {
 		.roots = std::span(fs.roots),
 		.generation = fs.generation,
 		.elapsed = fs.elapsed,
+		.boundary = fs.boundary,
 	};
 }
 
@@ -385,7 +387,8 @@ auto gse::trace::absorb_events(const std::span<const event> events) -> void {
 					.t1 = {},
 					.parent = e.parent_eid,
 					.opened_frame = build_frame_index,
-					.lexical = e.lexical
+					.lexical = e.lexical,
+					.kind = e.kind
 				}
 			);
 			continue;
@@ -486,7 +489,8 @@ auto gse::trace::build_frame(frame_storage& fs) -> void {
 			.children_first = 0,
 			.children_count = 0,
 			.open = sp.open,
-			.lexical = sp.info.lexical
+			.lexical = sp.info.lexical,
+			.kind = sp.info.kind
 		});
 	}
 
@@ -639,6 +643,10 @@ gse::trace::scope_guard::scope_guard(const id id, const std::uint64_t parent) : 
 	enter(parent);
 }
 
+gse::trace::scope_guard::scope_guard(const id id, const span_kind kind) : m_id(id), m_kind(kind) {
+	enter(current_eid());
+}
+
 auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
 	if (paused() || !m_id.exists()) {
 		return;
@@ -664,7 +672,8 @@ auto gse::trace::scope_guard::enter(std::uint64_t parent) -> void {
 		.parent_eid = m_parent,
 		.tid = m_tid,
 		.ts = system_clock::now<tick_step>(),
-		.lexical = true
+		.lexical = true,
+		.kind = m_kind
 	});
 
 	tls.stack.push_back(m_eid);

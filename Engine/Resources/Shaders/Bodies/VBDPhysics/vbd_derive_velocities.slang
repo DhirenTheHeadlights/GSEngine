@@ -1,14 +1,15 @@
 
 void vbd_derive_velocities(uint3 dispatch_id) {
-    uint bi = dispatch_id.x;
+    uint slot = dispatch_id.x;
 
-    if (bi == 0) {
+    if (slot == 0) {
         collision_state[state_converged_flag_index] = 0;
         collision_state[state_convergence_max_delta_index] = 0;
         collision_state[state_convergence_max_angular_delta_index] = 0;
     }
 
-    if (bi >= pc.body_count) return;
+    if (slot >= active_data[active_count_word]) return;
+    uint bi = active_list[active_data[active_half_word] * max_bodies() + slot];
 
     body_state body = body_data[bi];
     bool locked = body.locked != 0;
@@ -26,25 +27,7 @@ void vbd_derive_velocities(uint3 dispatch_id) {
     body.velocity = new_vel;
 
     if (update_orient) {
-        float4 delta_q = quat_mul(body.predicted_orientation, quat_conjugate(body.old_orientation));
-        float q_s = delta_q.x;
-        float3 q_v = delta_q.yzw;
-        if (q_s < 0.0) { q_s = -q_s; q_v = -q_v; }
-
-        float3 ang_vel;
-        if (q_s < 0.9999) {
-            float angle = 2.0 * acos(clamp(q_s, 0.0, 1.0));
-            float sin_half = sqrt(1.0 - q_s * q_s);
-            if (sin_half > 1e-6) {
-                ang_vel = (q_v / sin_half) * (angle / pc.dt);
-            } else {
-                ang_vel = q_v * (2.0 / pc.dt);
-            }
-        } else {
-            ang_vel = q_v * (2.0 / pc.dt);
-        }
-
-        body.angular_velocity = ang_vel;
+        body.angular_velocity = to_axis_angle(quat_mul(body.predicted_orientation, quat_conjugate(body.old_orientation))) / pc.dt;
     } else {
         body.angular_velocity = float3(0, 0, 0);
     }
@@ -58,14 +41,13 @@ void vbd_derive_velocities(uint3 dispatch_id) {
         uint contact_offset = contact_offsets[bi];
         uint contact_count = contact_counts[bi];
         for (uint k = 0; k < contact_count && calm; k++) {
-            uint ci = safe_load_uint(contact_adjacency, contact_offset + k, max_contact_adjacency);
-            if (ci >= max_contacts) continue;
+            uint ci = safe_load_uint(contact_adjacency, contact_offset + k, max_contact_adjacency());
+            if (ci >= max_contacts()) continue;
             contact_constraint c = contact_data[ci];
             if (c.body_a >= pc.body_count || c.body_b >= pc.body_count) continue;
             uint other_idx = c.body_a == bi ? c.body_b : c.body_a;
-            body_state other = body_data[other_idx];
-            if (other.locked != 0 || other.sleep_counter >= sleep_threshold) continue;
-            float other_speed = length(other.predicted_position.xyz - other.old_position.xyz) / pc.dt;
+            if (body_data[other_idx].locked != 0 || body_data[other_idx].sleep_counter >= sleep_threshold) continue;
+            float other_speed = length(body_data[other_idx].predicted_position.xyz - body_data[other_idx].old_position.xyz) / pc.dt;
             if (other_speed >= wake_thresh) {
                 calm = false;
             }
@@ -78,5 +60,8 @@ void vbd_derive_velocities(uint3 dispatch_id) {
         body.sleep_counter = body.sleep_counter / 2;
     }
 
-    body_data[bi] = body;
+    body_data[bi].accel_weight = body.accel_weight;
+    body_data[bi].velocity = body.velocity;
+    body_data[bi].angular_velocity = body.angular_velocity;
+    body_data[bi].sleep_counter = body.sleep_counter;
 }

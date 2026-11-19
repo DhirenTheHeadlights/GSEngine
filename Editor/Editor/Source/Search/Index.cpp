@@ -17,8 +17,11 @@ auto gse::ide::search::unexpected_lookup(const lookup_failure reason, std::strin
 	});
 }
 
-auto gse::ide::search::is_skipped_dir(const std::string_view name) -> bool {
-	return name == "out" || name == ".git" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "external" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
+auto gse::ide::search::is_skipped_dir(const std::string_view name, const bool at_root) -> bool {
+	if (at_root && name == "external") {
+		return true;
+	}
+	return name == ".generated" || name == "out" || name == ".git" || name == ".gse" || name == ".vs" || name == ".vscode" || name == ".claude" || name == ".idea" || name == "vcpkg" || name == ".gcc-build" || name == ".gcc-ci-build" || name == "msys64" || name == "build" || name == "node_modules" || name == ".cache";
 }
 
 auto gse::ide::search::is_binary_ext(const std::string_view ext) -> bool {
@@ -64,6 +67,9 @@ auto gse::ide::search::loc_language_of(const std::string_view ext) -> std::optio
 }
 
 auto gse::ide::search::classify_loc(const index_root& owner, const std::filesystem::path& path) -> std::optional<loc_bucket> {
+	if (!owner.counts_loc) {
+		return std::nullopt;
+	}
 	const std::optional<loc_language> language = loc_language_of(to_lower(path.extension().native_encoded_string()));
 	if (!language) {
 		return std::nullopt;
@@ -367,9 +373,31 @@ auto gse::ide::search::publish_file_search_snapshot(index_state& index) -> void 
 	index.current_search_snapshot = std::move(combined);
 }
 
+auto gse::ide::search::completion_kind_of(const analysis::symbol_kind kind) -> std::optional<complete::entity_kind> {
+	switch (kind) {
+		case analysis::symbol_kind::function: return complete::entity_kind::function;
+		case analysis::symbol_kind::variable: return complete::entity_kind::variable;
+		case analysis::symbol_kind::member: return complete::entity_kind::field;
+		case analysis::symbol_kind::enum_member: return complete::entity_kind::enumerator;
+		case analysis::symbol_kind::name_space: return complete::entity_kind::name_space;
+		case analysis::symbol_kind::type:
+		case analysis::symbol_kind::enumeration:
+		case analysis::symbol_kind::alias:
+		case analysis::symbol_kind::concept_decl: return complete::entity_kind::type;
+		case analysis::symbol_kind::parameter: return std::nullopt;
+	}
+	return std::nullopt;
+}
+
+auto gse::ide::search::unqualified_name(const std::string_view qualified) -> std::string_view {
+	const std::size_t cut = qualified.rfind("::");
+	return cut == std::string_view::npos ? qualified : qualified.substr(cut + 2);
+}
+
 auto gse::ide::search::publish_symbol_search_snapshot(index_state& index) -> void {
 	auto next = next_symbol_search_snapshot(index);
 	auto searchable = std::make_shared<std::vector<searchable_symbol>>();
+	auto completion = std::make_shared<complete::model>();
 	searchable->reserve(index.symbols.symbols.size());
 	for (const symbol_entry& symbol : index.symbols.symbols) {
 		searchable->push_back({
@@ -380,8 +408,30 @@ auto gse::ide::search::publish_symbol_search_snapshot(index_state& index) -> voi
 			.line = symbol.line,
 			.column = symbol.column,
 		});
+		const std::optional<complete::entity_kind> kind = completion_kind_of(symbol.kind);
+		if (!kind || !symbol.is_definition) {
+			continue;
+		}
+		const std::size_t cut = symbol.qualified.rfind("::");
+		completion->namespace_entries.push_back({
+			.name_space = cut == std::string::npos ? std::string() : symbol.qualified.substr(0, cut),
+			.what = {
+				.name = symbol.name,
+				.kind = *kind,
+			},
+		});
 	}
+	completion->index();
 	next->symbols = std::move(searchable);
+	next->completion = std::move(completion);
+
+	auto usage = std::make_shared<complete::usage_table>();
+	for (const std::vector<xref_entry>& refs : index.symbols.xrefs | std::views::values) {
+		for (const xref_entry& ref : refs) {
+			++usage->words[std::string(unqualified_name(ref.qualified.tag()))];
+		}
+	}
+	next->usage = std::move(usage);
 
 	auto lints = std::make_shared<lint_snapshot>();
 	lints->symbol_generation = next->symbol_generation;
@@ -657,7 +707,6 @@ auto gse::ide::search::end_index_progress(index_state& idx) -> void {
 	idx.progress_done.store(0, std::memory_order_relaxed);
 	idx.phase_started.store(time_t<double>{}, std::memory_order_relaxed);
 	idx.phase.store(index_phase::idle, std::memory_order_release);
-	idx.building.store(false, std::memory_order_release);
 }
 
 auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, index_state& idx) -> std::vector<analysis::tu_symbols> {
@@ -687,13 +736,15 @@ auto gse::ide::search::run_symbol_batch(const symbol_batch_request& request, ind
 	};
 
 	begin_index_phase(idx, index_phase::checking_modules, list.size());
-	run_parallel([&](const std::size_t i) {
+	std::unordered_set<id> validated;
+	for (std::size_t i = 0; i < list.size() && !index_cancelled(idx); ++i) {
 		out[i].tu = list[i]->file;
-		if (const std::expected<void, std::string> module_graph = analysis::validate_module_graph(*list[i]); !module_graph) {
+		if (const std::expected<void, std::string> module_graph = analysis::validate_module_graph(*list[i], validated); !module_graph) {
 			out[i].failure = analysis::symbol_index_failure::module_unavailable;
 			out[i].failure_detail = module_graph.error();
 		}
-	});
+		idx.progress_done.fetch_add(1, std::memory_order_relaxed);
+	}
 	if (index_cancelled(idx)) {
 		return out;
 	}
@@ -717,8 +768,8 @@ auto gse::ide::search::is_indexed_path(const std::filesystem::path& root, const 
 	if (relative.empty() || *relative.begin() == "..") {
 		return false;
 	}
-	for (const std::filesystem::path& part : relative) {
-		if (is_skipped_dir(to_lower(part.native_encoded_string()))) {
+	for (const auto& [depth, part] : std::views::enumerate(relative)) {
+		if (is_skipped_dir(to_lower(part.native_encoded_string()), depth == 0)) {
 			return false;
 		}
 	}
@@ -777,6 +828,10 @@ auto gse::ide::search::is_pending(const lookup_error& error) -> bool {
 	return error.reason == lookup_failure::index_building;
 }
 
+auto gse::ide::search::index_busy(const index_phase phase) -> bool {
+	return phase != index_phase::idle;
+}
+
 auto gse::ide::search::report_lookup_failure(const index_state& index, const lookup_probe& probe, const std::span<const std::string> causes) -> void {
 	const std::uint64_t generation = index.generation.load(std::memory_order_acquire);
 	const std::string path = probe.file.generic_display_string();
@@ -811,11 +866,10 @@ auto gse::ide::search::report_lookup_failure(const index_state& index, const loo
 	log::println(
 		log::level::warning,
 		log::category::general,
-		"[semantic]   index: gen={} phase={} ready={} building={} file={} tu={}",
+		"[semantic]   index: gen={} phase={} ready={} file={} tu={}",
 		generation,
 		info.label,
 		index.symbols_ready.load(std::memory_order_acquire),
-		index.building.load(std::memory_order_acquire),
 		index.symbols.files.contains(fid) ? "indexed" : (index.pending_symbol_files.contains(fid) ? "pending" : "absent"),
 		failure == index.symbols.failures.end() ? std::string_view("ok") : std::string_view(failure->second)
 	);
@@ -1061,7 +1115,7 @@ auto gse::ide::search::index_state::declaration_of(const std::string_view name, 
 	};
 }
 
-auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<analysis::semantic_kind, lookup_error> {
+auto gse::ide::search::index_state::semantic_kind_of(const std::string_view name) const -> std::expected<gse::analysis::semantic_kind, lookup_error> {
 	std::shared_lock _(mutex);
 	if (!symbols_ready.load(std::memory_order_acquire)) {
 		return unexpected_lookup(lookup_failure::index_building, std::string(name));
@@ -1159,7 +1213,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 			const std::filesystem::directory_entry& entry = *it;
 			std::error_code type_ec;
 			if (entry.is_directory(type_ec)) {
-				if (is_skipped_dir(to_lower(entry.path().filename().native_encoded_string()))) {
+				if (is_skipped_dir(to_lower(entry.path().filename().native_encoded_string()), it.depth() == 0)) {
 					it.disable_recursion_pending();
 				}
 				continue;
@@ -1171,7 +1225,7 @@ auto gse::ide::search::build_files_and_content(index_state& idx, const std::span
 			if (owning_root(roots.first(static_cast<std::size_t>(root_index)), path)) {
 				continue;
 			}
-			const std::filesystem::path relative = std::filesystem::relative(path, root.path, type_ec);
+			const std::filesystem::path relative = path.lexically_relative(root.path);
 			std::string rel = relative.empty() ? path.filename().generic_display_string() : (root.name + "/" + relative.generic_display_string());
 			const auto [resolved, file_identity] = canonical_path_id(path);
 			files.add(file_identity, {
@@ -1396,32 +1450,34 @@ auto gse::ide::search::file_fingerprint(const std::filesystem::path& file, file_
 		cache.emplace(raw, fingerprint);
 		return fingerprint;
 	}
-	std::uint64_t fingerprint = file_identity.number();
 	std::error_code time_ec;
 	const std::filesystem::file_time_type modified = std::filesystem::last_write_time(canonical, time_ec);
-	fingerprint = hash_combine(fingerprint, time_ec ? 0ull : static_cast<std::uint64_t>(modified.time_since_epoch().count()));
 	std::error_code size_ec;
 	const std::uintmax_t size = std::filesystem::file_size(canonical, size_ec);
-	fingerprint = hash_combine(fingerprint, size_ec ? 0ull : static_cast<std::uint64_t>(size));
+	const std::uint64_t fingerprint = hash_of(
+		file_identity.number(),
+		time_ec ? 0 : modified.time_since_epoch().count(),
+		size_ec ? 0 : size
+	);
 	cache.emplace(raw, fingerprint);
 	cache.try_emplace(canonical_key, fingerprint);
 	return fingerprint;
 }
 
 auto gse::ide::search::tu_fingerprint(const analysis::compilation_entry& entry, const std::filesystem::path& plugin, const std::span<const std::filesystem::path> dependencies, file_fingerprint_cache& file_fingerprints) -> std::uint64_t {
-	std::uint64_t fingerprint = stable_id("tu_symbol_cache");
-	fingerprint = hash_combine(fingerprint, tu_cache_version);
-	fingerprint = hash_combine(fingerprint, entry.command.fingerprint);
-	fingerprint = hash_combine(fingerprint, file_fingerprint(plugin, file_fingerprints));
-	fingerprint = hash_combine(fingerprint, dependencies.size());
-	for (const std::filesystem::path& dependency : dependencies) {
-		fingerprint = hash_combine(fingerprint, file_fingerprint(dependency, file_fingerprints));
-	}
-	return fingerprint;
+	return hash_of(
+		"tu_symbol_cache",
+		tu_cache_version,
+		entry.command.fingerprint,
+		file_fingerprint(plugin, file_fingerprints),
+		dependencies | std::views::transform([&file_fingerprints](const std::filesystem::path& dependency) {
+			return file_fingerprint(dependency, file_fingerprints);
+		})
+	);
 }
 
 auto gse::ide::search::tu_cache_path(const index_state& index, const analysis::compilation_entry& entry) -> std::filesystem::path {
-	const std::uint64_t id = hash_combine(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
+	const std::uint64_t id = hash_of(canonical_path_id(entry.file).second.number(), entry.command.fingerprint);
 	return config::cache_dir() / "symbols" / std::format("{:016x}.bin", id);
 }
 
@@ -1558,7 +1614,6 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		idx.symbols_ready.store(true, std::memory_order_release);
 		return;
 	}
-	idx.building.store(true, std::memory_order_release);
 	begin_index_phase(idx, index_phase::loading_database, idx.compile_commands.size());
 
 	std::vector<std::pair<std::filesystem::path, std::shared_ptr<const analysis::compilation_database>>> databases;
@@ -1797,11 +1852,11 @@ auto gse::ide::search::build_symbols(index_state& idx) -> void {
 		std::unordered_set<file_id>(std::from_range, local.lints | std::views::transform(&lint_entry::file)).size()
 	);
 
+	begin_index_phase(idx, index_phase::publishing, 1);
 	{
 		std::lock_guard _(idx.build_mutex);
 		idx.completed_symbols.emplace(std::move(local));
 	}
-	begin_index_phase(idx, index_phase::publishing, 1);
 }
 
 auto gse::ide::search::build_symbol_overlay(const std::filesystem::path& canonical, const file_id file, const std::span<const analysis::symbol_token> syms, const std::span<const analysis::symbol_ref> refs, const std::span<const analysis::param_token> params, const std::unordered_map<file_id, std::filesystem::path>& files) -> symbol_overlay {
